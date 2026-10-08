@@ -52,10 +52,11 @@ function Rail({ ui }) {
   return flows ? <div className="pointer-events-none absolute" style={box ?? undefined}>{rail}</div> : rail;
 }
 
-/** The browser's tabs over the other pages (§7j): a strip at the top-left of the page's viewport, always (with no tabs, only
- * its + button). */
+/** The browser's tabs over the editor page (§7j): a strip at the top-left of the page's viewport (with no tabs, only its +
+ * button). The plan and flowchart pages have their own headers there, so the strip stays off them. */
 function BrowserTabs({ ui }) {
-  const on = !can('view.browser', ui);
+  const editor = useStore((s) => s.view.type === 'editor');
+  const on = editor && !can('view.browser', ui);
   const box = useViewportBox(on);
   if (!on || !box) return null;
   return (
