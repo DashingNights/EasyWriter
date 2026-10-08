@@ -36,6 +36,7 @@
       "index.html",
       "package.json",
       "build/icon.ico",
+      "build/icon.svg",
       "dist/**",
       "!dist/*.map",
       "src/**",

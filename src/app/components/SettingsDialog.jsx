@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ArrowDown, ArrowUp, Bot, Check, CloudUpload, Globe, RefreshCw, Keyboard, MessageSquare, Mic, Plus, SlidersHorizontal, Tags, Type, X } from 'lucide-react';
+import { ArrowDown, ArrowUp, Bot, Check, ChevronsUpDown, CloudUpload, Globe, RefreshCw, Keyboard, MessageSquare, Mic, Plus, SlidersHorizontal, Tags, Type, X } from 'lucide-react';
 import { toast } from 'sonner';
 // import { Badge } from '@/components/ui/badge'; // LOCAL LLM (commented out 2026-10-07): the model file row's state
 import { Button } from '@/components/ui/button';
@@ -7,6 +7,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Command, CommandEmpty, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Slider } from '@/components/ui/slider';
 import { Switch } from '@/components/ui/switch';
@@ -590,6 +591,7 @@ function GitHubSection({ value: g, onChange, setProblem }) {
   const [st, setSt] = useState(null);
   const [code, setCode] = useState(null);
   const [repos, setRepos] = useState(null);
+  const [repoOpen, setRepoOpen] = useState(false); // the repository list, open until a pick
   const [check, setCheck] = useState(null);
   const [starting, setStarting] = useState(false);
   const login = st?.login;
@@ -669,24 +671,32 @@ function GitHubSection({ value: g, onChange, setProblem }) {
         {g.enabled && <div className={FIELDS}>
           <Label className="self-start pt-2 text-muted-foreground">Repository</Label>
           <div className="grid gap-1.5">
-            <div className="flex items-start gap-2">
-              {/* Search by typing; a click or Enter picks a repository */}
-              <Command className="h-auto w-96 rounded-md border bg-transparent" aria-label="Repository">
-                <CommandInput placeholder="Search your private repositories..." />
-                <CommandList className="max-h-48">
-                  <CommandEmpty>{repos ? 'No private repository found.' : 'Loading...'}</CommandEmpty>
-                  {repos && [...new Set([g.repo, ...repos])].filter(Boolean).map((r) => (
-                    <CommandItem key={r} value={r} onSelect={() => edit({ repo: r })}>
-                      <Check className={r === g.repo ? '' : 'invisible'} />
-                      <span className="truncate">{r}</span>
-                    </CommandItem>
-                  ))}
-                </CommandList>
-              </Command>
+            <div className="flex items-center gap-2">
+              {/* The button shows the pick; the list opens under it, search by typing, a click or Enter picks and closes */}
+              <Popover open={repoOpen} onOpenChange={setRepoOpen}>
+                <PopoverTrigger asChild>
+                  <Button type="button" variant="outline" role="combobox" aria-expanded={repoOpen} aria-label="Repository" className="w-96 justify-between font-normal">
+                    <span className="truncate">{g.repo || 'Choose a repository'}</span><ChevronsUpDown className="opacity-50" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent align="start" className="w-96 p-0">
+                  <Command>
+                    <CommandInput placeholder="Search your private repositories..." />
+                    <CommandList className="max-h-48">
+                      <CommandEmpty>{repos ? 'No private repository found.' : 'Loading...'}</CommandEmpty>
+                      {repos && [...new Set([g.repo, ...repos])].filter(Boolean).map((r) => (
+                        <CommandItem key={r} value={r} onSelect={() => { edit({ repo: r }); setRepoOpen(false); }}>
+                          <Check className={r === g.repo ? '' : 'invisible'} />
+                          <span className="truncate">{r}</span>
+                        </CommandItem>
+                      ))}
+                    </CommandList>
+                  </Command>
+                </PopoverContent>
+              </Popover>
               <Button type="button" variant="ghost" size="icon-sm" aria-label="Reload the list" title="Reload the list" disabled={!repos}
                 onClick={loadRepos}><RefreshCw /></Button>
             </div>
-            <span className="text-sm">{g.repo || 'No repository chosen'}</span>
             {repoNote && <span className={`text-xs ${check && !check.ok ? 'text-destructive' : 'text-muted-foreground'}`}>{repoNote}</span>}
           </div>
           <Label htmlFor="set-github-every" className="text-muted-foreground">Push every</Label>
