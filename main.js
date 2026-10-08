@@ -55,7 +55,7 @@ const LOGGED_OUT = { loggedIn: false, memberId: 0, name: null, profileUrl: null 
 
 const DEFAULT_SETTINGS = {
   forumWidth: 1454,
-  theme: 'dark',
+  theme: 'light',
   baseFont: '',
   baseSize: 100,
   presets: [
