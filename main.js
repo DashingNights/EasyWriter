@@ -64,7 +64,7 @@ if (DATA_DIR) {
 }
 const INDEX_FILE = path.join(__dirname, 'index.html');
 const INDEX_URL = pathToFileURL(INDEX_FILE).href;
-const ICON = path.join(__dirname, 'build', 'icon.ico');
+const ICON = app.isPackaged ? undefined : path.join(__dirname, 'build', 'icon.ico'); // packaged: Windows takes the exe's icon; an .ico inside app.asar does not load
 const LOGGED_OUT = { loggedIn: false, memberId: 0, name: null, profileUrl: null };
 
 const DEFAULT_SETTINGS = {
