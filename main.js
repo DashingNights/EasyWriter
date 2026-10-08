@@ -747,12 +747,12 @@ function runSmoke(win) {
 
 // --script=<file>: window.__agent.script(steps) once the app has started; per-step {req, res, pass} into smoke-agent.json;
 // exit 1 when a step fails its expect. Drafts persist into the data dir (only __smoke() sets state.smoke).
-// A step {"shot": "<file>.png"} (docs/screenshots.json, npm run shots) saves the 1440 x 900 window as that file: the steps
+// A step {"shot": "<file>.png"} (docs/screenshots.json, npm run shots) saves the 1600 x 900 window as that file: the steps
 // before it run as one script, so "$steps[n]" counts from the last shot. It waits 1 s first, or "wait" ms (a notice fading out).
 async function runScript(win, outDir) {
   const steps = JSON.parse(await fs.readFile(path.resolve(SCRIPT), 'utf8'));
   if (steps.some((s) => s.shot)) { // the window shows inactive, so focusin never fires and the board tools never take over: emulate the focus
-    win.setContentSize(1440, 900);
+    win.setContentSize(1600, 900);
     try { win.webContents.debugger.attach(); } catch {}
     await win.webContents.debugger.sendCommand('Emulation.setFocusEmulationEnabled', { enabled: true });
   }
