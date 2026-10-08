@@ -27,18 +27,41 @@
     "shot": "docs/img/editor.png"
   },
   {
-    "id": "ui.select",
+    "id": "ui.scrollTo",
     "args": {
       "path": [
-        15
-      ],
-      "ids": [
-        "demonote"
+        16
       ]
     }
   },
   {
-    "shot": "docs/img/canvas.png"
+    "shot": "docs/img/annotate.png"
+  },
+  {
+    "id": "ui.scrollTo",
+    "args": {
+      "path": [
+        26
+      ]
+    }
+  },
+  {
+    "shot": "docs/img/boards-in-post.png"
+  },
+  {
+    "id": "canvas.edit",
+    "args": {
+      "path": [
+        19
+      ]
+    }
+  },
+  {
+    "shot": "docs/img/smart-canvas.png"
+  },
+  {
+    "id": "canvas.close",
+    "args": {}
   },
   {
     "id": "flow.library.create",
@@ -421,6 +444,7 @@
     }
   },
   {
-    "shot": "docs/img/flow.png"
+    "shot": "docs/img/flow.png",
+    "wait": 2500
   }
 ]
