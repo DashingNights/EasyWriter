@@ -43,9 +43,23 @@ if (DATA_DIR) {
   app.setPath('logs', path.join(DATA, 'logs'));
   app.setPath('crashDumps', path.join(DATA, 'crashes'));
 } else {
-  const old = path.join(app.getPath('appData'), 'daf-writer'); // the data folder from before the rename to EasyWriter
-  if (!fsSync.existsSync(app.getPath('userData')) && fsSync.existsSync(old)) {
-    try { fsSync.renameSync(old, app.getPath('userData')); } catch { app.setPath('userData', old); } // still open elsewhere: keep using it
+  // The data folder from before the rename to EasyWriter. Electron creates the new folder (empty) before this runs, so the
+  // check is for settings.json, and the entries move one by one. A locked entry (that copy still open) moves everything back.
+  const target = app.getPath('userData');
+  const old = path.join(app.getPath('appData'), 'daf-writer');
+  if (!fsSync.existsSync(path.join(target, 'settings.json')) && fsSync.existsSync(path.join(old, 'settings.json'))) {
+    const moved = [];
+    try {
+      for (const name of fsSync.readdirSync(old)) {
+        fsSync.rmSync(path.join(target, name), { recursive: true, force: true });
+        fsSync.renameSync(path.join(old, name), path.join(target, name));
+        moved.push(name);
+      }
+      fsSync.rmSync(old, { recursive: true, force: true });
+    } catch {
+      for (const name of moved) { try { fsSync.renameSync(path.join(target, name), path.join(old, name)); } catch {} }
+      app.setPath('userData', old);
+    }
   }
 }
 const INDEX_FILE = path.join(__dirname, 'index.html');
