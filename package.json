@@ -1,7 +1,7 @@
 {
   "name": "easywriter",
   "productName": "EasyWriter",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "description": "Desktop editor for Digital Academy Forum development threads",
   "author": "DashingNights",
@@ -47,7 +47,10 @@
       "bin/**"
     ],
     "win": {
-      "target": ["nsis", "zip"],
+      "target": [
+        "nsis",
+        "zip"
+      ],
       "icon": "build/icon.ico"
     },
     "nsis": {
