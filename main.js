@@ -734,10 +734,14 @@ function runSmoke(win) {
 // --script=<file>: window.__agent.script(steps) once the app has started; per-step {req, res, pass} into smoke-agent.json;
 // exit 1 when a step fails its expect. Drafts persist into the data dir (only __smoke() sets state.smoke).
 // A step {"shot": "<file>.png"} (docs/screenshots.json, npm run shots) saves the 1440 x 900 window as that file: the steps
-// before it run as one script, so "$steps[n]" counts from the last shot.
+// before it run as one script, so "$steps[n]" counts from the last shot. It waits 1 s first, or "wait" ms (a notice fading out).
 async function runScript(win, outDir) {
   const steps = JSON.parse(await fs.readFile(path.resolve(SCRIPT), 'utf8'));
-  if (steps.some((s) => s.shot)) win.setContentSize(1440, 900);
+  if (steps.some((s) => s.shot)) { // the window shows inactive, so focusin never fires and the board tools never take over: emulate the focus
+    win.setContentSize(1440, 900);
+    try { win.webContents.debugger.attach(); } catch {}
+    await win.webContents.debugger.sendCommand('Emulation.setFocusEmulationEnabled', { enabled: true });
+  }
   const out = [];
   for (let rest = steps; ;) {
     const i = rest.findIndex((s) => s.shot);
@@ -746,7 +750,7 @@ async function runScript(win, outDir) {
       return window.__agent.script(${JSON.stringify(i < 0 ? rest : rest.slice(0, i))});
     })()`, true));
     if (i < 0) break;
-    await new Promise((r) => setTimeout(r, 1000)); // pictures decoded and charts laid out before the capture
+    await new Promise((r) => setTimeout(r, rest[i].wait ?? 1000)); // pictures decoded and charts laid out before the capture
     await fs.writeFile(path.join(outDir, rest[i].shot), (await win.webContents.capturePage()).toPNG());
     rest = rest.slice(i + 1);
   }
