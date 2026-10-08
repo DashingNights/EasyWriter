@@ -1,0 +1,17 @@
+[
+  { "id": "qwen3.8-max", "label": "Qwen3.8-Max", "ctx": 1000000 },
+  { "id": "qwen3.8-flash", "label": "Qwen3.8-Flash", "ctx": 1000000 },
+  { "id": "qwen3.8-27b", "label": "Qwen3.8 27B", "ctx": 1000000 },
+  { "id": "qwen3.8-omni-flash", "label": "Qwen3.8-Omni-Flash", "ctx": 1000000 },
+  { "id": "kimi-k3", "label": "Kimi K3", "ctx": 1000000 },
+  { "id": "qwen3.7-max-2026-06-08", "label": "Qwen3.7-Max (2026-06-08)", "ctx": 1000000 },
+  { "id": "qwen3.7-plus", "label": "Qwen3.7-Plus", "ctx": 1000000 },
+  { "id": "qwen3.7-flash", "label": "Qwen3.7-Flash", "ctx": 1000000 },
+  { "id": "qwen3.6-plus", "label": "Qwen3.6-Plus", "ctx": 1000000 },
+  { "id": "qwen3.6-flash", "label": "Qwen3.6-Flash", "ctx": 1000000 },
+  { "id": "qwen3.6-27b", "label": "Qwen3.6 27B", "ctx": 262144 },
+  { "id": "qwen3.5-plus", "label": "Qwen3.5-Plus", "ctx": 1000000 },
+  { "id": "qwen3.5-flash", "label": "Qwen3.5-Flash", "ctx": 1000000 },
+  { "id": "qwen3.5-27b", "label": "Qwen3.5 27B", "ctx": 262144 },
+  { "id": "qwen3.5-omni-plus", "label": "Qwen3.5-Omni-Plus", "ctx": 262144 }
+]

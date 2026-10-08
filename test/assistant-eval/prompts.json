@@ -1,0 +1,4073 @@
+[
+  {
+    "id": "open-by-title",
+    "note": "8d1e4b7a-... is the draft Week 1 - Blockout",
+    "view": "editor",
+    "permission": "standard",
+    "text": "Open my blockout draft.",
+    "expect": {
+      "calls": [
+        {
+          "name": "drafts_open",
+          "args": {
+            "draftId": "8d1e4b7a-2c3f-4a5b-8e9d-0f1a2b3c4d5e"
+          }
+        }
+      ],
+      "never": [
+        "drafts_delete",
+        "doc_delete"
+      ],
+      "maxCalls": 4,
+      "noClaimWithoutCall": true
+    },
+    "stub": [
+      {
+        "tool_calls": [
+          {
+            "name": "drafts_list",
+            "arguments": {}
+          }
+        ]
+      },
+      {
+        "tool_calls": [
+          {
+            "name": "drafts_open",
+            "arguments": {
+              "draftId": "8d1e4b7a-2c3f-4a5b-8e9d-0f1a2b3c4d5e"
+            }
+          }
+        ]
+      },
+      {
+        "text": "I opened Week 1 - Blockout."
+      }
+    ]
+  },
+  {
+    "id": "straighten-yes",
+    "note": "the flowchart canvas at [2] is node-selected, so the board set is offered (wave 1b); y6b1v4z is the connector labelled yes from Decision d4q8n1x (bottom) to End e9r3t6w (bottom), route straight with two waypoints under the boxes. Decision is at 360,170 size 180x80 and End at 660,170 size 180x80: the horizontal gap between them (120) is larger than the vertical one (they overlap, -80), so the facing sides are Decision's right (e, stored [1, 0.5]) and End's left (w, stored [0, 0.5]). It counts as straightened only when the stored connector has route straight, no points and those anchors: board_items_straighten does all of it, a board_items_update with route straight and both ends moved does too",
+    "view": "canvas",
+    "selection": {
+      "path": [
+        2
+      ]
+    },
+    "permission": "standard",
+    "text": "Straighten the yes arrow.",
+    "expect": {
+      "calls": [
+        {
+          "name": {
+            "$any": [
+              "board_items_straighten",
+              "board_items_update"
+            ]
+          },
+          "args": {
+            "path": [
+              2
+            ],
+            "id": "y6b1v4z"
+          },
+          "result": {
+            "item": {
+              "route": "straight",
+              "points": [],
+              "from": {
+                "item": "d4q8n1x",
+                "anchor": {
+                  "$any": [
+                    [
+                      1,
+                      0.5
+                    ],
+                    "e"
+                  ]
+                }
+              },
+              "to": {
+                "item": "e9r3t6w",
+                "anchor": {
+                  "$any": [
+                    [
+                      0,
+                      0.5
+                    ],
+                    "w"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ],
+      "never": [
+        "board_items_remove",
+        "doc_delete",
+        "doc_replace"
+      ],
+      "maxCalls": 6,
+      "noClaimWithoutCall": true
+    },
+    "stub": [
+      {
+        "tool_calls": [
+          {
+            "name": "board_items_straighten",
+            "arguments": {
+              "path": [
+                2
+              ],
+              "id": "y6b1v4z"
+            }
+          }
+        ]
+      },
+      {
+        "text": "The yes arrow is straight now, from the right side of Decision to the left side of End."
+      }
+    ]
+  },
+  {
+    "id": "rename-pump",
+    "note": "the whiteboard at [4] is node-selected (active); p8w2r5d is Pump",
+    "view": "board",
+    "selection": {
+      "path": [
+        4
+      ]
+    },
+    "permission": "standard",
+    "text": "Rename the shape Pump to Pump 2.",
+    "expect": {
+      "calls": [
+        {
+          "name": "board_items_update",
+          "args": {
+            "path": [
+              4
+            ],
+            "id": "p8w2r5d",
+            "patch": {
+              "html": {
+                "$regex": "Pump 2"
+              }
+            }
+          }
+        }
+      ],
+      "never": [
+        "board_items_remove",
+        "doc_delete"
+      ],
+      "maxCalls": 5,
+      "noClaimWithoutCall": true
+    },
+    "stub": [
+      {
+        "tool_calls": [
+          {
+            "name": "board_items_update",
+            "arguments": {
+              "path": [
+                4
+              ],
+              "id": "p8w2r5d",
+              "patch": {
+                "html": "Pump 2"
+              }
+            }
+          }
+        ]
+      },
+      {
+        "text": "Renamed it to Pump 2."
+      }
+    ]
+  },
+  {
+    "id": "move-valve",
+    "note": "v1x6m9q is Valve (x 420, w 160, top right); Pump p8w2r5d starts at x 230, so Valve's stored x must be 70 or less (its right edge left of Pump), by board_items_place left of Pump (wave 2) or by board_items_update",
+    "view": "board",
+    "selection": {
+      "path": [
+        4
+      ]
+    },
+    "permission": "standard",
+    "text": "Move Valve to the left of Pump.",
+    "expect": {
+      "calls": [
+        {
+          "name": {
+            "$any": [
+              "board_items_place",
+              "board_items_update"
+            ]
+          },
+          "args": {
+            "path": [
+              4
+            ],
+            "id": "v1x6m9q"
+          },
+          "result": {
+            "item": {
+              "x": {
+                "$lt": 71
+              }
+            }
+          }
+        }
+      ],
+      "never": [
+        "board_items_remove",
+        "doc_delete"
+      ],
+      "maxCalls": 5,
+      "noClaimWithoutCall": true
+    },
+    "stub": [
+      {
+        "tool_calls": [
+          {
+            "name": "board_items_place",
+            "arguments": {
+              "path": [
+                4
+              ],
+              "id": "v1x6m9q",
+              "relation": "left",
+              "of": "p8w2r5d"
+            }
+          }
+        ]
+      },
+      {
+        "text": "Moved Valve to the left of Pump."
+      }
+    ]
+  },
+  {
+    "id": "delete-selected",
+    "note": "the item Gearbox g3n7c1f is selected on the whiteboard at [4]; its items attachment makes the board set and the note's Selected line (wave 1c), so board_items_remove is offered and commands_describe is not needed; the harness clicks Allow on the card",
+    "view": "board",
+    "selection": {
+      "path": [
+        4
+      ],
+      "ids": [
+        "g3n7c1f"
+      ]
+    },
+    "permission": "standard",
+    "text": "Delete the selected item.",
+    "expect": {
+      "calls": [
+        {
+          "name": "board_items_remove",
+          "args": {
+            "path": [
+              4
+            ],
+            "ids": [
+              "g3n7c1f"
+            ]
+          }
+        }
+      ],
+      "never": [
+        "doc_delete",
+        "drafts_delete",
+        "commands_describe"
+      ],
+      "maxCalls": 5,
+      "noClaimWithoutCall": true
+    },
+    "stub": [
+      {
+        "tool_calls": [
+          {
+            "name": "board_items_remove",
+            "arguments": {
+              "path": [
+                4
+              ],
+              "ids": [
+                "g3n7c1f"
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "text": "Deleted the Gearbox shape."
+      }
+    ]
+  },
+  {
+    "id": "add-heading",
+    "note": "block [0] is the title heading; the second paragraph is block [3] (after the flowchart canvas at [2])",
+    "view": "editor",
+    "permission": "standard",
+    "text": "Add a heading called Valve puzzle above the second paragraph.",
+    "expect": {
+      "calls": [
+        {
+          "name": "doc_insert",
+          "args": {
+            "$all": [
+              {
+                "$any": [
+                  {
+                    "at": [
+                      3
+                    ],
+                    "position": "before"
+                  },
+                  {
+                    "at": [
+                      2
+                    ],
+                    "position": {
+                      "$ne": "before"
+                    }
+                  }
+                ]
+              },
+              {
+                "content": {
+                  "$all": [
+                    {
+                      "$regex": "\"type\":\"heading\"|<h[1-6]|\"markdown\":\"\\s*#"
+                    },
+                    {
+                      "$regex": "Valve puzzle"
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "never": [
+        "doc_delete",
+        "doc_replace"
+      ],
+      "maxCalls": 5,
+      "noClaimWithoutCall": true
+    },
+    "stub": [
+      {
+        "tool_calls": [
+          {
+            "name": "doc_insert",
+            "arguments": {
+              "at": [
+                3
+              ],
+              "position": "before",
+              "content": {
+                "markdown": "## Valve puzzle"
+              }
+            }
+          }
+        ]
+      },
+      {
+        "text": "Added the heading."
+      }
+    ]
+  },
+  {
+    "id": "reword-paragraph",
+    "note": "the first paragraph is block [1] (block [0] is the title heading)",
+    "view": "editor",
+    "permission": "standard",
+    "text": "Reword the first paragraph so it sounds more formal.",
+    "expect": {
+      "calls": [
+        {
+          "name": "doc_replace",
+          "args": {
+            "path": [
+              1
+            ]
+          }
+        }
+      ],
+      "never": [
+        "doc_delete"
+      ],
+      "maxCalls": 4,
+      "noClaimWithoutCall": true
+    },
+    "stub": [
+      {
+        "tool_calls": [
+          {
+            "name": "doc_replace",
+            "arguments": {
+              "path": [
+                1
+              ],
+              "content": {
+                "markdown": "The pump room is the second puzzle area of the level, in which the player restores the water pressure required to open the flood gate."
+              }
+            }
+          }
+        ]
+      },
+      {
+        "text": "Reworded the first paragraph."
+      }
+    ]
+  },
+  {
+    "id": "general-question",
+    "view": "editor",
+    "permission": "standard",
+    "text": "What is the difference between a blockout and a greybox?",
+    "expect": {
+      "calls": [],
+      "maxCalls": 0,
+      "noClaimWithoutCall": true
+    },
+    "stub": [
+      {
+        "text": "A blockout uses simple shapes to test the layout and scale of a level. A greybox goes further, with basic props and working gameplay, so the flow can be tested."
+      }
+    ]
+  },
+  {
+    "id": "tag-via-describe",
+    "note": "drafts_setTag is not in the editor's tool set, so commands_describe must add it; 3f2a9c1e-... is the open draft; 5 calls: describe, tags_list, the draft id, the tag (wave 1b)",
+    "view": "editor",
+    "permission": "standard",
+    "text": "Set this draft's tag to Done.",
+    "expect": {
+      "calls": [
+        {
+          "name": "commands_describe"
+        },
+        {
+          "name": "drafts_setTag",
+          "args": {
+            "draftId": "3f2a9c1e-7b4d-4e8a-9c6f-1d2e3f4a5b6c",
+            "tagId": "done"
+          }
+        }
+      ],
+      "never": [
+        "drafts_delete"
+      ],
+      "maxCalls": 5,
+      "noClaimWithoutCall": true
+    },
+    "stub": [
+      {
+        "tool_calls": [
+          {
+            "name": "commands_describe",
+            "arguments": {
+              "names": [
+                "drafts_setTag"
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "tool_calls": [
+          {
+            "name": "drafts_setTag",
+            "arguments": {
+              "draftId": "3f2a9c1e-7b4d-4e8a-9c6f-1d2e3f4a5b6c",
+              "tagId": "done"
+            }
+          }
+        ]
+      },
+      {
+        "text": "The draft is tagged Done."
+      }
+    ]
+  },
+  {
+    "id": "top-left-shape",
+    "note": "named only by position; the top left shape of the whiteboard at [4] is Gearbox g3n7c1f",
+    "view": "board",
+    "selection": {
+      "path": [
+        4
+      ]
+    },
+    "permission": "standard",
+    "text": "Change the text of the shape at the top left to Motor.",
+    "expect": {
+      "calls": [
+        {
+          "name": "board_items_update",
+          "args": {
+            "path": [
+              4
+            ],
+            "id": "g3n7c1f",
+            "patch": {
+              "html": {
+                "$regex": "Motor"
+              }
+            }
+          }
+        }
+      ],
+      "never": [
+        "board_items_remove",
+        "doc_delete"
+      ],
+      "maxCalls": 5,
+      "noClaimWithoutCall": true
+    },
+    "stub": [
+      {
+        "tool_calls": [
+          {
+            "name": "board_items_update",
+            "arguments": {
+              "path": [
+                4
+              ],
+              "id": "g3n7c1f",
+              "patch": {
+                "html": "Motor"
+              }
+            }
+          }
+        ]
+      },
+      {
+        "text": "Changed the top left shape to Motor."
+      }
+    ]
+  },
+  {
+    "id": "flows-page",
+    "note": "the Flowcharts page shows the library flowchart Level loop; the situation note names it",
+    "view": "flows",
+    "permission": "standard",
+    "text": "What is the title of the flowchart that is open?",
+    "expect": {
+      "calls": [],
+      "maxCalls": 2,
+      "noClaimWithoutCall": true,
+      "replyMatches": "Level loop"
+    },
+    "stub": [
+      {
+        "text": "The open flowchart is called Level loop."
+      }
+    ]
+  },
+  {
+    "id": "read-only",
+    "note": "Read only mode: the write must not run (not offered, or refused) and the reply says why",
+    "view": "board",
+    "selection": {
+      "path": [
+        4
+      ]
+    },
+    "permission": "readonly",
+    "text": "Rename the shape Gearbox to Gearbox A.",
+    "expect": {
+      "calls": [],
+      "never": [
+        "board_items_update",
+        "board_items_add",
+        "board_items_remove",
+        "doc_replace",
+        "doc_insert",
+        "doc_delete"
+      ],
+      "maxCalls": 3,
+      "noClaimWithoutCall": true,
+      "replyMatches": "read.?only|can.?not|can't|cannot|unable|not able|not allowed|permission"
+    },
+    "stub": [
+      {
+        "tool_calls": [
+          {
+            "name": "board_items_update",
+            "arguments": {
+              "path": [
+                4
+              ],
+              "id": "g3n7c1f",
+              "patch": {
+                "html": "Gearbox A"
+              }
+            }
+          }
+        ]
+      },
+      {
+        "text": "I can't rename it because the assistant is in Read only mode. You can change that in Settings."
+      }
+    ]
+  },
+  {
+    "id": "ground-shapes",
+    "note": "the image at [5] is attached; its shapes and boxes are in fixture/shapes.json (640 x 400)",
+    "view": "editor",
+    "selection": {
+      "path": [
+        5
+      ]
+    },
+    "permission": "standard",
+    "text": "Give me the boxes of the red circle, blue square and green triangle as JSON.",
+    "expect": {
+      "calls": [],
+      "maxCalls": 2,
+      "noClaimWithoutCall": true,
+      "boxes": {
+        "fixture": "shapes.json",
+        "minIoU": 0.5
+      }
+    },
+    "stub": [
+      {
+        "text": "```json\n[{\"label\": \"red circle\", \"bbox_2d\": [94, 200, 344, 600]}, {\"label\": \"blue square\", \"bbox_2d\": [422, 375, 641, 725]}, {\"label\": \"green triangle\", \"bbox_2d\": [703, 150, 938, 500]}]\n```"
+      }
+    ]
+  },
+  {
+    "id": "open-and-answer",
+    "note": "c5a7e9f1-... is Week 3 - Lighting pass, whose paragraph says the pass starts next week; after drafts_open the turn must go on to the answer (the read-after-write guard counts navigation as a write)",
+    "view": "editor",
+    "permission": "standard",
+    "text": "Open the lighting pass draft and tell me when the lighting pass starts.",
+    "expect": {
+      "calls": [
+        {
+          "name": "drafts_open",
+          "args": {
+            "draftId": "c5a7e9f1-3b2d-4c6e-a8f0-9e8d7c6b5a43"
+          }
+        }
+      ],
+      "never": [
+        "drafts_delete",
+        "doc_delete"
+      ],
+      "maxCalls": 5,
+      "noClaimWithoutCall": true,
+      "replyMatches": "next week"
+    },
+    "stub": [
+      {
+        "tool_calls": [
+          {
+            "name": "drafts_list",
+            "arguments": {}
+          }
+        ]
+      },
+      {
+        "tool_calls": [
+          {
+            "name": "drafts_open",
+            "arguments": {
+              "draftId": "c5a7e9f1-3b2d-4c6e-a8f0-9e8d7c6b5a43"
+            }
+          }
+        ]
+      },
+      {
+        "tool_calls": [
+          {
+            "name": "doc_get",
+            "arguments": {
+              "format": "text"
+            }
+          }
+        ]
+      },
+      {
+        "text": "I opened Week 3 - Lighting pass. The lighting pass starts next week."
+      }
+    ]
+  },
+  {
+    "id": "rename-and-move",
+    "note": "two changes in one turn on the whiteboard at [4]: Pump p8w2r5d (x 230, y 220, w 220) gets the text Pump 2 and goes under Gearbox g3n7c1f (x 40 to 200, bottom edge 120), so its stored x must be under 200 and its y 120 or more; either order, or one board_items_update that does both",
+    "view": "board",
+    "selection": {
+      "path": [
+        4
+      ]
+    },
+    "permission": "standard",
+    "text": "Rename Pump to Pump 2 and move it below Gearbox.",
+    "expect": {
+      "anyOrder": true,
+      "calls": [
+        {
+          "name": "board_items_update",
+          "args": {
+            "path": [
+              4
+            ],
+            "id": "p8w2r5d",
+            "patch": {
+              "html": {
+                "$regex": "Pump 2"
+              }
+            }
+          }
+        },
+        {
+          "name": {
+            "$any": [
+              "board_items_place",
+              "board_items_update"
+            ]
+          },
+          "args": {
+            "path": [
+              4
+            ],
+            "id": "p8w2r5d"
+          },
+          "result": {
+            "item": {
+              "x": {
+                "$lt": 200
+              },
+              "y": {
+                "$gt": 119
+              }
+            }
+          }
+        }
+      ],
+      "never": [
+        "board_items_remove",
+        "doc_delete"
+      ],
+      "maxCalls": 6,
+      "noClaimWithoutCall": true
+    },
+    "stub": [
+      {
+        "tool_calls": [
+          {
+            "name": "board_items_update",
+            "arguments": {
+              "path": [
+                4
+              ],
+              "id": "p8w2r5d",
+              "patch": {
+                "html": "Pump 2"
+              }
+            }
+          }
+        ]
+      },
+      {
+        "tool_calls": [
+          {
+            "name": "board_items_place",
+            "arguments": {
+              "path": [
+                4
+              ],
+              "id": "p8w2r5d",
+              "relation": "below",
+              "of": "g3n7c1f"
+            }
+          }
+        ]
+      },
+      {
+        "text": "Renamed Pump to Pump 2 and moved it below Gearbox."
+      }
+    ]
+  },
+  {
+    "id": "canvas-mode",
+    "note": "the flowchart canvas is the canvas block at [2]; canvas_edit opens it in Canvas Mode and nothing changes (a read to find the path is fine)",
+    "view": "editor",
+    "permission": "standard",
+    "text": "Open the flowchart canvas so I can draw.",
+    "expect": {
+      "calls": [
+        {
+          "name": "canvas_edit",
+          "result": {
+            "path": [
+              2
+            ]
+          }
+        }
+      ],
+      "never": [
+        "doc_insert",
+        "doc_replace",
+        "doc_delete",
+        "doc_format",
+        "batch",
+        "board_items_add",
+        "board_items_update",
+        "board_items_place",
+        "board_items_remove",
+        "canvas_close"
+      ],
+      "maxCalls": 3,
+      "noClaimWithoutCall": true
+    },
+    "stub": [
+      {
+        "tool_calls": [
+          {
+            "name": "doc_get",
+            "arguments": {
+              "format": "outline"
+            }
+          }
+        ]
+      },
+      {
+        "tool_calls": [
+          {
+            "name": "canvas_edit",
+            "arguments": {
+              "path": [
+                2
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "text": "The flowchart canvas is open in Canvas Mode, so you can draw."
+      }
+    ]
+  },
+  {
+    "id": "delete-last-two",
+    "note": "the open draft is Week 4 - Playtest notes: the title heading and five paragraphs [1] to [5]; the last two are [4] and [5], by one doc_delete, two, or a batch; the harness clicks Allow on the card; the draft must end as the title and the first three paragraphs",
+    "view": "editor",
+    "draft": "a4c6e8f0-2b4d-4f6a-8c0e-1f3a5b7d9e2c",
+    "permission": "standard",
+    "text": "Delete the last two paragraphs.",
+    "expect": {
+      "calls": [
+        {
+          "name": {
+            "$any": [
+              "doc_delete",
+              "batch"
+            ]
+          }
+        }
+      ],
+      "never": [
+        "drafts_delete",
+        "doc_replace"
+      ],
+      "maxCalls": 4,
+      "noClaimWithoutCall": true,
+      "doc": [
+        {
+          "type": "heading",
+          "text": "Week 4 - Playtest notes"
+        },
+        {
+          "type": "paragraph",
+          "text": {
+            "$regex": "^Five players"
+          }
+        },
+        {
+          "type": "paragraph",
+          "text": {
+            "$regex": "^Most players"
+          }
+        },
+        {
+          "type": "paragraph",
+          "text": {
+            "$regex": "^Two players"
+          }
+        }
+      ]
+    },
+    "stub": [
+      {
+        "tool_calls": [
+          {
+            "name": "doc_get",
+            "arguments": {
+              "format": "outline"
+            }
+          }
+        ]
+      },
+      {
+        "tool_calls": [
+          {
+            "name": "batch",
+            "arguments": {
+              "steps": [
+                {
+                  "id": "doc_delete",
+                  "args": {
+                    "paths": [
+                      [
+                        5
+                      ]
+                    ]
+                  }
+                },
+                {
+                  "id": "doc_delete",
+                  "args": {
+                    "paths": [
+                      [
+                        4
+                      ]
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "text": "Deleted the last two paragraphs."
+      }
+    ]
+  },
+  {
+    "id": "picture-widest",
+    "note": "the whiteboard at [4] is attached (node-selected) with its picture; Pump (w 220) is wider than Gearbox and Valve (w 160); answered from the attachment with no tool; the reply names Pump before Gearbox and Valve, or says Pump ... wide in one sentence (so 'Valve is the widest. Pump and Gearbox are smaller.' fails; 'pump room' is not Pump)",
+    "view": "board",
+    "selection": {
+      "path": [
+        4
+      ]
+    },
+    "permission": "standard",
+    "text": "Which shape is widest?",
+    "expect": {
+      "calls": [],
+      "maxCalls": 0,
+      "noClaimWithoutCall": true,
+      "replyMatches": "^(?:(?!\\b(?:Gearbox|Valve)\\b)[\\s\\S])*\\bPump\\b(?!\\s+room)|\\bPump\\b(?!\\s+room)[^.!?\\n]*\\bwid"
+    },
+    "stub": [
+      {
+        "text": "Pump is the widest shape."
+      }
+    ]
+  },
+  {
+    "id": "thread-question",
+    "note": "nothing selected (a caret in the title line); the situation note's Thread line names Pump room dev thread",
+    "view": "editor",
+    "permission": "standard",
+    "text": "What thread is this draft in?",
+    "expect": {
+      "calls": [],
+      "maxCalls": 0,
+      "noClaimWithoutCall": true,
+      "replyMatches": "Pump room dev thread"
+    },
+    "stub": [
+      {
+        "text": "This draft is in the Pump room dev thread."
+      }
+    ]
+  },
+  {
+    "id": "readonly-read",
+    "note": "Read only mode still runs reads; the second paragraph is block [3] (after the flowchart canvas at [2]), so doc_get may read it, and the reply quotes it",
+    "view": "editor",
+    "permission": "readonly",
+    "text": "What does the second paragraph say?",
+    "expect": {
+      "calls": [],
+      "never": [
+        "doc_insert",
+        "doc_replace",
+        "doc_delete",
+        "doc_format",
+        "batch"
+      ],
+      "maxCalls": 3,
+      "noClaimWithoutCall": true,
+      "replyMatches": "three valves in the right order"
+    },
+    "stub": [
+      {
+        "tool_calls": [
+          {
+            "name": "doc_get",
+            "arguments": {
+              "path": [
+                3
+              ],
+              "format": "text"
+            }
+          }
+        ]
+      },
+      {
+        "text": "It says: \"The valve puzzle asks the player to turn three valves in the right order while the gearbox drives the pump.\""
+      }
+    ]
+  },
+  {
+    "id": "critique-flowchart",
+    "note": "the flowchart canvas at [2] is node-selected; the user asks for suggestions, so nothing may change (reads are fine)",
+    "view": "canvas",
+    "selection": {
+      "path": [
+        2
+      ]
+    },
+    "permission": "standard",
+    "text": "What would you change about this flowchart?",
+    "expect": {
+      "calls": [],
+      "never": [
+        "board_items_add",
+        "board_items_update",
+        "board_items_place",
+        "board_items_remove",
+        "canvas_edit",
+        "doc_insert",
+        "doc_replace",
+        "doc_delete",
+        "doc_format",
+        "batch"
+      ],
+      "maxCalls": 3,
+      "noClaimWithoutCall": true,
+      "replyMatches": "\\b(add|label|rename|straighten|change|move|suggest|would|could)\\b"
+    },
+    "stub": [
+      {
+        "text": "I would add a no branch from Decision, label the arrow from Start, and straighten the yes arrow so it does not loop under the boxes."
+      }
+    ]
+  },
+  {
+    "id": "ambiguous-box",
+    "note": "the whiteboard at [4] is node-selected and holds three boxes (Gearbox, Valve, Pump), so the target is ambiguous: one question back, no change",
+    "view": "board",
+    "selection": {
+      "path": [
+        4
+      ]
+    },
+    "permission": "standard",
+    "text": "Make the box bigger.",
+    "expect": {
+      "calls": [],
+      "never": [
+        "board_items_add",
+        "board_items_update",
+        "board_items_place",
+        "board_items_remove",
+        "batch"
+      ],
+      "maxCalls": 2,
+      "noClaimWithoutCall": true,
+      "replyMatches": "\\?|\\bwhich (?:box|one|shape)\\b"
+    },
+    "stub": [
+      {
+        "text": "Which box do you mean: Gearbox, Valve or Pump?"
+      }
+    ]
+  },
+  {
+    "id": "delete-missing",
+    "note": "no draft is called Nothing Here (the situation note lists the thread's drafts): no destructive call, and the reply says it is not there",
+    "view": "editor",
+    "permission": "standard",
+    "text": "Delete the draft called Nothing Here.",
+    "expect": {
+      "calls": [],
+      "never": [
+        "drafts_delete",
+        "doc_delete",
+        "board_items_remove",
+        "batch"
+      ],
+      "maxCalls": 3,
+      "noClaimWithoutCall": true,
+      "replyMatches": "n[o']t (find|see|exist|locate)|not found|unable to find|no draft|no such|there is no|isn't|is not|do(?:n't| not) have|not in"
+    },
+    "stub": [
+      {
+        "tool_calls": [
+          {
+            "name": "drafts_list",
+            "arguments": {}
+          }
+        ]
+      },
+      {
+        "text": "I could not find a draft called Nothing Here, so nothing was deleted."
+      }
+    ]
+  },
+  {
+    "id": "heading-every-paragraph",
+    "note": "the open draft is Week 4 - Playtest notes (the title heading, paragraphs [1] to [5]); every paragraph gets a heading right before it, by several writes or one batch; the draft must end as the title and five heading and paragraph pairs",
+    "view": "editor",
+    "draft": "a4c6e8f0-2b4d-4f6a-8c0e-1f3a5b7d9e2c",
+    "permission": "standard",
+    "text": "Add a heading before every paragraph.",
+    "expect": {
+      "calls": [
+        {
+          "name": {
+            "$any": [
+              "doc_insert",
+              "batch",
+              "doc_replace"
+            ]
+          }
+        }
+      ],
+      "never": [
+        "doc_delete",
+        "drafts_delete"
+      ],
+      "maxCalls": 8,
+      "noClaimWithoutCall": true,
+      "doc": [
+        {
+          "type": "heading",
+          "text": "Week 4 - Playtest notes"
+        },
+        {
+          "type": "heading",
+          "text": {
+            "$regex": "\\S"
+          }
+        },
+        {
+          "type": "paragraph",
+          "text": {
+            "$regex": "^Five players"
+          }
+        },
+        {
+          "type": "heading",
+          "text": {
+            "$regex": "\\S"
+          }
+        },
+        {
+          "type": "paragraph",
+          "text": {
+            "$regex": "^Most players"
+          }
+        },
+        {
+          "type": "heading",
+          "text": {
+            "$regex": "\\S"
+          }
+        },
+        {
+          "type": "paragraph",
+          "text": {
+            "$regex": "^Two players"
+          }
+        },
+        {
+          "type": "heading",
+          "text": {
+            "$regex": "\\S"
+          }
+        },
+        {
+          "type": "paragraph",
+          "text": {
+            "$regex": "^The flood gate"
+          }
+        },
+        {
+          "type": "heading",
+          "text": {
+            "$regex": "\\S"
+          }
+        },
+        {
+          "type": "paragraph",
+          "text": {
+            "$regex": "^Next week"
+          }
+        }
+      ]
+    },
+    "stub": [
+      {
+        "tool_calls": [
+          {
+            "name": "doc_insert",
+            "arguments": {
+              "at": [
+                5
+              ],
+              "position": "before",
+              "content": {
+                "markdown": "### Next step"
+              }
+            }
+          }
+        ]
+      },
+      {
+        "tool_calls": [
+          {
+            "name": "doc_insert",
+            "arguments": {
+              "at": [
+                4
+              ],
+              "position": "before",
+              "content": {
+                "markdown": "### Flood gate"
+              }
+            }
+          }
+        ]
+      },
+      {
+        "tool_calls": [
+          {
+            "name": "doc_insert",
+            "arguments": {
+              "at": [
+                3
+              ],
+              "position": "before",
+              "content": {
+                "markdown": "### Gearbox lever"
+              }
+            }
+          }
+        ]
+      },
+      {
+        "tool_calls": [
+          {
+            "name": "doc_insert",
+            "arguments": {
+              "at": [
+                2
+              ],
+              "position": "before",
+              "content": {
+                "markdown": "### Valve order"
+              }
+            }
+          }
+        ]
+      },
+      {
+        "tool_calls": [
+          {
+            "name": "doc_insert",
+            "arguments": {
+              "at": [
+                1
+              ],
+              "position": "before",
+              "content": {
+                "markdown": "### Testers"
+              }
+            }
+          }
+        ]
+      },
+      {
+        "text": "Added a heading before each paragraph."
+      }
+    ]
+  },
+  {
+    "id": "flows-add-shape",
+    "view": "flows",
+    "permission": "standard",
+    "text": "Add a shape named Exit to this flowchart.",
+    "expect": {
+      "calls": [
+        {
+          "name": "flow_items_add",
+          "args": {
+            "flowId": "6b8d0f2a-4c6e-4a8b-9d1f-3e5a7c9b1d2f",
+            "items": {
+              "$regex": "Exit"
+            }
+          }
+        }
+      ],
+      "never": [
+        "flow_items_remove",
+        "flow_library_delete",
+        "board_items_remove",
+        "drafts_delete"
+      ],
+      "maxCalls": 5,
+      "noClaimWithoutCall": true
+    },
+    "stub": [
+      {
+        "tool_calls": [
+          {
+            "name": "flow_items_add",
+            "arguments": {
+              "flowId": "6b8d0f2a-4c6e-4a8b-9d1f-3e5a7c9b1d2f",
+              "items": [
+                {
+                  "type": "shape",
+                  "shape": "rect",
+                  "x": 1000,
+                  "y": 120,
+                  "w": 160,
+                  "h": 80,
+                  "html": "Exit"
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "text": "Added a shape named Exit to Level loop."
+      }
+    ]
+  },
+  {
+    "id": "journey-three-places",
+    "note": "stepped, in this order: open Week 1 (8d1e4b7a-...), rename the Pump shape m2p7w4k on its whiteboard at [2] to Pump 2 (the editor set lacks board_items_update: commands_describe adds it), open Week 3 (c5a7e9f1-...), add a heading Review at its end, then answer from the situation note: the Pump room dev thread has 4 drafts (Week 5 has no thread). Week 1 is read as saved after the turn, Week 3 as open; a call step met out of order scores half",
+    "view": "editor",
+    "permission": "standard",
+    "text": "Open Week 1, rename its Pump shape to Pump 2, then open Week 3 and add a heading Review at the end, then tell me how many drafts are in this thread.",
+    "expect": {
+      "ordered": true,
+      "steps": [
+        {
+          "name": "open Week 1",
+          "check": {
+            "calls": [
+              {
+                "name": "drafts_open",
+                "args": {
+                  "draftId": "8d1e4b7a-2c3f-4a5b-8e9d-0f1a2b3c4d5e"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "name": "Pump 2 on Week 1",
+          "check": {
+            "calls": [
+              {
+                "name": "board_items_update",
+                "args": {
+                  "path": [
+                    2
+                  ],
+                  "id": "m2p7w4k",
+                  "patch": {
+                    "html": {
+                      "$regex": "Pump 2"
+                    }
+                  }
+                }
+              }
+            ],
+            "draft": "8d1e4b7a-2c3f-4a5b-8e9d-0f1a2b3c4d5e",
+            "doc": {
+              "$some": {
+                "type": "whiteboard",
+                "items": {
+                  "$some": {
+                    "id": "m2p7w4k",
+                    "html": {
+                      "$regex": "Pump 2"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "open Week 3",
+          "check": {
+            "calls": [
+              {
+                "name": "drafts_open",
+                "args": {
+                  "draftId": "c5a7e9f1-3b2d-4c6e-a8f0-9e8d7c6b5a43"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "name": "heading Review at the end of Week 3",
+          "check": {
+            "calls": [
+              {
+                "name": {
+                  "$any": [
+                    "doc_insert",
+                    "doc_replace"
+                  ]
+                },
+                "args": {
+                  "$regex": "Review"
+                }
+              }
+            ],
+            "draft": "c5a7e9f1-3b2d-4c6e-a8f0-9e8d7c6b5a43",
+            "doc": [
+              {
+                "type": "heading",
+                "text": "Week 3 - Lighting pass"
+              },
+              {
+                "type": "paragraph",
+                "text": {
+                  "$regex": "^The lighting pass starts next week"
+                }
+              },
+              {
+                "type": "heading",
+                "text": {
+                  "$regex": "^\\s*Review\\s*$"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "name": "says 4 drafts",
+          "check": {
+            "replyMatches": "(?<!week\\s)\\b(?:4|four)\\b(?!\\s*-)"
+          }
+        }
+      ],
+      "never": [
+        "drafts_delete",
+        "doc_delete",
+        "board_items_remove"
+      ],
+      "maxCalls": 8,
+      "noClaimWithoutCall": true
+    },
+    "stub": [
+      {
+        "tool_calls": [
+          {
+            "name": "drafts_open",
+            "arguments": {
+              "draftId": "8d1e4b7a-2c3f-4a5b-8e9d-0f1a2b3c4d5e"
+            }
+          }
+        ]
+      },
+      {
+        "tool_calls": [
+          {
+            "name": "commands_describe",
+            "arguments": {
+              "names": [
+                "board_items_update"
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "tool_calls": [
+          {
+            "name": "board_items_update",
+            "arguments": {
+              "path": [
+                2
+              ],
+              "id": "m2p7w4k",
+              "patch": {
+                "html": "Pump 2"
+              }
+            }
+          }
+        ]
+      },
+      {
+        "tool_calls": [
+          {
+            "name": "drafts_open",
+            "arguments": {
+              "draftId": "c5a7e9f1-3b2d-4c6e-a8f0-9e8d7c6b5a43"
+            }
+          }
+        ]
+      },
+      {
+        "tool_calls": [
+          {
+            "name": "doc_insert",
+            "arguments": {
+              "at": [
+                1
+              ],
+              "position": "after",
+              "content": {
+                "markdown": "## Review"
+              }
+            }
+          }
+        ]
+      },
+      {
+        "text": "Pump is now Pump 2 in Week 1, and Week 3 ends with a Review heading. This thread has 4 drafts."
+      }
+    ]
+  },
+  {
+    "id": "journey-flowchart",
+    "note": "stepped: the Flowcharts page shows Level loop (6b8d0f2a-...: Build, Test, Ship) with Week 2 open behind it; flow_items_add puts a shape named Exit on Level loop, then flow_insert puts the synced flowchart at the end of Week 2 (a canvas with Level loop's flow id after the image canvas). The prompt says after Ship, Level loop's last shape (it has no End). Expected to fail until tool-sets.mjs VIEW_SETS.flows offers FLOW_VIEW_SET (the stub's direct calls answer unknown_command until then, and XPASS after); then drop expectedFail",
+    "view": "flows",
+    "permission": "standard",
+    "text": "On the Level loop flowchart add a shape named Exit after Ship, then insert that flowchart at the end of Week 2.",
+    "expect": {
+      "steps": [
+        {
+          "name": "Exit on Level loop",
+          "check": {
+            "calls": [
+              {
+                "name": "flow_items_add",
+                "args": {
+                  "flowId": "6b8d0f2a-4c6e-4a8b-9d1f-3e5a7c9b1d2f",
+                  "items": {
+                    "$regex": "Exit"
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "name": "Level loop at the end of Week 2",
+          "check": {
+            "draft": "3f2a9c1e-7b4d-4e8a-9c6f-1d2e3f4a5b6c",
+            "doc": [
+              {
+                "type": "heading",
+                "text": "Week 2 - Pump room"
+              },
+              {
+                "type": "paragraph"
+              },
+              {
+                "type": "canvas"
+              },
+              {
+                "type": "paragraph"
+              },
+              {
+                "type": "whiteboard"
+              },
+              {
+                "type": "canvas"
+              },
+              {
+                "type": "canvas",
+                "flow": "6b8d0f2a-4c6e-4a8b-9d1f-3e5a7c9b1d2f"
+              }
+            ]
+          }
+        }
+      ],
+      "never": [
+        "flow_items_remove",
+        "flow_library_delete",
+        "board_items_remove",
+        "drafts_delete",
+        "doc_delete"
+      ],
+      "maxCalls": 8,
+      "noClaimWithoutCall": true
+    },
+    "stub": [
+      {
+        "tool_calls": [
+          {
+            "name": "flow_items_add",
+            "arguments": {
+              "flowId": "6b8d0f2a-4c6e-4a8b-9d1f-3e5a7c9b1d2f",
+              "items": [
+                {
+                  "id": "x",
+                  "type": "shape",
+                  "shape": "rect",
+                  "x": 1040,
+                  "y": 120,
+                  "w": 160,
+                  "h": 80,
+                  "html": "Exit"
+                },
+                {
+                  "type": "connector",
+                  "from": {
+                    "item": "s8h9i0p",
+                    "anchor": "e"
+                  },
+                  "to": {
+                    "item": "x",
+                    "anchor": "w"
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "tool_calls": [
+          {
+            "name": "flow_insert",
+            "arguments": {
+              "flowId": "6b8d0f2a-4c6e-4a8b-9d1f-3e5a7c9b1d2f"
+            }
+          }
+        ]
+      },
+      {
+        "text": "Added Exit after Ship on Level loop and inserted the flowchart at the end of Week 2."
+      }
+    ]
+  },
+  {
+    "id": "long-headings-bold",
+    "note": "stepped: the open draft is Week 4 - Playtest notes (the title heading, paragraphs [1] to [5]); a heading before each paragraph, then the first word of each new heading bold (doc_format marks, or bold in the inserted text; the title may be bolded too). Steps: the title and five heading and paragraph pairs; the same with each new heading starting with exactly one bold word. Five inserts and five formats are 10 calls and loop.js stops a turn after 8 (MAX_CALLS), so only batches reach 100; the score shows the partial",
+    "view": "editor",
+    "draft": "a4c6e8f0-2b4d-4f6a-8c0e-1f3a5b7d9e2c",
+    "permission": "standard",
+    "text": "Add a heading before every paragraph in Week 4, then make the first word of each heading bold.",
+    "expect": {
+      "steps": [
+        {
+          "name": "five headings",
+          "check": {
+            "doc": [
+              {
+                "type": "heading",
+                "text": "Week 4 - Playtest notes"
+              },
+              {
+                "type": "heading",
+                "text": {
+                  "$regex": "\\S"
+                }
+              },
+              {
+                "type": "paragraph",
+                "text": {
+                  "$regex": "^Five players"
+                }
+              },
+              {
+                "type": "heading",
+                "text": {
+                  "$regex": "\\S"
+                }
+              },
+              {
+                "type": "paragraph",
+                "text": {
+                  "$regex": "^Most players"
+                }
+              },
+              {
+                "type": "heading",
+                "text": {
+                  "$regex": "\\S"
+                }
+              },
+              {
+                "type": "paragraph",
+                "text": {
+                  "$regex": "^Two players"
+                }
+              },
+              {
+                "type": "heading",
+                "text": {
+                  "$regex": "\\S"
+                }
+              },
+              {
+                "type": "paragraph",
+                "text": {
+                  "$regex": "^The flood gate"
+                }
+              },
+              {
+                "type": "heading",
+                "text": {
+                  "$regex": "\\S"
+                }
+              },
+              {
+                "type": "paragraph",
+                "text": {
+                  "$regex": "^Next week"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "name": "first word of each heading bold",
+          "check": {
+            "doc": [
+              {
+                "type": "heading",
+                "text": "Week 4 - Playtest notes"
+              },
+              {
+                "type": "heading",
+                "firstBold": {
+                  "$regex": "^\\s*\\S+\\s*$"
+                }
+              },
+              {
+                "type": "paragraph",
+                "text": {
+                  "$regex": "^Five players"
+                }
+              },
+              {
+                "type": "heading",
+                "firstBold": {
+                  "$regex": "^\\s*\\S+\\s*$"
+                }
+              },
+              {
+                "type": "paragraph",
+                "text": {
+                  "$regex": "^Most players"
+                }
+              },
+              {
+                "type": "heading",
+                "firstBold": {
+                  "$regex": "^\\s*\\S+\\s*$"
+                }
+              },
+              {
+                "type": "paragraph",
+                "text": {
+                  "$regex": "^Two players"
+                }
+              },
+              {
+                "type": "heading",
+                "firstBold": {
+                  "$regex": "^\\s*\\S+\\s*$"
+                }
+              },
+              {
+                "type": "paragraph",
+                "text": {
+                  "$regex": "^The flood gate"
+                }
+              },
+              {
+                "type": "heading",
+                "firstBold": {
+                  "$regex": "^\\s*\\S+\\s*$"
+                }
+              },
+              {
+                "type": "paragraph",
+                "text": {
+                  "$regex": "^Next week"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "never": [
+        "doc_delete",
+        "drafts_delete"
+      ],
+      "maxCalls": 20,
+      "noClaimWithoutCall": true
+    },
+    "stub": [
+      {
+        "tool_calls": [
+          {
+            "name": "batch",
+            "arguments": {
+              "steps": [
+                {
+                  "id": "doc_insert",
+                  "args": {
+                    "at": [
+                      5
+                    ],
+                    "position": "before",
+                    "content": {
+                      "markdown": "### Next step"
+                    }
+                  }
+                },
+                {
+                  "id": "doc_insert",
+                  "args": {
+                    "at": [
+                      4
+                    ],
+                    "position": "before",
+                    "content": {
+                      "markdown": "### Flood gate"
+                    }
+                  }
+                },
+                {
+                  "id": "doc_insert",
+                  "args": {
+                    "at": [
+                      3
+                    ],
+                    "position": "before",
+                    "content": {
+                      "markdown": "### Gearbox lever"
+                    }
+                  }
+                },
+                {
+                  "id": "doc_insert",
+                  "args": {
+                    "at": [
+                      2
+                    ],
+                    "position": "before",
+                    "content": {
+                      "markdown": "### Valve order"
+                    }
+                  }
+                },
+                {
+                  "id": "doc_insert",
+                  "args": {
+                    "at": [
+                      1
+                    ],
+                    "position": "before",
+                    "content": {
+                      "markdown": "### Testers"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "tool_calls": [
+          {
+            "name": "batch",
+            "arguments": {
+              "steps": [
+                {
+                  "id": "doc_format",
+                  "args": {
+                    "path": [
+                      1
+                    ],
+                    "from": 0,
+                    "to": 7,
+                    "marks": {
+                      "bold": true
+                    }
+                  }
+                },
+                {
+                  "id": "doc_format",
+                  "args": {
+                    "path": [
+                      3
+                    ],
+                    "from": 0,
+                    "to": 5,
+                    "marks": {
+                      "bold": true
+                    }
+                  }
+                },
+                {
+                  "id": "doc_format",
+                  "args": {
+                    "path": [
+                      5
+                    ],
+                    "from": 0,
+                    "to": 7,
+                    "marks": {
+                      "bold": true
+                    }
+                  }
+                },
+                {
+                  "id": "doc_format",
+                  "args": {
+                    "path": [
+                      7
+                    ],
+                    "from": 0,
+                    "to": 5,
+                    "marks": {
+                      "bold": true
+                    }
+                  }
+                },
+                {
+                  "id": "doc_format",
+                  "args": {
+                    "path": [
+                      9
+                    ],
+                    "from": 0,
+                    "to": 4,
+                    "marks": {
+                      "bold": true
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "text": "Added a heading before each paragraph and made the first word of each heading bold."
+      }
+    ]
+  },
+  {
+    "id": "long-reorder",
+    "note": "stepped: the open draft is Week 4; its last paragraph [5] (two sentences about the hint light) goes to the top, after the title (or above it), and becomes one sentence. Steps: it is first and the other four paragraphs keep their order; the hint light paragraph, wherever it is, has one terminal punctuation mark and fewer than 30 words (checked on that paragraph, not on the first one, which is one sentence already)",
+    "view": "editor",
+    "draft": "a4c6e8f0-2b4d-4f6a-8c0e-1f3a5b7d9e2c",
+    "permission": "standard",
+    "text": "In Week 4 move the last paragraph to the top and reword it to one sentence.",
+    "expect": {
+      "steps": [
+        {
+          "name": "last paragraph first",
+          "check": {
+            "doc": {
+              "$any": [
+                [
+                  {
+                    "type": "heading",
+                    "text": "Week 4 - Playtest notes"
+                  },
+                  {
+                    "type": "paragraph",
+                    "text": {
+                      "$regex": "\\blight"
+                    }
+                  },
+                  {
+                    "type": "paragraph",
+                    "text": {
+                      "$regex": "^Five players"
+                    }
+                  },
+                  {
+                    "type": "paragraph",
+                    "text": {
+                      "$regex": "^Most players"
+                    }
+                  },
+                  {
+                    "type": "paragraph",
+                    "text": {
+                      "$regex": "^Two players"
+                    }
+                  },
+                  {
+                    "type": "paragraph",
+                    "text": {
+                      "$regex": "^The flood gate"
+                    }
+                  }
+                ],
+                [
+                  {
+                    "type": "paragraph",
+                    "text": {
+                      "$regex": "\\blight"
+                    }
+                  },
+                  {
+                    "type": "heading",
+                    "text": "Week 4 - Playtest notes"
+                  },
+                  {
+                    "type": "paragraph",
+                    "text": {
+                      "$regex": "^Five players"
+                    }
+                  },
+                  {
+                    "type": "paragraph",
+                    "text": {
+                      "$regex": "^Most players"
+                    }
+                  },
+                  {
+                    "type": "paragraph",
+                    "text": {
+                      "$regex": "^Two players"
+                    }
+                  },
+                  {
+                    "type": "paragraph",
+                    "text": {
+                      "$regex": "^The flood gate"
+                    }
+                  }
+                ]
+              ]
+            }
+          }
+        },
+        {
+          "name": "one sentence",
+          "check": {
+            "doc": {
+              "$some": {
+                "type": "paragraph",
+                "text": {
+                  "$all": [
+                    {
+                      "$regex": "\\blight"
+                    },
+                    {
+                      "$regex": "^\\s*(?=(?:\\S+\\s+){0,28}\\S+\\s*$)[^.!?]*[.!?]+[\"')\\]]*\\s*$"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ],
+      "never": [
+        "drafts_delete"
+      ],
+      "maxCalls": 20,
+      "noClaimWithoutCall": true
+    },
+    "stub": [
+      {
+        "tool_calls": [
+          {
+            "name": "doc_get",
+            "arguments": {
+              "format": "outline"
+            }
+          }
+        ]
+      },
+      {
+        "tool_calls": [
+          {
+            "name": "batch",
+            "arguments": {
+              "steps": [
+                {
+                  "id": "doc_delete",
+                  "args": {
+                    "paths": [
+                      [
+                        5
+                      ]
+                    ]
+                  }
+                },
+                {
+                  "id": "doc_insert",
+                  "args": {
+                    "at": [
+                      1
+                    ],
+                    "position": "before",
+                    "content": {
+                      "markdown": "Next week a hint light goes above the first valve to cut down the trial and error."
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "text": "Moved the last paragraph to the top as one sentence."
+      }
+    ]
+  },
+  {
+    "id": "annotate-scene",
+    "note": "stepped: the open draft is Week 5 - Scene (no thread): the title and the whiteboard at [1], 960 x 600, holding fixture/scene.json's picture (scene.png) as an image item at 0,0, 960 x 600, so board coordinates are picture pixels; the whiteboard is node-selected and attached with its picture. Steps: per thing (house, tree, car, sun) a shape whose box has IoU 0.3 or more with the thing's box scores half, and a text item naming the thing joined to that shape by a connector the other half; then a paragraph after the whiteboard with two sentences naming at least three of the four. doc_insert is not in the board set (commands_describe adds it). maxCalls 20 so the score measures, though loop.js stops a turn after 8 calls (MAX_CALLS) today. stubWrong (DAF_EVAL_STUB_WRONG=annotate-scene) labels house and tree, marks the car without a connector, skips the sun and the summary: 50%",
+    "view": "board",
+    "draft": "e5b7d9f1-3a2c-4e6b-8d0f-2a4c6e8b0d15",
+    "selection": {
+      "path": [
+        1
+      ]
+    },
+    "permission": "standard",
+    "text": "Identify the things in this picture. Mark each one with a shape around it and an arrow from a text label naming it, then write a two-sentence summary of the picture under the whiteboard.",
+    "expect": {
+      "steps": [
+        {
+          "name": "house",
+          "check": {
+            "mark": {
+              "fixture": "scene.json",
+              "object": "house",
+              "minIoU": 0.3
+            }
+          }
+        },
+        {
+          "name": "tree",
+          "check": {
+            "mark": {
+              "fixture": "scene.json",
+              "object": "tree",
+              "minIoU": 0.3
+            }
+          }
+        },
+        {
+          "name": "car",
+          "check": {
+            "mark": {
+              "fixture": "scene.json",
+              "object": "car",
+              "minIoU": 0.3
+            }
+          }
+        },
+        {
+          "name": "sun",
+          "check": {
+            "mark": {
+              "fixture": "scene.json",
+              "object": "sun",
+              "minIoU": 0.3
+            }
+          }
+        },
+        {
+          "name": "summary under the whiteboard",
+          "check": {
+            "summary": {
+              "fixture": "scene.json",
+              "sentences": 2,
+              "names": 3
+            }
+          }
+        }
+      ],
+      "never": [
+        "doc_delete",
+        "drafts_delete"
+      ],
+      "maxCalls": 20,
+      "noClaimWithoutCall": true
+    },
+    "stub": [
+      {
+        "tool_calls": [
+          {
+            "name": "board_items_add",
+            "arguments": {
+              "path": [
+                1
+              ],
+              "items": [
+                {
+                  "id": "mh",
+                  "type": "shape",
+                  "shape": "rect",
+                  "x": 90,
+                  "y": 170,
+                  "w": 300,
+                  "h": 320,
+                  "color": "#e02020",
+                  "width": 3
+                },
+                {
+                  "id": "mt",
+                  "type": "shape",
+                  "shape": "rect",
+                  "x": 430,
+                  "y": 220,
+                  "w": 180,
+                  "h": 270,
+                  "color": "#e02020",
+                  "width": 3
+                },
+                {
+                  "id": "mc",
+                  "type": "shape",
+                  "shape": "rect",
+                  "x": 650,
+                  "y": 350,
+                  "w": 240,
+                  "h": 150,
+                  "color": "#e02020",
+                  "width": 3
+                },
+                {
+                  "id": "ms",
+                  "type": "shape",
+                  "shape": "ellipse",
+                  "x": 770,
+                  "y": 40,
+                  "w": 140,
+                  "h": 140,
+                  "color": "#e02020",
+                  "width": 3
+                },
+                {
+                  "id": "lh",
+                  "type": "text",
+                  "html": "House",
+                  "x": 180,
+                  "y": 60,
+                  "w": 120,
+                  "color": "#e02020"
+                },
+                {
+                  "id": "lt",
+                  "type": "text",
+                  "html": "Tree",
+                  "x": 470,
+                  "y": 120,
+                  "w": 100,
+                  "color": "#e02020"
+                },
+                {
+                  "id": "lc",
+                  "type": "text",
+                  "html": "Car",
+                  "x": 720,
+                  "y": 530,
+                  "w": 100,
+                  "color": "#e02020"
+                },
+                {
+                  "id": "ls",
+                  "type": "text",
+                  "html": "Sun",
+                  "x": 620,
+                  "y": 80,
+                  "w": 100,
+                  "color": "#e02020"
+                },
+                {
+                  "type": "connector",
+                  "from": {
+                    "item": "lh",
+                    "anchor": "s"
+                  },
+                  "to": {
+                    "item": "mh",
+                    "anchor": "n"
+                  }
+                },
+                {
+                  "type": "connector",
+                  "from": {
+                    "item": "lt",
+                    "anchor": "s"
+                  },
+                  "to": {
+                    "item": "mt",
+                    "anchor": "n"
+                  }
+                },
+                {
+                  "type": "connector",
+                  "from": {
+                    "item": "lc",
+                    "anchor": "n"
+                  },
+                  "to": {
+                    "item": "mc",
+                    "anchor": "s"
+                  }
+                },
+                {
+                  "type": "connector",
+                  "from": {
+                    "item": "ls",
+                    "anchor": "e"
+                  },
+                  "to": {
+                    "item": "ms",
+                    "anchor": "w"
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "tool_calls": [
+          {
+            "name": "commands_describe",
+            "arguments": {
+              "names": [
+                "doc_insert"
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "tool_calls": [
+          {
+            "name": "doc_insert",
+            "arguments": {
+              "at": [
+                1
+              ],
+              "position": "after",
+              "content": {
+                "markdown": "The picture shows a house with a red roof, a tree and a blue car on a white ground. A yellow sun shines in the top right corner."
+              }
+            }
+          }
+        ]
+      },
+      {
+        "text": "Marked the house, the tree, the car and the sun, and wrote the summary under the whiteboard."
+      }
+    ],
+    "stubWrong": [
+      {
+        "tool_calls": [
+          {
+            "name": "board_items_add",
+            "arguments": {
+              "path": [
+                1
+              ],
+              "items": [
+                {
+                  "id": "mh",
+                  "type": "shape",
+                  "shape": "rect",
+                  "x": 90,
+                  "y": 170,
+                  "w": 300,
+                  "h": 320,
+                  "color": "#e02020",
+                  "width": 3
+                },
+                {
+                  "id": "mt",
+                  "type": "shape",
+                  "shape": "rect",
+                  "x": 430,
+                  "y": 220,
+                  "w": 180,
+                  "h": 270,
+                  "color": "#e02020",
+                  "width": 3
+                },
+                {
+                  "id": "mc",
+                  "type": "shape",
+                  "shape": "rect",
+                  "x": 650,
+                  "y": 350,
+                  "w": 240,
+                  "h": 150,
+                  "color": "#e02020",
+                  "width": 3
+                },
+                {
+                  "id": "lh",
+                  "type": "text",
+                  "html": "House",
+                  "x": 180,
+                  "y": 60,
+                  "w": 120,
+                  "color": "#e02020"
+                },
+                {
+                  "id": "lt",
+                  "type": "text",
+                  "html": "Tree",
+                  "x": 470,
+                  "y": 120,
+                  "w": 100,
+                  "color": "#e02020"
+                },
+                {
+                  "id": "lc",
+                  "type": "text",
+                  "html": "Car",
+                  "x": 720,
+                  "y": 530,
+                  "w": 100,
+                  "color": "#e02020"
+                },
+                {
+                  "type": "connector",
+                  "from": {
+                    "item": "lh",
+                    "anchor": "s"
+                  },
+                  "to": {
+                    "item": "mh",
+                    "anchor": "n"
+                  }
+                },
+                {
+                  "type": "connector",
+                  "from": {
+                    "item": "lt",
+                    "anchor": "s"
+                  },
+                  "to": {
+                    "item": "mt",
+                    "anchor": "n"
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "text": "Marked the house, the tree and the car."
+      }
+    ]
+  },
+  {
+    "id": "annotate-valorant-lanes",
+    "note": "stepped, eval set 4 (a copy of the user's own post): the open draft is Week 2 - W2P1 - Task 1: Structure Analysis (d2f4a6c8-1e3b-4d5f-9a7c-2b4d6f8a0c13); its Valorant whiteboard at [8] (1402 wide, 730 high) holds the Ascent map (142,49, 642 x 642) and the Lotus map (741,49, 661 x 661) with their titles; the user's two rects, four lines and three notes were removed into fixture/structure-truth.json. The board is node-selected and attached with its picture; blocks [2] to [4] state the task (structure, symmetry, flow) and the Overwatch board at [6] shows how the user annotated the first maps. Steps: per truth rect (the mid areas) an added rect or round shape with IoU 0.4 or more (a box around the whole map has IoU 0.28 on Ascent and 0.33 on Lotus); per truth line an added line, arrow, free connector or thin shape whose centre is within 60 px of the line's centre and runs within 30 degrees of it; three new notes (added text items or new blocks after the board) on lanes, symmetry and flow, one note per word. The user drew two lines per map, so four lane steps. maxCalls 20 so the score measures, though loop.js stops a turn after 8 calls (MAX_CALLS) today. stubWrong (DAF_EVAL_STUB_WRONG=annotate-valorant-lanes) draws both rects, the two spawn to spawn lines and one note naming lanes and symmetry: 56%",
+    "view": "board",
+    "draft": "d2f4a6c8-1e3b-4d5f-9a7c-2b4d6f8a0c13",
+    "settings": {
+      "forumWidth": 1454
+    },
+    "selection": {
+      "path": [
+        8
+      ]
+    },
+    "permission": "standard",
+    "text": "On the Valorant board, mark the three lanes on each map with lines and the mid area with a rectangle, then add the three notes the task asks for: structure, symmetry and flow.",
+    "expect": {
+      "steps": [
+        {
+          "name": "Ascent mid boxed",
+          "check": {
+            "shape": {
+              "truth": "structure-truth.json",
+              "id": "iq4yh32",
+              "kinds": [
+                "rect",
+                "round"
+              ],
+              "minIoU": 0.4
+            }
+          }
+        },
+        {
+          "name": "Lotus mid boxed",
+          "check": {
+            "shape": {
+              "truth": "structure-truth.json",
+              "id": "0joftgu",
+              "kinds": [
+                "rect",
+                "round"
+              ],
+              "minIoU": 0.4
+            }
+          }
+        },
+        {
+          "name": "Ascent spawn to spawn lane drawn",
+          "check": {
+            "line": {
+              "truth": "structure-truth.json",
+              "id": "hxwosuw",
+              "dist": 60,
+              "angle": 30
+            }
+          }
+        },
+        {
+          "name": "Ascent B to A lane drawn",
+          "check": {
+            "line": {
+              "truth": "structure-truth.json",
+              "id": "djrnxx0",
+              "dist": 60,
+              "angle": 30
+            }
+          }
+        },
+        {
+          "name": "Lotus spawn to spawn lane drawn",
+          "check": {
+            "line": {
+              "truth": "structure-truth.json",
+              "id": "lj4x8um",
+              "dist": 60,
+              "angle": 30
+            }
+          }
+        },
+        {
+          "name": "Lotus C to A lane drawn",
+          "check": {
+            "line": {
+              "truth": "structure-truth.json",
+              "id": "n8pbt00",
+              "dist": 60,
+              "angle": 30
+            }
+          }
+        },
+        {
+          "name": "note on structure (lanes)",
+          "check": {
+            "note": {
+              "truth": "structure-truth.json",
+              "word": "lane"
+            }
+          }
+        },
+        {
+          "name": "note on symmetry",
+          "check": {
+            "note": {
+              "truth": "structure-truth.json",
+              "word": "symmetr"
+            }
+          }
+        },
+        {
+          "name": "note on flow",
+          "check": {
+            "note": {
+              "truth": "structure-truth.json",
+              "word": "flow"
+            }
+          }
+        }
+      ],
+      "never": [
+        "drafts_delete",
+        "doc_delete",
+        "board_items_remove"
+      ],
+      "maxCalls": 20,
+      "noClaimWithoutCall": true
+    },
+    "stub": [
+      {
+        "tool_calls": [
+          {
+            "name": "board_items_add",
+            "arguments": {
+              "path": [
+                8
+              ],
+              "items": [
+                {
+                  "id": "sa1",
+                  "type": "shape",
+                  "shape": "rect",
+                  "x": 320,
+                  "y": 215,
+                  "w": 350,
+                  "h": 300,
+                  "color": "#ff0000",
+                  "width": 4,
+                  "fill": "none"
+                },
+                {
+                  "id": "sa2",
+                  "type": "shape",
+                  "shape": "rect",
+                  "x": 840,
+                  "y": 225,
+                  "w": 460,
+                  "h": 290,
+                  "color": "#ff0000",
+                  "width": 4,
+                  "fill": "none"
+                },
+                {
+                  "id": "sl1",
+                  "type": "shape",
+                  "shape": "line",
+                  "x": 455,
+                  "y": 140,
+                  "w": 40,
+                  "h": 410,
+                  "color": "#ff0000",
+                  "width": 4,
+                  "fill": "none"
+                },
+                {
+                  "id": "sl2",
+                  "type": "shape",
+                  "shape": "line",
+                  "x": 295,
+                  "y": 290,
+                  "w": 400,
+                  "h": 80,
+                  "flipY": true,
+                  "color": "#ff0000",
+                  "width": 4,
+                  "fill": "none"
+                },
+                {
+                  "id": "sl3",
+                  "type": "shape",
+                  "shape": "line",
+                  "x": 1060,
+                  "y": 170,
+                  "w": 14,
+                  "h": 400,
+                  "color": "#ff0000",
+                  "width": 4,
+                  "fill": "none"
+                },
+                {
+                  "id": "sl4",
+                  "type": "shape",
+                  "shape": "line",
+                  "x": 815,
+                  "y": 280,
+                  "w": 530,
+                  "h": 120,
+                  "flipX": true,
+                  "color": "#ff0000",
+                  "width": 4,
+                  "fill": "none"
+                },
+                {
+                  "id": "sn1",
+                  "type": "text",
+                  "html": "Both maps are built on three lanes.",
+                  "x": 23,
+                  "y": 232,
+                  "w": 211,
+                  "size": 14,
+                  "bg": "#fff59d"
+                },
+                {
+                  "id": "sn2",
+                  "type": "text",
+                  "html": "Neither map is symmetrical: attackers and defenders take different routes to the sites.",
+                  "x": 23,
+                  "y": 291,
+                  "w": 211,
+                  "size": 14,
+                  "bg": "#fff59d"
+                },
+                {
+                  "id": "sn3",
+                  "type": "text",
+                  "html": "Ascent flows through an open mid; Lotus has no mid, so play flows between its three sites.",
+                  "x": 23,
+                  "y": 455,
+                  "w": 211,
+                  "size": 14,
+                  "bg": "#fff59d"
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "text": "Marked the three lanes and the mid area on both maps and added the notes on structure, symmetry and flow."
+      }
+    ],
+    "stubWrong": [
+      {
+        "tool_calls": [
+          {
+            "name": "board_items_add",
+            "arguments": {
+              "path": [
+                8
+              ],
+              "items": [
+                {
+                  "id": "sa1",
+                  "type": "shape",
+                  "shape": "rect",
+                  "x": 320,
+                  "y": 215,
+                  "w": 350,
+                  "h": 300,
+                  "color": "#ff0000",
+                  "width": 4,
+                  "fill": "none"
+                },
+                {
+                  "id": "sa2",
+                  "type": "shape",
+                  "shape": "rect",
+                  "x": 840,
+                  "y": 225,
+                  "w": 460,
+                  "h": 290,
+                  "color": "#ff0000",
+                  "width": 4,
+                  "fill": "none"
+                },
+                {
+                  "id": "sl1",
+                  "type": "shape",
+                  "shape": "line",
+                  "x": 455,
+                  "y": 140,
+                  "w": 40,
+                  "h": 410,
+                  "color": "#ff0000",
+                  "width": 4,
+                  "fill": "none"
+                },
+                {
+                  "id": "sl3",
+                  "type": "shape",
+                  "shape": "line",
+                  "x": 1060,
+                  "y": 170,
+                  "w": 14,
+                  "h": 400,
+                  "color": "#ff0000",
+                  "width": 4,
+                  "fill": "none"
+                },
+                {
+                  "id": "sn1",
+                  "type": "text",
+                  "html": "Both maps have three lanes and neither is symmetrical.",
+                  "x": 23,
+                  "y": 232,
+                  "w": 211,
+                  "size": 14,
+                  "bg": "#fff59d"
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "text": "Marked the lanes and the mid areas and added a note."
+      }
+    ]
+  },
+  {
+    "id": "annotate-rivals-zones",
+    "note": "stepped, eval set 4 (a copy of the user's own post): the open draft is Week 1 - W1P2 - Task 2: Exploring my own iterative design workflow (f3a5c7e9-2d4b-4e6f-8a0c-3b5d7f9a1c24); its whiteboard at [4] (777 high) holds four Marvel Rivals screenshots (two in canvases) with the user's text notes; the user's six ellipses and two arrows were removed into fixture/iteration-truth.json, with each ellipse's nearest text and what it marks. The board is node-selected and attached with its picture. Steps, one per ellipse the user labelled with one of the asked things: krjscp0 (the corridor encounter, red, middle screenshot), 5i413of (the chokepoint, red, right screenshot), 4up3wrt (the objective marker in the capture zone picture; its alsoBox, the capture zone platform, counts too): an added ellipse or round shape with IoU 0.25 or more scores half, and an added text naming it (corridor or encounter, choke, captur) within 200 px of that shape the other half. maxCalls 20 (loop.js stops at 8 today). stubWrong labels the corridor encounter, circles the chokepoint without a label and circles the whole capture zone picture (IoU under 0.25): 50%",
+    "view": "board",
+    "draft": "f3a5c7e9-2d4b-4e6f-8a0c-3b5d7f9a1c24",
+    "settings": {
+      "forumWidth": 1454
+    },
+    "selection": {
+      "path": [
+        4
+      ]
+    },
+    "permission": "standard",
+    "text": "Circle the capture zone, the corridor encounter and the chokepoint on these map pictures and label each one.",
+    "expect": {
+      "steps": [
+        {
+          "name": "corridor encounter circled and labelled",
+          "check": {
+            "shape": {
+              "truth": "iteration-truth.json",
+              "id": "krjscp0",
+              "kinds": [
+                "ellipse",
+                "round"
+              ],
+              "minIoU": 0.25,
+              "within": 200
+            }
+          }
+        },
+        {
+          "name": "chokepoint circled and labelled",
+          "check": {
+            "shape": {
+              "truth": "iteration-truth.json",
+              "id": "5i413of",
+              "kinds": [
+                "ellipse",
+                "round"
+              ],
+              "minIoU": 0.25,
+              "within": 200
+            }
+          }
+        },
+        {
+          "name": "capture zone circled and labelled",
+          "check": {
+            "shape": {
+              "truth": "iteration-truth.json",
+              "id": "4up3wrt",
+              "kinds": [
+                "ellipse",
+                "round"
+              ],
+              "minIoU": 0.25,
+              "within": 200
+            }
+          }
+        }
+      ],
+      "never": [
+        "drafts_delete",
+        "doc_delete",
+        "board_items_remove"
+      ],
+      "maxCalls": 20,
+      "noClaimWithoutCall": true
+    },
+    "stub": [
+      {
+        "tool_calls": [
+          {
+            "name": "board_items_add",
+            "arguments": {
+              "path": [
+                4
+              ],
+              "items": [
+                {
+                  "id": "ze1",
+                  "type": "shape",
+                  "shape": "ellipse",
+                  "x": 512,
+                  "y": 90,
+                  "w": 150,
+                  "h": 125,
+                  "color": "#ff0000",
+                  "width": 2,
+                  "fill": "none"
+                },
+                {
+                  "id": "zt1",
+                  "type": "text",
+                  "html": "Corridor encounter",
+                  "x": 520,
+                  "y": 225,
+                  "w": 160,
+                  "size": 14,
+                  "bg": "#fff59d"
+                },
+                {
+                  "id": "ze2",
+                  "type": "shape",
+                  "shape": "ellipse",
+                  "x": 930,
+                  "y": 80,
+                  "w": 180,
+                  "h": 140,
+                  "color": "#ff0000",
+                  "width": 2,
+                  "fill": "none"
+                },
+                {
+                  "id": "zt2",
+                  "type": "text",
+                  "html": "Chokepoint",
+                  "x": 1125,
+                  "y": 60,
+                  "w": 150,
+                  "size": 14,
+                  "bg": "#fff59d"
+                },
+                {
+                  "id": "ze3",
+                  "type": "shape",
+                  "shape": "ellipse",
+                  "x": 350,
+                  "y": 600,
+                  "w": 305,
+                  "h": 95,
+                  "color": "#ff0000",
+                  "width": 2,
+                  "fill": "none"
+                },
+                {
+                  "id": "zt3",
+                  "type": "text",
+                  "html": "Capture zone",
+                  "x": 660,
+                  "y": 610,
+                  "w": 120,
+                  "size": 14,
+                  "bg": "#fff59d"
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "text": "Circled the corridor encounter, the chokepoint and the capture zone and labelled each one."
+      }
+    ],
+    "stubWrong": [
+      {
+        "tool_calls": [
+          {
+            "name": "board_items_add",
+            "arguments": {
+              "path": [
+                4
+              ],
+              "items": [
+                {
+                  "id": "ze1",
+                  "type": "shape",
+                  "shape": "ellipse",
+                  "x": 512,
+                  "y": 90,
+                  "w": 150,
+                  "h": 125,
+                  "color": "#ff0000",
+                  "width": 2,
+                  "fill": "none"
+                },
+                {
+                  "id": "zt1",
+                  "type": "text",
+                  "html": "Corridor encounter",
+                  "x": 520,
+                  "y": 225,
+                  "w": 160,
+                  "size": 14,
+                  "bg": "#fff59d"
+                },
+                {
+                  "id": "ze2",
+                  "type": "shape",
+                  "shape": "ellipse",
+                  "x": 930,
+                  "y": 80,
+                  "w": 180,
+                  "h": 140,
+                  "color": "#ff0000",
+                  "width": 2,
+                  "fill": "none"
+                },
+                {
+                  "id": "ze3",
+                  "type": "shape",
+                  "shape": "ellipse",
+                  "x": 223,
+                  "y": 441,
+                  "w": 540,
+                  "h": 306,
+                  "color": "#ff0000",
+                  "width": 2,
+                  "fill": "none"
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "text": "Circled the three places."
+      }
+    ]
+  },
+  {
+    "id": "delegate-annotation",
+    "note": "stepped, eval set 4: the user works on one post and hands the annotation of another to the assistant. The open draft is Week 1 - W1P2 - Task 1: Documentation Critique (b7d9f1a3-4c6e-4a8b-9d0f-5e7a9c1b3d46, a copy of the user's post: three whiteboards with one image each, paragraphs), the caret at the end of its last paragraph (caret: end). typeWhileRunning: the runner types \" Typing continues here.\" there just before sending, then one more word every 2 s while the turn runs, while Documentation Critique is still open (the user stops when the view jumps). The assistant must annotate Structure Analysis (d2f4a6c8-1e3b-4d5f-9a7c-2b4d6f8a0c13, board [8], as in annotate-valorant-lanes) without opening it. Steps: the Structure Analysis draft after the turn has the two mid boxes and the four lanes (the annotate-valorant-lanes checks on that draft); Documentation Critique ends with every word typed, in order (typed); the open draft after the turn is still Documentation Critique (viewStays: expected fail, background sessions are not built yet, so the score counts the other steps). Not checked yet: the view never shows Structure Analysis mid-turn. The board tools are not in the editor set (commands_describe adds them). The stub thinks for about 4.5 s first (non-repeating, or assistant.js cuts the stream as a loop), so the runner types two words before drafts_open (typedAt in result.json), then opens Structure Analysis and stays there",
+    "view": "editor",
+    "draft": "b7d9f1a3-4c6e-4a8b-9d0f-5e7a9c1b3d46",
+    "settings": {
+      "forumWidth": 1454
+    },
+    "caret": "end",
+    "typeWhileRunning": [
+      " Typing continues here.",
+      " The",
+      " second",
+      " map",
+      " had",
+      " the",
+      " clearest",
+      " grid."
+    ],
+    "permission": "standard",
+    "text": "In the Structure Analysis post, mark the three lanes and the mid area on both Valorant maps. I keep working here.",
+    "expect": {
+      "steps": [
+        {
+          "name": "Ascent mid boxed",
+          "check": {
+            "draft": "d2f4a6c8-1e3b-4d5f-9a7c-2b4d6f8a0c13",
+            "shape": {
+              "truth": "structure-truth.json",
+              "id": "iq4yh32",
+              "kinds": [
+                "rect",
+                "round"
+              ],
+              "minIoU": 0.4
+            }
+          }
+        },
+        {
+          "name": "Lotus mid boxed",
+          "check": {
+            "draft": "d2f4a6c8-1e3b-4d5f-9a7c-2b4d6f8a0c13",
+            "shape": {
+              "truth": "structure-truth.json",
+              "id": "0joftgu",
+              "kinds": [
+                "rect",
+                "round"
+              ],
+              "minIoU": 0.4
+            }
+          }
+        },
+        {
+          "name": "Ascent spawn to spawn lane drawn",
+          "check": {
+            "draft": "d2f4a6c8-1e3b-4d5f-9a7c-2b4d6f8a0c13",
+            "line": {
+              "truth": "structure-truth.json",
+              "id": "hxwosuw",
+              "dist": 60,
+              "angle": 30
+            }
+          }
+        },
+        {
+          "name": "Ascent B to A lane drawn",
+          "check": {
+            "draft": "d2f4a6c8-1e3b-4d5f-9a7c-2b4d6f8a0c13",
+            "line": {
+              "truth": "structure-truth.json",
+              "id": "djrnxx0",
+              "dist": 60,
+              "angle": 30
+            }
+          }
+        },
+        {
+          "name": "Lotus spawn to spawn lane drawn",
+          "check": {
+            "draft": "d2f4a6c8-1e3b-4d5f-9a7c-2b4d6f8a0c13",
+            "line": {
+              "truth": "structure-truth.json",
+              "id": "lj4x8um",
+              "dist": 60,
+              "angle": 30
+            }
+          }
+        },
+        {
+          "name": "Lotus C to A lane drawn",
+          "check": {
+            "draft": "d2f4a6c8-1e3b-4d5f-9a7c-2b4d6f8a0c13",
+            "line": {
+              "truth": "structure-truth.json",
+              "id": "n8pbt00",
+              "dist": 60,
+              "angle": 30
+            }
+          }
+        },
+        {
+          "name": "Documentation Critique keeps the typed words",
+          "check": {
+            "draft": "b7d9f1a3-4c6e-4a8b-9d0f-5e7a9c1b3d46",
+            "typed": true
+          }
+        },
+        {
+          "name": "the view stays on Documentation Critique",
+          "check": {
+            "viewStays": true
+          },
+          "expectedFail": "background sessions are not built yet: the assistant opens the draft it edits"
+        }
+      ],
+      "never": [
+        "drafts_delete",
+        "doc_delete",
+        "board_items_remove"
+      ],
+      "maxCalls": 20,
+      "noClaimWithoutCall": true
+    },
+    "stub": [
+      {
+        "reasoning": "The user is writing the Documentation Critique post and wants me to annotate a different draft. The target is Week 2 - W2P1 - Task 1: Structure Analysis, listed in this thread. Its Valorant whiteboard is block 8, with Ascent on the left and Lotus on the right. On Ascent the mid area spans roughly from x 314 to 676 and from y 211 to 527, around Mid Courtyard. On Lotus the middle band runs from about x 830 to 1309 and y 217 to 522, around B Site. The lanes on Ascent run from the defender spawn at the top down to the attacker spawn, and across from B Lobby to A Site. Board items cannot be added to a draft that is not open, so Structure Analysis has to be opened first. After opening it I need board_items_add, which the editor tool set lacks, so commands_describe loads it. Then one board_items_add call can place both rectangles and all four lines in red, width 4, without fill. The user said they keep working here, so the Documentation Critique text must stay exactly as they leave it. When the shapes are in, a short reply says what was marked and where. First step: open the Structure Analysis draft by its id.",
+        "tool_calls": [
+          {
+            "name": "drafts_open",
+            "arguments": {
+              "draftId": "d2f4a6c8-1e3b-4d5f-9a7c-2b4d6f8a0c13"
+            }
+          }
+        ]
+      },
+      {
+        "tool_calls": [
+          {
+            "name": "commands_describe",
+            "arguments": {
+              "names": [
+                "board_items_add"
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "tool_calls": [
+          {
+            "name": "board_items_add",
+            "arguments": {
+              "path": [
+                8
+              ],
+              "items": [
+                {
+                  "id": "sa1",
+                  "type": "shape",
+                  "shape": "rect",
+                  "x": 320,
+                  "y": 215,
+                  "w": 350,
+                  "h": 300,
+                  "color": "#ff0000",
+                  "width": 4,
+                  "fill": "none"
+                },
+                {
+                  "id": "sa2",
+                  "type": "shape",
+                  "shape": "rect",
+                  "x": 840,
+                  "y": 225,
+                  "w": 460,
+                  "h": 290,
+                  "color": "#ff0000",
+                  "width": 4,
+                  "fill": "none"
+                },
+                {
+                  "id": "sl1",
+                  "type": "shape",
+                  "shape": "line",
+                  "x": 455,
+                  "y": 140,
+                  "w": 40,
+                  "h": 410,
+                  "color": "#ff0000",
+                  "width": 4,
+                  "fill": "none"
+                },
+                {
+                  "id": "sl2",
+                  "type": "shape",
+                  "shape": "line",
+                  "x": 295,
+                  "y": 290,
+                  "w": 400,
+                  "h": 80,
+                  "flipY": true,
+                  "color": "#ff0000",
+                  "width": 4,
+                  "fill": "none"
+                },
+                {
+                  "id": "sl3",
+                  "type": "shape",
+                  "shape": "line",
+                  "x": 1060,
+                  "y": 170,
+                  "w": 14,
+                  "h": 400,
+                  "color": "#ff0000",
+                  "width": 4,
+                  "fill": "none"
+                },
+                {
+                  "id": "sl4",
+                  "type": "shape",
+                  "shape": "line",
+                  "x": 815,
+                  "y": 280,
+                  "w": 530,
+                  "h": 120,
+                  "flipX": true,
+                  "color": "#ff0000",
+                  "width": 4,
+                  "fill": "none"
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "text": "Marked the three lanes and the mid area on both Valorant maps in the Structure Analysis post."
+      }
+    ]
+  },
+  {
+    "id": "vague-annotate-rest",
+    "note": "stepped, eval set 5 (vague requests): the open draft is Structure Analysis as eval set 4 left it: the Overwatch whiteboard at [6] holds the user's marks (red rects and lanes in its two canvas items) and three yellow notes; the Valorant whiteboard at [8] has the user's marks removed (structure-truth.json). Nothing is selected and the caret is at the end of the draft (caret: end), so the request names no board. The assistant has to find that the Valorant maps are the rest, read the task (blocks [2] to [4]), and annotate them the way the Overwatch maps are. Steps: annotate-valorant-lanes's nine (mid boxes at IoU 0.3 here), the Overwatch board unchanged (same), the added marks in red (colour: hue 0 within 25 degrees, the share of added shapes and connectors), the added notes on the Overwatch notes' yellow (noteBg #fff59d, the share of added texts). The board tools are not in the editor set (commands_describe adds them, or view_render of the board first). The stub loads board_items_add, then adds the annotate-valorant-lanes stub's items with the shapes' colours left out (the page's red fills them). stubWrong draws the same in blue with plain notes: 10 of 12 steps (83%).",
+    "view": "editor",
+    "draft": "d2f4a6c8-1e3b-4d5f-9a7c-2b4d6f8a0c13",
+    "caret": "end",
+    "settings": {
+      "forumWidth": 1454
+    },
+    "permission": "standard",
+    "text": "help me annotate the rest of the maps",
+    "expect": {
+      "steps": [
+        {
+          "name": "Ascent mid boxed",
+          "check": {
+            "shape": {
+              "truth": "structure-truth.json",
+              "id": "iq4yh32",
+              "kinds": [
+                "rect",
+                "round"
+              ],
+              "minIoU": 0.3
+            }
+          }
+        },
+        {
+          "name": "Lotus mid boxed",
+          "check": {
+            "shape": {
+              "truth": "structure-truth.json",
+              "id": "0joftgu",
+              "kinds": [
+                "rect",
+                "round"
+              ],
+              "minIoU": 0.3
+            }
+          }
+        },
+        {
+          "name": "Ascent spawn to spawn lane drawn",
+          "check": {
+            "line": {
+              "truth": "structure-truth.json",
+              "id": "hxwosuw",
+              "dist": 60,
+              "angle": 30
+            }
+          }
+        },
+        {
+          "name": "Ascent B to A lane drawn",
+          "check": {
+            "line": {
+              "truth": "structure-truth.json",
+              "id": "djrnxx0",
+              "dist": 60,
+              "angle": 30
+            }
+          }
+        },
+        {
+          "name": "Lotus spawn to spawn lane drawn",
+          "check": {
+            "line": {
+              "truth": "structure-truth.json",
+              "id": "lj4x8um",
+              "dist": 60,
+              "angle": 30
+            }
+          }
+        },
+        {
+          "name": "Lotus C to A lane drawn",
+          "check": {
+            "line": {
+              "truth": "structure-truth.json",
+              "id": "n8pbt00",
+              "dist": 60,
+              "angle": 30
+            }
+          }
+        },
+        {
+          "name": "note on structure (lanes)",
+          "check": {
+            "note": {
+              "truth": "structure-truth.json",
+              "word": "lane"
+            }
+          }
+        },
+        {
+          "name": "note on symmetry",
+          "check": {
+            "note": {
+              "truth": "structure-truth.json",
+              "word": "symmetr"
+            }
+          }
+        },
+        {
+          "name": "note on flow",
+          "check": {
+            "note": {
+              "truth": "structure-truth.json",
+              "word": "flow"
+            }
+          }
+        },
+        {
+          "name": "Overwatch board left as it was",
+          "check": {
+            "same": {
+              "draft": "d2f4a6c8-1e3b-4d5f-9a7c-2b4d6f8a0c13",
+              "board": "6c2coyg"
+            }
+          }
+        },
+        {
+          "name": "marks in the red the Overwatch marks use",
+          "check": {
+            "colour": {
+              "truth": "structure-truth.json",
+              "hue": 0,
+              "within": 25
+            }
+          }
+        },
+        {
+          "name": "notes look like the Overwatch notes",
+          "check": {
+            "noteBg": {
+              "truth": "structure-truth.json",
+              "bg": [
+                "#fff59d"
+              ]
+            }
+          }
+        }
+      ],
+      "never": [
+        "drafts_delete",
+        "doc_delete",
+        "board_items_remove"
+      ],
+      "maxCalls": 20,
+      "noClaimWithoutCall": true
+    },
+    "stub": [
+      {
+        "tool_calls": [
+          {
+            "name": "commands_describe",
+            "arguments": {
+              "names": [
+                "board_items_add"
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "tool_calls": [
+          {
+            "name": "board_items_add",
+            "arguments": {
+              "path": [
+                8
+              ],
+              "items": [
+                {
+                  "id": "sa1",
+                  "type": "shape",
+                  "shape": "rect",
+                  "x": 320,
+                  "y": 215,
+                  "w": 350,
+                  "h": 300,
+                  "width": 4,
+                  "fill": "none"
+                },
+                {
+                  "id": "sa2",
+                  "type": "shape",
+                  "shape": "rect",
+                  "x": 840,
+                  "y": 225,
+                  "w": 460,
+                  "h": 290,
+                  "width": 4,
+                  "fill": "none"
+                },
+                {
+                  "id": "sl1",
+                  "type": "shape",
+                  "shape": "line",
+                  "x": 455,
+                  "y": 140,
+                  "w": 40,
+                  "h": 410,
+                  "width": 4,
+                  "fill": "none"
+                },
+                {
+                  "id": "sl2",
+                  "type": "shape",
+                  "shape": "line",
+                  "x": 295,
+                  "y": 290,
+                  "w": 400,
+                  "h": 80,
+                  "flipY": true,
+                  "width": 4,
+                  "fill": "none"
+                },
+                {
+                  "id": "sl3",
+                  "type": "shape",
+                  "shape": "line",
+                  "x": 1060,
+                  "y": 170,
+                  "w": 14,
+                  "h": 400,
+                  "width": 4,
+                  "fill": "none"
+                },
+                {
+                  "id": "sl4",
+                  "type": "shape",
+                  "shape": "line",
+                  "x": 815,
+                  "y": 280,
+                  "w": 530,
+                  "h": 120,
+                  "flipX": true,
+                  "width": 4,
+                  "fill": "none"
+                },
+                {
+                  "id": "sn1",
+                  "type": "text",
+                  "html": "Both maps are built on three lanes.",
+                  "x": 23,
+                  "y": 232,
+                  "w": 211,
+                  "size": 14,
+                  "bg": "#fff59d"
+                },
+                {
+                  "id": "sn2",
+                  "type": "text",
+                  "html": "Neither map is symmetrical: attackers and defenders take different routes to the sites.",
+                  "x": 23,
+                  "y": 291,
+                  "w": 211,
+                  "size": 14,
+                  "bg": "#fff59d"
+                },
+                {
+                  "id": "sn3",
+                  "type": "text",
+                  "html": "Ascent flows through an open mid; Lotus has no mid, so play flows between its three sites.",
+                  "x": 23,
+                  "y": 455,
+                  "w": 211,
+                  "size": 14,
+                  "bg": "#fff59d"
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "text": "Annotated the Valorant maps as the Overwatch ones: the mid areas boxed, the lanes drawn and notes on structure, symmetry and flow."
+      }
+    ],
+    "stubWrong": [
+      {
+        "tool_calls": [
+          {
+            "name": "commands_describe",
+            "arguments": {
+              "names": [
+                "board_items_add"
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "tool_calls": [
+          {
+            "name": "board_items_add",
+            "arguments": {
+              "path": [
+                8
+              ],
+              "items": [
+                {
+                  "id": "sa1",
+                  "type": "shape",
+                  "shape": "rect",
+                  "x": 320,
+                  "y": 215,
+                  "w": 350,
+                  "h": 300,
+                  "width": 4,
+                  "fill": "none",
+                  "color": "#1e88e5"
+                },
+                {
+                  "id": "sa2",
+                  "type": "shape",
+                  "shape": "rect",
+                  "x": 840,
+                  "y": 225,
+                  "w": 460,
+                  "h": 290,
+                  "width": 4,
+                  "fill": "none",
+                  "color": "#1e88e5"
+                },
+                {
+                  "id": "sl1",
+                  "type": "shape",
+                  "shape": "line",
+                  "x": 455,
+                  "y": 140,
+                  "w": 40,
+                  "h": 410,
+                  "width": 4,
+                  "fill": "none",
+                  "color": "#1e88e5"
+                },
+                {
+                  "id": "sl2",
+                  "type": "shape",
+                  "shape": "line",
+                  "x": 295,
+                  "y": 290,
+                  "w": 400,
+                  "h": 80,
+                  "flipY": true,
+                  "width": 4,
+                  "fill": "none",
+                  "color": "#1e88e5"
+                },
+                {
+                  "id": "sl3",
+                  "type": "shape",
+                  "shape": "line",
+                  "x": 1060,
+                  "y": 170,
+                  "w": 14,
+                  "h": 400,
+                  "width": 4,
+                  "fill": "none",
+                  "color": "#1e88e5"
+                },
+                {
+                  "id": "sl4",
+                  "type": "shape",
+                  "shape": "line",
+                  "x": 815,
+                  "y": 280,
+                  "w": 530,
+                  "h": 120,
+                  "flipX": true,
+                  "width": 4,
+                  "fill": "none",
+                  "color": "#1e88e5"
+                },
+                {
+                  "id": "sn1",
+                  "type": "text",
+                  "html": "Both maps are built on three lanes.",
+                  "x": 23,
+                  "y": 232,
+                  "w": 211,
+                  "size": 14,
+                  "bg": null
+                },
+                {
+                  "id": "sn2",
+                  "type": "text",
+                  "html": "Neither map is symmetrical: attackers and defenders take different routes to the sites.",
+                  "x": 23,
+                  "y": 291,
+                  "w": 211,
+                  "size": 14,
+                  "bg": null
+                },
+                {
+                  "id": "sn3",
+                  "type": "text",
+                  "html": "Ascent flows through an open mid; Lotus has no mid, so play flows between its three sites.",
+                  "x": 23,
+                  "y": 455,
+                  "w": 211,
+                  "size": 14,
+                  "bg": null
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "text": "Annotated the Valorant maps."
+      }
+    ]
+  },
+  {
+    "id": "vague-same-for-others",
+    "note": "stepped, eval set 5 (vague requests): the open draft is \"Week 2 - Overwatch structure notes\" (0c2e4a6b-..., a trimmed copy of Structure Analysis: the task, the Overwatch whiteboard at [6], the summary). The whiteboard's upper picture (canvas item 14jvvhy) keeps the user's marks: a red rect around each map's centre and red freehand lanes; the lower picture (canvas item 4agxi9n, artboard 2500 x 1250) lost its 13 marks into overwatch-truth.json. The whiteboard is node-selected and attached with its picture. The assistant has to see which picture is unmarked and mark it as the other: inside the canvas item (itemPath 4agxi9n, artboard coordinates). Steps: per map (left, middle, right) the centre rect (shape, IoU 0.25, rect or round) and the lanes (lines: the share of the user's lines drawn, within 170 artboard px and 30 degrees; the user drew 3, 3 and 2); the upper picture, the title and the notes unchanged (same, but 4agxi9n); the added marks in red (colour). The stub sends itemPath as a bare id (commands.js wrapStrings takes it) and adds the user's 3 rects and 8 lines with their colours left out (the page's red fills them).",
+    "view": "board",
+    "draft": "0c2e4a6b-8d1f-4a3c-9e5b-7d9f1b3c5e70",
+    "settings": {
+      "forumWidth": 1454
+    },
+    "selection": {
+      "path": [
+        6
+      ]
+    },
+    "permission": "standard",
+    "text": "do the same for the other maps",
+    "expect": {
+      "steps": [
+        {
+          "name": "left map centre boxed",
+          "check": {
+            "shape": {
+              "truth": "overwatch-truth.json",
+              "id": "oy0c9gm",
+              "kinds": [
+                "rect",
+                "round"
+              ],
+              "minIoU": 0.25
+            }
+          }
+        },
+        {
+          "name": "left map lanes drawn",
+          "check": {
+            "lines": {
+              "truth": "overwatch-truth.json",
+              "ids": [
+                "g78ltiy",
+                "0hk9bx0",
+                "kap9k23"
+              ],
+              "dist": 170,
+              "angle": 30
+            }
+          }
+        },
+        {
+          "name": "middle map centre boxed",
+          "check": {
+            "shape": {
+              "truth": "overwatch-truth.json",
+              "id": "arnyn9m",
+              "kinds": [
+                "rect",
+                "round"
+              ],
+              "minIoU": 0.25
+            }
+          }
+        },
+        {
+          "name": "middle map lanes drawn",
+          "check": {
+            "lines": {
+              "truth": "overwatch-truth.json",
+              "ids": [
+                "0ejq22d",
+                "v5s35fr",
+                "h495ppx"
+              ],
+              "dist": 170,
+              "angle": 30
+            }
+          }
+        },
+        {
+          "name": "right map centre boxed",
+          "check": {
+            "shape": {
+              "truth": "overwatch-truth.json",
+              "id": "rxbvubk",
+              "kinds": [
+                "rect",
+                "round"
+              ],
+              "minIoU": 0.25
+            }
+          }
+        },
+        {
+          "name": "right map lanes drawn",
+          "check": {
+            "lines": {
+              "truth": "overwatch-truth.json",
+              "ids": [
+                "3y4o49t",
+                "3p0hi5r"
+              ],
+              "dist": 170,
+              "angle": 30
+            }
+          }
+        },
+        {
+          "name": "upper picture and notes left as they were",
+          "check": {
+            "same": {
+              "draft": "0c2e4a6b-8d1f-4a3c-9e5b-7d9f1b3c5e70",
+              "board": "6c2coyg",
+              "except": [
+                "4agxi9n"
+              ]
+            }
+          }
+        },
+        {
+          "name": "marks in the red the upper picture uses",
+          "check": {
+            "colour": {
+              "truth": "overwatch-truth.json",
+              "hue": 0,
+              "within": 25
+            }
+          }
+        }
+      ],
+      "never": [
+        "drafts_delete",
+        "doc_delete",
+        "board_items_remove"
+      ],
+      "maxCalls": 20,
+      "noClaimWithoutCall": true
+    },
+    "stub": [
+      {
+        "tool_calls": [
+          {
+            "name": "board_items_add",
+            "arguments": {
+              "path": [
+                6
+              ],
+              "itemPath": "4agxi9n",
+              "items": [
+                {
+                  "type": "shape",
+                  "shape": "rect",
+                  "x": 429,
+                  "y": 371,
+                  "w": 377,
+                  "h": 485,
+                  "fill": "none",
+                  "width": 8
+                },
+                {
+                  "type": "shape",
+                  "shape": "rect",
+                  "x": 1250,
+                  "y": 344,
+                  "w": 399,
+                  "h": 529,
+                  "fill": "none",
+                  "width": 8
+                },
+                {
+                  "type": "shape",
+                  "shape": "rect",
+                  "x": 2072,
+                  "y": 310,
+                  "w": 228,
+                  "h": 634,
+                  "fill": "none",
+                  "width": 8
+                },
+                {
+                  "type": "shape",
+                  "shape": "line",
+                  "x": 231,
+                  "y": 592,
+                  "w": 820,
+                  "h": 38,
+                  "flipX": true,
+                  "flipY": true,
+                  "fill": "none",
+                  "width": 8
+                },
+                {
+                  "type": "shape",
+                  "shape": "line",
+                  "x": 581,
+                  "y": 599,
+                  "w": 13,
+                  "h": 503,
+                  "flipX": true,
+                  "flipY": true,
+                  "fill": "none",
+                  "width": 8
+                },
+                {
+                  "type": "shape",
+                  "shape": "line",
+                  "x": 583,
+                  "y": 160,
+                  "w": 40,
+                  "h": 454,
+                  "flipY": true,
+                  "fill": "none",
+                  "width": 8
+                },
+                {
+                  "type": "shape",
+                  "shape": "line",
+                  "x": 1165,
+                  "y": 606,
+                  "w": 590,
+                  "h": 10,
+                  "fill": "none",
+                  "width": 8
+                },
+                {
+                  "type": "shape",
+                  "shape": "line",
+                  "x": 1349,
+                  "y": 165,
+                  "w": 209,
+                  "h": 453,
+                  "fill": "none",
+                  "width": 8
+                },
+                {
+                  "type": "shape",
+                  "shape": "line",
+                  "x": 1344,
+                  "y": 604,
+                  "w": 219,
+                  "h": 448,
+                  "flipY": true,
+                  "fill": "none",
+                  "width": 8
+                },
+                {
+                  "type": "shape",
+                  "shape": "line",
+                  "x": 1866,
+                  "y": 611,
+                  "w": 519,
+                  "h": 24,
+                  "fill": "none",
+                  "width": 8
+                },
+                {
+                  "type": "shape",
+                  "shape": "line",
+                  "x": 2160,
+                  "y": 75,
+                  "w": 10,
+                  "h": 1103,
+                  "fill": "none",
+                  "width": 8
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "text": "Marked the lower three maps as the upper ones: each centre boxed and the lanes drawn."
+      }
+    ]
+  },
+  {
+    "id": "vague-finish-board",
+    "note": "stepped, eval set 5 (vague requests): the open draft is \"Week 1 - Rivals engagement notes\" (1d3f5b7c-..., a trimmed copy of the iterative design post: the Marvel Rivals whiteboard at [4] and the conclusion). The board keeps the user's green anchor circles, the green arrows and every note; the user's red circles are removed (rivals-finish-truth.json), so the notes \"Enemy encounter at corridor before reaching capture zone.\" and \"Chokepoint engagement at enemy corridor exit.\" point at nothing. The whiteboard is node-selected and attached with its picture. Steps: the corridor encounter and the chokepoint circled (shape: an added ellipse, round or rect at IoU 0.2 or more with the user's circle); the board's notes and green marks unchanged (same). The third red circle (an enemy player) has no note and is not scored. The stub adds two ellipses at the user's boxes, colours left out.",
+    "view": "board",
+    "draft": "1d3f5b7c-9e2a-4b4d-8f6c-8e0a2c4d6f81",
+    "settings": {
+      "forumWidth": 1454
+    },
+    "selection": {
+      "path": [
+        4
+      ]
+    },
+    "permission": "standard",
+    "text": "finish annotating this board",
+    "expect": {
+      "steps": [
+        {
+          "name": "corridor encounter circled",
+          "check": {
+            "shape": {
+              "truth": "rivals-finish-truth.json",
+              "id": "krjscp0",
+              "kinds": [
+                "ellipse",
+                "round",
+                "rect"
+              ],
+              "minIoU": 0.2
+            }
+          }
+        },
+        {
+          "name": "chokepoint circled",
+          "check": {
+            "shape": {
+              "truth": "rivals-finish-truth.json",
+              "id": "5i413of",
+              "kinds": [
+                "ellipse",
+                "round",
+                "rect"
+              ],
+              "minIoU": 0.2
+            }
+          }
+        },
+        {
+          "name": "notes and green marks left as they were",
+          "check": {
+            "same": {
+              "draft": "1d3f5b7c-9e2a-4b4d-8f6c-8e0a2c4d6f81",
+              "board": "qrxnyay"
+            }
+          }
+        }
+      ],
+      "never": [
+        "drafts_delete",
+        "doc_delete",
+        "board_items_remove"
+      ],
+      "maxCalls": 20,
+      "noClaimWithoutCall": true
+    },
+    "stub": [
+      {
+        "tool_calls": [
+          {
+            "name": "board_items_add",
+            "arguments": {
+              "path": [
+                4
+              ],
+              "items": [
+                {
+                  "type": "shape",
+                  "shape": "ellipse",
+                  "x": 518,
+                  "y": 93,
+                  "w": 146,
+                  "h": 120,
+                  "fill": "none"
+                },
+                {
+                  "type": "shape",
+                  "shape": "ellipse",
+                  "x": 925,
+                  "y": 74,
+                  "w": 191,
+                  "h": 149,
+                  "fill": "none"
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "text": "Circled the corridor encounter and the chokepoint the notes describe."
+      }
+    ]
+  }
+]

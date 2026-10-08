@@ -1,0 +1,182 @@
+/* Page preview: forum typography (SPEC §1 / §7) under .page .ProseMirror. Unlayered, so it wins over Tailwind's layers. */
+:root {
+  --ui-accent: #3d99f5;
+
+  /* set from settings by applySettings() */
+  --forum-width: 1454px;
+  --base-font: system-ui, Helvetica, Arial, sans-serif;
+  --base-scale: 1;
+}
+
+/* Tailwind preflight must not change the preview: inside .page the base layer (preflight, shadcn base) is rolled back, so
+   presentational hints (SVG attributes, contenteditable) and browser defaults apply. Rules below, the editor's and the
+   board's own stylesheets and inline styles still win. */
+@layer base {
+  .page *, .page *::before, .page *::after { all: revert-layer; box-sizing: border-box; }
+  .page { tab-size: 8; }
+}
+
+/* ---------- Forum page themes (SPEC §1) ---------- */
+:root[data-theme="dark"] {
+  --pg-bg: #21212a;
+  --post-bg: #303039;
+  --text: #c5c6d0;
+  --head: #ffffff;
+  --quote-bg: #3a3b46;
+  --quote-border: #4c4d55;
+  --quote-text: #a3a6b8;
+  --icode-bg: #45465a;
+  --table-border: #6b6d80;
+  --th-bg: #45465a;
+  --hr: #c5c6d0;
+  --c-soft: #a3a6b8;
+  --c-hard: #ffffff;
+}
+:root[data-theme="light"] {
+  --pg-bg: #f2f2f5;
+  --post-bg: #ffffff;
+  --text: #333340;
+  --head: #111111;
+  --quote-bg: #f0f0f4;
+  --quote-border: #d0d0da;
+  --quote-text: #6b6d80;
+  --icode-bg: #ececf2;
+  --table-border: #d0d0da;
+  --th-bg: #ececf2;
+  --hr: #d0d0da;
+  --c-soft: #6b6d80;
+  --c-hard: #000000;
+}
+
+.page {
+  box-sizing: content-box; /* content width = forumWidth exactly (SPEC §7) */
+  width: var(--forum-width);
+  padding: 22px;
+  background: var(--post-bg);
+  color: var(--text);
+  border-radius: 6px;
+  font-family: var(--base-font);
+}
+
+/* ---------- Forum typography (SPEC §1) ---------- */
+.page .ProseMirror {
+  font-size: 16px;
+  line-height: 1.8;
+  min-height: 60vh;
+  outline: none;
+  word-wrap: break-word;
+}
+.page .ProseMirror > :first-child { margin-top: 0; }
+/* Base size scales only paragraph text, like applyBaseStyles (not headings, code or sized runs); margins stay 16px-based. */
+.page .ProseMirror p { font-size: calc(1em * var(--base-scale)); margin: calc(1em / var(--base-scale)) 0; }
+.page .ProseMirror p code { font-size: calc(1em / var(--base-scale)); }
+.page .ProseMirror h1, .page .ProseMirror h2, .page .ProseMirror h3,
+.page .ProseMirror h4, .page .ProseMirror h5, .page .ProseMirror h6 { font-weight: bold; color: var(--head); margin: 14.5px 0; }
+.page .ProseMirror h1 { font-size: 3em; line-height: 1.1; margin: 0 0 14.5px; }
+.page .ProseMirror h2 { font-size: 2.2em; line-height: 1.1; }
+.page .ProseMirror h3 { font-size: 1.8em; line-height: 1.1; }
+.page .ProseMirror h4 { font-size: 1.5em; line-height: 1.8; }
+.page .ProseMirror h5 { font-size: 1.2em; line-height: 1.8; }
+.page .ProseMirror h6 { font-size: 1em; line-height: 1.8; }
+.page .ProseMirror a { color: var(--head); text-decoration: underline; }
+.page .ProseMirror blockquote {
+  margin: 1em 0;
+  padding: 20px;
+  background: var(--quote-bg);
+  border-left: 3px solid var(--quote-border);
+  color: var(--quote-text);
+}
+.page .ProseMirror blockquote > :first-child { margin-top: 0; }
+.page .ProseMirror blockquote > :last-child { margin-bottom: 0; }
+.page .ProseMirror pre {
+  margin: 1em 0;
+  padding: 18px;
+  background: var(--quote-bg);
+  border-left: 3px solid var(--quote-border);
+  font-family: ui-monospace, "Cascadia Code", monospace;
+  font-size: .9em;
+  white-space: pre-wrap;
+}
+.page .ProseMirror pre code { background: none; padding: 0; border-radius: 0; font-size: inherit; }
+.page .ProseMirror code {
+  background: var(--icode-bg);
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-family: ui-monospace, "Cascadia Code", monospace;
+}
+.page .ProseMirror hr { border: none; border-top: 1px solid var(--hr); margin: 1em 0; }
+.page .ProseMirror ul, .page .ProseMirror ol { margin: 1em 0 0; padding-left: 1.5em; }
+.page .ProseMirror li > p { margin: 0; }
+.page .ProseMirror table { border-collapse: collapse; width: 100%; margin: 1em 0; table-layout: fixed; }
+.page .ProseMirror th, .page .ProseMirror td {
+  border: 1px solid var(--table-border);
+  padding: 11px;
+  vertical-align: top;
+  position: relative;
+}
+.page .ProseMirror th { background: var(--th-bg); font-weight: 600; text-align: left; }
+.page .ProseMirror th > p, .page .ProseMirror td > p { margin: 0; }
+.page .ProseMirror .selectedCell::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: rgba(61, 153, 245, .2);
+  pointer-events: none;
+}
+.page .ProseMirror .ProseMirror-selectednode { outline: 2px solid var(--ui-accent); }
+/* The text selection while the editor is not focused (extensions.js InactiveSelection) */
+.page .ProseMirror .inactive-sel { background: rgba(61, 153, 245, .3); }
+
+/* Box (titled panel) */
+.page .ProseMirror .ipsRichTextBox {
+  margin: 1em 0;
+  border: 1px solid var(--table-border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.page .ProseMirror .ipsRichTextBox__title {
+  padding: 8px 16px;
+  background: var(--th-bg);
+  color: var(--head);
+  font-weight: bold;
+}
+.page .ProseMirror .ipsRichTextBox__title p { margin: 0; }
+.page .ProseMirror i-richtext-box-content { display: block; padding: 0 16px; }
+
+/* Font size marks */
+.page [data-ips-font-size="80"] { font-size: 80%; }
+.page [data-ips-font-size="90"] { font-size: 90%; }
+.page [data-ips-font-size="100"] { font-size: 100%; }
+.page [data-ips-font-size="125"] { font-size: 125%; }
+.page [data-ips-font-size="150"] { font-size: 150%; }
+.page [data-ips-font-size="175"] { font-size: 175%; }
+.page [data-ips-font-size="200"] { font-size: 200%; }
+.page .ProseMirror p [data-ips-font-size="80"] { font-size: calc(80% / var(--base-scale)); }
+.page .ProseMirror p [data-ips-font-size="90"] { font-size: calc(90% / var(--base-scale)); }
+.page .ProseMirror p [data-ips-font-size="100"] { font-size: calc(100% / var(--base-scale)); }
+.page .ProseMirror p [data-ips-font-size="125"] { font-size: calc(125% / var(--base-scale)); }
+.page .ProseMirror p [data-ips-font-size="150"] { font-size: calc(150% / var(--base-scale)); }
+.page .ProseMirror p [data-ips-font-size="175"] { font-size: calc(175% / var(--base-scale)); }
+.page .ProseMirror p [data-ips-font-size="200"] { font-size: calc(200% / var(--base-scale)); }
+
+/* Text colour marks */
+.page [data-i-color="root"] { color: inherit; }
+.page [data-i-color="soft"] { color: var(--c-soft); }
+.page [data-i-color="hard"] { color: var(--c-hard); }
+.page [data-i-color="red"] { color: #e05252; }
+.page [data-i-color="orange"] { color: #e09952; }
+.page [data-i-color="yellow"] { color: #e0c952; }
+.page [data-i-color="green"] { color: #62d926; }
+.page [data-i-color="blue"] { color: #3d99f5; }
+.page [data-i-color="indigo"] { color: #9c6ef7; }
+.page [data-i-color="violet"] { color: #e052e0; }
+
+/* Highlight marks: same hue at 25 % alpha */
+.page mark[data-i-background-color] { color: inherit; padding: 3px 0; }
+.page mark[data-i-background-color="red"] { background: rgba(224, 82, 82, .25); }
+.page mark[data-i-background-color="orange"] { background: rgba(224, 153, 82, .25); }
+.page mark[data-i-background-color="yellow"] { background: rgba(224, 201, 82, .25); }
+.page mark[data-i-background-color="green"] { background: rgba(98, 217, 38, .25); }
+.page mark[data-i-background-color="blue"] { background: rgba(61, 153, 245, .25); }
+.page mark[data-i-background-color="indigo"] { background: rgba(156, 110, 247, .25); }
+.page mark[data-i-background-color="violet"] { background: rgba(224, 82, 224, .25); }

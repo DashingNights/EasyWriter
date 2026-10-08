@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <defs>
+    <linearGradient id="page" x1="0" y1="50" x2="0" y2="210" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#f1ebff"/>
+    </linearGradient>
+    <linearGradient id="nib" x1="0" y1="-108" x2="0" y2="0" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#3a3a46"/>
+      <stop offset="1" stop-color="#21212a"/>
+    </linearGradient>
+  </defs>
+  <rect x="12" y="12" width="232" height="232" rx="52" fill="#2563eb"/>
+  <g transform="translate(-5 3)">
+    <rect x="42" y="56" width="122" height="160" rx="22" fill="#21212a" opacity="0.14"/>
+    <rect x="42" y="50" width="122" height="160" rx="22" fill="url(#page)"/>
+    <rect x="64" y="80" width="78" height="18" rx="9" fill="#2563eb"/>
+    <rect x="64" y="111" width="78" height="18" rx="9" fill="#2563eb"/>
+    <rect x="64" y="142" width="38" height="18" rx="9" fill="#2563eb"/>
+    <g transform="translate(116 154) rotate(40) scale(1.2)">
+      <path d="M0 0 L-30 -58 Q-36 -72 -28 -84 L-28 -96 Q-28 -108 -16 -108 L16 -108 Q28 -108 28 -96 L28 -84 Q36 -72 30 -58 Z"
+            fill="url(#nib)" stroke="#fff" stroke-width="7" stroke-linejoin="round"/>
+      <path d="M0 -6 L0 -50" stroke="#fff" stroke-width="5.5" stroke-linecap="round"/>
+      <circle cx="0" cy="-58" r="9" fill="#fff"/>
+    </g>
+  </g>
+</svg>

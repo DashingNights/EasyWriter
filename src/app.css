@@ -1,0 +1,129 @@
+@import "tailwindcss" source(none);
+@import "tw-animate-css";
+@import "./page.css";
+
+@source "./";
+@source "../index.html";
+
+@custom-variant dark (&:is(.dark *));
+
+/* App chrome: shadcn/ui neutral palette, always dark (class "dark" on <html>), independent of the page theme. */
+.dark {
+  --radius: 0.625rem;
+  --background: oklch(0.145 0 0);
+  /* Interface text is #f5f5f5, a little softer than shadcn's near-white (the page preview keeps the forum's colours). */
+  --foreground: #f5f5f5;
+  --card: oklch(0.205 0 0);
+  --card-foreground: #f5f5f5;
+  --popover: oklch(0.205 0 0);
+  --popover-foreground: #f5f5f5;
+  --primary: oklch(0.922 0 0);
+  --primary-foreground: oklch(0.205 0 0);
+  --secondary: oklch(0.269 0 0);
+  --secondary-foreground: #f5f5f5;
+  --muted: oklch(0.269 0 0);
+  --muted-foreground: oklch(0.708 0 0);
+  --accent: oklch(0.269 0 0);
+  --accent-foreground: #f5f5f5;
+  --destructive: oklch(0.704 0.191 22.216);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.556 0 0);
+}
+
+@theme inline {
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-island: calc(var(--radius) + 4px); /* every floating bar / island (toolbar, rails, menus, ribbons): one corner size */
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+}
+
+@layer base {
+  /* Compact density (SPEC §7b): every chrome size is rem, so this one value scales text, padding and control heights.
+     The page preview is px / em under .page and is not affected. */
+  html {
+    font-size: 13px;
+  }
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+/* Title strip (SPEC §7): the window's drag region (double-click maximizes). px, not rem: with its 1 px bottom border it is the
+   height of the native window controls (main.js TITLE_BAR, 33 px) drawn over its right end, in the room the Window Controls
+   Overlay leaves (env(); no overlay in full screen). Controls placed in it stay clickable, and so do the menus, selects,
+   popovers, dialogs and palettes drawn over it (a long list opened upward in a short window reaches the window top): the
+   drag region takes every click inside it that no no-drag element covers. */
+.titlebar {
+  height: 34px;
+  padding-right: calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw));
+  -webkit-app-region: drag;
+}
+.titlebar :is(button, input, select, textarea, a),
+[data-radix-popper-content-wrapper], [role="dialog"], [role="alertdialog"], [data-board-chrome] {
+  -webkit-app-region: no-drag;
+}
+
+/* Open menus, selects and popovers never swallow a click elsewhere: Radix makes the page inert (inline body
+   pointer-events: none) while one is open, so the first outside click only closed it. With this the click closes it
+   and also reaches what is under the pointer (another select opens, a tool button switches, the board draws). Modal
+   dialogs keep their overlay, which still takes those clicks. Radix also makes the popovers / menus below the open one
+   inert (inline pointer-events: none), e.g. the tool options card while one of its selects is open. */
+body,
+[data-slot=popover-content],
+[data-slot=dropdown-menu-content],
+[data-slot=dropdown-menu-sub-content] {
+  pointer-events: auto !important;
+}
+
+/* Themed scrollbars everywhere (custom WebKit scrollbars; Radix ScrollArea draws its own): thin rounded thumb, no arrow
+   buttons, no track. The neutral grey reads on the dark chrome and on both page preview themes. Defining
+   ::-webkit-scrollbar here is also what lets the editor area hide its horizontal bar. */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+::-webkit-scrollbar-button {
+  display: none;
+}
+::-webkit-scrollbar-thumb {
+  background: rgb(128 128 140 / 45%) content-box;
+  border: 3px solid transparent;
+  border-radius: 999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background-color: rgb(128 128 140 / 70%);
+}
+::-webkit-scrollbar-thumb:active {
+  background-color: rgb(128 128 140 / 85%);
+}
+/* The editor area pans (middle-drag), so it has no horizontal bar; unlayered like the rules above so it wins over them. */
+#editor-area::-webkit-scrollbar:horizontal {
+  height: 0;
+}
