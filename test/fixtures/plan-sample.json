@@ -1,0 +1,72 @@
+{
+  "version": 1,
+  "id": "3f1c2a9e-4b7d-4f1e-9c2a-7d5e1f0b8a21",
+  "threadUrl": "https://daf.staffs.ac.uk/topic/88136-level-design-dev-thread/",
+  "title": "Level design dev thread",
+  "seq": 6,
+  "calendar": { "workdays": [1, 2, 3, 4, 5], "holidays": ["2026-12-25"], "weekOne": null },
+  "columns": [
+    { "id": "todo", "name": "To do", "color": "#e5e5e5", "tagId": "todo", "wip": null },
+    { "id": "progress", "name": "In progress", "color": "#3d99f5", "tagId": "progress", "wip": null },
+    { "id": "r7k2m9q", "name": "Review", "color": "#e09952", "tagId": null, "wip": null },
+    { "id": "done", "name": "Done", "color": "#62d926", "tagId": "done", "wip": null }
+  ],
+  "doneColumn": "done",
+  "units": [{ "id": "p4t8x2q", "name": "pt", "daysPer": 0.5 }],
+  "estimateUnit": "d",
+  "autoSchedule": false,
+  "labels": [{ "id": "a1b2c3d", "name": "Art", "color": "#e09952" }],
+  "views": [{ "id": "v1x9k2m", "name": "This sprint", "view": "kanban", "options": { "labels": ["a1b2c3d"], "hideDone": true } }],
+  "order": [
+    "aaaaaaaa-0000-4000-8000-000000000001",
+    "aaaaaaaa-0000-4000-8000-000000000002",
+    "aaaaaaaa-0000-4000-8000-000000000003",
+    "aaaaaaaa-0000-4000-8000-000000000004",
+    "aaaaaaaa-0000-4000-8000-000000000005",
+    "aaaaaaaa-0000-4000-8000-000000000006"
+  ],
+  "tickets": [
+    {
+      "id": "aaaaaaaa-0000-4000-8000-000000000001", "num": 1, "title": "Design", "description": "", "status": "done", "priority": 2,
+      "labels": ["a1b2c3d"], "estimate": 3, "unit": "d", "start": "2026-10-05", "end": "2026-10-07", "milestone": false, "progress": 100,
+      "parent": null, "deps": [],
+      "checklist": [{ "id": "k1q8z3v", "text": "Greybox", "done": true }, { "id": "m2w7r4t", "text": "Lighting notes", "done": false }],
+      "draftId": null, "urls": [{ "id": "u3n8c5w", "url": "https://daf.staffs.ac.uk/topic/88136-x/#findComment-123", "title": "Feedback post" }],
+      "baseline": null, "completedAt": 1759600000000, "created": 1759600000000, "updated": 1759600000000
+    },
+    {
+      "id": "aaaaaaaa-0000-4000-8000-000000000002", "num": 2, "title": "Blockout", "description": "", "status": "progress", "priority": 0,
+      "labels": [], "estimate": 4, "unit": "p4t8x2q", "start": "2026-10-08", "end": "2026-10-09", "milestone": false, "progress": 40,
+      "parent": null, "deps": [{ "on": "aaaaaaaa-0000-4000-8000-000000000001", "type": "FS", "lag": 0 }],
+      "checklist": [], "draftId": null, "urls": [], "baseline": null, "completedAt": null, "created": 1759600000000, "updated": 1759600000000
+    },
+    {
+      "id": "aaaaaaaa-0000-4000-8000-000000000003", "num": 3, "title": "Art pass", "description": "", "status": "progress", "priority": 3,
+      "labels": ["a1b2c3d"], "estimate": 4, "unit": "d", "start": "2026-10-08", "end": "2026-10-13", "milestone": false, "progress": 20,
+      "parent": null, "deps": [{ "on": "aaaaaaaa-0000-4000-8000-000000000001", "type": "FS", "lag": 0 }],
+      "checklist": [], "draftId": null, "urls": [], "baseline": null, "completedAt": null, "created": 1759600000000, "updated": 1759600000000
+    },
+    {
+      "id": "aaaaaaaa-0000-4000-8000-000000000004", "num": 4, "title": "Playtest", "description": "", "status": "todo", "priority": 0,
+      "labels": [], "estimate": null, "unit": "d", "start": "2026-10-14", "end": "2026-10-15", "milestone": false, "progress": 0,
+      "parent": null,
+      "deps": [{ "on": "aaaaaaaa-0000-4000-8000-000000000002", "type": "FS", "lag": 0 }, { "on": "aaaaaaaa-0000-4000-8000-000000000003", "type": "FS", "lag": 0 }],
+      "checklist": [], "draftId": null, "urls": [], "baseline": null, "completedAt": null, "created": 1759600000000, "updated": 1759600000000
+    },
+    {
+      "id": "aaaaaaaa-0000-4000-8000-000000000005", "num": 5, "title": "Submission", "description": "", "status": "todo", "priority": 1,
+      "labels": [], "estimate": null, "unit": "d", "start": "2026-10-16", "end": "2026-10-16", "milestone": true, "progress": 0,
+      "parent": null, "deps": [{ "on": "aaaaaaaa-0000-4000-8000-000000000004", "type": "FS", "lag": 0 }],
+      "checklist": [], "draftId": null, "urls": [], "baseline": null, "completedAt": null, "created": 1759600000000, "updated": 1759600000000
+    },
+    {
+      "id": "aaaaaaaa-0000-4000-8000-000000000006", "num": 6, "title": "Write-up", "description": "", "status": "todo", "priority": 4,
+      "labels": [], "estimate": 1, "unit": "d", "start": "2026-10-09", "end": "2026-10-09", "milestone": false, "progress": 0,
+      "parent": null, "deps": [{ "on": "aaaaaaaa-0000-4000-8000-000000000003", "type": "SS", "lag": 1 }],
+      "checklist": [], "draftId": null, "urls": [], "baseline": null, "completedAt": null, "created": 1759600000000, "updated": 1759600000000
+    }
+  ],
+  "baselineAt": null,
+  "created": 1759600000000,
+  "updated": 1759600000000
+}

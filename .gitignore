@@ -1,0 +1,9 @@
+node_modules/
+dist/
+release/
+.smoke-data/
+.vscode/
+*.log
+smoke-*
+docs/plans/eval-runs/
+test/assistant-eval/fixture/
