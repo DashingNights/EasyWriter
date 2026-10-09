@@ -288,9 +288,10 @@ function GoogleSignInBar({ tab, floating }) {
 
 /** Where the tabs' pages show (SPEC §7j): a frame per tab, each holding the tab's <webview>, never moved in the DOM (a moved
  * webview reloads its page). The layer is a stacking context over the main column: under the chrome on the browser page (z 11,
- * the active tab's frame covering the page's slot), over all of it elsewhere (z 44, below menus and dialogs), where every tab with
- * an open pane (settings.browserPanes) is a floating pane, stacked in that list's order. Other frames are hidden and inert, their
- * pages still running. */
+ * the active tab's frame covering the page's slot), over the page elsewhere (z 20: over the workspace pages, under every
+ * floating island, the tab strip, the assistant's panel, menus and dialogs), where every tab with an open pane
+ * (settings.browserPanes) is a floating pane, stacked in that list's order. Other frames are hidden and inert, their pages
+ * still running. */
 export function WebLayer() {
   const page = useStore((s) => s.view.type === 'browser');
   const { tabs, active } = useStore((s) => s.browser);
@@ -298,7 +299,7 @@ export function WebLayer() {
   useStore((s) => s.settings?.browserPane);
   const panes = openPanes();
   return (
-    <div className="pointer-events-none absolute inset-0" style={{ zIndex: page ? 11 : 44 }}>
+    <div className="pointer-events-none absolute inset-0" style={{ zIndex: page ? 11 : 20 }}>
       {tabs.map((t) => {
         const i = panes.findIndex((p) => p.tab === t.id);
         const mode = page ? (t.id === active ? 'page' : 'hidden') : i >= 0 ? 'pane' : 'hidden';
@@ -310,8 +311,8 @@ export function WebLayer() {
 
 /** One tab's frame. `mode` 'page' (the browser page's slot), 'pane' (floating at `place`, stacked at `z`) or 'hidden'. The pane
  * is the page under a notch on its top edge: Back, Forward, Reload and the compact address bar at the notch's left, the grip in
- * the middle (the notch and the pane's border move it), the zoom, Open in default browser, the resize mode toggle and the yellow
- * minimize button (closes the pane; the tab stays in the strip) at its right. Resizable from its corners like the assistant's
+ * the middle (the notch and the pane's border move it), the zoom, Open in default browser, the resize mode toggle, the yellow
+ * minimize button (closes the pane; the tab stays in the strip) and the red close button (closes the tab) at its right. Resizable from its corners like the assistant's
  * panel, its place kept in settings.browserPanes; without the focus it is drawn at settings.browserIdleOpacity (no blur; the
  * notch at NOTCH_FLOOR or more while settings.browserNotchFloor) and click-through except for its notch. */
 function TabFrame({ tab, mode, place, z }) {
@@ -326,6 +327,8 @@ function TabFrame({ tab, mode, place, z }) {
   const [resizing, setResizing] = useState(false); // resize mode: the outline and handles, the page covered
   const ref = useRef(null);
   const drag = useRef(null);
+  const notchPress = useRef(false); // the last press was on the notch's grip: a double-click there minimizes the pane
+  const held = useRef(false); // a press on the pane's chrome is down, so the page keeps the focus (the focus effect)
   const last = useRef({ inset: 0 }); // the box kept while hidden, so the page keeps its size
   const focusPage = () => views.get(tab.id)?.focus();
   useEffect(() => { // whether the focus is in this pane (its page included): a press elsewhere takes it out, and after any
@@ -334,12 +337,22 @@ function TabFrame({ tab, mode, place, z }) {
     // While the strip's tabs are held the pane keeps its look: the tab's click decides (openPane focuses, closePane minimizes),
     // and the page's lost focus would make it see-through until then.
     let strip = false;
-    const check = () => requestAnimationFrame(() => !strip && setFocused(!!ref.current?.contains(document.activeElement)));
+    // While a press on the pane's chrome is held the page keeps the focus. With the page already focused, focusPage on the
+    // press does nothing, and the window's own focus for that press can land just after it, leaving the focus on the body.
+    const check = () => requestAnimationFrame(() => {
+      if (strip) return;
+      const inside = !!ref.current?.contains(document.activeElement);
+      if (!inside && held.current) focusPage();
+      else setFocused(inside);
+    });
     const press = (e) => {
       strip = !!e.target.closest?.('[data-browser-tabs]');
       if (!strip && !ref.current.contains(e.target)) setFocused(false);
     };
-    const release = () => { strip = false; };
+    const release = () => {
+      strip = false;
+      held.current = false;
+    };
     check();
     const on = [['pointerdown', press, true], ['pointerup', release, true], ['focusin', check, true], ['focusout', check, true], ['blur', check], ['focus', check]];
     for (const [type, fn, capture] of on) addEventListener(type, fn, capture);
@@ -413,9 +426,13 @@ function TabFrame({ tab, mode, place, z }) {
   // Corners and resize mode's handles resize; the notch and the pane's border (not their buttons or address bar) move it.
   const onPointerDownCapture = (e) => {
     if (!r || e.button) return;
-    if (!resizing && !e.target.closest('input, [data-resize-toggle]')) focusPage(); // a press on the chrome focuses the page
+    if (!resizing && !e.target.closest('input, [data-resize-toggle]')) { // a press on the chrome focuses the page
+      focusPage();
+      held.current = true;
+    }
     const corner = e.target.closest('[data-handle]')?.dataset.handle ?? cornerAt(e);
     const grip = e.target === ref.current || e.target.hasAttribute('data-card') || (e.target.closest('[data-grip]') && !e.target.closest('button, input'));
+    notchPress.current = grip && !!e.target.closest('[data-notch]');
     if (!corner && !grip) return;
     e.preventDefault();
     ref.current.setPointerCapture(e.pointerId);
@@ -441,6 +458,7 @@ function TabFrame({ tab, mode, place, z }) {
         resizing ? 'outline-2 outline-offset-1 outline-[#3d99f5]' : 'outline-none', shown && !idleNow ? 'pointer-events-auto' : 'pointer-events-none',
         !shown && 'invisible')}
       onPointerDownCapture={onPointerDownCapture} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onLostPointerCapture={onPointerUp}
+      onDoubleClick={() => floating && notchPress.current && closePane(tab.id)}
       onKeyDown={(e) => browserKey(e, tab.id) && e.preventDefault()}>
       {/* The card: the pane's box and its page. It comes first, so the notch paints over its top border. */}
       <div data-card style={{ opacity: idleNow && idle < notchIdle ? idle / notchIdle : undefined }}
@@ -465,6 +483,9 @@ function TabFrame({ tab, mode, place, z }) {
           className="pointer-events-auto absolute bottom-[calc(100%-2px)] left-1/2 flex -translate-x-1/2 cursor-move items-center gap-0.5 rounded-t-lg border border-b-0 bg-card px-1 select-none">
           <span aria-hidden style={flare('left')} />
           <span aria-hidden style={flare('right')} />
+          {/* The seam under the notch, down to the page's border: part of the notch, so it takes a press while the pane is idle
+              (the card is click-through then) */}
+          <span aria-hidden className="absolute inset-x-0 top-full h-[calc(0.375rem-1px)]" />
           <NavButtons tab={tab} />
           <AddressBar tab={tab} compact className="w-[clamp(5rem,30%,14rem)] shrink" />
           <span className="flex min-w-6 flex-1 justify-center"><GripHorizontal className="size-4 text-muted-foreground" /></span>
@@ -481,8 +502,14 @@ function TabFrame({ tab, mode, place, z }) {
           </Tip>
           <Tip title="Minimize (the tab stays in the strip)">
             <button type="button" aria-label="Minimize pane" onMouseDown={keepFocus} onClick={() => closePane(tab.id)}
-              className="mx-1 grid size-3.5 shrink-0 place-items-center rounded-full bg-[#febc2e] text-[#8a5300] ring-1 ring-black/15 hover:brightness-95">
+              className="ml-1 grid size-3.5 shrink-0 place-items-center rounded-full bg-[#febc2e] text-[#8a5300] ring-1 ring-black/15 hover:brightness-95">
               <Minus className="size-2.5" strokeWidth={3} />
+            </button>
+          </Tip>
+          <Tip title="Close tab">
+            <button type="button" aria-label="Close tab" onMouseDown={keepFocus} onClick={() => closeTab(tab.id)}
+              className="mx-1 grid size-3.5 shrink-0 place-items-center rounded-full bg-[#ff5f57] text-[#7a0b06] ring-1 ring-black/15 hover:brightness-95">
+              <X className="size-2.5" strokeWidth={3} />
             </button>
           </Tip>
         </div>
