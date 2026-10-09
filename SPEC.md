@@ -2005,7 +2005,7 @@ footer's **Browser** tab (Globe, hint "Ctrl+Alt+B") or Ctrl+Alt+B from anywhere 
 - Web layer (`WebLayer`, App.jsx after the browser page): a frame per tab (`TabFrame`, `data-tab-frame`), each holding the
   tab's webview, never moved in the DOM (a moved webview reloads its page), so tabs keep running whatever is shown. The layer is
   a stacking context over the main column: z 11 on the browser page (under its chrome), where the active tab's frame covers the
-  page's slot (`[data-web-slot]`, below its header); z 44 on any other page, where each tab with an open pane is a floating pane;
+  page's slot (`[data-web-slot]`, below its header); z 20 on any other page, where each tab with an open pane is a floating pane;
   every other frame is hidden and inert.
 - Tabs: `settings.browser = {tabs: [{id, url, title}], active}`, mirrored from `state.browser` 300 ms after a change; a new tab
   opens Google (`HOME`). The browser page shows the active tab. The browser page stays mounted behind the other pages (hidden
@@ -2038,18 +2038,21 @@ footer's **Browser** tab (Globe, hint "Ctrl+Alt+B") or Ctrl+Alt+B from anywhere 
   centred, its top corners rounded, its feet flared into the pane's top edge by 10 px inverse curves: radial-gradient fillets,
   the card outside a circle and the border ring along it), holding the pane's controls: at its left Back / Forward / Reload and
   the compact address bar (`clamp(5rem, 30 %, 14rem)` wide: the domain until clicked, then the whole URL in the same width, the
-  URL as its tooltip), in the middle the grip (with the notch's other empty parts, a move handle), at its right the zoom (while it
-  is not 75 %), Open in default browser, the resize toggle (Scaling; Check while on, in #3d99f5) and Minimize, a 14 px yellow
-  circle (#febc2e) with a minus, which closes the pane (the tab stays in the strip). No fullscreen button, no header row. The pane
+  URL as its tooltip), in the middle the grip (with the notch's other empty parts, a move handle; a double-click there minimizes the pane like
+  Minimize), at its right the zoom (while it
+  is not 75 %), Open in default browser, the resize toggle (Scaling; Check while on, in #3d99f5), Minimize, a 14 px yellow
+  circle (#febc2e) with a minus, which closes the pane (the tab stays in the strip), and Close tab, a 14 px red circle (#ff5f57)
+  with an X, which closes the tab (`closeTab`). No fullscreen button, no header row. The pane
   is placed in the viewport less the notch's height, so the notch stays in view. Resize mode draws a canvas item's selection
   (whiteboard.js): a 2 px #3d99f5 outline (1 px offset) and eight handles (#3d99f5 squares, 2 px white border; 12 px corners,
   10 px edge midpoints) that resize from that corner or edge (`dragPanel` takes edges 'n' | 'e' | 's' | 'w' too); the page is
   covered by a blue tint with the hint "Drag the blue squares to resize. Press Enter or Esc when done." and takes no input; the
   pane holds the focus and stays opaque. Enter, Escape (stopped there, so Canvas Mode stays), the toggle or a press outside the
   pane end it, the page getting the focus back. The 10 px corner zones and the notch drag still work outside resize mode.
-- Panes stack: the browser panes (their layer), the assistant's panel (§7i) and the background window's pane are z-44, over all app chrome
-  (toolbar, rail, ribbons, notices, z-40 and below) and under the agent prompt (z-45), menus, popovers, tooltips and dialogs
-  (z-50).
+- Panes stack: the browser panes (their layer, z 20) are over the pages (z 10 / 11) and under every floating island and
+  bar (the tab strip z-25; the toolbar island, the rail, the sidebar button, the push-to-talk island, the chat button, the
+  ribbons and canvas bars, notices, z-30 to z-40). The assistant's panel (§7i) and the background window's pane are z-44, over
+  all of that, and under the agent prompt (z-45), menus, popovers, tooltips and dialogs (z-50).
 - Chrome (browser page): header row 1 the sidebar button, the tab strip and **Back to editor**; row 2 the nav bar (`NavBar`:
   `NavButtons`, `AddressBar`, `PageButtons`, which the pane's notch shares): Back / Forward / Reload, the address bar (`data-browser-address`: Enter loads a URL, a bare host gets `https://`,
   anything else is a Google search; Escape restores the URL) and **Open in default browser** (window.open, main's
