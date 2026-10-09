@@ -21,6 +21,7 @@ import { backgroundClick } from '../../viewport.js';
 import { Tip } from '../Tip.jsx';
 import { keepFocus } from '../Toolbar.jsx';
 import { openDraftFromPlan, PRIORITIES } from './Card.jsx';
+import { dragRows, shiftRows } from './drag.js';
 import { GanttDeps, GanttGrid, GanttRows, GanttTicks } from './ChartView.jsx';
 
 // The Gantt tab (Gantt plan §6.5, §6.7): a resizable task list beside the chart drawn from ganttLayout (the drawing is the
@@ -158,6 +159,7 @@ export function Gantt({ ctx, options }) {
   const [hover, setHover] = useState(null); // hitTest result under the pointer
   const [dep, setDep] = useState(null); // the selected dependency {from, to}
   const [menu, setMenu] = useState(null); // {x, y, id, ids}
+  const [rowDrag, setRowDrag] = useState(null); // a task-list row drag (drag.js dragRows)
   const pane = useRef(null);
   const body = useRef(null);
   const busy = useRef(false); // a gesture is running
@@ -519,7 +521,9 @@ export function Gantt({ ctx, options }) {
     else if ((e.key === 'Delete' || e.key === 'Backspace') && dep) go(() => { dispatch('plan.deps.remove', { planId, ...dep }); setDep(null); });
     else if ((e.key === 'Delete' || e.key === 'Backspace') && sel.length) go(() => deleteTickets(planId, sel));
     else if (e.key === 'Enter' && focus) go(() => editTicket(planId, focus));
-    else if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+    else if ((e.key === 'ArrowUp' || e.key === 'ArrowDown') && e.shiftKey) {
+      go(() => sel.length && sel.every((id) => ticketOf(id).parent === ticketOf(sel[0]).parent) && shiftRows(plan, sel, e.key === 'ArrowUp' ? -1 : 1));
+    } else if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
       go(() => {
         const i = rowIds.indexOf(focus);
         const id = rowIds[i < 0 ? 0 : Math.max(0, Math.min(rowIds.length - 1, i + (e.key === 'ArrowUp' ? -1 : 1)))];
@@ -582,7 +586,7 @@ export function Gantt({ ctx, options }) {
           </Tip>
         )}
         <span className="min-w-0 flex-1 truncate text-right text-muted-foreground">
-          Click or drag in an unscheduled row to schedule it; drag a bar to move it (Shift: with its successors), its ends to resize, a dot beside it to link; Alt-drag a link: lag
+          Drag a task row to reorder it (Alt: onto a parent); click or drag in an unscheduled row to schedule it; drag a bar to move it (Shift: with its successors), its ends to resize, a dot beside it to link; Alt-drag a link: lag
         </span>
       </div>
       <div ref={pane} className="relative min-h-0 flex-1 overflow-auto border-t" onScroll={onScroll}
@@ -609,11 +613,19 @@ export function Gantt({ ctx, options }) {
                   const t = ticketOf(r.id);
                   const n = sched.byId[r.id];
                   const [s, e] = r.summary ? [fromWork(n.s, cal), fromWork(n.e - 1, cal)] : [toDay(t.start), toDay(t.end)];
+                  const line = rowDrag?.target?.id === r.id && !rowDrag.target.parent && (rowDrag.target.before ? 'before:top-0' : 'before:bottom-0');
                   return (
                     <div key={r.id} data-gantt-row={r.id} aria-selected={selection.includes(r.id)} style={ROW}
-                      className={cn('flex cursor-pointer items-center tabular-nums hover:bg-accent/40', selection.includes(r.id) && 'bg-accent/70 hover:bg-accent/70',
-                        focusId === r.id && 'outline outline-1 -outline-offset-1 outline-ring', hasKids(r.id) && 'font-medium')}
-                      onPointerDown={(ev) => ev.button === 0 && !dismissOnly(ev) && select(ev, r.id)} onDoubleClick={() => editTicket(planId, r.id)} onContextMenu={(ev) => openMenu(ev, r.id)}>
+                      className={cn('relative flex cursor-pointer items-center tabular-nums hover:bg-accent/40', selection.includes(r.id) && 'bg-accent/70 hover:bg-accent/70',
+                        focusId === r.id && 'outline outline-1 -outline-offset-1 outline-ring', hasKids(r.id) && 'font-medium', rowDrag?.ids.includes(r.id) && 'opacity-40',
+                        rowDrag?.target?.parent && rowDrag.target.id === r.id && 'bg-primary/20 outline outline-1 outline-primary',
+                        line && `before:absolute before:inset-x-0 before:h-0.5 before:bg-primary ${line}`)}
+                      onPointerDown={(ev) => { // a drag reorders among siblings (Alt: onto a new parent), a click selects
+                        if (ev.button !== 0 || dismissOnly(ev)) return;
+                        if (!ev.ctrlKey && !ev.metaKey && !ev.shiftKey) dragRows(ev, plan, r.id, { ids: rowIds, scroller: pane.current, attr: 'data-gantt-row', onMove: setRowDrag });
+                        select(ev, r.id);
+                      }}
+                      onDoubleClick={() => editTicket(planId, r.id)} onContextMenu={(ev) => openMenu(ev, r.id)}>
                       <span className="flex min-w-0 flex-1 items-center gap-1 px-2" style={{ paddingLeft: 8 + r.depth * 12 }}>
                         {t.milestone && <Milestone className="size-3.5 shrink-0 text-muted-foreground" />}
                         <span className="truncate text-sm">{t.title || 'Untitled'}</span>

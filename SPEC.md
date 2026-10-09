@@ -1907,7 +1907,9 @@ A2 builds the Board, A3 the Backlog and the plan chart (§6e), A4 the Gantt.
   and left without dates in the dialog starts today, or the next working day (Add subtask: on the parent's start, today when
   the parent has none), and lasts its estimate in working days (rounded up, at least 1; a milestone 0); tickets created on the
   Board or the Backlog stay unscheduled.
-  Keys: ↑/↓ focus a row, ←/→ move the focused bar a working day, Shift+←/→ its end, Ctrl+←/→ its start, Tab / Shift+Tab cycle
+  Dragging a task-list row reorders it among its siblings and Alt-dropping it on a row makes that row the parent, as a Backlog
+  handle does (drag.js `dragRows`).
+  Keys: ↑/↓ focus a row, Shift+↑/↓ reorder among siblings, ←/→ move the focused bar a working day, Shift+←/→ its end, Ctrl+←/→ its start, Tab / Shift+Tab cycle
   the focused bar's dependencies, Del / Backspace removes the selected dependency, else deletes the selected tickets (confirm),
   Enter opens, T today, + / − zoom, Ctrl+A selects every row, Escape clears the selection and the dependency.
 - Not built yet: swimlanes, collapsed Board columns, the L / P menu keys and the other per-viewer `localStorage` settings of

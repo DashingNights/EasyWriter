@@ -9,7 +9,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { fmt, toDay } from '../../../plan/dates.mjs';
 import { blockers, doneColumnOf, estimateDays, filterTickets, statusOf, summary, unitOf } from '../../../plan/plan-model.mjs';
 import { BACKLOG_COLS, backlogRows } from '../../../plan-chart.js';
-import { edgeSpeed } from '../../../whiteboard.js';
 import { withKey } from '../../keybinds.js';
 import { refocusEditor } from '../../actions.js';
 import { deleteTickets, dispatch, editTicket, moveCards } from '../../plans.js';
@@ -19,6 +18,7 @@ import { DateField } from '../DateField.jsx';
 import { Tip } from '../Tip.jsx';
 import { keepFocus } from '../Toolbar.jsx';
 import { openDraftFromPlan, PRIORITIES } from './Card.jsx';
+import { dragRows, shiftRows } from './drag.js';
 
 // The Backlog tab (Gantt plan §6.4): the plan's tickets as a tree table, filtered like the Board. Hidden columns and collapsed
 // parents are per-viewer conveniences in localStorage (`daf-writer.plan.<planId>`, §3.4).
@@ -149,70 +149,11 @@ export function Backlog({ ctx, options }) {
     }
   };
 
-  // Reorders the tickets `moving` (siblings) one place up (-1) or down (1) among their siblings.
-  const shift = (moving, by) => {
-    const t = ticketOf(moving[0]);
-    const sibs = plan.order.filter((id) => ticketOf(id).parent === t.parent);
-    const at = by < 0 ? sibs.indexOf(moving[0]) - 1 : sibs.indexOf(moving.at(-1)) + 1;
-    const other = sibs[at];
-    if (other && !moving.includes(other)) dispatch('plan.tickets.reorder', { planId, ticketIds: moving, ...(by < 0 ? { beforeId: other } : { afterId: other }) });
-  };
-
   // Drag of a row's handle: siblings reorder (the insertion line), with Alt the row under the pointer becomes the parent.
   const startDrag = (e, t) => {
     if (e.button !== 0 || sort) return;
     e.preventDefault();
-    const cur = getState().planUi.selection;
-    const moving = cur.includes(t.id) && cur.every((id) => ticketOf(id)?.parent === t.parent) ? ids.filter((id) => cur.includes(id)) : [t.id];
-    const below = new Set(moving);
-    for (let grew = true; grew;) {
-      grew = false;
-      for (const x of plan.tickets) if (!below.has(x.id) && below.has(x.parent)) grew = below.add(x.id);
-    }
-    const y0 = e.clientY;
-    let y = y0;
-    let alt = false;
-    let moved = false;
-    let target = null;
-    let frame = 0;
-    const locate = () => {
-      const els = [...body.current.querySelectorAll('[data-row]')].filter((el) => !moving.includes(el.dataset.row));
-      const hit = els.find((el) => y < el.getBoundingClientRect().bottom) ?? els.at(-1);
-      const id = hit?.dataset.row;
-      const r = hit?.getBoundingClientRect();
-      if (!id) target = null;
-      else if (alt) target = below.has(id) ? null : { id, parent: true };
-      else target = ticketOf(id).parent === t.parent ? { id, before: y < (r.top + r.bottom) / 2 } : null;
-      setDrag({ ids: moving, target });
-    };
-    const tick = () => {
-      const r = body.current.getBoundingClientRect();
-      const by = edgeSpeed(r.bottom - y) - edgeSpeed(y - r.top);
-      if (by) {
-        body.current.scrollTop += by;
-        locate();
-      }
-      frame = requestAnimationFrame(tick);
-    };
-    const move = (ev) => {
-      y = ev.clientY;
-      alt = ev.altKey;
-      if (!moved && Math.abs(y - y0) <= 4) return;
-      if (!moved) frame = requestAnimationFrame(tick);
-      moved = true;
-      locate();
-    };
-    const up = () => {
-      window.removeEventListener('pointermove', move);
-      window.removeEventListener('pointerup', up);
-      cancelAnimationFrame(frame);
-      setDrag(null);
-      if (!moved || !target) return;
-      if (target.parent) dispatch('plan.tickets.update', { planId, ticketIds: moving, patch: { parent: target.id } });
-      else dispatch('plan.tickets.reorder', { planId, ticketIds: moving, ...(target.before ? { beforeId: target.id } : { afterId: target.id }) });
-    };
-    window.addEventListener('pointermove', move);
-    window.addEventListener('pointerup', up);
+    dragRows(e, plan, t.id, { ids, scroller: body.current, attr: 'data-row', onMove: setDrag });
   };
 
   // Backlog keys (§6.7) on #workspace-root; typing in an input, a menu or a dialog is not here.
@@ -233,7 +174,7 @@ export function Backlog({ ctx, options }) {
     else if ((e.key === 'ArrowUp' || e.key === 'ArrowDown') && e.shiftKey) {
       e.preventDefault();
       const moving = sel();
-      if (!sort && moving.length && moving.every((id) => ticketOf(id).parent === ticketOf(moving[0]).parent)) shift(moving, e.key === 'ArrowUp' ? -1 : 1);
+      if (!sort && moving.length && moving.every((id) => ticketOf(id).parent === ticketOf(moving[0]).parent)) shiftRows(plan, moving, e.key === 'ArrowUp' ? -1 : 1);
     } else if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
       e.preventDefault();
       const next = ids[at < 0 ? 0 : Math.max(0, Math.min(ids.length - 1, at + (e.key === 'ArrowUp' ? -1 : 1)))];
