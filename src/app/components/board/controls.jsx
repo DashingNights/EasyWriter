@@ -7,7 +7,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { DropdownMenuItem, DropdownMenuSeparator, DropdownMenuShortcut } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { Toggle } from '@/components/ui/toggle';
@@ -15,7 +15,7 @@ import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { HEADS } from '../../../flow/model.mjs';
 import { headPath, headTrim } from '../../../flow/route.mjs';
 import { kindOf, stylePresets } from '../../../flow/shapes.mjs';
-import { activeBoard, colorPicker, FILLS, NOTE_COLORS, PEN_STYLES, PEN_WIDTHS, resolveBg, shapeGeometry, TEXT_SIZES } from '../../../whiteboard.js';
+import { activeBoard, fillable, FILLS, NOTE_COLORS, PEN_STYLES, PEN_WIDTHS, resolveBg, shapeGeometry, TEXT_SIZES } from '../../../whiteboard.js';
 import {
   armPrefab, createPrefab, customOrder, dropShape, duplicatePrefab, prefabList, prefabTile, removePrefab, renamePrefab, resetShapeSection,
   shapeLayout, toggleShapeFavourite, usePrefabs,
@@ -32,7 +32,7 @@ import { PointerMenu } from './BoardMenu.jsx';
 export const CHROME = { 'data-board-chrome': '' };
 
 /** onMouseDown of chrome bars: buttons and backgrounds never take focus, so the board (or the edited text with its caret)
- * keeps it. Colour inputs do take focus: it keeps a text edit open while their native picker deactivates the window. */
+ * keeps it. Text fields (sizes, the angle) do take focus. */
 export const keepFocus = (e) => {
   if (e.target.tagName !== 'INPUT') e.preventDefault();
 };
@@ -56,47 +56,163 @@ export const refocus = (board) => (e) => {
   if (!a || a === document.body || a.closest('[data-board-chrome]')) board?.focus();
 };
 
-/** Native colour input styled as a swatch. `live`: onChange on every pick while the picker is open (tool settings);
- * otherwise once, when the picker closes (item colours). Focus then returns to the board. While its picker is open a click
- * on a board only closes it (colorPicker, §6c). */
-export function ColorSwatch({ board, title, value, live = false, onChange }) {
-  const ref = useRef(null);
-  const latest = useRef(null);
-  latest.current = { board, onChange };
-  useEffect(() => {
-    ref.current.value = value;
-  }, [value]);
-  useEffect(() => {
-    const el = ref.current;
-    const pick = () => latest.current.onChange(el.value);
-    const close = () => {
-      if (!live) pick();
-      latest.current.board?.focus();
-    };
-    const blur = () => document.hasFocus() && colorPicker.closed(); // not the window losing focus to the picker
-    if (live) el.addEventListener('input', pick);
-    el.addEventListener('click', colorPicker.open);
-    el.addEventListener('change', colorPicker.closed);
-    el.addEventListener('change', close);
-    el.addEventListener('blur', blur);
-    return () => {
-      el.removeEventListener('input', pick);
-      el.removeEventListener('click', colorPicker.open);
-      el.removeEventListener('change', colorPicker.closed);
-      el.removeEventListener('change', close);
-      el.removeEventListener('blur', blur);
-    };
-  }, [live]);
+// RGBA colours: #rgb, #rrggbb or #rrggbbaa in; #rrggbb out at full opacity, else #rrggbbaa. HSVA while picking (a grey keeps
+// its hue). h 0–360, s v a 0–1.
+const unit = (n) => Math.min(1, Math.max(0, n));
+const toHsva = (hex) => {
+  let x = /^#([0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i.test(hex ?? '') ? hex.slice(1) : '000000';
+  if (x.length === 3) x = [...x].map((d) => d + d).join('');
+  const [r, g, b, a = 255] = x.match(/../g).map((p) => parseInt(p, 16));
+  const [max, min] = [Math.max(r, g, b), Math.min(r, g, b)];
+  const d = max - min;
+  const h = !d ? 0 : max === r ? ((g - b) / d + 6) % 6 : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
+  return { h: h * 60, s: max ? d / max : 0, v: max / 255, a: a / 255 };
+};
+const rgbOf = ({ h, s, v }) => [5, 3, 1].map((n) => {
+  const k = (n + h / 60) % 6;
+  return Math.round(255 * (v - v * s * Math.max(0, Math.min(k, 4 - k, 1))));
+});
+const hexOf = (c) => {
+  const a = Math.round(c.a * 255);
+  return `#${[...rgbOf(c), ...(a < 255 ? [a] : [])].map((n) => n.toString(16).padStart(2, '0')).join('')}`;
+};
+const CHECKS = 'repeating-conic-gradient(#c8c8c8 0 25%, #fff 0 50%) 0 0 / 8px 8px'; // shows through a see-through colour
+
+// The last RECENT colours applied with a picker, newest first (every swatch shares them; kept in this browser profile).
+const RECENT = 6;
+const RECENT_KEY = 'daf-writer.recentColors';
+let recentColors = [];
+try {
+  const saved = JSON.parse(localStorage.getItem(RECENT_KEY));
+  if (Array.isArray(saved)) recentColors = saved.filter((x) => /^#([0-9a-f]{6}|[0-9a-f]{8})$/.test(x)).slice(0, RECENT);
+} catch { /* no storage: none yet */ }
+const remember = (hex) => {
+  recentColors = [hex, ...recentColors.filter((x) => x !== hex)].slice(0, RECENT);
+  try {
+    localStorage.setItem(RECENT_KEY, JSON.stringify(recentColors));
+  } catch { /* no storage: this session only */ }
+};
+
+/** A drag area: the pointer (or arrow keys, 1 % a step) picks fractions fx, fy (0–1) of its box; `at` [fx, fy] places its thumb. */
+function Pick({ label, at, onPick, className, style }) {
+  const pick = (e) => {
+    const r = e.currentTarget.getBoundingClientRect();
+    onPick(unit((e.clientX - r.left) / r.width), unit((e.clientY - r.top) / r.height));
+  };
+  const keys = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
   return (
-    <Tip title={title} {...CHROME}>
-      <input
-        ref={ref}
-        type="color"
-        aria-label={title}
-        defaultValue={value}
-        className="size-8 shrink-0 cursor-pointer rounded-md border border-input bg-input/30 p-1 [&::-webkit-color-swatch]:rounded-sm [&::-webkit-color-swatch]:border-0 [&::-webkit-color-swatch-wrapper]:p-0"
-      />
-    </Tip>
+    <div role="slider" aria-label={label} aria-valuenow={Math.round(at[0] * 100)} tabIndex={0}
+      className={cn('relative cursor-crosshair rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring', className)} style={style}
+      onPointerDown={(e) => { e.currentTarget.setPointerCapture(e.pointerId); pick(e); }}
+      onPointerMove={(e) => { if (e.buttons & 1) pick(e); }}
+      onKeyDown={(e) => {
+        const d = keys[e.key];
+        if (!d) return;
+        e.preventDefault();
+        onPick(unit(at[0] + d[0] / 100), unit(at[1] + d[1] / 100));
+      }}>
+      <span className="pointer-events-none absolute size-3 -translate-1/2 rounded-full border-2 border-white shadow-[0_0_0_1px_#0008]"
+        style={{ left: `${at[0] * 100}%`, top: `${at[1] * 100}%` }} />
+    </div>
+  );
+}
+
+/** A text field showing `value` (not while it has the focus: the typed text stays); each edit goes to parse(text), which
+ * applies it when valid. Enter: `done`. */
+function Field({ label, value, parse, done, className }) {
+  const [text, setText] = useState(value);
+  const ref = useRef(null);
+  useEffect(() => {
+    if (document.activeElement !== ref.current) setText(value);
+  }, [value]);
+  return (
+    <Input ref={ref} aria-label={label} value={text} spellCheck={false} className={cn('h-7 px-1.5 text-xs', className)}
+      onBlur={() => setText(value)}
+      onChange={(e) => { setText(e.target.value); parse(e.target.value.trim()); }}
+      onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); done(); } }} />
+  );
+}
+
+/** A colour swatch (§6c) opening an RGBA picker: the 6 recent colours, a saturation / brightness area, hue and opacity sliders,
+ * hex and R G B A fields. A recent colour applies at once and closes the picker.
+ * `live`: onChange on every change (tool settings); otherwise once, when the picker closes (item colours). Escape puts the
+ * colour back as it was. Focus then returns to the board. */
+export function ColorSwatch({ board, title, value, live = false, onChange }) {
+  const [open, setOpen] = useState(false);
+  const [c, setC] = useState(() => toHsva(value));
+  const start = useRef(value);
+  useEffect(() => {
+    if (!open) setC(toHsva(value));
+  }, [value, open]);
+  const hex = hexOf(c);
+  const [r, g, b] = rgbOf(c);
+  const set = (patch) => {
+    const next = { ...c, ...patch };
+    setC(next);
+    if (live) onChange(hexOf(next));
+  };
+  // keep: `final` stays (a changed colour applies, if not live already, and becomes a recent one); else the start comes back.
+  const close = (keep, final = hex) => {
+    setOpen(false);
+    if (!keep) {
+      setC(toHsva(start.current));
+      if (live) onChange(start.current);
+      return;
+    }
+    if (final === hexOf(toHsva(start.current))) return;
+    if (!live) onChange(final);
+    remember(final);
+  };
+  const recent = (x) => {
+    setC(toHsva(x));
+    if (live) onChange(x);
+    close(true, x);
+  };
+  const channel = (k) => (t) => {
+    const n = Number(t);
+    if (t === '' || !Number.isInteger(n) || n < 0 || n > 255) return;
+    const rgb = [r, g, b];
+    rgb[k] = n;
+    set({ ...toHsva(`#${rgb.map((x) => x.toString(16).padStart(2, '0')).join('')}`), a: c.a });
+  };
+  const done = () => close(true);
+  return (
+    <Popover open={open} onOpenChange={(o) => {
+      if (!o) return close(true);
+      start.current = value;
+      setOpen(true);
+    }}>
+      <Tip title={title} {...CHROME}>
+        <PopoverTrigger asChild>
+          <button type="button" aria-label={title} className="size-8 shrink-0 cursor-pointer rounded-md border border-input bg-input/30 p-1">
+            <span className="block size-full rounded-sm" style={{ background: `linear-gradient(${hex}, ${hex}), ${CHECKS}` }} />
+          </button>
+        </PopoverTrigger>
+      </Tip>
+      <PopoverContent {...CHROME} className="flex w-56 flex-col gap-2 p-2" onOpenAutoFocus={(e) => e.preventDefault()}
+        onCloseAutoFocus={refocus(board)} onEscapeKeyDown={(e) => { e.preventDefault(); close(false); }}>
+        <div className="grid grid-cols-6 gap-1">
+          {Array.from({ length: RECENT }, (_, k) => recentColors[k]).map((x, k) => (x ? (
+            <button key={k} type="button" aria-label={`Recent colour ${x}`} title={x} onClick={() => recent(x)}
+              className="h-6 cursor-pointer rounded-sm border border-input" style={{ background: `linear-gradient(${x}, ${x}), ${CHECKS}` }} />
+          ) : <span key={k} className="h-6 rounded-sm border border-dashed border-input" />))}
+        </div>
+        <Pick label="Saturation and brightness" at={[c.s, 1 - c.v]} onPick={(s, y) => set({ s, v: 1 - y })} className="h-32"
+          style={{ background: `linear-gradient(to top, #000, transparent), linear-gradient(to right, #fff, hsl(${c.h} 100% 50%))` }} />
+        <Pick label="Hue" at={[c.h / 360, 0.5]} onPick={(x) => set({ h: x * 360 })} className="h-3"
+          style={{ background: 'linear-gradient(to right, #f00, #ff0, #0f0, #0ff, #00f, #f0f, #f00)' }} />
+        <Pick label="Opacity" at={[c.a, 0.5]} onPick={(a) => set({ a })} className="h-3"
+          style={{ background: `linear-gradient(to right, transparent, rgb(${r} ${g} ${b})), ${CHECKS}` }} />
+        <Field label="Hex" value={hex} done={done}
+          parse={(t) => /^#?([0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i.test(t) && set(toHsva(t.startsWith('#') ? t : `#${t}`))} />
+        <div className="grid grid-cols-4 gap-1 text-center text-[10px] text-muted-foreground">
+          {['R', 'G', 'B'].map((l, k) => <Field key={l} label={l} value={String([r, g, b][k])} parse={channel(k)} done={done} />)}
+          <Field label="A (opacity %)" value={String(Math.round(c.a * 100))} done={done}
+            parse={(t) => /^\d{1,3}$/.test(t) && Number(t) <= 100 && set({ a: Number(t) / 100 })} />
+          {['R', 'G', 'B', 'A %'].map((l) => <span key={l}>{l}</span>)}
+        </div>
+      </PopoverContent>
+    </Popover>
   );
 }
 
@@ -159,6 +275,51 @@ export function OptionSelect({ board, title, value, options, onChange, className
         ))}
       </SelectContent>
     </Select>
+  );
+}
+
+/** A text or label size in px: a field that takes any whole size from 1 to 999 as it is typed, with TEXT_SIZES in a list that
+ * opens when the field or its chevron is clicked. Enter, Escape or a picked size hands the focus back to the board. */
+export function SizeSelect({ board, title, value, onChange, className }) {
+  const [open, setOpen] = useState(false);
+  const [text, setText] = useState(String(value));
+  const field = useRef(null);
+  const anchor = useRef(null);
+  useEffect(() => {
+    if (document.activeElement !== field.current) setText(String(value)); // not while typed in
+  }, [value]);
+  const type = (v) => {
+    setText(v);
+    const n = Number(v);
+    if (v.trim() !== '' && Number.isInteger(n) && n >= 1 && n <= 999) onChange(n);
+  };
+  const done = () => {
+    setOpen(false);
+    board.focus();
+  };
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverAnchor asChild>
+        <div ref={anchor} className={cn('relative', className)}>
+          <Tip title={title} {...CHROME}>
+            <Input ref={field} inputMode="numeric" aria-label={title} value={text} className="h-8 w-full pr-11 pl-2 text-sm"
+              onMouseDown={() => setOpen(true)} onBlur={() => setText(String(value))} onChange={(e) => type(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === 'Escape') { e.preventDefault(); done(); } }} />
+          </Tip>
+          <span className="pointer-events-none absolute inset-y-0 right-7 flex items-center text-sm text-muted-foreground">px</span>
+          <button type="button" tabIndex={-1} aria-label={`${title} list`} onMouseDown={keepFocus} onClick={() => setOpen(!open)}
+            className="absolute inset-y-0 right-0 grid w-7 place-items-center"><ChevronDown className="size-4 opacity-50" /></button>
+        </div>
+      </PopoverAnchor>
+      <PopoverContent {...CHROME} align="start" className="max-h-72 w-auto min-w-24 overflow-y-auto p-1" onMouseDown={keepFocus}
+        onOpenAutoFocus={(e) => e.preventDefault()} onCloseAutoFocus={(e) => e.preventDefault()}
+        onInteractOutside={(e) => { if (anchor.current?.contains(e.target)) e.preventDefault(); }}>
+        {TEXT_SIZES.map((s) => (
+          <button key={s} type="button" onClick={() => { setText(String(s)); onChange(s); done(); }}
+            className={cn('flex w-full rounded-sm px-2 py-1 text-left text-sm hover:bg-accent', s === value && 'bg-accent')}>{s} px</button>
+        ))}
+      </PopoverContent>
+    </Popover>
   );
 }
 
@@ -601,10 +762,12 @@ export function ShapeControls({ board, value, set, live, strokeFirst }) {
       {!strokeFirst && shape}
       <StrokeControls board={board} value={value} set={set} live={live} />
       {strokeFirst && shape}
-      <div className={PAIR}>
-        <FillSelect board={board} value={value} set={set} />
-        <ColorSwatch board={board} title="Fill colour" value={value.fillColor} live={live} onChange={(fillColor) => set({ fillColor })} />
-      </div>
+      {fillable(value.shape) && (
+        <div className={PAIR}>
+          <FillSelect board={board} value={value} set={set} />
+          <ColorSwatch board={board} title="Fill colour" value={value.fillColor} live={live} onChange={(fillColor) => set({ fillColor })} />
+        </div>
+      )}
     </>
   );
 }
@@ -709,8 +872,7 @@ function IconGroup({ value, items, onChange }) {
 export function LabelControls({ board, value, set, align }) {
   return (
     <>
-      <OptionSelect board={board} title="Label size" className="w-22" value={value.size}
-        options={withValue(TEXT_SIZES, value.size).map((s) => [s, `${s} px`])} onChange={(v) => set({ size: Number(v) })} />
+      <SizeSelect board={board} title="Label size" className="w-22" value={value.size} onChange={(size) => set({ size })} />
       <ColorSwatch board={board} title="Label colour" value={value.textColor} onChange={(textColor) => set({ textColor })} />
       <Tip title="Bold" {...CHROME}>
         <Toggle size="sm" aria-label="Bold label" pressed={!!value.bold} onPressedChange={() => set({ bold: !value.bold })}><Bold /></Toggle>

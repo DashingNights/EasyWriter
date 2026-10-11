@@ -4,10 +4,10 @@ import { Plugin, PluginKey, NodeSelection, TextSelection } from '@tiptap/pm/stat
 import { closeHistory } from '@tiptap/pm/history';
 import { toBlob } from 'html-to-image';
 import { toast } from 'sonner';
-import { anchorPoint, kindOf, portNormal, portsOf, rotBox } from './flow/shapes.mjs';
+import { anchorPoint, kindOf, portNormal, portsOf, rotatePoint, rotBox, rotOf, turns } from './flow/shapes.mjs';
 import {
   align as alignBoxes, boundIndex, cleanConnector, cloneItems, containedIn, DASHES, distribute as distributeBoxes, HEADS, hitTarget, JUMPS,
-  LABEL_SLOTS, MAX_POINTS, moveItem, repairEnds, resizeInFrame, ROUTES, sameSize as sameBoxes, unbindFrom, validConnector,
+  flipItem, LABEL_SLOTS, MAX_POINTS, moveItem, repairEnds, resizeInFrame, ROUTES, sameSize as sameBoxes, turnItem, unbindFrom, validConnector,
 } from './flow/model.mjs';
 import { headPath, LABEL_PAD, nearestT, polylineHitsRect, polylinePoint, resolveConnectors } from './flow/route.mjs';
 import { isMermaid } from './flow/mermaid.mjs';
@@ -18,7 +18,7 @@ export const WB_BG = { post: { dark: '#303039', light: '#ffffff' }, transparent:
 
 const FONT = 'system-ui, Helvetica, Arial, sans-serif';
 // Option lists of the board chrome (src/app/components/board).
-export const TEXT_SIZES = [12, 14, 16, 18, 20, 24, 28, 32, 40, 48, 64, 72];
+export const TEXT_SIZES = [2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 24, 28, 32, 40, 48, 64, 72];
 export const NOTE_COLORS = [['', 'No note'], ['#fff59d', 'Yellow note'], ['#c8e6c9', 'Green note'], ['#bbdefb', 'Blue note'], ['#f8bbd0', 'Pink note']];
 export const BG_OPTIONS = [['post', 'Post'], ['transparent', 'Transparent'], ['white', 'White'], ['black', 'Black']];
 const MIN_ITEM = 20;
@@ -26,7 +26,7 @@ const MIN_HEIGHT = 80;
 const HEIGHT_PAD = 20; // a whiteboard is never shorter than its lowest item bottom + this
 const ARTBOARD_PAD = 32; // a canvas artboard reaches this far past content beyond its frame (§6b)
 const CORNERS = ['nw', 'ne', 'sw', 'se'];
-const EDGES = ['n', 'e', 's', 'w']; // a shape's edge handles (§6d)
+const EDGES = ['n', 'e', 's', 'w']; // edge handles (§6d; text: e and w only)
 const GRID = 10;
 const SNAP_PX = 6; // snap threshold in screen px
 const EDGE = 48; // auto-scroll zone in screen px from the scrolling area's edge
@@ -47,10 +47,13 @@ const shapeTool = { shape: 'rect', color: '#e05252', width: 4, opacity: 1, fill:
 const textTool = { size: 20, color: null, bold: false, bg: null };
 const connTool = { route: 'ortho', corner: 8, heads: { start: 'none', end: 'arrow' }, color: null, width: 2, opacity: 1, dash: 'solid', jump: 'none' };
 const toolSettings = { pen, shape: shapeTool, text: textTool, conn: connTool };
+// The last tool that adds items, on any board (§7d: the shape tool's last → Ctrl+Tab shows the shapes first, also back in Select).
+const SPAWNERS = ['text', 'pen', 'shape', 'connector', 'canvas', 'image'];
+let lastTool = null;
 {
   // Saved values are checked like parseBoard checks items, so new items always pass it.
   const size = (v) => Number.isFinite(v) && v > 0;
-  const color = (v) => typeof v === 'string' && /^#[0-9a-f]{6}$/i.test(v);
+  const color = (v) => typeof v === 'string' && /^#([0-9a-f]{6}|[0-9a-f]{8})$/i.test(v); // RGBA: #rrggbbaa below full opacity
   const none = (ok) => (v) => v === null || ok(v);
   const oneOf = (list) => (v) => list.some(([k]) => k === v);
   const among = (list) => (v) => list.includes(v);
@@ -90,7 +93,7 @@ const UNIT_KEYS = ['size', 'width']; // item sizes the chrome shows and sets in 
 const LABEL = { size: 16, textColor: '#ffffff', align: 'center', valign: 'middle' };
 const FLEX = { left: 'flex-start', top: 'flex-start', center: 'center', middle: 'center', right: 'flex-end', bottom: 'flex-end' };
 // A gesture changed an item when one of these differs (compared as JSON: ends, waypoints and labels are objects).
-const CHANGE_KEYS = ['x', 'y', 'w', 'h', 'crop', 'from', 'to', 'points', 'labels', 'rot'];
+const CHANGE_KEYS = ['x', 'y', 'w', 'h', 'crop', 'from', 'to', 'points', 'labels', 'rot', 'mirrorX', 'mirrorY', 'flipX', 'flipY'];
 // Snapping rules, shared by every board and kept across sessions.
 const SNAP_KEY = 'daf-writer.snap';
 const snapRules = { on: true, items: true, board: true, grid: false };
@@ -218,29 +221,28 @@ const LABEL_CHECKS = {
 };
 
 // Drops an invalid crop; a canvas item gets a valid frame and bg and its own items filtered like a board's (never a canvas),
-// and loses `flow` (a library link is a canvas node attr only, §6b). Connectors get their defaults; a shape's rot is
-// normalised to [0, 360) (non-finite: dropped) and bad label fields dropped; a text item's non-finite `h` is dropped.
+// and loses `flow` (a library link is a canvas node attr only, §6b). Connectors get their defaults; every other item's rot is
+// normalised to [0, 360) (non-finite: dropped); a shape's bad label fields are dropped; a text item's non-finite `h` is dropped.
 function cleanItem(item) {
+  if (item.type === 'connector') return cleanConnector(item);
+  const out = cleanFields(item);
+  if (Number.isFinite(out.rot)) out.rot = ((out.rot % 360) + 360) % 360;
+  else delete out.rot;
+  return out;
+}
+function cleanFields(item) {
   if (item.type === 'canvas') {
     const items = Array.isArray(item.items) ? item.items.filter((i) => i?.type !== 'canvas' && validItem(i)).map(cleanItem) : [];
     const { flow, ...rest } = item;
     return { ...rest, frame: parseFrame(item.frame), bg: Object.hasOwn(WB_BG, item.bg) ? item.bg : DEFAULT_ATTRS.bg, items: repairEnds(items) };
   }
-  if (item.type === 'connector') return cleanConnector(item);
-  if (item.type === 'shape') {
-    const out = { ...item };
-    for (const [k, ok] of Object.entries(LABEL_CHECKS)) if (k in out && !ok(out[k])) delete out[k];
-    if (Number.isFinite(out.rot)) out.rot = ((out.rot % 360) + 360) % 360;
-    else delete out.rot;
-    return out;
-  }
-  if (item.type === 'text' && 'h' in item && !Number.isFinite(item.h)) {
-    const { h, ...rest } = item;
-    return rest;
-  }
-  if (item.type !== 'image' || item.crop === undefined || validCrop(item.crop)) return item;
-  const { crop, ...rest } = item;
-  return rest;
+  const out = { ...item };
+  if (item.type === 'shape') for (const [k, ok] of Object.entries(LABEL_CHECKS)) if (k in out && !ok(out[k])) delete out[k];
+  if (item.type === 'text' && 'h' in out && !Number.isFinite(out.h)) delete out.h;
+  if (item.type === 'image' && out.crop !== undefined && !validCrop(out.crop)) delete out.crop;
+  for (const k of ['mirrorX', 'mirrorY']) if (out[k] !== true || item.type === 'text') delete out[k]; // §6d flips
+  if (out.fit !== true || item.type !== 'text') delete out.fit; // a text item's width fitted to its text
+  return out;
 }
 
 export function parseBoard(json) {
@@ -259,6 +261,11 @@ export function parseBoard(json) {
 
 // ---------------------------------------------------------------------------------------------
 // Styles: board chrome lives in one injected stylesheet; item visuals are inline (shared with the rasterizer).
+
+// Over the rotate zones just outside a selected item's corners (§6d): a turning arrow, black on a white halo.
+const ROTATE_ICON = '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke-linecap="round" stroke-linejoin="round">'
+  + '<path d="M19 12a7 7 0 1 1-2.05-4.95M19 4v4h-4" stroke="white" stroke-width="4"/><path d="M19 12a7 7 0 1 1-2.05-4.95M19 4v4h-4" stroke="black" stroke-width="1.6"/></svg>';
+const ROTATE_CURSOR = `url("data:image/svg+xml,${encodeURIComponent(ROTATE_ICON)}") 12 12, alias`;
 
 const CSS = `
 .wb{position:relative;width:100%;box-sizing:border-box;margin:1em 0;outline:1px dashed transparent;outline-offset:3px;user-select:none;-webkit-user-select:none}
@@ -298,7 +305,10 @@ const CSS = `
 .wb-h-n,.wb-h-e,.wb-h-s,.wb-h-w{width:calc(10px*var(--wb-inv,1));height:calc(10px*var(--wb-inv,1));margin:calc(-5px*var(--wb-inv,1))}
 .wb-h-n{top:0;left:50%}.wb-h-s{top:100%;left:50%}.wb-h-e{top:50%;left:100%}.wb-h-w{top:50%;left:0}
 .wb-h-n,.wb-h-s{cursor:ns-resize}.wb-h-e,.wb-h-w{cursor:ew-resize}
-.wb-rot{position:absolute;left:calc(100% + 18px*var(--wb-inv,1));top:calc(-18px*var(--wb-inv,1));width:calc(12px*var(--wb-inv,1));height:calc(12px*var(--wb-inv,1));margin:calc(-6px*var(--wb-inv,1));box-sizing:border-box;border-radius:50%;background:#fff;border:calc(2px*var(--wb-inv,1)) solid #3d99f5;cursor:grab}
+.wb-group>.wb-rot{pointer-events:auto}
+.wb-tip{position:absolute;z-index:1;width:calc(12px*var(--wb-inv,1));height:calc(12px*var(--wb-inv,1));margin:calc(-6px*var(--wb-inv,1));box-sizing:border-box;border-radius:50%;background:#fff;border:calc(2px*var(--wb-inv,1)) solid #3d99f5;pointer-events:auto;cursor:move}
+.wb-rot{position:absolute;width:calc(22px*var(--wb-inv,1));height:calc(22px*var(--wb-inv,1));cursor:${ROTATE_CURSOR}}
+.wb-rot-nw,.wb-rot-ne{top:calc(-22px*var(--wb-inv,1))}.wb-rot-sw,.wb-rot-se{top:100%}.wb-rot-nw,.wb-rot-sw{left:calc(-22px*var(--wb-inv,1))}.wb-rot-ne,.wb-rot-se{left:100%}
 .wb-hbar{position:absolute;left:0;right:0;bottom:-4px;height:8px;z-index:4;cursor:row-resize}
 .wb-hbar:hover{background:rgba(61,153,245,.45)}
 .wb-item.wb-target{outline:calc(2px*var(--wb-inv,1)) dashed #3d99f5;outline-offset:calc(2px*var(--wb-inv,1))}
@@ -331,11 +341,18 @@ export function injectStyle() {
 function placeItem(el, item) {
   el.style.left = `${item.x}px`;
   el.style.top = `${item.y}px`;
-  el.style.width = `${item.w}px`;
+  el.style.width = item.type === 'text' && item.fit ? 'max-content' : `${item.w}px`; // fit: the commit stores the width
   if (item.type !== 'text') el.style.height = `${item.h}px`;
-  if (item.type === 'canvas') el.querySelector(':scope > .sc-art').style.transform = `scale(${item.w / item.aw})`;
-  // A shape turns about its centre, label and handles included (§6d); every renderer draws it this way.
-  el.style.transform = item.type === 'shape' && item.rot ? `rotate(${item.rot}deg)` : '';
+  // A mirrored item (§6d flips) mirrors its content only: its label and handles stay as they are.
+  const [mx, my] = [item.mirrorX ? -1 : 1, item.mirrorY ? -1 : 1];
+  const mirror = mx < 0 || my < 0 ? `scale(${mx}, ${my})` : '';
+  if (item.type === 'canvas') {
+    el.querySelector(':scope > .sc-art').style.transform = `scale(${item.w / item.aw})${mirror && ` translate(${mx < 0 ? item.aw : 0}px, ${my < 0 ? item.ah : 0}px) ${mirror}`}`;
+  }
+  const content = item.type === 'image' ? el.querySelector(':scope > .wb-clip') : item.type === 'stroke' || item.type === 'shape' ? el.querySelector(':scope > svg') : null;
+  if (content) content.style.transform = mirror;
+  // A shape or image turns about its centre, label and handles included (§6d); every renderer draws it this way.
+  el.style.transform = rotOf(item) ? `rotate(${item.rot}deg)` : '';
 }
 
 // Files and agents may hold connectors that were never routed: renderers route them (O(connectors)).
@@ -401,9 +418,32 @@ function smoothPath(pts) {
 // --- Shapes: geometry is computed in item pixels (viewBox 0 0 w h) so arrowheads and bumps never distort.
 
 const isLineish = (s) => s === 'line' || s === 'arrow';
+/** Whether shape kind `s` can be filled: not a line or arrow, not an open outline (the annotation brace). */
+export const fillable = (s) => !isLineish(s) && !kindOf(s)?.open;
 const arrowHead = (width) => Math.max(12, width * 3.5);
 // Line/arrow boxes are padded so the stroke and arrowhead fit; endpoints sit at opposite padded corners.
 const linePad = (item) => (item.shape === 'arrow' ? arrowHead(item.width) * 0.6 : item.width / 2) + 1;
+
+/** A line's or arrow's two ends in board px ([start, end], turned with it): where its tip handles sit. */
+const lineEnds = (it) => {
+  const p = linePad(it);
+  const [x1, x2] = it.flipX ? [it.w - p, p] : [p, it.w - p];
+  const [y1, y2] = it.flipY ? [it.h - p, p] : [p, it.h - p];
+  const c = { x: it.x + it.w / 2, y: it.y + it.h / 2 };
+  return [[x1, y1], [x2, y2]].map(([x, y]) => rotatePoint({ x: it.x + x, y: it.y + y }, c, rotOf(it)));
+};
+
+/** Whether item `i` mirrors its content on a flip (§6d): pictures, strokes, canvases and shapes but lines and arrows (whose
+ * direction turns instead); text never mirrors. */
+const mirrors = (i) => ['image', 'stroke', 'canvas'].includes(i.type) || (i.type === 'shape' && !isLineish(i.shape));
+
+// A resize gone past the fixed side on x (fx) / y (fy) mirrors the item from how it started (§6d flips).
+const setMirror = (item, start, fx, fy) => {
+  for (const [k, f] of [['mirrorX', fx], ['mirrorY', fy]]) {
+    if (!!start[k] !== !!f) item[k] = true;
+    else delete item[k];
+  }
+};
 
 export function shapeGeometry(item) {
   const { w, h } = item;
@@ -495,15 +535,19 @@ function shapeBox(p0, p1, shift, tool, bounds) {
   return { x, y, w: Math.max(1, Math.round(Math.abs(dx) + 2 * pad)), h: Math.max(1, Math.round(Math.abs(dy) + 2 * pad)), flipX: dx < 0, flipY: dy < 0 };
 }
 
+// Hatch pattern ids are unique per drawing, not per item: the same item can be drawn twice at once (a canvas's static drawing,
+// hidden while it is edited, and the editing board), and url(#id) takes the first element with that id in the document.
+let hatches = 0;
+
 function shapeSvg(item) {
   const { d, head } = shapeGeometry(item);
   const svg = svgEl('svg', { width: '100%', height: '100%', viewBox: `0 0 ${item.w} ${item.h}`, preserveAspectRatio: 'none', overflow: 'visible' });
   svg.style.display = 'block';
   let fill = 'none';
-  const fills = !isLineish(item.shape) && !kindOf(item.shape)?.open; // an open outline (the annotation brace) is never filled
+  const fills = fillable(item.shape);
   if (fills && item.fill === 'solid') fill = item.fillColor;
   if (fills && item.fill === 'hatch') {
-    const id = `wbh-${item.id}`;
+    const id = `wbh-${++hatches}`;
     const pattern = svgEl('pattern', { id, width: 8, height: 8, patternUnits: 'userSpaceOnUse', patternTransform: 'rotate(45)' });
     pattern.append(svgEl('line', { x1: 0, y1: 0, x2: 0, y2: 8, stroke: item.fillColor, 'stroke-width': 1.5 }));
     const defs = svgEl('defs', {});
@@ -589,6 +633,7 @@ export function itemElement(item) {
   if (item.type === 'image') {
     // The clip box shows the crop region; the picture inside is scaled up by 1 / crop size and offset by the crop origin.
     const clip = document.createElement('div');
+    clip.className = 'wb-clip';
     clip.style.cssText = 'position:absolute;inset:0;overflow:hidden';
     const img = document.createElement('img');
     img.src = item.src;
@@ -927,27 +972,10 @@ export function finishBoardEdits() {
 const POPUPS = '[data-slot=select-content],[data-slot=dropdown-menu-content],[data-slot=dropdown-menu-sub-content],' +
   '[data-slot=popover-content]:not([data-tool-flyout]),[data-slot=dialog-content],[data-quick-tools]';
 
-// The native picker of a chrome colour swatch (ColorSwatch) counts as one: open from the input's click until 300 ms after it
-// closes (change, focus leaving the input, the window back in front), as Chromium may fire change before or after the
-// pointer-down that closed it, and keeps the focus on the input when it closes without a change.
-let pickerOpen = false;
-let pickerTimer = 0;
-export const colorPicker = {
-  open() {
-    clearTimeout(pickerTimer);
-    pickerOpen = true;
-  },
-  closed() {
-    clearTimeout(pickerTimer);
-    pickerTimer = setTimeout(() => (pickerOpen = false), 300);
-  },
-};
-
 /** A pointer-down on a board while a transient popup is open only closes the popup (Radix closes it on the document's
- * pointerdown or click, the native picker itself): → true, default prevented (no focus change). It ends the picker state. */
+ * pointerdown or click): → true, default prevented (no focus change). */
 export function dismissOnly(e) {
-  const open = pickerOpen || [...document.querySelectorAll(POPUPS)].some((el) => el.dataset.state !== 'closed');
-  pickerOpen = false;
+  const open = [...document.querySelectorAll(POPUPS)].some((el) => el.dataset.state !== 'closed');
   if (open) e.preventDefault();
   return open;
 }
@@ -956,7 +984,6 @@ let listening = false;
 function listen() {
   if (listening) return;
   listening = true;
-  window.addEventListener('focus', colorPicker.closed); // the picker may have taken the window's focus
   const refresh = () => queueMicrotask(updateActive);
   document.addEventListener('focusin', (e) => {
     if (isChrome(e.target)) active?.saveRange();
@@ -1007,6 +1034,7 @@ export class Board {
     this.layer = make('div', 'wb-layer');
     this.guides = make('div', 'wb-guides');
     this.groupEl = make('div', 'wb-group', { hidden: true }); // the group box of several selected items
+    this.groupEl.append(...CORNERS.map((c) => make('div', `wb-rot wb-rot-${c}`, { title: 'Drag to rotate the selection (Shift: 15 degree steps)' }))); // §6d group turn
     this.hbar = fixed ? null : make('div', 'wb-hbar', { title: 'Drag to change board height' });
     this.fileInput = make('input', '', { type: 'file', accept: 'image/*', multiple: true }); // detached: pickImages() clicks it
     // Picked images wait for a click that places them ('image' mode); picking nothing ends that mode.
@@ -1088,6 +1116,7 @@ export class Board {
     const snap = {
       kind: this.fixed ? 'canvas' : 'whiteboard',
       mode: this.mode,
+      lastTool, // §7d
       prefab: (this.mode === 'shape' && this.pending?.id) || null, // the armed prefab (§6g)
       item: props, // only while exactly one item is selected
       group: this.groupProps(), // several selected: their common controls (groupProps)
@@ -1261,7 +1290,7 @@ export class Board {
     const one = this.selectedId;
     for (const el of this.layer.children) {
       el.classList.toggle('wb-sel', this.sel.has(el.dataset.id));
-      for (const h of el.querySelectorAll(':scope > :is(.wb-handle, .wb-rot, .wb-end, .wb-mid, .wb-wp, .wb-qc)')) h.remove();
+      for (const h of el.querySelectorAll(':scope > :is(.wb-handle, .wb-rot, .wb-tip, .wb-end, .wb-mid, .wb-wp, .wb-qc)')) h.remove();
       if (el.dataset.id === one) this.decorate(el, this.selected());
     }
     this.placeGroupBox();
@@ -1269,8 +1298,9 @@ export class Board {
   }
 
   // The handles of the one selected item: a connector's end, segment and waypoint handles (its box is derived: no
-  // corners); any other item's corner handles (a shape's also its edge handles and rotate handle) and, except a stroke's,
-  // its four quick-connect dots (§6d). Children of the item's element, they turn with a turned shape.
+  // corners); any other item's rotate zones just outside its corners (the corner handles over their inner corner, so near a
+  // corner resizes and a little further out rotates), its corner and edge handles (text: e and w) and, except a stroke's, its
+  // four quick-connect dots (§6d). Children of the item's element, they turn with a turned item.
   decorate(el, item) {
     if (!item) return;
     if (item.type === 'connector') {
@@ -1280,11 +1310,21 @@ export class Board {
       el.append(...ends);
       return;
     }
-    const title = item.type === 'image' ? 'Drag to resize, Ctrl + drag to crop' : 'Drag to resize';
-    el.append(...CORNERS.map((c) => make('div', `wb-handle wb-h-${c}`, { title })));
-    if (item.type === 'shape') {
-      el.append(...EDGES.map((c) => make('div', `wb-handle wb-h-${c}`, { title })), make('div', 'wb-rot', { title: `Drag to rotate (Shift: 15 degree steps)${keyLabel('board.rotate') ? `, ${keyLabel('board.rotate')}: 90 degrees` : ''}` }));
+    if (item.type === 'shape' && isLineish(item.shape)) { // a line or arrow: a handle on each end, nothing else (§6d tips)
+      const c = { x: item.x + item.w / 2, y: item.y + item.h / 2 };
+      el.append(...lineEnds(item).map((p, k) => {
+        const q = rotatePoint(p, c, -rotOf(item)); // into its element's own (unturned) frame
+        const tip = make('div', 'wb-tip', { title: `Drag to point the ${k ? 'tip' : 'start'} elsewhere (Shift: 45 degree steps)` });
+        Object.assign(tip.style, { left: `${q.x - item.x}px`, top: `${q.y - item.y}px` });
+        tip.dataset.tip = k;
+        return tip;
+      }));
+      return;
     }
+    const title = item.type === 'image' ? 'Drag to resize, Ctrl + drag to crop' : 'Drag to resize';
+    const turn = `Drag to rotate (Shift: 15 degree steps)${keyLabel('board.rotate') ? `, ${keyLabel('board.rotate')}: 90 degrees` : ''}`;
+    if (turns(item)) el.append(...CORNERS.map((c) => make('div', `wb-rot wb-rot-${c}`, { title: turn })));
+    el.append(...[...CORNERS, ...(item.type === 'text' ? ['e', 'w'] : EDGES)].map((c) => make('div', `wb-handle wb-h-${c}`, { title })));
     if (item.type === 'stroke') return;
     for (const s of Object.keys(SIDES)) {
       const dot = make('div', `wb-qc wb-qc-${s}`, { title: 'Drag to connect, click to add a connected copy (Ctrl+Arrow)' });
@@ -1309,14 +1349,16 @@ export class Board {
       ...midHandles(c.route ?? 'ortho', geo.pts, c.points ?? []).map((m) => at(`wb-mid${m.dir ? ` ${m.dir}` : ''}`, m, { k: m.k },
         c.route === 'ortho' || !c.route ? 'Drag to move this segment' : 'Drag to add a bend')),
       ...(c.points ?? []).map((p, k) => at('wb-wp', p, { k }, 'Drag to move the bend, double-click to remove it')),
-    ], geo.tipsAbs.map((t, k) => at(`wb-end${bound([c.from, c.to][k]) ? ' bound' : ''}`, t, { end: k }, 'Drag to reconnect (Alt: do not stick)'))];
+    ], geo.tipsAbs.map((t, k) => at(`wb-end${bound([c.from, c.to][k]) ? ' bound' : ''}`, t, { end: k }, 'Drag to reconnect (Alt: do not stick, Shift: pin the tip right there)'))];
   }
 
-  // One dashed box around several selected items, without handles (live during a group move).
+  // One dashed box around several selected items with its rotate handle (live during a group move; during a group turn the
+  // start box turned by the gesture's angle).
   placeGroupBox() {
-    const box = this.sel.size > 1 && groupBox(this.selectedItems().map((i) => this.itemBox(i)));
+    const turn = this.gesture?.kind === 'turn' && this.gesture;
+    const box = turn ? turn.group : this.sel.size > 1 && groupBox(this.selectedItems().map((i) => this.itemBox(i)));
     this.groupEl.hidden = !box;
-    if (box) placeItem(this.groupEl, { ...box, type: 'shape' });
+    if (box) placeItem(this.groupEl, { ...box, type: 'shape', rot: turn.delta ?? 0 });
   }
 
   // Handles and the selection outline keep their on-screen size at any zoom (CSS calc with --wb-inv); the layer clips
@@ -1490,18 +1532,17 @@ export class Board {
     return h;
   }
 
-  // The item's box (text: rendered height; a turned shape: the bounds of its turned box, §6d).
+  // The item's box (text: rendered height; a turned item: the bounds of its turned box, §6d).
   itemBox(item) {
-    if (item.type === 'shape' && item.rot) return rotBox(item);
-    return { x: item.x, y: item.y, w: item.w, h: this.itemHeight(item) };
+    return rotBox({ x: item.x, y: item.y, w: item.w, h: this.itemHeight(item), rot: rotOf(item) });
   }
 
-  // Keeps the item (a turned shape: its turned bounds) inside the bounds; an item wider than the board is pinned to 0. A
+  // Keeps the item (a turned one: its turned bounds) inside the bounds; an item wider than the board is pinned to 0. A
   // connector's box is derived from its ends.
   clampItem(item) {
     if (item.type === 'connector') return;
     const { l, t, r } = this.limits();
-    const b = item.type === 'shape' && item.rot ? rotBox(item) : item;
+    const b = rotOf(item) ? this.itemBox(item) : item;
     item.x += fit(b.x, l, r - b.w) - b.x;
     item.y += Math.max(t, b.y) - b.y;
   }
@@ -1549,6 +1590,13 @@ export class Board {
     let capped;
     ({ items: this.items, geo: this.geo, capped } = resolveConnectors(this.items, this.measure)); // before autoSize: arrows count
     if (capped) toast('Too many crossing lines: some line jumps are not drawn', { id: 'wb-jump-cap' });
+    // A text item fitted to its text (`fit`) stores its rendered width.
+    for (const i of this.items) {
+      const el = i.type === 'text' && i.fit && this.itemEl(i.id);
+      if (!el) continue;
+      placeItem(el, i);
+      i.w = Math.max(1, Math.ceil(el.offsetWidth));
+    }
     this.autoSize();
     // A text item stores its rendered height (`h`, §6d): pure code (routing outside the Board) reads it.
     const attrs = { ...this.attrs, bg: this.bg, items: this.items.map((i) => (i.type === 'text' ? { ...i, h: this.itemHeight(i) } : { ...i })) };
@@ -1868,7 +1916,7 @@ export class Board {
     this.finishEdit();
     const items = this.selectedItems().filter((i) => i.type !== 'connector' && i.type !== 'canvas' && (axis === 'w' || i.type !== 'text'));
     if (items.length < 2) return;
-    const boxes = sameBoxes(items.map((i) => ({ x: i.x, y: i.y, w: i.w, h: i.h, rot: i.type === 'shape' ? i.rot : 0 })), axis);
+    const boxes = sameBoxes(items.map((i) => ({ x: i.x, y: i.y, w: i.w, h: i.h, rot: rotOf(i) })), axis);
     if (boxes.every((b, k) => b[axis] === items[k][axis])) return;
     items.forEach((i, k) => {
       Object.assign(i, { x: Math.round(boxes[k].x), y: Math.round(boxes[k].y), [axis]: boxes[k][axis] });
@@ -1877,18 +1925,67 @@ export class Board {
     this.commit();
   }
 
-  // R (by 90), Shift+R (by −90), the ribbon's Rotate: every selected shape turns about its own centre. `to`: the angle field.
+  // R (by 90), Shift+R (by −90), the ribbon's Rotate: every selected shape and image turns about its own centre. `to`: the
+  // angle field.
   rotate(by, to = null) {
     this.finishEdit();
+    const items = this.selectedItems();
+    if (to === null) { // R, Shift+R, Rotate 90°: the selection turns as one about its group box's centre
+      const starts = items.map((i) => ({ ...i }));
+      this.turnItems(items, starts, by);
+      if (items.some((i, k) => CHANGE_KEYS.some((p) => JSON.stringify(i[p]) !== JSON.stringify(starts[k][p])))) this.commit();
+      return;
+    }
     let turned = false;
-    for (const s of this.selectedItems()) {
-      const rot = (((to ?? (s.rot ?? 0) + by) % 360) + 360) % 360;
-      if (s.type !== 'shape' || rot === (s.rot ?? 0)) continue;
+    for (const s of items) {
+      const rot = ((to % 360) + 360) % 360;
+      if (!turns(s) || rot === (s.rot ?? 0)) continue;
       s.rot = rot;
       this.clampItem(s);
       turned = true;
     }
     if (turned) this.commit();
+  }
+
+  // `items` set to `starts` turned `deg` degrees about the centre of the starts' group box (turnItem: each goes round it and
+  // turns; a connector's free ends and bends go round), then the group is pulled back inside a whiteboard's bounds.
+  turnItems(items, starts, deg) {
+    const b = groupBox(starts.map((s) => this.itemBox(s)));
+    if (!b) return;
+    const c = { x: b.x + b.w / 2, y: b.y + b.h / 2 };
+    items.forEach((i, k) => Object.assign(i, turnItem(starts[k], c, deg, this.itemHeight(starts[k]))));
+    const d = clampMove(groupBox(items.map((i) => this.itemBox(i))), 0, 0, this.limits());
+    if (d.dx || d.dy) items.forEach((i) => Object.assign(i, moveItem(i, d.dx, d.dy)));
+    for (const i of items) {
+      const el = this.itemEl(i.id);
+      if (el) placeItem(el, i);
+    }
+  }
+
+  // Flip horizontal (axis 'x') / vertical ('y') (§6d flips; the board menu, Shift+H / Shift+V): the selection mirrored as one
+  // across its group box's middle (one item: in place). Each item mirrors its content (mirrors()), a line or arrow turns its
+  // direction, text keeps its words the right way round; angles are mirrored; a connector's free ends and bends move across.
+  flip(axis) {
+    this.finishEdit();
+    const items = this.selectedItems();
+    const b = groupBox(items.map((i) => this.itemBox(i)));
+    if (!b) return;
+    const c = { x: b.x + b.w / 2, y: b.y + b.h / 2 };
+    const field = (i) => (i.type === 'shape' && isLineish(i.shape) ? (axis === 'x' ? 'flipX' : 'flipY')
+      : mirrors(i) ? (axis === 'x' ? 'mirrorX' : 'mirrorY') : null);
+    const starts = items.map((i) => ({ ...i }));
+    items.forEach((i, k) => Object.assign(i, flipItem(starts[k], c, axis, field(i), this.itemHeight(starts[k]))));
+    if (items.some((i, k) => CHANGE_KEYS.some((p) => JSON.stringify(i[p]) !== JSON.stringify(starts[k][p])))) this.commit();
+  }
+
+  // The group's rotate handle (§6d): the selection turns as one by the angle the pointer has turned about its group box's
+  // centre since the press, in whole degrees; Shift: 15° steps.
+  turnGroup(g, e) {
+    const c = { x: g.group.x + g.group.w / 2, y: g.group.y + g.group.h / 2 };
+    const angle = (p) => (Math.atan2(p.y - c.y, p.x - c.x) * 180) / Math.PI;
+    const d = angle(this.local(e)) - angle(g.p0);
+    g.delta = e.shiftKey ? Math.round(d / 15) * 15 : Math.round(d);
+    this.turnItems(g.moving, g.starts, g.delta);
   }
 
   // Ctrl+Shift+C: the one selected item's visual keys (a connector: also each label's size, colour and bold).
@@ -2218,6 +2315,13 @@ export class Board {
     if (e.altKey) this.altUsed = true; // releasing Alt must not open the window menu
     const hit = e.altKey ? null : hitTarget(this.items, this.local(e), { exclude: g.exclude, tol: 12 / this.scale(), measure: this.measure });
     this.showTarget(hit);
+    if (hit && e.shiftKey) { // Shift: pinned, the tip at this very point of the item (it follows the item, §6d)
+      const it = this.items.find((i) => i.id === hit.item);
+      const b = { x: it.x, y: it.y, w: it.w, h: this.itemHeight(it) };
+      const p = rotatePoint(this.local(e), { x: b.x + b.w / 2, y: b.y + b.h / 2 }, -rotOf(it));
+      const frac = (v) => Math.round(fit(v, 0, 1) * 10000) / 10000;
+      return { item: it.id, anchor: [frac((p.x - b.x) / b.w), frac((p.y - b.y) / b.h)], pin: true };
+    }
     if (hit) return hit;
     const p = this.pointAt(e, 0, g);
     return { x: Math.round(p.x), y: Math.round(p.y) };
@@ -2312,6 +2416,7 @@ export class Board {
   // `pending`: the files an 'image' mode places, the prefab a 'shape' mode places (§6g); any mode change drops them.
   setMode(mode, pending = null) {
     this.mode = mode;
+    if (SPAWNERS.includes(mode)) lastTool = mode;
     this.pending = pending;
     this.finishEdit();
     this.showTarget(null);
@@ -2532,15 +2637,21 @@ export class Board {
       this.showGuides(this.gesture.guides);
       return;
     }
+    if (e.target.parentElement === this.groupEl) { // the group's rotate handle (§6d group turn)
+      this.finishEdit();
+      this.dom.focus({ preventScroll: true });
+      this.startGesture(e, 'turn', this.selectedItems());
+      return;
+    }
     const itemEl = e.target.closest('.wb-item');
     if (!itemEl) {
       this.finishEdit();
       this.startGesture(e, 'marquee'); // a drag selects what it touches, a click deselects (finishMarquee)
       return;
     }
-    // A resize handle (corner, a shape's edge) or the rotate handle ('rot').
+    // A resize handle (corner or edge) or a rotate zone ('rot').
     const corner = [...CORNERS, ...EDGES].find((c) => e.target.classList.contains(`wb-h-${c}`))
-      ?? (e.target.classList.contains('wb-rot') ? 'rot' : undefined);
+      ?? (e.target.classList.contains('wb-rot') ? 'rot' : e.target.classList.contains('wb-tip') ? 'tip' : undefined);
     const id = itemEl.dataset.id;
     if (id === this.editingId && this.editText()?.contains(e.target)) return; // caret placement inside the text being edited
     this.finishEdit();
@@ -2556,8 +2667,8 @@ export class Board {
     // A label of the one selected connector drags along / beside its path (§6d; the pointer keeps its grip on it); in a
     // multi-selection it moves the group.
     const slot = !corner && this.selectedId === id && e.target.closest('.wb-conn > .wb-text[data-slot]')?.dataset.slot;
-    this.startGesture(e, slot ? 'label' : crop ? 'crop' : corner === 'rot' ? 'rotate' : corner ? 'resize' : 'move');
-    Object.assign(this.gesture, { corner, copy: !corner && !slot && e.altKey, click, slot });
+    this.startGesture(e, slot ? 'label' : crop ? 'crop' : corner === 'rot' ? 'rotate' : corner === 'tip' ? 'tip' : corner ? 'resize' : 'move');
+    Object.assign(this.gesture, { corner, copy: !corner && !slot && e.altKey, click, slot, tip: Number(e.target.dataset.tip) });
     const c = slot && this.selected();
     if (c?.lps?.[slot]) this.gesture.grab = { x: c.x + c.lps[slot].x - this.gesture.p0.x, y: c.y + c.lps[slot].y - this.gesture.p0.y };
   };
@@ -2787,10 +2898,14 @@ export class Board {
         if (el) placeItem(el, i);
       });
       box = { ...b, x: b.x + d.dx, y: b.y + d.dy };
+    } else if (g.kind === 'turn') {
+      this.turnGroup(g, e);
+      box = groupBox(g.moving.map((i) => this.itemBox(i)));
     } else {
       const item = g.moving[0];
       if (g.kind === 'crop') this.cropItem(item, g, dx, dy, e);
       else if (g.kind === 'rotate') this.rotateItem(item, g, e);
+      else if (g.kind === 'tip') this.tipItem(item, g, e);
       else this.resizeItem(item, g, dx, dy, e);
       const el = this.itemEl(item.id);
       placeItem(el, item);
@@ -2803,14 +2918,25 @@ export class Board {
     this.emit(); // the ribbon follows
   }
 
-  // Corner (a shape: also edge) resize from the gesture's start box with the opposite corner (edge) fixed; stops at the
-  // bounds and at the minimum size (never flips). Minimum: MIN_ITEM per side, or the start size if already smaller. The
-  // moving edges snap. A turned shape resizes in its own frame (resizeInFrame, §6d): no snapping, no size cap; a whiteboard
-  // then pulls its turned box back inside.
+  // Corner (edge) resize from the gesture's start box with the opposite corner (edge) fixed; stops at the bounds and at the
+  // minimum size, except that an item that mirrors (mirrors()) goes on past the fixed side, mirrored. Minimum: MIN_ITEM per side, or the start size if already smaller. The
+  // moving edges snap. A turned shape or image resizes in its own frame (resizeInFrame, §6d): no snapping, no size cap; a
+  // whiteboard then pulls its turned box back inside.
   resizeItem(item, g, dx, dy, e) {
     const start = g.starts[0];
-    if (start.rot) {
-      Object.assign(item, resizeInFrame(start, g.corner, dx, dy, { aspect: e.shiftKey, min: MIN_ITEM }));
+    if (item.type === 'text') delete item.fit; // a width set by hand
+    if (start.rot && item.type === 'text') { // width only, about the middle of the opposite side; the text then reflows
+      const r = resizeInFrame({ ...start, h: this.itemHeight(start) }, g.corner.includes('w') ? 'w' : 'e', dx, dy, { min: MIN_ITEM });
+      Object.assign(item, { x: r.x, y: r.y, w: r.w });
+      placeItem(this.itemEl(item.id), item);
+      this.clampItem(item);
+      return;
+    }
+    if (start.rot || (item.type === 'canvas' && g.corner.length === 1)) { // a canvas edge scales it whole about that edge's middle
+      const aspect = item.type === 'canvas' || (g.corner.length === 2 && (item.type === 'shape' ? e.shiftKey : !e.shiftKey)); // the rule below
+      const { fx, fy, ...box } = resizeInFrame(start, g.corner, dx, dy, { aspect, min: MIN_ITEM, flip: mirrors(item) });
+      Object.assign(item, box);
+      if (mirrors(item)) setMirror(item, start, fx, fy);
       this.clampItem(item);
       return;
     }
@@ -2830,30 +2956,48 @@ export class Board {
       return;
     }
     const ay = sy > 0 ? start.y : start.y + start.h;
-    const maxH = sy > 0 ? bounds.b - ay : ay - bounds.t;
-    const [w, h] = [start.w + sx * dx, start.h + sy * dy]; // the box the pointer asks for
+    const [w, h] = [start.w + sx * dx, start.h + sy * dy]; // the box the pointer asks for (negative: past the fixed side)
+    const flip = mirrors(item); // past the fixed side the box goes on there, mirrored (§6d flips)
+    const room = (s, a, lo, hi) => (s > 0 ? hi - a : a - lo);
+    let [ex, ey] = [sx, sy]; // the side the box grows to from the fixed corner (edge)
     if (sx && sy && (item.type === 'canvas' || (item.type === 'shape' ? e.shiftKey : !e.shiftKey))) {
       // Images and strokes keep their aspect unless Shift, canvases always; shapes resize freely unless Shift. One
       // scale for both axes (the corner follows the pointer along the diagonal, snapped on x), clamped on the larger
       // side only, so thin strokes and dots keep their shape.
-      const k = snapSize('x', ax, sx, (start.w * (w * start.w + h * start.h)) / (start.w ** 2 + start.h ** 2)) / start.w;
-      const s = Math.max(Math.min(1, MIN_ITEM / Math.max(start.w, start.h)), Math.min(k, maxW / start.w, maxH / start.h));
+      let p = (start.w * (w * start.w + h * start.h)) / (start.w ** 2 + start.h ** 2); // the pointer on the diagonal, as a width
+      if (flip && p < 0) [p, ex, ey] = [-p, -sx, -sy];
+      const k = snapSize('x', ax, ex, p) / start.w;
+      const s = Math.max(Math.min(1, MIN_ITEM / Math.max(start.w, start.h)),
+        Math.min(k, room(ex, ax, bounds.l, bounds.r) / start.w, room(ey, ay, bounds.t, bounds.b) / start.h));
       item.w = Math.max(1, Math.round(start.w * s));
       item.h = Math.max(1, Math.round(start.h * s));
     } else {
       // An edge handle (sx or sy 0) leaves the other side as it was.
-      item.w = sx ? size(snapSize('x', ax, sx, w), Math.min(MIN_ITEM, start.w), maxW) : start.w;
-      item.h = sy ? size(snapSize('y', ay, sy, h), Math.min(MIN_ITEM, start.h), maxH) : start.h;
+      if (flip && w < 0) ex = -sx;
+      if (flip && h < 0) ey = -sy;
+      item.w = sx ? size(snapSize('x', ax, ex, flip ? Math.abs(w) : w), Math.min(MIN_ITEM, start.w), room(ex, ax, bounds.l, bounds.r)) : start.w;
+      item.h = sy ? size(snapSize('y', ay, ey, flip ? Math.abs(h) : h), Math.min(MIN_ITEM, start.h), room(ey, ay, bounds.t, bounds.b)) : start.h;
     }
-    item.x = sx > 0 ? ax : sx < 0 ? ax - item.w : start.x;
-    item.y = sy > 0 ? ay : sy < 0 ? ay - item.h : start.y;
+    item.x = ex > 0 ? ax : ex < 0 ? ax - item.w : start.x;
+    item.y = ey > 0 ? ay : ey < 0 ? ay - item.h : start.y;
+    if (flip) setMirror(item, start, ex !== sx, ey !== sy);
   }
 
-  // The rotate handle (§6d): the shape turns by the angle the pointer has turned about its centre since the press, in whole
+  // A line's or arrow's tip handle (§6d tips): that end goes to the pointer (snapped; Shift: 45° steps about the other end),
+  // the other end stays; the line is then drawn unturned between them.
+  tipItem(item, g, e) {
+    const s = g.starts[0];
+    const ends = lineEnds(s);
+    const box = shapeBox(ends[g.tip ? 0 : 1], this.pointAt(e, linePad(s), g), e.shiftKey, s, this.limits());
+    if (!g.tip) [box.flipX, box.flipY] = [!box.flipX, !box.flipY]; // drawn from the fixed end: the start moved
+    Object.assign(item, box, { rot: 0 });
+  }
+
+  // The rotate handle (§6d): the item turns by the angle the pointer has turned about its centre since the press, in whole
   // degrees; Shift: 15° steps. On a whiteboard its turned box is kept inside.
   rotateItem(item, g, e) {
     const s = g.starts[0];
-    const c = { x: s.x + s.w / 2, y: s.y + s.h / 2 };
+    const c = { x: s.x + s.w / 2, y: s.y + this.itemHeight(s) / 2 };
     const angle = (p) => (Math.atan2(p.y - c.y, p.x - c.x) * 180) / Math.PI;
     const rot = (s.rot ?? 0) + angle(this.local(e)) - angle(g.p0);
     item.rot = (((e.shiftKey ? Math.round(rot / 15) * 15 : Math.round(rot)) % 360) + 360) % 360;
@@ -2861,25 +3005,37 @@ export class Board {
     this.clampItem(item);
   }
 
-  // Ctrl + corner on an image: that corner's two edges move over the picture, which stays where it is at its scale.
-  // Edges stop at the picture's own edges (dragging outward un-crops), the bounds and the minimum size; they snap.
+  // Ctrl + corner (edge) on an image: that corner's two edges (that edge) move over the picture, which stays where it is at its scale.
+  // Edges stop at the picture's own edges (dragging outward un-crops), the bounds and the minimum size; they snap. A turned
+  // image crops in its own frame (as resizeInFrame): the move turned by −rot, no snapping, no bounds, then its turned box
+  // pulled back inside.
   cropItem(item, g, dx, dy, e) {
     const s = g.starts[0];
+    const rot = s.rot || 0;
+    if (rot) ({ x: dx, y: dy } = rotatePoint({ x: dx, y: dy }, { x: 0, y: 0 }, -rot));
     const c = s.crop ?? FULL;
     const [fw, fh] = [s.w / c.w, s.h / c.h]; // the whole picture on the board
-    const [ox, oy] = [s.x - c.x * fw, s.y - c.y * fh];
-    const bounds = this.limits();
-    const edge = (axis, v, min, max) => fit(Math.round(v + (this.snapHit(g, axis, [v], e)?.d ?? 0)), min, max);
-    let [l, t, r, b] = [s.x, s.y, s.x + s.w, s.y + s.h];
+    const [x0, y0] = rot ? [0, 0] : [s.x, s.y]; // a turned image: its own frame, from its top-left
+    const [ox, oy] = [x0 - c.x * fw, y0 - c.y * fh];
+    const bounds = rot ? { l: -Infinity, t: -Infinity, r: Infinity, b: Infinity } : this.limits();
+    const edge = (axis, v, min, max) => fit(Math.round(v + ((!rot && this.snapHit(g, axis, [v], e)?.d) || 0)), min, max);
+    let [l, t, r, b] = [x0, y0, x0 + s.w, y0 + s.h];
     const [mw, mh] = [Math.min(MIN_ITEM, s.w), Math.min(MIN_ITEM, s.h)];
     if (g.corner.includes('w')) l = edge('x', l + dx, Math.max(ox, bounds.l), r - mw);
-    else r = edge('x', r + dx, l + mw, Math.min(ox + fw, bounds.r));
+    else if (g.corner.includes('e')) r = edge('x', r + dx, l + mw, Math.min(ox + fw, bounds.r));
     if (g.corner.includes('n')) t = edge('y', t + dy, Math.max(oy, bounds.t), b - mh);
-    else b = edge('y', b + dy, t + mh, Math.min(oy + fh, bounds.b));
-    Object.assign(item, { x: l, y: t, w: r - l, h: b - t });
-    const crop = { x: (l - ox) / fw, y: (t - oy) / fh, w: item.w / fw, h: item.h / fh };
+    else if (g.corner.includes('s')) b = edge('y', b + dy, t + mh, Math.min(oy + fh, bounds.b));
+    const crop = { x: (l - ox) / fw, y: (t - oy) / fh, w: (r - l) / fw, h: (b - t) / fh };
     if ([crop.x, crop.y, 1 - crop.w, 1 - crop.h].every((v) => Math.abs(v) < 1e-6)) delete item.crop;
     else item.crop = crop;
+    if (!rot) {
+      Object.assign(item, { x: l, y: t, w: r - l, h: b - t });
+      return;
+    }
+    // The cropped box's centre turned about the start centre: the edges not dragged keep their board position.
+    const m = rotatePoint({ x: s.x + (l + r) / 2, y: s.y + (t + b) / 2 }, { x: s.x + s.w / 2, y: s.y + s.h / 2 }, rot);
+    Object.assign(item, { x: r2(m.x - (r - l) / 2), y: r2(m.y - (b - t) / 2), w: r - l, h: b - t });
+    this.clampItem(item);
   }
 
   onPointerUp = (e) => {
@@ -3012,8 +3168,10 @@ export class Board {
       'board.grid': () => this.setSnap({ grid: !snapRules.grid }),
       ...(this.sel.size && {
         'board.delete': () => this.removeItem(),
-        'board.rotate': () => this.rotate(90), // the selected shapes turn 90° clockwise / back (§6d)
+        'board.rotate': () => this.rotate(90), // the selection turns 90° clockwise / back as one (§6d)
         'board.rotateBack': () => this.rotate(-90),
+        'board.flipH': () => this.flip('x'), // §6d flips
+        'board.flipV': () => this.flip('y'),
       }),
     };
     const id = keyAmong(Object.keys(commands), e);

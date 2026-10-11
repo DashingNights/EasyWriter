@@ -1,6 +1,6 @@
 'use strict';
 // GitHub backup (SPEC §4b): the synced files go to one private repository through GitHub's REST API (no git): the drafts with
-// their undo history, plans, flowcharts, prefabs and the drafts' metadata from settings. Login is GitHub's device flow; the
+// their undo history, plans, flowcharts, prefabs, their pictures and the drafts' metadata from settings. Login is GitHub's device flow; the
 // token is kept encrypted (safeStorage) in github-token.json. github-sync.json holds the last synced commit and each file's
 // blob SHA at that commit, the base of a three-way merge per file.
 const { app, dialog, net, safeStorage, shell } = require('electron');
@@ -8,21 +8,24 @@ const path = require('path');
 const os = require('os');
 const fs = require('fs/promises');
 const crypto = require('crypto');
-const { readJson, serialized, writeJsonAtomic } = require('./file-family.js');
+const { externalize, IMAGE_NAME, readJson, serialized, writeFileAtomic, writeJsonAtomic } = require('./file-family.js');
 
 // The OAuth app the device flow logs in to (github.com/settings/developers, "Enable Device Flow" ticked). A client ID is public.
 const CLIENT_ID = process.env.EASYWRITER_GITHUB_CLIENT_ID || 'Ov23liF2DRVkwtYJ59dw';
 const API = 'https://api.github.com';
 const DIRS = ['drafts', 'plans', 'flowcharts', 'prefabs'];
 const NAME_RE = /^[a-f0-9-]{36}(\.history)?\.json$/;
-const PATH_RE = new RegExp(`^(${DIRS.join('|')})/[a-f0-9-]{36}(\\.history)?\\.json$`);
+const IMAGES = 'images'; // the records' pictures (src/file-family.js externalize): only ever added, never changed
+const PATH_RE = new RegExp(`^((${DIRS.join('|')})/[a-f0-9-]{36}(\\.history)?\\.json|${IMAGES}/[a-f0-9]{64}\\.[a-z0-9.+-]+)$`);
+const isImage = (p) => p.startsWith(`${IMAGES}/`);
 const REPO_RE = /^[\w.-]+\/[\w.-]+$/;
 const SETTINGS_FILE = 'settings.json';
 const SETTINGS_KEYS = ['threads', 'folders', 'draftFolders', 'draftOrder', 'draftTags', 'tags'];
 const MARKER = '.easywriter'; // a repository holding it is an EasyWriter backup; any other non-empty one is refused
 const MARKER_BODY = Buffer.from('{"app":"EasyWriter","format":1}\n');
 const MIN_SECONDS = 30;
-const CHUNK = 8 * 1024 * 1024; // inline content per tree request; a bigger file goes up as a blob of its own
+const CHUNK = 8 * 1024 * 1024; // inline content per tree request; a bigger file (or a picture) goes up as a blob of its own
+const ROUND = 32 * 1024 * 1024; // new pictures per commit when there are more: a long backup that stops keeps what it sent
 const DEFAULTS = { enabled: false, repo: '', intervalSec: 300, onClose: 'ask' }; // onClose: ask | push | skip
 
 const userFile = (name) => path.join(app.getPath('userData'), name);
@@ -206,17 +209,38 @@ async function checkRepo(repo) {
 
 const blobSha = (buf) => crypto.createHash('sha1').update(`blob ${buf.length}\0`).update(buf).digest('hex');
 const shas = (files) => Object.fromEntries([...files].map(([p, b]) => [p, blobSha(b)]));
+const same = (a, b) => Object.keys(a).length === Object.keys(b).length && Object.keys(a).every((p) => a[p] === b[p]);
 const settingsBody = (s) => Buffer.from(JSON.stringify(Object.fromEntries(SETTINGS_KEYS.filter((k) => s[k] !== undefined).map((k) => [k, s[k]]))));
 const enoent = (e) => { if (e.code !== 'ENOENT') throw e; };
 
-/** This computer's synced files → Map(repo path → bytes). */
-async function readLocal() {
+/** A synced record's bytes. One still holding base64 pictures (saved before pictures were files, or pulled from a copy of the
+ * app from before) has them moved to images/ first, so each goes up once, as a file of its own. */
+async function readRecord(file) {
+  const buf = await fs.readFile(file).catch(enoent);
+  if (!buf?.includes(';base64,')) return buf;
+  return serialized(async () => { // read again in the queue: the renderer may have saved since
+    const text = await fs.readFile(file, 'utf8').catch(enoent);
+    let next;
+    try {
+      next = JSON.stringify(await externalize(userFile(IMAGES), JSON.parse(text)));
+    } catch {
+      return text == null ? null : Buffer.from(text); // gone, or not JSON: synced as it is
+    }
+    if (next !== text) await writeFileAtomic(file, next); // unchanged: base64 that stays inline, or text that mentions it
+    return Buffer.from(next);
+  });
+}
+
+/** This computer's synced files → Map(repo path → bytes). `migrate`: records still holding base64 pictures move them to
+ * images/ first (readRecord). The merge reads them as they are, so a format change alone never counts as a local edit. */
+async function readLocal(migrate = true) {
   const files = new Map([[MARKER, MARKER_BODY]]);
-  for (const dir of DIRS) {
+  for (const dir of [...DIRS, IMAGES]) { // the pictures last: reading the records may add some
     const names = await fs.readdir(userFile(dir)).catch((e) => (enoent(e), []));
     for (const n of names) {
-      if (!NAME_RE.test(n)) continue;
-      const buf = await fs.readFile(path.join(userFile(dir), n)).catch(enoent);
+      if (!(dir === IMAGES ? IMAGE_NAME : NAME_RE).test(n) || n.endsWith('.tmp')) continue; // .tmp: a picture being written
+      const file = path.join(userFile(dir), n);
+      const buf = dir === IMAGES || !migrate ? await fs.readFile(file).catch(enoent) : await readRecord(file);
       if (buf) files.set(`${dir}/${n}`, buf);
     }
   }
@@ -226,13 +250,14 @@ async function readLocal() {
 
 /** Three-way merge per file of {path: sha} maps (a missing path = no file) → {take: the paths to copy from remote (missing
  * there: delete here), conflicts: the paths both sides changed since base, differently}. A path only this computer changed
- * stays as it is and goes up with the next push. */
+ * stays as it is and goes up with the next push, and so does a picture missing on GitHub. */
 function plan(local, remote, base) {
   const take = [];
   const conflicts = [];
   for (const p of new Set([...Object.keys(local), ...Object.keys(remote)])) {
     const [l, r, b] = [local[p], remote[p], base[p]];
     if (l === r || r === b) continue;
+    if (!r && isImage(p)) continue; // a picture gone there (an older copy of the app pushed without it) goes up again
     (l === b ? take : conflicts).push(p);
   }
   return { take, conflicts };
@@ -283,6 +308,10 @@ async function ask(conflicts, local, bodies, first) {
 async function apply(paths, bodies) {
   const backup = path.join('github-backups', new Date().toISOString().replace(/[:.]/g, '-'));
   for (const p of paths) {
+    if (isImage(p)) { // a new picture (the same name is the same picture, and pictures are never deleted here)
+      await serialized(() => writeFileAtomic(userFile(p), bodies.get(p)));
+      continue;
+    }
     const kept = userFile(path.join(backup, p));
     await fs.mkdir(path.dirname(kept), { recursive: true });
     if (p === SETTINGS_FILE) {
@@ -298,8 +327,13 @@ async function apply(paths, bodies) {
   }
 }
 
-/** Commits `local` (Map path → bytes) on top of `remote` unless the remote tree already matches → {head, files}. */
-async function push(repo, remote, local) {
+const uploaded = new Set(); // `repo/sha` of the blobs sent this session: a push that failed and runs again does not send them twice
+const tooLarge = new Set(); // blob SHAs GitHub refused as too large this session: not sent again until the app restarts
+
+/** Commits `local` (Map path → bytes) on top of `remote` unless the remote tree already matches → {head, files, skipped}.
+ * `saved({head, files})`: a commit of pictures went up before the last one (the base of the next sync if this one stops).
+ * `skipped`: {path: sha here} of the files GitHub refused as too large; GitHub keeps the version it has of each, if any. */
+async function push(repo, remote, local, saved) {
   let head = remote.head;
   let have = remote.files;
   if (!head) { // an empty repository: the git database API needs a first commit, which the contents API can make
@@ -308,11 +342,63 @@ async function push(repo, remote, local) {
     have = { [MARKER]: blobSha(MARKER_BODY) };
   }
   const sha = shas(local);
-  const paths = Object.keys(sha);
-  if (paths.length === Object.keys(have).length && paths.every((p) => have[p] === sha[p])) return { head, files: sha };
-  // The first tree request lists every file (no base tree, so files gone here are gone there); the rest add to it.
-  const entry = (p, more) => ({ path: p, mode: '100644', type: 'blob', ...more });
-  let batch = [];
+  const entry = (p, s) => ({ path: p, mode: '100644', type: 'blob', sha: s });
+  const own = (p) => isImage(p) || local.get(p).length > CHUNK; // sent as a blob of its own, not inline in a tree request
+  /** Sends one file as a blob → false when GitHub refuses it as too large. */
+  const blob = async (p) => {
+    if (uploaded.has(`${repo}/${sha[p]}`)) return true;
+    if (tooLarge.has(sha[p])) return false;
+    try {
+      await gh('POST', `/repos/${repo}/git/blobs`, { content: local.get(p).toString('base64'), encoding: 'base64' });
+    } catch (e) {
+      if (e.status !== 413 && !/too large/i.test(e.message)) throw e;
+      tooLarge.add(sha[p]);
+      return false;
+    }
+    uploaded.add(`${repo}/${sha[p]}`);
+    return true;
+  };
+  const commit = async (tree, message) => {
+    const c = await gh('POST', `/repos/${repo}/git/commits`, { message, tree, parents: [head] });
+    await gh('PATCH', `/repos/${repo}/git/refs/${refPath(remote.branch)}`, { sha: c.sha }); // 422 when the branch moved
+    head = c.sha;
+  };
+
+  // New pictures go first, a commit per ROUND of them while more follow: a long first backup that stops halfway keeps what
+  // it sent, and a draft never reaches GitHub before its pictures. These commits only add pictures to GitHub's files.
+  let round = {};
+  let bytes = 0;
+  for (const p of Object.keys(sha).filter((q) => isImage(q) && have[q] !== sha[q])) {
+    if (bytes && bytes + local.get(p).length > ROUND) {
+      have = { ...have, ...round };
+      const tree = await gh('POST', `/repos/${repo}/git/trees`, { tree: Object.entries(have).map(([q, s]) => entry(q, s)) });
+      await commit(tree.sha, `Backup pictures from ${os.hostname()}`);
+      await saved({ head, files: have });
+      round = {};
+      bytes = 0;
+    }
+    if (await blob(p)) {
+      round[p] = sha[p];
+      bytes += local.get(p).length;
+    }
+  }
+
+  // Then every file: what GitHub refuses as too large stays as GitHub has it (gone if it has none).
+  const files = {};
+  const skipped = {};
+  for (const p of Object.keys(sha)) {
+    if (have[p] !== sha[p] && own(p) && !(await blob(p))) {
+      skipped[p] = sha[p];
+      if (have[p]) files[p] = have[p];
+    } else {
+      files[p] = sha[p];
+    }
+  }
+  if (same(files, have)) return { head, files, skipped };
+  // The first tree request lists every file (no base tree, so files gone here are gone there): by SHA, except the changed
+  // text files, which go inline up to CHUNK per request, each request on the tree of the one before.
+  const text = (p) => files[p] === sha[p] && have[p] !== sha[p] && !own(p);
+  let batch = Object.keys(files).filter((p) => !text(p)).map((p) => entry(p, files[p]));
   let size = 0;
   let tree = null;
   const send = async () => {
@@ -320,20 +406,15 @@ async function push(repo, remote, local) {
     batch = [];
     size = 0;
   };
-  for (const [p, buf] of local) {
-    if (have[p] === sha[p]) batch.push(entry(p, { sha: sha[p] }));
-    else if (buf.length > CHUNK) batch.push(entry(p, { sha: (await gh('POST', `/repos/${repo}/git/blobs`, { content: buf.toString('base64'), encoding: 'base64' })).sha }));
-  }
-  for (const [p, buf] of local) {
-    if (have[p] === sha[p] || buf.length > CHUNK) continue;
+  for (const p of Object.keys(files).filter(text)) {
+    const buf = local.get(p);
     if (size && size + buf.length > CHUNK) await send();
-    batch.push(entry(p, { content: buf.toString('utf8') })); // the files are JSON, so UTF-8 text
+    batch.push({ path: p, mode: '100644', type: 'blob', content: buf.toString('utf8') }); // the records are JSON, so UTF-8 text
     size += buf.length;
   }
   await send();
-  const commit = await gh('POST', `/repos/${repo}/git/commits`, { message: `Backup from ${os.hostname()}`, tree, parents: [head] });
-  await gh('PATCH', `/repos/${repo}/git/refs/${refPath(remote.branch)}`, { sha: commit.sha }); // 422 when the branch moved
-  return { head: commit.sha, files: sha };
+  await commit(tree, `Backup from ${os.hostname()}`);
+  return { head, files, skipped };
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -372,7 +453,7 @@ async function doSync({ closing = false, retry = true } = {}) {
       covered = true;
     }
     if (news && (await hooks.flush()) === false) throw new Error('The open draft could not be saved, so nothing was synced.');
-    let local = await readLocal();
+    let local = await readLocal(!news);
     if (news) {
       const theirs = Object.fromEntries(Object.entries(remote.files).filter(([p]) => p === SETTINGS_FILE || PATH_RE.test(p)));
       const ours = shas(local);
@@ -380,7 +461,9 @@ async function doSync({ closing = false, retry = true } = {}) {
       const { take, conflicts } = plan(ours, theirs, base.files);
       const bodies = new Map();
       for (const p of [...take, ...conflicts]) {
-        if (theirs[p]) bodies.set(p, JSON.parse((await gh('GET', `/repos/${repo}/git/blobs/${theirs[p]}`, null, { raw: true })).toString('utf8')));
+        if (!theirs[p]) continue;
+        const buf = await gh('GET', `/repos/${repo}/git/blobs/${theirs[p]}`, null, { raw: true });
+        bodies.set(p, isImage(p) ? buf : JSON.parse(buf.toString('utf8')));
       }
       let paths = take;
       if (conflicts.length) {
@@ -393,17 +476,22 @@ async function doSync({ closing = false, retry = true } = {}) {
       }
       if (paths.length) {
         await apply(paths, bodies);
-        local = await readLocal();
         if (!closing) hooks.reload();
       }
       // Merged: GitHub's head is the new base, so a failed or retried push does not merge (or ask) again.
       await serialized(() => writeJsonAtomic(stateFile(), { repo, head: remote.head, files: remote.files }));
+      local = await readLocal(); // the merged files, their base64 pictures moved out
     }
-    const next = await push(repo, remote, local);
-    await serialized(() => writeJsonAtomic(stateFile(), { repo, ...next }));
-    setStatus({ lastSync: Date.now(), error: null });
+    const save = (next) => serialized(() => writeJsonAtomic(stateFile(), { repo, head: next.head, files: next.files, skipped: next.skipped }));
+    const next = await push(repo, remote, local, save);
+    await save(next);
+    const n = Object.keys(next.skipped).length;
+    setStatus({ lastSync: Date.now(), error: n ? `Synced, but ${n === 1 ? '1 file is' : `${n} files are`} too large for GitHub and stayed on this computer.` : null });
   } catch (e) {
-    if (e.status === 422 && retry) return await doSync({ closing, retry: false }); // the branch moved during the push
+    if (e.status === 422 && retry) { // the branch moved during the push, or a blob sent before is gone (a repository made again)
+      uploaded.clear();
+      return await doSync({ closing, retry: false });
+    }
     active = true; // the next tick tries again
     setStatus({ error: e.message });
     throw e;
@@ -417,9 +505,7 @@ async function doSync({ closing = false, retry = true } = {}) {
 async function pending() {
   const base = await readJson(stateFile()).catch(() => null);
   if (base?.repo !== cfg.repo) return true;
-  const now = shas(await readLocal());
-  const paths = Object.keys(now);
-  return paths.length !== Object.keys(base.files).length || paths.some((p) => now[p] !== base.files[p]);
+  return !same(shas(await readLocal()), { ...base.files, ...base.skipped }); // a file too large for GitHub is not pending
 }
 
 /** Main's settings changed: the push timer follows them; turning the backup on or picking another repository syncs at once. */
@@ -498,4 +584,4 @@ function register(handle, h) {
   handle('github.start', () => { sync().catch(() => {}); }); // the renderer has started: pull what changed while the app was closed
 }
 
-module.exports = { register, configure, touch, closeCheck, beforeClose, plan, blobSha, DEFAULTS, SETTINGS_KEYS };
+module.exports = { register, configure, touch, closeCheck, beforeClose, plan, push, blobSha, DEFAULTS, SETTINGS_KEYS };

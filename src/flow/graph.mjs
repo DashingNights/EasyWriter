@@ -3,7 +3,7 @@
 // Graph: as mermaid.mjs, plus node x y w h rot, edge route / startLabel / endLabel, group kind frame | lane and x y w h.
 import { layout } from './layout.mjs';
 import { cleanConnector, containedIn, defaultMeasure } from './model.mjs';
-import { flowPreset, kindOf } from './shapes.mjs';
+import { flowPreset, kindOf, rotOf } from './shapes.mjs';
 
 const CONTAINERS = ['frame', 'lane'];
 const NODE_TYPES = ['shape', 'text', 'image', 'canvas'];
@@ -55,7 +55,7 @@ export function toGraph(items, { unit = 1, preset = null } = {}) {
   const nodeItems = items.filter((i) => NODE_TYPES.includes(i.type) && !containers.includes(i));
   const fillOf = (i) => (i.fill === 'none' ? 'none' : i.fillColor);
   const nodes = nodeItems.map((i) => {
-    const n = { id: i.id, kind: i.type === 'shape' ? i.shape : i.type, label: htmlToText(i.html), ...boxOf(i), ...(i.type === 'shape' && i.rot && { rot: i.rot }) };
+    const n = { id: i.id, kind: i.type === 'shape' ? i.shape : i.type, label: htmlToText(i.html), ...boxOf(i), ...(rotOf(i) && { rot: i.rot }) };
     if (i.type !== 'shape') return n;
     const own = { fill: fillOf(i), stroke: i.color, text: i.textColor };
     const base = preset && { fill: fillOf(preset), stroke: preset.color, text: preset.textColor };

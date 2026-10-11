@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { cleanConnector, cloneItems, containedIn, hitTarget, moveItem, unbindFrom } from '../src/flow/model.mjs';
+import { cleanConnector, cloneItems, containedIn, flipItem, hitTarget, moveItem, turnItem, unbindFrom } from '../src/flow/model.mjs';
 import { parseBoard } from '../src/whiteboard.js';
 
 const shape = (id, x, y, extra = {}) => ({ id, type: 'shape', shape: 'rect', x, y, w: 100, h: 60, color: '#fff', width: 2, opacity: 1, fill: 'none', fillColor: '#fff', ...extra });
@@ -71,4 +71,24 @@ test('hitTarget: a port within tol, the inside of an unfilled diamond, a rect at
 test('containedIn: the items fully inside a lane', () => {
   const lane = shape('lane', 0, 0, { shape: 'lane', w: 500, h: 200 });
   assert.deepEqual(containedIn(lane, [lane, shape('in', 20, 40), shape('out', 450, 40), conn('k', { x: 1, y: 1 }, { x: 2, y: 2 }, derived)]), ['in']);
+});
+
+test('turnItem: a quarter turn about a point takes the centre round it and turns the item; a free connector end and bend go round, a bound end stays', () => {
+  const t = turnItem({ id: 'a', type: 'shape', x: 0, y: 0, w: 20, h: 10, rot: 350 }, { x: 50, y: 5 }, 90);
+  assert.deepEqual([t.x, t.y, t.rot], [40, -40, 80]); // centre (10, 5) → (50, -35)
+  const c = { id: 'c', type: 'connector', from: { item: 'a', anchor: null }, to: { x: 60, y: 5 }, points: [{ x: 50, y: 15 }] };
+  const tc = turnItem(c, { x: 50, y: 5 }, 90);
+  assert.deepEqual([tc.from, tc.to, tc.points], [c.from, { x: 50, y: 15 }, [{ x: 40, y: 5 }]]);
+});
+
+test('flipItem: across x = 50 the centre mirrors, the angle negates and the flag toggles; a free end mirrors, a bound one stays', () => {
+  const f = flipItem({ id: 'a', type: 'image', x: 0, y: 0, w: 20, h: 10, rot: 30 }, { x: 50, y: 5 }, 'x', 'mirrorX');
+  assert.deepEqual([f.x, f.y, f.rot, f.mirrorX], [80, 0, 330, true]);
+  const c = flipItem({ id: 'c', type: 'connector', from: { item: 'a', anchor: null }, to: { x: 60, y: 9 } }, { x: 50, y: 5 }, 'x');
+  assert.deepEqual([c.from, c.to], [{ item: 'a', anchor: null }, { x: 40, y: 9 }]);
+});
+
+test('cleanConnector keeps pin only on a bound end with an anchor', () => {
+  const c = cleanConnector({ id: 'c', type: 'connector', from: { item: 'a', anchor: [0.2, 0.7], pin: true }, to: { item: 'b', anchor: null, pin: true } });
+  assert.deepEqual([c.from, c.to], [{ item: 'a', anchor: [0.2, 0.7], pin: true }, { item: 'b', anchor: null }]);
 });

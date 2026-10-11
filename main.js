@@ -1,9 +1,9 @@
 'use strict';
-const { app, BrowserWindow, dialog, ipcMain, Menu, net, session, shell } = require('electron');
+const { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, net, session, shell } = require('electron');
 const path = require('path');
 const fs = require('fs/promises');
 const { pathToFileURL } = require('url');
-const { fileFamily, isPlainObject, readJson, serialized, setAside, writeJsonAtomic } = require('./src/file-family.js');
+const { externalize, fileFamily, inline, isPlainObject, readJson, serialized, setAside, writeJsonAtomic } = require('./src/file-family.js');
 const { buildPushScript, describeThreadsScript, STATUS_SCRIPT, DISCOVER_SCRIPT } = require('./src/forum-inject.js');
 const dictation = require('./src/dictation-main.js');
 const assistant = require('./src/assistant-main.js');
@@ -109,6 +109,7 @@ let forumWin = null;
 
 const settingsFile = () => path.join(app.getPath('userData'), 'settings.json');
 const userDir = (name) => () => path.join(app.getPath('userData'), name);
+const images = userDir('images'); // the records' pictures, one file each (src/file-family.js externalize)
 
 async function getSettings() {
   let stored;
@@ -140,6 +141,7 @@ function setSettings(partial) {
 const drafts = fileFamily(userDir('drafts'), {
   summary: (d) => ({ id: d.id, title: d.title, threadUrl: d.threadUrl ?? null, updated: d.updated, pushedAt: d.pushedAt ?? null }),
   siblings: (id) => [historyFile(id)],
+  images,
 });
 const historyFile = (id) => drafts.file(id).replace(/\.json$/, '.history.json');
 
@@ -149,13 +151,14 @@ function saveDraft(draft) {
 }
 
 async function loadHistory(id) {
-  return readJson(historyFile(id));
+  const data = await readJson(historyFile(id));
+  return data && inline(images(), data);
 }
 
 function saveHistory(id, data) {
   const file = historyFile(id);
   if (data !== null && !isPlainObject(data)) throw new Error('history must be an object or null');
-  return serialized(() => writeJsonAtomic(file, data));
+  return serialized(async () => writeJsonAtomic(file, data && (await externalize(images(), data))));
 }
 
 // Plans (Gantt plan §4) and the flowchart library (flowchart plan §4): main checks the envelope, the renderer the rest.
@@ -165,6 +168,7 @@ const isThread = (url) => typeof url === 'string' && TOPIC_URL_RE.test(url);
 const plans = fileFamily(userDir('plans'), {
   keepPrevious: true,
   maxBytes: 8 * MB,
+  images,
   validate: (p) => {
     if (!isThread(p.threadUrl)) throw new Error('plan threadUrl must be a forum topic URL');
   },
@@ -172,7 +176,8 @@ const plans = fileFamily(userDir('plans'), {
 
 const flows = fileFamily(userDir('flowcharts'), {
   keepPrevious: true,
-  maxBytes: 32 * MB, // a board may hold images (data URLs)
+  maxBytes: 32 * MB, // without its pictures, which are files of their own
+  images,
   summary: (f) => ({
     id: f.id, threadUrl: f.threadUrl ?? null, title: f.title, created: f.created, updated: f.updated, rev: f.rev,
     items: Array.isArray(f.board?.items) ? f.board.items.length : 0,
@@ -188,7 +193,8 @@ const flows = fileFamily(userDir('flowcharts'), {
 // Prefabs (flowchart plan §3.10): the user's own, no thread; the list carries thumbnails but no items.
 const prefabs = fileFamily(userDir('prefabs'), {
   keepPrevious: true,
-  maxBytes: 32 * MB, // a prefab may hold images (data URLs)
+  maxBytes: 32 * MB, // without its pictures, which are files of their own
+  images,
   summary: (p) => ({
     id: p.id, name: p.name, keywords: Array.isArray(p.keywords) ? p.keywords : [], w: p.w, h: p.h,
     items: Array.isArray(p.items) ? p.items.length : 0, thumb: p.thumb ?? null, created: p.created, updated: p.updated,
@@ -508,6 +514,31 @@ app.on('web-contents-created', (_e, wc) => {
     return { action: 'deny' };
   });
   wc.on('zoom-changed', (_ev, direction) => send({ type: 'zoom', wcId: wc.id, dir: direction === 'in' ? 1 : -1 }));
+  // Right-click: link / image items, Back / Forward / Reload on the bare page, then the edit menu.
+  wc.on('context-menu', (_event, params) => {
+    const extra = [];
+    if (params.linkURL) {
+      extra.push(
+        { label: 'Open link in new tab', click: () => send({ type: 'open', url: params.linkURL }) },
+        { label: 'Copy link address', click: () => clipboard.writeText(params.linkURL) },
+      );
+    }
+    if (params.mediaType === 'image') {
+      extra.push(
+        { label: 'Copy image', click: () => wc.copyImageAt(params.x, params.y) },
+        { label: 'Copy image address', click: () => clipboard.writeText(params.srcURL) },
+      );
+    }
+    if (!extra.length && !params.isEditable && !params.selectionText) {
+      const nav = wc.navigationHistory;
+      extra.push(
+        { label: 'Back', enabled: nav.canGoBack(), click: () => nav.goBack() },
+        { label: 'Forward', enabled: nav.canGoForward(), click: () => nav.goForward() },
+        { label: 'Reload', click: () => wc.reload() },
+      );
+    }
+    popupEditMenu(wc, params, mainWin, extra);
+  });
   wc.on('before-input-event', (event, input) => {
     const chord = input.type === 'keyDown' && keys?.chordOf(input);
     if (!chord || !chords.browser.has(chord)) return;
@@ -515,6 +546,25 @@ app.on('web-contents-created', (_e, wc) => {
     send({ type: 'key', chord, wcId: wc.id });
   });
 });
+
+// Native right-click menu (main window and browser pages): `extra` items, spelling suggestions, then Cut / Copy / Paste / Select
+// All on `wc` (explicit, so a page's menu acts on the page, not the focused window's own webContents).
+function popupEditMenu(wc, params, win, extra = []) {
+  const template = [...extra];
+  if (template.length) template.push({ type: 'separator' });
+  for (const word of params.dictionarySuggestions) template.push({ label: word, click: () => wc.replaceMisspelling(word) });
+  if (params.misspelledWord) {
+    template.push({ label: 'Add to dictionary', click: () => wc.session.addWordToSpellCheckerDictionary(params.misspelledWord) });
+  }
+  if (template.length && template.at(-1).type !== 'separator') template.push({ type: 'separator' });
+  template.push(
+    { label: 'Cut', enabled: params.editFlags.canCut, click: () => wc.cut() },
+    { label: 'Copy', enabled: params.editFlags.canCopy, click: () => wc.copy() },
+    { label: 'Paste', enabled: params.editFlags.canPaste, click: () => wc.paste() },
+    { label: 'Select All', click: () => wc.selectAll() },
+  );
+  Menu.buildFromTemplate(template).popup({ window: win });
+}
 
 // Keybinds (§7k, src/app/keys.mjs): the chords main acts on, from settings.keybinds; loaded before the window, again on a change.
 let keys = null;
@@ -579,20 +629,7 @@ function createMainWindow() {
     if (event.url.split('#')[0] !== INDEX_URL) event.preventDefault();
   });
 
-  wc.on('context-menu', (_event, params) => {
-    const template = params.dictionarySuggestions.map((word) => ({ label: word, click: () => wc.replaceMisspelling(word) }));
-    if (params.misspelledWord) {
-      template.push({ label: 'Add to dictionary', click: () => wc.session.addWordToSpellCheckerDictionary(params.misspelledWord) });
-    }
-    if (template.length) template.push({ type: 'separator' });
-    template.push(
-      { role: 'cut', enabled: params.editFlags.canCut },
-      { role: 'copy', enabled: params.editFlags.canCopy },
-      { role: 'paste', enabled: params.editFlags.canPaste },
-      { role: 'selectAll' },
-    );
-    Menu.buildFromTemplate(template).popup({ window: win });
-  });
+  wc.on('context-menu', (_event, params) => popupEditMenu(wc, params, win));
 
   // Logged in to GitHub with the backup on: unpushed changes are pushed (or the user is asked) before the window closes.
   let closeState = null; // 'checking' while it asks or pushes, 'done' once the window may close

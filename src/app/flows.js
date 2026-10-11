@@ -8,7 +8,7 @@ import { FLOW_SIZE, parseFlow, stateOf, summaryOf } from '../flow/library.mjs';
 import { parseMermaid, toMermaid } from '../flow/mermaid.mjs';
 import { defaultMeasure, moveItem } from '../flow/model.mjs';
 import { resolveConnectors } from '../flow/route.mjs';
-import { flowPreset, rotBox } from '../flow/shapes.mjs';
+import { flowPreset, rotBox, rotOf } from '../flow/shapes.mjs';
 import { contentWidth, diagramPaste, groupBox, rasterizeWhiteboard, scaleItem, setConnTool, setShapeTool } from '../whiteboard.js';
 import { afterNodeSel, confirmDialog } from './actions.js';
 import { can } from './gates.mjs';
@@ -337,7 +337,7 @@ const MARGIN = 40; // post px around a diagram placed by an import
 const MAX_ITEMS = 1000; // import cap (flowchart plan §4)
 // The bounds of `items` as drawn (turned shapes; text: its stored or estimated height; unrouted connectors left out).
 const drawnBox = (items) => groupBox(items.filter((i) => i.type !== 'connector' || Number.isFinite(i.h))
-  .map((i) => rotBox({ ...defaultMeasure(i), rot: i.type === 'shape' ? i.rot : 0 })));
+  .map((i) => rotBox({ ...defaultMeasure(i), rot: rotOf(i) })));
 
 /** Items for Mermaid `text` at `unit` (board px per post px): laid out (direction `dir`, else the text's), routed, in the
  * theme's flowchart look, the drawing's top-left at 0,0; graph ids are item ids unless `taken` holds them.

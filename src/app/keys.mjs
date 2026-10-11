@@ -234,6 +234,8 @@ export const DEFS = [
   board('board.back', 'Send to back', ['Ctrl+Shift+[']),
   board('board.rotate', 'Rotate 90 degrees', ['R']),
   board('board.rotateBack', 'Rotate back 90 degrees', ['Shift+R']),
+  board('board.flipH', 'Flip horizontal', ['Shift+H']),
+  board('board.flipV', 'Flip vertical', ['Shift+V']),
   board('board.snap', 'Snapping on or off', ['Ctrl+Shift+;']),
   board('board.grid', 'Grid snap on or off', ["Ctrl+'"]),
 

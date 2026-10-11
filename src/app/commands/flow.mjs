@@ -5,7 +5,7 @@ import { layout } from '../../flow/layout.mjs';
 import { FLOW_SIZE } from '../../flow/library.mjs';
 import { cleanConnector, defaultMeasure, moveItem, repairEnds, unbindFrom, validConnector } from '../../flow/model.mjs';
 import { resolveConnectors } from '../../flow/route.mjs';
-import { KINDS, rotBox } from '../../flow/shapes.mjs';
+import { KINDS, rotBox, rotOf } from '../../flow/shapes.mjs';
 import {
   contentWidth, groupBox, injectStyle, itemElement, make, parseBoard, smartArtboard, topLevelPos, WB_BG,
 } from '../../whiteboard.js';
@@ -140,7 +140,7 @@ function settle(b, items) {
   try {
     let list = resolveConnectors(items, measure).items;
     const box = (i) => {
-      const r = i.type === 'shape' && i.rot ? rotBox(i) : measure(i);
+      const r = rotBox({ ...measure(i), rot: rotOf(i) });
       return { x: r.x, y: r.y, w: r.w, h: r.h };
     };
     let frame = b.frame ?? null;
@@ -183,9 +183,9 @@ async function write(ctx, flowId, edit) {
 }
 
 // The box of item `i` as stored (a text item without a stored h: its estimate).
-const boxOf = (i) => (i.type === 'shape' && i.rot ? rotBox(i) : defaultMeasure(i));
+const boxOf = (i) => rotBox({ ...defaultMeasure(i), rot: rotOf(i) });
 const drawnBox = (items) => groupBox(items.filter((i) => i.type !== 'connector' || Number.isFinite(i.h))
-  .map((i) => rotBox({ ...defaultMeasure(i), rot: i.type === 'shape' ? i.rot : 0 }))); // flows.js drawnBox
+  .map((i) => rotBox({ ...defaultMeasure(i), rot: rotOf(i) }))); // flows.js drawnBox
 
 /** flows.js autoLayout on a fixed board without a Board: the shapes, text, images and groups laid out by dagre in direction
  * `dir`, starting where the drawing began; connectors between them lose their bends (settle routes them again). */

@@ -20,6 +20,13 @@ test('canvas items: invalid numbers and artboards dropped, inner items filtered,
   assert.deepEqual(items[1].items, []);
 });
 
+test('items turn: rot −90 → 270, a bad rot dropped, a valid crop kept', () => {
+  const img = { type: 'image', src: 'x', x: 0, y: 0, w: 100, h: 50 };
+  const text = { id: 't', type: 'text', html: 'A', x: 0, y: 0, w: 100, size: 20, color: '#fff', bold: false, align: 'left', bg: null, rot: 450 };
+  const items = parse([{ ...img, id: 'a', rot: -90, crop: { x: 0, y: 0, w: 0.5, h: 1 } }, { ...img, id: 'b', rot: 'x' }, text]);
+  assert.deepEqual([items[0].rot, items[0].crop.w, 'rot' in items[1], items[2].rot], [270, 0.5, false, 90]);
+});
+
 test('flowchart items (§6d): a connector with three labels, a labelled shape, rot −90 → 270, text h; a canvas item loses flow', () => {
   const sh = { id: 'sh', type: 'shape', shape: 'diam', x: 0, y: 0, w: 160, h: 90, color: '#fff', width: 2, opacity: 1, fill: 'solid', fillColor: '#333', flipX: false, flipY: false };
   const labels = { start: { html: '1' }, mid: { html: 'yes', t: 0.4, dy: -10 }, end: { html: 'n', bold: true } };

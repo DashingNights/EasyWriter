@@ -3,14 +3,14 @@
 import { groupBox, parseBoard, scaleItem } from '../whiteboard.js';
 import { cloneItems, defaultMeasure, moveItem } from './model.mjs';
 import { resolveConnectors } from './route.mjs';
-import { rotBox } from './shapes.mjs';
+import { rotBox, rotOf } from './shapes.mjs';
 
 const ID_RE = /^[a-f0-9-]{36}$/; // the uuid pattern of file-family.js
 const NAME_MAX = 80;
 const DERIVED = ['x', 'y', 'w', 'h', 'd', 'tips', 'lps']; // a connector's, written again by every resolve
 
 // An item's box: a turned shape by its turned bounds, a connector by its derived bbox, text by its stored height.
-const boxOf = (i) => (i.type === 'shape' && i.rot ? rotBox(i) : defaultMeasure(i));
+const boxOf = (i) => rotBox({ ...defaultMeasure(i), rot: rotOf(i) });
 const strip = (i) => (i.type === 'connector' ? Object.fromEntries(Object.entries(i).filter(([k]) => !DERIVED.includes(k))) : i);
 const sizeOf = (items) => {
   const b = groupBox(resolveConnectors(items).items.map(boxOf));

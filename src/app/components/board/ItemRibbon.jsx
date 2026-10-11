@@ -1,26 +1,28 @@
 import { useLayoutEffect, useRef } from 'react';
-import { AlignCenter, AlignLeft, AlignRight, ArrowLeftRight, Bold, Captions, Crop, Palette, RouteOff, Scaling, SquarePen } from 'lucide-react';
+import { AlignCenter, AlignLeft, AlignRight, ArrowLeftRight, Bold, Captions, Crop, MoveHorizontal, Palette, RouteOff, Scaling, SquarePen } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Toggle } from '@/components/ui/toggle';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
-import { NOTE_COLORS, TEXT_SIZES } from '../../../whiteboard.js';
+import { turns } from '../../../flow/shapes.mjs';
+import { fillable, NOTE_COLORS } from '../../../whiteboard.js';
 import { Tip } from '../Tip.jsx';
 import {
   CHROME, ColorSwatch, ConnectorControls, FillSelect, keepFocus, LabelControls, LabelsPanel, OptionSelect, PopoverButton, PresetRow, RotateControls,
-  ShapePicker, StrokeControls, useBoard, useSnapshot, withValue,
+  ShapePicker, SizeSelect, StrokeControls, useBoard, useSnapshot,
 } from './controls.jsx';
 import { placeRibbon } from './place.mjs';
 
 const ALIGNS = [['left', 'Align left', AlignLeft], ['center', 'Align centre', AlignCenter], ['right', 'Align right', AlignRight]];
 const FIRST = 17; // px from the ribbon's left edge to the centre of its first control (border, p-1, half a size-8)
-const HANDLES = ':scope > .wb-sel > :is(.wb-handle, .wb-rot, .wb-qc, .wb-end, .wb-mid, .wb-wp)';
+const HANDLES = ':scope > .wb-sel > :is(.wb-handle, .wb-rot, .wb-tip, .wb-qc, .wb-end, .wb-mid, .wb-wp)';
 const grow = (r, d) => ({ left: r.left - d, top: r.top - d, right: r.right + d, bottom: r.bottom + d });
 
 /** The selection's chrome on `board` as drawn (client px): [its box, the handle rects]. The box spans the selected items'
  * outlines (3 px beyond their elements), the group box's (6 px beyond) and the handles, rotate handle and quick-connect
  * dots (children of the item's element: they turn with a turned shape). */
 function chrome(board) {
-  const handles = [...board.layer.querySelectorAll(HANDLES)].map((h) => h.getBoundingClientRect());
+  const group = board.groupEl.hidden ? [] : [...board.groupEl.children]; // its rotate handle
+  const handles = [...board.layer.querySelectorAll(HANDLES), ...group].map((h) => h.getBoundingClientRect());
   const rects = [...board.layer.querySelectorAll(':scope > .wb-sel')].map((el) => grow(el.getBoundingClientRect(), 3));
   if (!board.groupEl.hidden) rects.push(grow(board.groupEl.getBoundingClientRect(), 6));
   rects.push(...handles);
@@ -97,8 +99,7 @@ export function ItemControls({ board, item, group, mixed = [] }) {
     controls = (
       <>
         <ColorSwatch board={board} title="Text colour" value={item.color} onChange={(color) => set({ color })} />
-        <OptionSelect board={board} title="Text size" className="w-22" value={item.size}
-          options={withValue(TEXT_SIZES, item.size).map((s) => [s, `${s} px`])} onChange={(v) => set({ size: Number(v) })} />
+        <SizeSelect board={board} title="Text size" className="w-22" value={item.size} onChange={(size) => set({ size })} />
         <Tip title="Bold" {...CHROME}>
           <Toggle size="sm" aria-label="Bold" pressed={!!item.bold} onPressedChange={() => set({ bold: !item.bold })}><Bold /></Toggle>
         </Tip>
@@ -109,6 +110,9 @@ export function ItemControls({ board, item, group, mixed = [] }) {
             </Tip>
           ))}
         </ToggleGroup>
+        <Tip title="Fit the width to the text" {...CHROME}>
+          <Toggle size="sm" aria-label="Fit the width to the text" pressed={!!item.fit} onPressedChange={() => set({ fit: !item.fit })}><MoveHorizontal /></Toggle>
+        </Tip>
         <OptionSelect board={board} title="Note colour" className="w-36" value={item.bg || 'none'}
           options={NOTE_COLORS.map(([v, label]) => [v || 'none', label, v])} onChange={(v) => set({ bg: v === 'none' ? null : v })} />
       </>
@@ -118,15 +122,14 @@ export function ItemControls({ board, item, group, mixed = [] }) {
   } else if (item.type === 'shape') {
     controls = (
       <>
-        <ColorSwatch board={board} title="Fill colour" value={item.fillColor} onChange={(fillColor) => set({ fillColor })} />
+        {fillable(item.shape) && <ColorSwatch board={board} title="Fill colour" value={item.fillColor} onChange={(fillColor) => set({ fillColor })} />}
         <StrokeControls board={board} value={item} set={set} />
-        <FillSelect board={board} value={item} set={set} />
+        {fillable(item.shape) && <FillSelect board={board} value={item} set={set} />}
         <PopoverButton board={board} title="Label (double-click, Enter, F2 to edit)" icon={<Captions />}>
           <LabelControls board={board} value={item} set={set} align />
         </PopoverButton>
         {!mixed.includes('shape') && <ShapePicker board={board} value={item.shape} onChange={(shape) => set({ shape })} />}
         <PopoverButton board={board} title="Style presets" icon={<Palette />}><PresetRow set={set} /></PopoverButton>
-        {one && <RotateControls board={board} value={item.rot ?? 0} />}
       </>
     );
   } else if (item.type === 'connector') {
@@ -179,5 +182,5 @@ export function ItemControls({ board, item, group, mixed = [] }) {
       </>
     );
   }
-  return controls;
+  return one && turns(item) ? <>{controls}<RotateControls board={board} value={item.rot ?? 0} /></> : controls; // §6d: every item but a connector turns
 }

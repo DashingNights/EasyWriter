@@ -66,7 +66,7 @@ export const FLOW_TOOLS = [
     keywords: [...ARRANGE_WORDS[id.split('-')[0]], ...label.toLowerCase().split(' ').slice(1)],
   })),
   { id: 'rotate', label: 'Rotate 90 degrees', group: 'Item', icon: h(RotateCw), key: 'board.rotate', notice: 'Rotated',
-    when: (c) => can('board.itemIs', c.snap, null, ['shape']) || many(c), run: (c) => c.board.rotate(90),
+    when: (c) => can('board.itemIs', c.snap, null, ['shape', 'image', 'text', 'stroke', 'canvas']) || many(c), run: (c) => c.board.rotate(90),
     options: (c) => h(RotateControls, { board: c.board, value: c.snap.item?.rot ?? 0 }),
     keywords: ['rotate', 'turn', 'spin', 'angle', 'degrees', 'tilt', 'clockwise', 'rotation', 'orientation', 'rotat'] },
   { id: 'copy-style', label: 'Copy style', group: 'Item', icon: h(PaintbrushVertical), key: 'board.copyStyle', notice: 'Style copied', when: styled,

@@ -89,3 +89,27 @@ test('ids are checked before any path is built; other file names are not listed'
   fs.writeFileSync(path.join(dir, `${ID}.history.json`), '{"updated": 1}');
   assert.deepEqual(await fam.list(), []);
 });
+
+test('images: base64 pictures are saved once as files and loaded back as data URLs; old records load as they are', async () => {
+  const dir = tempDir();
+  const pics = path.join(dir, 'images');
+  const fam = fileFamily(() => dir, { images: () => pics, maxBytes: 6000, summary: (r) => ({ id: r.id, thumb: r.thumb }) });
+  const png = `data:image/png;base64,${Buffer.alloc(3000, 7).toString('base64')}`; // 4022 characters: three inline would pass maxBytes
+  const odd = 'data:image/png;base64,AAA'; // not canonical base64: stays inline
+  const { id } = await fam.save({ thumb: png, doc: { items: [{ src: png }, { src: odd }], text: `see ${png}` } });
+  const [name] = fs.readdirSync(pics);
+  assert.match(name, /^[a-f0-9]{64}\.png$/);
+  assert.equal(fs.readFileSync(path.join(pics, name)).length, 3000);
+  const ref = `data:image/png;sha256,${name.slice(0, 64)}`;
+  const disk = JSON.parse(fs.readFileSync(path.join(dir, `${id}.json`), 'utf8'));
+  assert.deepEqual([disk.thumb, disk.doc.items[0].src, disk.doc.items[1].src, disk.doc.text], [ref, ref, odd, `see ${png}`]);
+  const back = await fam.load(id);
+  assert.deepEqual([back.thumb, back.doc.items[0].src, back.doc.items[1].src], [png, png, odd]);
+  assert.equal((await fam.list())[0].thumb, png);
+  const shared = { src: png }; // one object reached twice, as IPC can send it
+  const two = await fam.load((await fam.save({ a: shared, b: shared })).id);
+  assert.deepEqual([two.a.src, two.b.src], [png, png]);
+  // A record from before keeps its data URL; a missing picture keeps its reference.
+  fs.writeFileSync(path.join(dir, `${ID}.json`), JSON.stringify({ id: ID, a: png, b: `data:image/png;sha256,${'0'.repeat(64)}` }));
+  assert.deepEqual(await fam.load(ID), { id: ID, a: png, b: `data:image/png;sha256,${'0'.repeat(64)}` });
+});

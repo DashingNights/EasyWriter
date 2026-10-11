@@ -1,5 +1,5 @@
 import { polylinePoint, resolveConnectors } from '../../flow/route.mjs';
-import { rotBox } from '../../flow/shapes.mjs';
+import { rotBox, rotOf } from '../../flow/shapes.mjs';
 import { rasterizeWhiteboard } from '../../whiteboard.js';
 
 // Numbered marks on the pictures the assistant's model gets (SPEC §7i Vision; plan assistant-reliability.md wave 2): a badge
@@ -25,7 +25,7 @@ export function markSpots(items, all = items) {
   const geo = conns.size ? resolveConnectors(all, undefined, conns).geo : new Map();
   return items.map((i) => {
     if (i.type !== 'connector') {
-      const b = i.type === 'shape' && i.rot ? rotBox(i) : i;
+      const b = rotOf(i) ? rotBox({ ...i, h: i.h ?? 0 }) : i;
       return { id: i.id, x: b.x ?? 0, y: b.y ?? 0, mid: false };
     }
     const pts = geo.get(i.id)?.pts;

@@ -478,7 +478,9 @@ class CanvasSession {
     this.page = pm.dom.closest('.page');
     // Artboard px → page px: the canvas's display scale, kept while editing (a size capped to the page or whiteboard width
     // never shrinks the content on screen). Its inverse is the board's unit: item sizes show and are set in post px (§6c).
-    this.k = target.el().getBoundingClientRect().width / scaleOf(this.page) / target.attrs().w;
+    // A canvas item's element may be turned (§6d): its width on screen is its layout width at its whiteboard's scale.
+    const el = target.el();
+    this.k = (target.parent ? el.offsetWidth * scaleOf(target.parent) : el.getBoundingClientRect().width) / scaleOf(this.page) / target.attrs().w;
     this.board = new Board(target.attrs(), {
       commit: (attrs, newGroup) => target.commit(attrs, newGroup, this.min && { x: this.at.x - this.min.x, y: this.at.y - this.min.y }),
       undo: () => withoutScroll(() => editor.commands.undo()),
@@ -543,6 +545,10 @@ class CanvasSession {
   place() {
     const el = this.target.el();
     el.style.visibility = 'hidden';
+    if (this.target.parent && !('turn' in el.dataset)) { // a turned canvas item is edited unturned, from its unturned box
+      el.dataset.turn = el.style.transform;
+      el.style.transform = '';
+    }
     const z = scaleOf(this.page);
     const p = this.page.getBoundingClientRect();
     const at = (e) => {
@@ -584,6 +590,10 @@ class CanvasSession {
     this.page.classList.remove('sc-editing');
     const el = this.target.el();
     if (el) el.style.visibility = '';
+    if (el && 'turn' in el.dataset) {
+      el.style.transform = el.dataset.turn;
+      delete el.dataset.turn;
+    }
     window.removeEventListener('keydown', this.onKeyDown);
     window.removeEventListener('paste', this.board.pasteEvent, true);
     window.removeEventListener('pointerdown', this.onPointerDown, true);

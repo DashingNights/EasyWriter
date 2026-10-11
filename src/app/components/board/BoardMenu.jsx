@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { BringToFront, ClipboardPaste, Copy, CopyPlus, PackagePlus, Scissors, SendToBack, Trash2 } from 'lucide-react';
+import { BringToFront, ClipboardPaste, Copy, CopyPlus, FlipHorizontal2, FlipVertical2, PackagePlus, Scissors, SendToBack, Trash2 } from 'lucide-react';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuShortcut, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
@@ -64,6 +64,9 @@ export function BoardMenu() {
       <DropdownMenuSeparator />
       {item('Bring to front', BringToFront, keyLabel('board.front'), () => board.arrange('front'))}
       {item('Send to back', SendToBack, keyLabel('board.back'), () => board.arrange('back'))}
+      <DropdownMenuSeparator />
+      {item('Flip horizontal', FlipHorizontal2, keyLabel('board.flipH'), () => board.flip('x'))}
+      {item('Flip vertical', FlipVertical2, keyLabel('board.flipV'), () => board.flip('y'))}
     </PointerMenu>
   );
 }

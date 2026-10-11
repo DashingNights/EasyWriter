@@ -55,21 +55,22 @@ const item = (type, required, properties) => ({
 
 const TEXT = item('text', ['x', 'y', 'w', 'html'], {
   ...XY, w: SIZE, html: { type: 'string', maxLength: 100000 }, size: SIZE, color: COLOR, bold: BOOL,
-  align: { enum: ['left', 'center', 'right'] }, bg: { anyOf: [COLOR, { type: 'null' }] },
+  align: { enum: ['left', 'center', 'right'] }, bg: { anyOf: [COLOR, { type: 'null' }] }, rot: NUM, fit: BOOL,
 });
 const IMAGE = item('image', ['src', 'x', 'y', 'w', 'h'], {
   ...BOX, src: { type: 'string', pattern: '^data:image/', maxLength: 20000000 },
   crop: { type: 'object', required: ['x', 'y', 'w', 'h'], properties: { x: OPACITY, y: OPACITY, w: OPACITY, h: OPACITY } },
+  rot: NUM, mirrorX: BOOL, mirrorY: BOOL,
 });
 const SHAPE = item('shape', ['shape', 'x', 'y', 'w', 'h'], {
   ...BOX, shape: { enum: KINDS.map((k) => k.kind) }, color: COLOR, width: { type: 'number', minimum: 0 }, opacity: OPACITY,
-  fill: { enum: FILLS.map(([k]) => k) }, fillColor: COLOR, rot: NUM, flipX: BOOL, flipY: BOOL,
+  fill: { enum: FILLS.map(([k]) => k) }, fillColor: COLOR, rot: NUM, flipX: BOOL, flipY: BOOL, mirrorX: BOOL, mirrorY: BOOL,
   // its label
   html: { type: 'string', maxLength: 100000 }, size: SIZE, textColor: COLOR, align: { enum: ['left', 'center', 'right'] },
   valign: { enum: ['top', 'middle', 'bottom'] },
 });
 const STROKE = item('stroke', ['x', 'y', 'w', 'h', 'vw', 'vh', 'd', 'color', 'width', 'opacity'], {
-  ...BOX, vw: SIZE, vh: SIZE, d: { type: 'string', maxLength: 1000000 }, color: COLOR, width: SIZE, opacity: OPACITY,
+  ...BOX, vw: SIZE, vh: SIZE, d: { type: 'string', maxLength: 1000000 }, color: COLOR, width: SIZE, opacity: OPACITY, rot: NUM, mirrorX: BOOL, mirrorY: BOOL,
 });
 // A connector end: bound to an item (anchor null: floating; a name or [rx, ry] in 0..1: that point) or free at x, y.
 const END = {
@@ -80,6 +81,7 @@ const END = {
         item: ITEM_ID,
         anchor: { anyOf: [{ type: 'null' }, { enum: ['n', 'e', 's', 'w', 'ne', 'nw', 'se', 'sw', 'c'] },
           { type: 'array', items: { type: 'number', minimum: 0, maximum: 1 }, minItems: 2, maxItems: 2 }] },
+        pin: BOOL, // with an [rx, ry] anchor: the tip at that point inside the item, not on its outline
       },
     },
     { type: 'object', required: ['x', 'y'], properties: XY },
@@ -102,7 +104,7 @@ const FLAT = [TEXT, IMAGE, SHAPE, STROKE, CONNECTOR];
 const CANVAS = item('canvas', ['x', 'y', 'w', 'h', 'aw', 'ah'], {
   ...BOX, aw: { type: 'number', minimum: 1, maximum: 8000 }, ah: { type: 'number', minimum: 1, maximum: 8000 },
   frame: { anyOf: [{ type: 'null' }, { type: 'object', required: ['x', 'y', 'w', 'h'], properties: { ...BOX, item: ITEM_ID } }] },
-  bg: { enum: Object.keys(WB_BG) }, items: { type: 'array', maxItems: 2000, items: { oneOf: FLAT } },
+  bg: { enum: Object.keys(WB_BG) }, items: { type: 'array', maxItems: 2000, items: { oneOf: FLAT } }, rot: NUM, mirrorX: BOOL, mirrorY: BOOL,
 });
 
 export const ITEM = { oneOf: [...FLAT, CANVAS] };

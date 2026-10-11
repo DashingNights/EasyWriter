@@ -3,7 +3,7 @@ import { cn } from 'cn';
 import {
   AlignCenterHorizontal, AlignCenterVertical, AlignEndHorizontal, AlignEndVertical, AlignHorizontalDistributeCenter, AlignStartHorizontal,
   AlignStartVertical, AlignVerticalDistributeCenter, BringToFront, Copy, Eraser, FoldVertical, Frame, ImagePlus, Magnet, MousePointer2,
-  MoveHorizontal, MoveVertical, PaintBucket, Pen, Redo2, SendToBack, Shapes, Spline, SquareX, Trash2, Type, Undo2,
+  LayoutGrid, MoveHorizontal, MoveVertical, PaintBucket, Pen, Redo2, SendToBack, Shapes, Spline, SquareX, Trash2, Type, Undo2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -16,6 +16,7 @@ import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from '@/compon
 import { Separator } from '@/components/ui/separator';
 import { Switch } from '@/components/ui/switch';
 import { Toggle } from '@/components/ui/toggle';
+import { KINDS } from '../../../flow/shapes.mjs';
 import { BG_OPTIONS, resolveBg } from '../../../whiteboard.js';
 import { keyLabel, withKey } from '../../keybinds.js';
 import { refocusEditor } from '../../actions.js';
@@ -24,9 +25,10 @@ import { useEditor, useStore } from '../../store.js';
 import { Group as ToolGroup, SwatchMenu, textTools } from '../Toolbar.jsx';
 import { Tip } from '../Tip.jsx';
 import {
-  CHROME, ConnectorControls, keepFocus, OptionSelect, PresetRow, refocus, ShapeControls, StrokeControls, useBoard, useSnapshot,
+  armTile, CHROME, ConnectorControls, keepFocus, OptionSelect, PresetRow, refocus, ShapeControls, ShapeIcon, StrokeControls, useBoard, useSnapshot,
 } from './controls.jsx';
 
+const BASIC = KINDS.filter((k) => k.group === 'basic'); // the quick tools' shapes version (§7d), two rows of 7
 const ACTIVE = 'size-8 data-[state=on]:bg-(--ui-accent) data-[state=on]:text-white hover:data-[state=on]:bg-(--ui-accent) hover:data-[state=on]:text-white';
 const SNAP_RULES = [['items', 'Other items'], ['board', 'Board edges and centre'], ['grid', '10 px grid', 'board.grid']]; // the third: its keybind (§7k)
 const CHECKER = 'repeating-conic-gradient(#8a8ca0 0 25%, #d0d0da 0 50%) 0 0 / 8px 8px';
@@ -188,8 +190,10 @@ function TextRail() {
 }
 
 /** Board mode: the anchored slots acting on `board`, then its tools. In the quick tools island the mode tools come first
- * (nearest the pointer) and Undo, Redo, Add image and Snapping are left out (keys, paste / drop cover them). */
-export function BoardTools({ board }) {
+ * (nearest the pointer) and Undo, Redo, Add image and Snapping are left out (keys, paste / drop cover them). `shapes` (the
+ * island's shapes version, §7d): the basic shapes and All tools (`onAllTools`) in place of the mode tools; there Shape calls
+ * `onShapes` (back to the shapes version) instead of opening its options above the island. */
+export function BoardTools({ board, shapes = false, onAllTools, onShapes }) {
   const snap = useSnapshot(board);
   const popup = usePopup();
   const [open, setOpen] = useState(null); // 'snap' | 'bg' | 'arrange' | null
@@ -205,7 +209,11 @@ export function BoardTools({ board }) {
   // A tool's options show once: under the quick tools island while it is open for this board, else beside the rail.
   const inIsland = !!useContext(RailLayout).anchor;
   const quickHere = useStore((s) => s.quickTools?.board === board);
-  const showTool = (m) => mode === m && (inIsland || !quickHere);
+  const showTool = (m) => mode === m && (inIsland ? m !== 'shape' : !quickHere); // the island's shape options: its shapes version
+  const kindButton = (k) => (
+    <RailButton key={k.kind} title={k.label} active={mode === 'shape' && !snap.prefab && snap.shape.shape === k.kind}
+      onClick={act(() => armTile(board, { kind: k.kind }))}><ShapeIcon shape={k.kind} /></RailButton>
+  );
 
   // Text, canvas and image are placement tools: a click on the board places the item there (§6c). Canvases do not nest.
   const addCanvas = <RailButton title={withKey('Add canvas', 'board.canvas')} disabled={snap.kind !== 'whiteboard'} active={mode === 'canvas'} onClick={tool('canvas')}><Frame /></RailButton>;
@@ -236,7 +244,16 @@ export function BoardTools({ board }) {
           {addCanvas}
         </Group>
       )}
-      <Group first={inIsland}>
+      {shapes && (
+        <>
+          <Group first>
+            <RailButton title="All tools" onClick={onAllTools}><LayoutGrid /></RailButton>
+            {BASIC.slice(0, 7).map(kindButton)}
+          </Group>
+          <Group>{BASIC.slice(7).map(kindButton)}</Group>
+        </>
+      )}
+      {!shapes && <Group first={inIsland}>
         <RailButton title={withKey('Select', 'board.select')} active={!mode} onClick={act(() => mode && board.setMode(null))}><MousePointer2 /></RailButton>
         <RailButton title={withKey('Add text', 'board.text')} active={mode === 'text'} onClick={tool('text')}><Type /></RailButton>
         <Popover open={showTool('pen')}>
@@ -246,7 +263,8 @@ export function BoardTools({ board }) {
         {/* The eraser removes whole strokes it crosses: it has no settings, so no options flyout. */}
         <RailButton title={withKey('Eraser', 'board.eraser')} active={mode === 'eraser'} onClick={tool('eraser')}><Eraser /></RailButton>
         <Popover open={showTool('shape')}>
-          <RailButton title={withKey('Shape', 'board.shape')} active={mode === 'shape'} onClick={tool('shape')} slot={PopoverAnchor}><Shapes /></RailButton>
+          <RailButton title={withKey('Shape', 'board.shape')} active={mode === 'shape'} slot={PopoverAnchor}
+            onClick={inIsland ? act(() => { onShapes?.(); if (mode !== 'shape') board.setMode('shape'); }) : tool('shape')}><Shapes /></RailButton>
           <ToolFlyout board={board}>
             <ShapeControls board={board} value={snap.shape} set={(p) => board.setShapeTool(p)} live strokeFirst={inIsland} />
             <PresetRow set={(p) => board.setShapeTool(p)} />
@@ -259,7 +277,7 @@ export function BoardTools({ board }) {
             <PresetRow set={(p) => board.setConnTool(p)} connector />
           </ToolFlyout>
         </Popover>
-      </Group>
+      </Group>}
       <Group>
         <RailButton title={withKey('Duplicate', 'board.duplicate')} disabled={!count} onClick={act(() => board.duplicate())}><Copy /></RailButton>
         <RailButton title={withKey('Bring to front', 'board.front')} disabled={!count} onClick={act(() => board.arrange('front'))}><BringToFront /></RailButton>

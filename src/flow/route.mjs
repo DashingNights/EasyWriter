@@ -1,7 +1,7 @@
 // Connector routing (docs/plans/flowchart.md §3.4, SPEC §6d): resolveConnectors writes each connector's derived fields (bbox
 // x y w h, shaft path `d`, `tips`, label anchors `lps`) from its ends, waypoints and route, so rendering never needs the
 // siblings. Pure (no DOM).
-import { anchorPoint, outlineOf, perimeter, portNormal, rotBox } from './shapes.mjs';
+import { anchorPoint, outlineOf, perimeter, pinPoint, portNormal, rotBox, rotOf } from './shapes.mjs';
 import { ANCHOR_NAMES, defaultMeasure, LABEL_SLOTS, repairEnds } from './model.mjs';
 
 const STUB = 20; // ortho: the straight run out of a bound end (past its turned box), and the detours' clearance
@@ -165,7 +165,8 @@ function endOf(e, byId, measure) {
   const it = byId.get(e.item);
   const b = measure(it);
   const anchor = typeof e.anchor === 'string' ? ANCHOR_NAMES[e.anchor] ?? null : e.anchor;
-  return { it, b, anchor, c: { x: b.x + b.w / 2, y: b.y + b.h / 2 }, box: rotBox({ ...b, rot: it.type === 'shape' ? it.rot : 0 }) };
+  if (e.pin && anchor) return { free: pinPoint(it, anchor, b) }; // pinned: routed as a free end at a point that follows the item
+  return { it, b, anchor, c: { x: b.x + b.w / 2, y: b.y + b.h / 2 }, box: rotBox({ ...b, rot: rotOf(it) }) };
 }
 
 // The point the other end aims at: a free point, a fixed anchor's point, else the item's centre.

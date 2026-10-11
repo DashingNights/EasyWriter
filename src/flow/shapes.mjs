@@ -282,7 +282,10 @@ export const kindOf = (kind) => BY_KIND.get(kind) ?? null;
 // --- rotation ---
 
 const centre = (b) => ({ x: b.x + b.w / 2, y: b.y + b.h / 2 });
-const rotOf = (it) => (it.type === 'shape' && Number.isFinite(it.rot) ? it.rot : 0); // only shapes turn
+/** Whether item `it` can turn: every item but a connector (its line follows its ends). */
+export const turns = (it) => ['shape', 'image', 'text', 'stroke', 'canvas'].includes(it?.type);
+/** Item `it`'s angle in degrees (0 for an item that cannot turn). */
+export const rotOf = (it) => (turns(it) && Number.isFinite(it.rot) ? it.rot : 0);
 
 /** Point `p` turned `deg` degrees clockwise (screen axes, y down) about `c`; the inverse is -deg. */
 export function rotatePoint(p, c, deg) {
@@ -310,7 +313,7 @@ export function rotBox(b) {
 
 // --- outline, perimeter, ports ---
 
-/** Item `it`'s outline in board px ([{x, y}]): its kind's poly, else its box, turned by a shape's rot. `b`: its unrotated box
+/** Item `it`'s outline in board px ([{x, y}]): its kind's poly, else its box, turned by its rot (rotOf). `b`: its unrotated box
  * (text: the rendered height; default the item itself). */
 export function outlineOf(it, b = it) {
   const poly = (it.type === 'shape' && kindOf(it.shape)?.path(b.w, b.h, (it.width || 0) / 2).poly) || rectPoly(0, 0, b.w, b.h);
@@ -342,6 +345,9 @@ export function anchorPoint(it, anchor, b = it) {
   const p = rotatePoint({ x: b.x + anchor[0] * b.w, y: b.y + anchor[1] * b.h }, c, rotOf(it));
   return perimeter(outlineOf(it, b), c, p);
 }
+
+/** A pinned end's point (§6d): anchor [rx, ry] of the unrotated box turned with the item, left where it is (inside the item). */
+export const pinPoint = (it, anchor, b = it) => rotatePoint({ x: b.x + anchor[0] * b.w, y: b.y + anchor[1] * b.h }, centre(b), rotOf(it));
 
 export const portsOf = (it) => (it.type === 'shape' && kindOf(it.shape)?.ports) || PORTS;
 

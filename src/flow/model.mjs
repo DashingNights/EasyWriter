@@ -1,6 +1,6 @@
 // Flowchart data model (docs/plans/flowchart.md §3.3, SPEC §6d): connector validation and defaults, dangling-end repair,
 // moving, cloning, hit-testing, aligning and resizing board items. Pure (no DOM): whiteboard.js, route.mjs and the Node tests share it.
-import { anchorPoint, outlineOf, portsOf, rotatePoint, rotBox } from './shapes.mjs';
+import { anchorPoint, outlineOf, portsOf, rotatePoint, rotBox, rotOf } from './shapes.mjs';
 
 export const ROUTES = ['straight', 'ortho', 'curve'];
 export const DASHES = ['solid', 'dashed', 'dotted'];
@@ -19,7 +19,8 @@ const bound = (e) => typeof e?.item === 'string';
 
 // An end: bound {item, anchor: null (floating) | [rx, ry] in 0..1 | an anchor name} or free {x, y}.
 const validEnd = (e) => isObj(e) && (bound(e)
-  ? e.anchor == null || Object.hasOwn(ANCHOR_NAMES, e.anchor) || (Array.isArray(e.anchor) && e.anchor.length === 2 && e.anchor.every((v) => num(v) && v >= 0 && v <= 1))
+  ? (e.anchor == null || Object.hasOwn(ANCHOR_NAMES, e.anchor) || (Array.isArray(e.anchor) && e.anchor.length === 2 && e.anchor.every((v) => num(v) && v >= 0 && v <= 1)))
+    && (e.pin === undefined || typeof e.pin === 'boolean')
   : num(e.x) && num(e.y));
 
 /** A connector item parseBoard keeps: valid ends; optional fields, when present, of the right kind. */
@@ -37,9 +38,11 @@ export function validConnector(c) {
  * non-empty html; t clamped to 0..1), at most MAX_POINTS waypoints; derived fields that are not all valid are dropped (the next
  * resolve writes them). */
 export function cleanConnector(c) {
-  const end = (e) => (bound(e)
-    ? { item: e.item, anchor: typeof e.anchor === 'string' ? [...ANCHOR_NAMES[e.anchor]] : e.anchor ? [e.anchor[0], e.anchor[1]] : null }
-    : { x: e.x, y: e.y });
+  const end = (e) => {
+    if (!bound(e)) return { x: e.x, y: e.y };
+    const anchor = typeof e.anchor === 'string' ? [...ANCHOR_NAMES[e.anchor]] : e.anchor ? [e.anchor[0], e.anchor[1]] : null;
+    return { item: e.item, anchor, ...(e.pin === true && anchor && { pin: true }) }; // pin: the tip at the anchor itself (§6d)
+  };
   const { label, ...rest } = c;
   const src = { ...(typeof label === 'string' && { mid: { html: label } }), ...(isObj(c.labels) ? c.labels : {}) };
   const labels = {};
@@ -115,6 +118,36 @@ export function moveItem(item, dx, dy) {
   return { ...out, from: end(item.from), to: end(item.to), points: (item.points ?? []).map((p) => ({ x: p.x + dx, y: p.y + dy })) };
 }
 
+/** A copy of `item` turned `deg` degrees clockwise about point `c` (a group turn, §6d): its box centre goes round c and it turns
+ * by deg; a connector's free ends and waypoints go round c (bound ends stay on their item). `h`: its height (text: rendered). */
+export function turnItem(item, c, deg, h = item.h) {
+  const r2 = (n) => Math.round(n * 100) / 100;
+  const round = (p) => {
+    const q = rotatePoint(p, c, deg);
+    return { x: r2(q.x), y: r2(q.y) };
+  };
+  if (item.type === 'connector') {
+    const end = (e) => (bound(e) ? e : { ...e, ...round(e) });
+    return { ...item, from: end(item.from), to: end(item.to), ...(item.points && { points: item.points.map(round) }) };
+  }
+  const m = round({ x: item.x + item.w / 2, y: item.y + h / 2 });
+  return { ...item, x: r2(m.x - item.w / 2), y: r2(m.y - h / 2), rot: (((Math.round((item.rot || 0) + deg) % 360) + 360) % 360) };
+}
+
+/** A copy of `item` mirrored across the line through `c` (axis 'x': the vertical line, left ↔ right; 'y': top ↔ bottom; a
+ * flip, §6d): its box centre mirrored, its angle negated and its flag `field` (null: none) toggled; a connector's free ends and
+ * waypoints mirrored (bound ends stay on their item). `h`: its height (text: rendered). */
+export function flipItem(item, c, axis, field = null, h = item.h) {
+  const r2 = (n) => Math.round(n * 100) / 100;
+  const m = (p) => (axis === 'x' ? { x: r2(2 * c.x - p.x), y: p.y } : { x: p.x, y: r2(2 * c.y - p.y) });
+  if (item.type === 'connector') {
+    const end = (e) => (bound(e) ? e : { ...e, ...m(e) });
+    return { ...item, from: end(item.from), to: end(item.to), ...(item.points && { points: item.points.map(m) }) };
+  }
+  const q = m({ x: item.x + item.w / 2, y: item.y + h / 2 });
+  return { ...item, x: r2(q.x - item.w / 2), y: r2(q.y - h / 2), ...(item.rot && { rot: (360 - item.rot) % 360 }), ...(field && { [field]: !item[field] }) };
+}
+
 /** Deep copies with new ids (`makeId()`); connector ends bound inside the copied set follow the copies, ends bound outside it
  * become free at their tips. */
 export function cloneItems(items, makeId) {
@@ -179,7 +212,7 @@ export function containedIn(container, items, measure = defaultMeasure) {
   const c = rotBox({ ...measure(container), rot: container.rot });
   return items.filter((i) => {
     if (i === container || i.type === 'connector') return false;
-    const b = rotBox({ ...measure(i), rot: i.type === 'shape' ? i.rot : 0 });
+    const b = rotBox({ ...measure(i), rot: rotOf(i) });
     return b.x >= c.x && b.y >= c.y && b.x + b.w <= c.x + c.w && b.y + b.h <= c.y + c.h;
   }).map((i) => i.id);
 }
@@ -228,29 +261,37 @@ export function sameSize(boxes, axis) {
 }
 
 /** A resize of box `start` ({x, y, w, h, rot}) by `handle` (corner nw ne sw se, edge n e s w) moved dx, dy board px, done in
- * the item's own frame: the move turned by −rot, the box resized with the opposite corner (edge) fixed, then placed so that
- * point keeps its board position (Konva Transformer). `aspect`: one scale for both axes (corners only); `min`: the smallest
+ * the item's own frame: the move turned by −rot, the box resized with the opposite corner (edge) fixed (`flip`: past it the box
+ * goes on there and `fx` / `fy` say which axes went past), then placed so that
+ * point keeps its board position (Konva Transformer). `aspect`: one scale for both axes (an edge scales both, the other side
+ * about its middle); `min`: the smallest
  * side, or a side's start size when that is smaller. Sizes whole px. → {x, y, w, h}. */
-export function resizeInFrame(start, handle, dx, dy, { aspect = false, min = 20 } = {}) {
+export function resizeInFrame(start, handle, dx, dy, { aspect = false, min = 20, flip = false } = {}) {
   const rot = start.rot || 0;
   const d = rotatePoint({ x: dx, y: dy }, { x: 0, y: 0 }, -rot);
   const sx = handle.includes('w') ? -1 : handle.includes('e') ? 1 : 0;
   const sy = handle.includes('n') ? -1 : handle.includes('s') ? 1 : 0;
   let [w, h] = [start.w + sx * d.x, start.h + sy * d.y];
-  if (aspect && sx && sy) {
-    const k = (start.w * w + start.h * h) / (start.w ** 2 + start.h ** 2); // the pointer projected on the diagonal
+  let [fx, fy] = [false, false]; // flip: past the fixed side the box goes on there (mirrored)
+  if (aspect) {
+    // Corner: the pointer projected on the diagonal; edge: that side's scale (the other side about its middle).
+    let k = sx && sy ? (start.w * w + start.h * h) / (start.w ** 2 + start.h ** 2) : sx ? w / start.w : h / start.h;
+    if (flip && k < 0) [k, fx, fy] = [-k, !!sx, !!sy];
     const s = Math.max(k, Math.min(1, min / Math.max(start.w, start.h)));
     [w, h] = [Math.max(1, Math.round(start.w * s)), Math.max(1, Math.round(start.h * s))];
   } else {
+    if (flip && sx && w < 0) [w, fx] = [-w, true];
+    if (flip && sy && h < 0) [h, fy] = [-h, true];
     w = sx ? Math.max(Math.min(min, start.w), Math.round(w)) : start.w;
     h = sy ? Math.max(Math.min(min, start.h), Math.round(h)) : start.h;
   }
-  // The fixed point, from the box's top-left in the item frame: the opposite corner, or the middle of the opposite edge.
-  const fixed = (bw, bh) => ({ x: sx > 0 ? 0 : sx < 0 ? bw : bw / 2, y: sy > 0 ? 0 : sy < 0 ? bh : bh / 2 });
-  const f0 = fixed(start.w, start.h);
+  // The fixed point, from the box's top-left in the item frame: the opposite corner, or the middle of the opposite edge (`ex`,
+  // `ey`: the side the box lies on from it).
+  const fixed = (bw, bh, ex, ey) => ({ x: ex > 0 ? 0 : ex < 0 ? bw : bw / 2, y: ey > 0 ? 0 : ey < 0 ? bh : bh / 2 });
+  const f0 = fixed(start.w, start.h, sx, sy);
   const F = rotatePoint({ x: start.x + f0.x, y: start.y + f0.y }, { x: start.x + start.w / 2, y: start.y + start.h / 2 }, rot);
-  const f1 = fixed(w, h);
+  const f1 = fixed(w, h, fx ? -sx : sx, fy ? -sy : sy);
   const v = rotatePoint({ x: f1.x - w / 2, y: f1.y - h / 2 }, { x: 0, y: 0 }, rot); // the fixed point from the new centre
   const r2 = (n) => Math.round(n * 100) / 100;
-  return { x: r2(F.x - v.x - w / 2), y: r2(F.y - v.y - h / 2), w, h };
+  return { x: r2(F.x - v.x - w / 2), y: r2(F.y - v.y - h / 2), w, h, ...(flip && { fx, fy }) };
 }

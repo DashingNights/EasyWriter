@@ -1,5 +1,5 @@
 import { endSide } from '../assistant/attach.mjs';
-import { rotatePoint, rotBox } from '../../flow/shapes.mjs';
+import { rotatePoint, rotBox, rotOf } from '../../flow/shapes.mjs';
 import { defs as boardDefs, itemsOf, target } from './board.mjs';
 import { define, fail } from './define.mjs';
 import { DRAFT_ID, ITEM_ID, ref } from './schema-defs.mjs';
@@ -39,7 +39,7 @@ const NORMALS = { n: { x: 0, y: -1 }, e: { x: 1, y: 0 }, s: { x: 0, y: 1 }, w: {
 
 /** The anchor name of item `it` that sits on screen side `side`: a turned shape's anchors turn with it (rot, clockwise degrees). */
 function unturned(side, it) {
-  const n = rotatePoint(NORMALS[side], { x: 0, y: 0 }, -((it?.type === 'shape' && it.rot) || 0));
+  const n = rotatePoint(NORMALS[side], { x: 0, y: 0 }, -(it ? rotOf(it) : 0));
   return Math.abs(n.x) >= Math.abs(n.y) ? (n.x > 0 ? 'e' : 'w') : n.y > 0 ? 's' : 'n';
 }
 
@@ -96,7 +96,7 @@ export const defs = [
       const t = target(ctx, a.path);
       // As board.items.place: a whiteboard measures its text items; elsewhere a stored text height is used.
       const boxOf = t.kind === 'whiteboard' && t.wb ? (i) => t.wb.itemBox(i)
-        : (i) => (i.type === 'shape' && i.rot ? rotBox(i) : { x: i.x, y: i.y, w: i.w, h: i.h ?? 0 });
+        : (i) => rotBox({ x: i.x, y: i.y, w: i.w, h: i.h ?? 0, rot: rotOf(i) });
       const patch = straightPatch(itemsOf(t), connectorOf(itemsOf(t), a.id, 'board'), boxOf);
       const out = update.run(ctx, { path: a.path, id: a.id, patch });
       return { ...out, ...endBoxes(itemsOf(target(ctx, a.path)), out.item, boxOf) };

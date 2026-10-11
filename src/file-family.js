@@ -24,17 +24,71 @@ async function readJson(file) {
   }
 }
 
-async function writeJsonAtomic(file, data) {
+async function writeFileAtomic(file, data) {
   await fs.mkdir(path.dirname(file), { recursive: true });
   const tmp = `${file}.tmp`;
   const fh = await fs.open(tmp, 'w');
   try {
-    await fh.writeFile(JSON.stringify(data));
+    await fh.writeFile(data);
     await fh.sync();
   } finally {
     await fh.close();
   }
   await fs.rename(tmp, file);
+}
+
+const writeJsonAtomic = (file, data) => writeFileAtomic(file, JSON.stringify(data));
+
+// Pictures out of the records (SPEC §3): a base64 data URL anywhere in a saved record is written once to
+// `images/<sha256 of the bytes>.<type>` and the record keeps `data:image/<type>;sha256,<hex>` in its place. Loading puts the
+// data URL back, so the renderer only ever sees data URLs. Records saved before this keep theirs until their next save.
+const DATA_URL = /^data:image\/([a-z0-9.+-]+);base64,/i;
+const IMAGE_REF = /^data:image\/([a-z0-9.+-]+);sha256,([a-f0-9]{64})$/;
+const IMAGE_NAME = /^[a-f0-9]{64}\.[a-z0-9.+-]+$/;
+
+/** [object, key] of every string value in `v` (nested objects and arrays) that passes `test`. */
+function strings(v, test, out = []) {
+  for (const k of Object.keys(v)) {
+    const x = v[k];
+    if (typeof x === 'string') {
+      if (x.startsWith('data:image/') && test(x)) out.push([v, k]);
+    } else if (x && typeof x === 'object') {
+      strings(x, test, out);
+    }
+  }
+  return out;
+}
+
+/** Moves the base64 pictures of record `v` (changed in place) into folder `dir` → `v`. */
+async function externalize(dir, v) {
+  for (const [o, k] of strings(v, (s) => DATA_URL.test(s.slice(0, 80)))) {
+    const m = o[k].slice(0, 80).match(DATA_URL);
+    if (!m) continue; // done already: the same object reached twice (IPC keeps shared references)
+    const [head, type] = m;
+    const b64 = o[k].slice(head.length);
+    const bytes = Buffer.from(b64, 'base64');
+    if (!bytes.length || bytes.toString('base64') !== b64) continue; // not canonical base64: kept inline, so it loads back the same
+    const hex = crypto.createHash('sha256').update(bytes).digest('hex');
+    const file = path.join(dir, `${hex}.${type.toLowerCase()}`);
+    if (!(await fs.stat(file).then((s) => s.size === bytes.length, () => false))) await writeFileAtomic(file, bytes);
+    o[k] = `data:image/${type.toLowerCase()};sha256,${hex}`;
+  }
+  return v;
+}
+
+/** Puts the pictures of folder `dir` back into record `v` (changed in place) as data URLs → `v`. A missing picture keeps its
+ * reference: it shows as a broken image and saves back unchanged, so it comes back once the file does (a later sync). */
+async function inline(dir, v) {
+  const read = new Map();
+  for (const [o, k] of strings(v, (s) => s.length < 200 && IMAGE_REF.test(s))) {
+    const m = o[k].match(IMAGE_REF);
+    if (!m) continue; // done already: the same object reached twice
+    const [, type, hex] = m;
+    const name = `${hex}.${type}`;
+    if (!read.has(name)) read.set(name, await fs.readFile(path.join(dir, name)).then((b) => `data:image/${type};base64,${b.toString('base64')}`, () => null));
+    o[k] = read.get(name) ?? o[k];
+  }
+  return v;
 }
 
 /** Keeps an unparsable file as `<file>.corrupt-<ms>`, out of the way of reads and writes. */
@@ -51,9 +105,10 @@ function isPlainObject(v) {
  *   next save cannot copy it over the good `.bak`;
  * - `maxBytes`: the most JSON characters a record may have;
  * - `validate(record)`: throws on a bad envelope (the message is the caller's error);
- * - `siblings(id)`: more files remove() moves to the trash with the record.
+ * - `siblings(id)`: more files remove() moves to the trash with the record;
+ * - `images()`: the pictures folder: save() moves the record's base64 pictures there, load() and list() put them back.
  */
-function fileFamily(dir, { summary, keepPrevious = false, maxBytes, validate, siblings } = {}) {
+function fileFamily(dir, { summary, keepPrevious = false, maxBytes, validate, siblings, images } = {}) {
   function file(id) {
     if (typeof id !== 'string' || !ID_RE.test(id)) throw new Error('invalid id');
     return path.join(dir(), `${id}.json`);
@@ -74,7 +129,7 @@ function fileFamily(dir, { summary, keepPrevious = false, maxBytes, validate, si
       const f = path.join(dir(), name);
       try {
         const r = await readJson(f);
-        if (r) records.push(summary ? summary(r) : r);
+        if (r) records.push(images ? await inline(images(), summary ? summary(r) : r) : summary ? summary(r) : r);
       } catch (e) {
         if (keepPrevious && e instanceof SyntaxError) await setAside(f);
       }
@@ -83,7 +138,7 @@ function fileFamily(dir, { summary, keepPrevious = false, maxBytes, validate, si
   }
 
   /** The record, or null when there is none. */
-  const load = (id) => readJson(file(id));
+  const load = (id) => readJson(file(id)).then((r) => (r && images ? inline(images(), r) : r));
 
   /** Writes a copy of `record`: a new id (and `created`) when it has none, `updated` = now. */
   function save(record) {
@@ -98,8 +153,12 @@ function fileFamily(dir, { summary, keepPrevious = false, maxBytes, validate, si
     const f = file(saved.id);
     if (saved.created == null) saved.created = now;
     saved.updated = now;
-    if (maxBytes && JSON.stringify(saved).length > maxBytes) throw new Error(`record too large (over ${maxBytes} characters)`);
+    if (!images && maxBytes && JSON.stringify(saved).length > maxBytes) throw new Error(`record too large (over ${maxBytes} characters)`);
     return serialized(async () => {
+      if (images) {
+        await externalize(images(), saved); // changes the caller's nested objects: records come fresh from IPC
+        if (maxBytes && JSON.stringify(saved).length > maxBytes) throw new Error(`record too large (over ${maxBytes} characters)`);
+      }
       if (keepPrevious) {
         await fs.copyFile(f, `${f}.bak`).catch((e) => {
           if (e.code !== 'ENOENT') throw e;
@@ -131,4 +190,4 @@ function fileFamily(dir, { summary, keepPrevious = false, maxBytes, validate, si
   return { file, list, load, save, remove };
 }
 
-module.exports = { fileFamily, isPlainObject, readJson, serialized, setAside, writeJsonAtomic };
+module.exports = { fileFamily, isPlainObject, readJson, serialized, setAside, writeFileAtomic, writeJsonAtomic, externalize, inline, IMAGE_NAME };

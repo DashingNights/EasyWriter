@@ -238,3 +238,10 @@ test('line jumps: the x sweep with its bbox prefilter finds exactly the brute-fo
   assert.equal(findJumps(paths, 5).capped, true);
   assert.equal(resolveConnectors(grid(150, 'arc')).capped, true, '150 × 150 crossings pass the 20 000 test cap');
 });
+
+test('a pinned end ends at its anchor point inside the item, not on the outline', () => {
+  const items = [{ id: 'a', type: 'image', x: 100, y: 100, w: 100, h: 50 },
+    { id: 'c', type: 'connector', route: 'straight', from: { x: 0, y: 0 }, to: { item: 'a', anchor: [0.5, 0.5], pin: true } }];
+  const tip = resolveConnectors(items).geo.get('c').tipsAbs[1];
+  assert.deepEqual([tip.x, tip.y], [150, 125]);
+});

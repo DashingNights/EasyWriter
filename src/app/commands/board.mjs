@@ -4,7 +4,7 @@ import { pathOfPos, posOfPath } from '../../doc-path.mjs';
 import { validFlow } from '../../flow/library.mjs';
 import { cleanConnector, moveItem, repairEnds, unbindFrom, validConnector } from '../../flow/model.mjs';
 import { resolveConnectors } from '../../flow/route.mjs';
-import { KINDS, rotBox } from '../../flow/shapes.mjs';
+import { KINDS, rotBox, rotOf } from '../../flow/shapes.mjs';
 import {
   contentWidth, groupBox, injectStyle, itemElement, make, parseBoard, rasterizeWhiteboard, smartArtboard, topLevelPos, WB_BG,
 } from '../../whiteboard.js';
@@ -160,7 +160,7 @@ function settle(b, items) {
   try {
     let list = resolveConnectors(items, measure).items;
     const box = (i) => {
-      const r = i.type === 'shape' && i.rot ? rotBox(i) : measure(i);
+      const r = rotBox({ ...measure(i), rot: rotOf(i) });
       return { x: r.x, y: r.y, w: r.w, h: r.h };
     };
     let frame = b.frame ?? null;
@@ -581,7 +581,7 @@ export const defs = [
       // A whiteboard measures its text items; elsewhere a stored text height is used (settle stores it on every board write).
       // ponytail: a canvas text item never written through board.* has no h and counts as 0 high; measure it if that shows.
       const boxOf = t.kind === 'whiteboard' && t.wb ? (i) => t.wb.itemBox(i)
-        : (i) => (i.type === 'shape' && i.rot ? rotBox(i) : { x: i.x, y: i.y, w: i.w, h: i.h ?? 0 });
+        : (i) => rotBox({ x: i.x, y: i.y, w: i.w, h: i.h ?? 0, rot: rotOf(i) });
       write(ctx, a, (items) => {
         mustHave(items, [a.id, a.of]);
         const k = items.findIndex((i) => i.id === a.id);

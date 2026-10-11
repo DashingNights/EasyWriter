@@ -81,3 +81,9 @@ test('resizeInFrame: aspect keeps the ratio (corners only), the minimum size hol
   const edge = resizeInFrame({ x: 0, y: 0, w: 100, h: 50 }, 's', 40, 25);
   assert.deepEqual(edge, { x: 0, y: 0, w: 100, h: 75 });
 });
+
+test('resizeInFrame flip: dragging the e edge 50 px past the w edge puts the box on the other side, mirrored on x', () => {
+  const r = resizeInFrame({ x: 0, y: 0, w: 100, h: 50 }, 'e', -150, 0, { flip: true });
+  assert.deepEqual(r, { x: -50, y: 0, w: 50, h: 50, fx: true, fy: false });
+  assert.deepEqual(resizeInFrame({ x: 0, y: 0, w: 100, h: 50 }, 'e', -150, 0), { x: 0, y: 0, w: 20, h: 50 }); // no flip: the minimum
+});
