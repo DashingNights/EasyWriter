@@ -6,7 +6,7 @@ import { toBlob } from 'html-to-image';
 import { toast } from 'sonner';
 import { anchorPoint, kindOf, portNormal, portsOf, rotatePoint, rotBox, rotOf, turns } from './flow/shapes.mjs';
 import {
-  align as alignBoxes, arrangeItems, boundIndex, cleanConnector, cleanLayers, cloneItems, containedIn, DASHES, distribute as distributeBoxes,
+  align as alignBoxes, arrangeItems, boundIndex, cleanConnector, cleanLayers, cloneItems, containedIn, DASHES, defaultMeasure, distribute as distributeBoxes,
   groupItems, HEADS, hitTarget, JUMPS, flipItem, LABEL_SLOTS, MAX_POINTS, moveItem, normalizeGroups, repairEnds, resizeInFrame, ROUTES,
   sameSize as sameBoxes, selectable, toggleLayer, turnItem, unbindFrom, ungroupItems, unitOf, validConnector,
 } from './flow/model.mjs';
@@ -261,6 +261,97 @@ export function parseBoard(json) {
 }
 
 // ---------------------------------------------------------------------------------------------
+// Converted whiteboards (§6b; docs/plans/canvas-merge.md §2). Pure and deterministic (no newId, no DOM): an undo history
+// replays only when the doc and its history file convert alike. They never throw: they run before `new Editor`.
+
+const isObject = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
+
+// A whiteboard's attrs {height, base, bg, items} → canvas attrs, shown at 1:1. `width`: settings.forumWidth.
+export function whiteboardToCanvas(a, width) {
+  const h0 = Number.isFinite(a?.height) ? a.height : DEFAULT_ATTRS.height;
+  const raw = (Array.isArray(a?.items) ? a.items : []).filter(isObject);
+  const bg = Object.hasOwn(WB_BG, a?.bg) ? a.bg : 'post';
+  try {
+    const items = flattenCanvases(raw);
+    const boxes = items.filter((i) => i.type !== 'connector').map((i) => rotBox({ ...defaultMeasure(i), rot: rotOf(i) }))
+      .filter((b) => Number.isFinite(b.x + b.y + b.w + b.h));
+    const w = Math.max(width, Math.ceil(Math.max(0, ...boxes.map((b) => b.x + b.w))));
+    const h = Math.max(h0, Math.ceil(Math.max(0, ...boxes.map((b) => b.y + b.h))));
+    return { w, h, dw: Math.min(w, width), frame: { x: 0, y: 0, w, h }, bg, items, flow: null, source: null };
+  } catch {
+    // A malformed node still becomes a canvas, with its items as they are: dropping them would lose data.
+    return { w: width, h: h0, dw: width, frame: { x: 0, y: 0, w: width, h: h0 }, bg, items: raw, flow: null, source: null };
+  }
+}
+
+// Board items with each canvas item replaced, at its place in the z-order, by its own items as drawn: scaled by w / aw and
+// moved to it, mirrored then turned about its centre (placeItem's order), grouped under its id (2 or more items), its hidden /
+// locked copied, a white or black bg as a backing rect first. Ids and inner group ids already on the board get `-<its id>`.
+// Connectors lose their route (renderers redo it); ends bound to the canvas item are freed (repairEnds). An invalid canvas
+// item is dropped, as parseBoard drops it. → `items` itself when there is none, or when the input is malformed.
+export function flattenCanvases(items) {
+  if (!items.some((i) => i?.type === 'canvas')) return items;
+  try {
+    const used = new Set(items.map((i) => i?.id));
+    const usedGroups = new Set(items.flatMap((i) => (Array.isArray(i?.groups) ? i.groups : [])));
+    const unique = (id, set, c) => (set.has(id) ? `${id}-${c.id}`.slice(0, 32) : id);
+    const out = items.flatMap((c) => {
+      if (c?.type !== 'canvas') return [c];
+      const k = c.w / c.aw;
+      if (!(Number.isFinite(k) && k > 0)) return [];
+      const inner = flattenCanvases((Array.isArray(c.items) ? c.items : []).filter(isObject));
+      if (c.bg === 'white' || c.bg === 'black') {
+        const fill = WB_BG[c.bg];
+        inner.unshift({ id: `${c.id}-bg`, type: 'shape', shape: 'rect', x: 0, y: 0, w: c.aw, h: c.ah, color: fill, width: 0, opacity: 1, fill: 'solid', fillColor: fill });
+      }
+      const ids = new Map(inner.map((i) => [i.id, unique(i.id, used, c)]));
+      const groups = new Map(inner.flatMap((i) => i.groups ?? []).map((g) => [g, unique(g, usedGroups, c)]));
+      for (const id of ids.values()) used.add(id);
+      for (const g of [...groups.values(), c.id]) usedGroups.add(g);
+      const centre = { x: c.x + c.w / 2, y: c.y + c.h / 2 };
+      return inner.map((i0) => {
+        // A label or text with no size renders at 16 px (LABEL; the page's font size): it gets that size so it scales by k.
+        let i = (i0.type === 'shape' && 'html' in i0) || i0.type === 'text' ? { size: LABEL.size, ...i0 } : i0;
+        i = moveItem(scaleItem(i, k), c.x, c.y);
+        for (const axis of ['x', 'y']) if (c[`mirror${axis.toUpperCase()}`]) i = flipItem(i, centre, axis, flipField(i, axis), defaultMeasure(i).h);
+        if (rotOf(c)) i = turnItem(i, centre, c.rot, defaultMeasure(i).h);
+        const end = (e) => (typeof e?.item === 'string' && ids.has(e.item) ? { ...e, item: ids.get(e.item) } : e);
+        if (i.type === 'connector') {
+          const { d, lps, ...rest } = i;
+          i = { ...rest, from: end(i.from), to: end(i.to) };
+        }
+        const gs = [...(i.groups ?? []).map((g) => groups.get(g)), ...(inner.length > 1 ? [c.id] : []), ...(c.groups ?? [])];
+        const { groups: _, ...rest } = i;
+        return { ...rest, id: ids.get(i0.id), ...(gs.length && { groups: gs }), ...(c.hidden && { hidden: true }), ...(c.locked && { locked: true }) };
+      });
+    });
+    return repairEnds(out);
+  } catch {
+    return items;
+  }
+}
+
+// A doc, node or history file with every whiteboard node → a canvas node and every canvas node's canvas items flattened;
+// the same object when there is nothing to change (only the changed path is copied). Board items never match: none has type
+// whiteboard, and a canvas item has no attrs. `width`: settings.forumWidth.
+export function migrateBoards(v, width) {
+  if (!v || typeof v !== 'object') return v;
+  if (v.type === 'whiteboard') return { ...v, type: 'canvas', attrs: whiteboardToCanvas(v.attrs, width) };
+  if (v.type === 'canvas' && isObject(v.attrs) && Array.isArray(v.attrs.items)) {
+    const items = flattenCanvases(v.attrs.items);
+    return items === v.attrs.items ? v : { ...v, attrs: { ...v.attrs, items } };
+  }
+  let out = v;
+  for (const [k, x] of Object.entries(v)) {
+    const y = migrateBoards(x, width);
+    if (y === x) continue;
+    if (out === v) out = Array.isArray(v) ? v.slice() : { ...v };
+    out[k] = y;
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------------------------------------
 // Styles: board chrome lives in one injected stylesheet; item visuals are inline (shared with the rasterizer).
 
 // Over the rotate zones just outside a selected item's corners (§6d): a turning arrow, black on a white halo.
@@ -438,6 +529,9 @@ const lineEnds = (it) => {
 /** Whether item `i` mirrors its content on a flip (§6d): pictures, strokes, canvases and shapes but lines and arrows (whose
  * direction turns instead); text never mirrors. */
 const mirrors = (i) => ['image', 'stroke', 'canvas'].includes(i.type) || (i.type === 'shape' && !isLineish(i.shape));
+// The flag a flip of item `i` on `axis` toggles: a line's or arrow's direction, a mirroring item's mirror, none for text.
+const flipField = (i, axis) => (i.type === 'shape' && isLineish(i.shape) ? (axis === 'x' ? 'flipX' : 'flipY')
+  : mirrors(i) ? (axis === 'x' ? 'mirrorX' : 'mirrorY') : null);
 
 // A resize gone past the fixed side on x (fx) / y (fy) mirrors the item from how it started (§6d flips).
 const setMirror = (item, start, fx, fy) => {
@@ -2078,10 +2172,8 @@ export class Board {
     const b = groupBox(items.map((i) => this.itemBox(i)));
     if (!b) return;
     const c = { x: b.x + b.w / 2, y: b.y + b.h / 2 };
-    const field = (i) => (i.type === 'shape' && isLineish(i.shape) ? (axis === 'x' ? 'flipX' : 'flipY')
-      : mirrors(i) ? (axis === 'x' ? 'mirrorX' : 'mirrorY') : null);
     const starts = items.map((i) => ({ ...i }));
-    items.forEach((i, k) => Object.assign(i, flipItem(starts[k], c, axis, field(i), this.itemHeight(starts[k]))));
+    items.forEach((i, k) => Object.assign(i, flipItem(starts[k], c, axis, flipField(i, axis), this.itemHeight(starts[k]))));
     if (items.some((i, k) => CHANGE_KEYS.some((p) => JSON.stringify(i[p]) !== JSON.stringify(starts[k][p])))) this.commit();
   }
 
