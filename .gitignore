@@ -7,3 +7,6 @@ release/
 smoke-*
 docs/plans/eval-runs/
 test/assistant-eval/fixture/
+SPEC.md
+docs/plans/
+test/assistant-eval/
