@@ -80,7 +80,10 @@ function Rows({ board, expanded }) {
       for (const g of i.groups ?? []) if (!board.items.every((m) => m.hidden || !m.groups?.includes(g) || sel.has(m.id))) expanded.add(g);
     }
   }
-  useEffect(() => list.current?.querySelector('[data-on]')?.scrollIntoView({ block: 'nearest' }), [selKey]);
+  // A block body: scrollIntoView returns a Promise in Chromium, and React calls whatever an effect returns as its cleanup.
+  useEffect(() => {
+    list.current?.querySelector('[data-on]')?.scrollIntoView({ block: 'nearest' });
+  }, [selKey]);
   useEffect(() => () => board.hover(), [board]);
 
   // Click: the row's unit (a locked one too, not a hidden one), scrolled into view; Shift: the sibling rows from the last one
