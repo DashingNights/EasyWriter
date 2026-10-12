@@ -2,7 +2,7 @@ import { createContext, useContext, useLayoutEffect, useRef, useState } from 're
 import { cn } from 'cn';
 import {
   AlignCenterHorizontal, AlignCenterVertical, AlignEndHorizontal, AlignEndVertical, AlignHorizontalDistributeCenter, AlignStartHorizontal,
-  AlignStartVertical, AlignVerticalDistributeCenter, BringToFront, Copy, Eraser, FoldVertical, Frame, ImagePlus, Magnet, MousePointer2,
+  AlignStartVertical, AlignVerticalDistributeCenter, BringToFront, Copy, Eraser, FoldVertical, Frame, ImagePlus, Layers, Magnet, MousePointer2,
   MoveHorizontal, MoveVertical, PaintBucket, Pen, Pin, Redo2, SendToBack, Shapes, Spline, SquareX, Trash2, Type, Undo2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -28,6 +28,7 @@ import { Tip } from '../Tip.jsx';
 import {
   armTile, CHROME, ConnectorControls, keepFocus, OptionSelect, PresetRow, refocus, ShapeControls, ShapeIcon, StrokeControls, useBoard, useSnapshot,
 } from './controls.jsx';
+import { LayersPanel, toggleLayers } from './LayersPanel.jsx';
 
 const BASIC = KINDS.filter((k) => k.group === 'basic'); // the quick tools' shapes (§7d), two rows of 7
 const ACTIVE = 'size-8 data-[state=on]:bg-(--ui-accent) data-[state=on]:text-white hover:data-[state=on]:bg-(--ui-accent) hover:data-[state=on]:text-white';
@@ -209,6 +210,7 @@ export function BoardTools({ board }) {
   // A tool's options show once: under the quick tools island while it is open for this board, else beside the rail.
   const inIsland = !!useContext(RailLayout).anchor;
   const quickHere = useStore((s) => s.quickTools?.board === board);
+  const layers = useStore((s) => s.layers);
   const showTool = (m) => mode === m && (inIsland || !quickHere);
   const kindButton = (k) => (
     <RailButton key={k.kind} title={withKey(k.label, SHAPE_KEYS[k.kind])} active={mode === 'shape' && !snap.prefab && snap.shape.shape === k.kind}
@@ -301,6 +303,7 @@ export function BoardTools({ board }) {
               <SnapControls board={board} snap={snap.snap} />
             </PopoverContent>
           </Popover>
+          <RailButton title="Layers" active={layers} onClick={act(toggleLayers)}><Layers /></RailButton>
           <Sep />
           {background}
         </Group>
@@ -325,7 +328,8 @@ try {
  * around its vertical centre; it scrolls (wheel, no scrollbar) when that ancestor is shorter than the rail. Serves the
  * active board of the document (also a canvas being edited); with none it is in text mode. It is always shown, and the
  * anchored zone (Undo, Redo, Add image, Add canvas) has the same slots in both modes. Its height follows the mode's
- * slots with a quick transition. `className` can cap its height further (App: room for the sidebar button below it). */
+ * slots with a quick transition. `className` can cap its height further (App: room for the sidebar button below it). The
+ * layers panel (§6c) docks right of it, level with its top and down to its cap's end. */
 export function BoardRail({ className }) {
   const board = useBoard();
   const inner = useRef(null);
@@ -363,6 +367,7 @@ export function BoardRail({ className }) {
           {board ? <BoardTools board={board} /> : <TextRail />}
         </div>
       </div>
+      <LayersPanel board={board} className={className} style={{ top: style.top, maxHeight: `calc(0.5rem + ${cap} - ${style.top})` }} />
     </RailLayout.Provider>
   );
 }

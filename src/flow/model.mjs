@@ -132,6 +132,17 @@ export function units(items, scope = null) {
   return out;
 }
 
+/** The layers panel's rows (SPEC §6c Layers panel) for normalised `items` at group `scope` (null: the top level): its units
+ * topmost first, each {group, scope, items, rows}: an item alone (`group` null, `items` [it], `rows` null) or a group (`group`
+ * its id, `items` its members, `rows` its own rows). */
+export function layerRows(items, scope = null) {
+  return units(items, scope).reverse().map((u) => {
+    const gs = u[0].groups ?? [];
+    const group = gs[(scope ? gs.indexOf(scope) : gs.length) - 1] ?? null;
+    return { group, scope, items: u, rows: group ? layerRows(u, group) : null };
+  });
+}
+
 /** Item `id`'s unit at group `scope` (null: the top level; SPEC §6c Groups) → {group, scope, ids}: `scope` is where it counts
  * from (the scope itself when the item is inside it, else the innermost group around the scope that holds the item, else null),
  * `group` the item's outermost group inside that (null: the item alone) and `ids` its members, or [id]. */

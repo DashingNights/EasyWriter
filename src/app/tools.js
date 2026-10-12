@@ -2,7 +2,7 @@ import { createElement as h } from 'react';
 import { NodeSelection } from '@tiptap/pm/state';
 import {
   ALargeSmall, AppWindow, BringToFront, CaseSensitive, Copy, Crop, Eraser, Eye, EyeOff, FilePlus, FoldVertical, FolderInput, Frame, Group, Heading1,
-  Heading2, Heading3, Globe, Heading4, Heading5, Heading6, ImagePlus, Lock, LockOpen, Magnet, MessagesSquare, MousePointer2, MoveHorizontal, PaintBucket, Palette, Pen, Pilcrow, Pin, Redo2, Save,
+  Heading2, Heading3, Globe, Heading4, Heading5, Heading6, ImagePlus, Layers, Lock, LockOpen, Magnet, MessagesSquare, MousePointer2, MoveHorizontal, PaintBucket, Palette, Pen, Pilcrow, Pin, Redo2, Save,
   Scaling, MessageSquare, Send, SendToBack, Settings, Shapes, SlidersHorizontal, SquarePen, SquareX, TableColumnsSplit, TableRowsSplit, Tag, Trash2,
   Type, Undo2, Ungroup, Workflow, X,
 } from 'lucide-react';
@@ -18,6 +18,7 @@ import { byId } from './commands/catalogue.mjs';
 import { PALETTE } from './commands/palette.mjs';
 import { bindTools } from './commands/tool.mjs';
 import { BgSelect, SnapControls } from './components/board/BoardRail.jsx';
+import { toggleLayers } from './components/board/LayersPanel.jsx';
 import { ShapeControls, ShapeIcon, StrokeControls } from './components/board/controls.jsx';
 import { ItemControls } from './components/board/ItemRibbon.jsx';
 import { notify } from './components/Notices.jsx';
@@ -160,6 +161,9 @@ const CORE = [
     options: (c) => h(BgSelect, { board: c.board, bg: c.snap.bg }),
     keywords: ['bg', 'board colour', 'board color', 'background colour', 'background color', 'backdrop', 'transparent',
       'white', 'black', 'post', 'backround', 'backgroud'] },
+  { id: 'layers', label: 'Layers', group: 'Board', icon: h(Layers), needs: BOARD, toggle: true, active: () => getState().layers, run: toggleLayers,
+    keywords: ['layers panel', 'layer list', 'layer', 'outline', 'tree', 'objects', 'item list', 'z order', 'order', 'reorder', 'stack',
+      'hide', 'lock', 'show', 'unlock', 'groups', 'layres', 'layrs'] },
   { id: 'fit-height', label: 'Fit height', group: 'Board', icon: h(FoldVertical), needs: WHITEBOARD, run: (c) => c.board.fitHeight(),
     keywords: ['shrink', 'fit', 'height', 'trim', 'auto height', 'tighten', 'resize board', 'board height'] },
   { id: 'delete-board', label: 'Delete board', group: 'Board', icon: h(SquareX), needs: WHITEBOARD, run: (c) => c.board.deleteBoard(), risk: 'destructive',

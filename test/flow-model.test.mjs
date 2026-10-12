@@ -1,8 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  arrangeItems, cleanConnector, cloneItems, containedIn, flipItem, groupItems, hitTarget, moveItem, normalizeGroups, selectable, toggleLayer,
-  turnItem, unbindFrom, ungroupItems, unitOf, units,
+  arrangeItems, cleanConnector, cloneItems, containedIn, flipItem, groupItems, hitTarget, layerRows, moveItem, normalizeGroups, selectable,
+  toggleLayer, turnItem, unbindFrom, ungroupItems, unitOf, units,
 } from '../src/flow/model.mjs';
 import { parseBoard } from '../src/whiteboard.js';
 
@@ -162,6 +162,13 @@ test('groupItems wraps whole units inside their parent; ungroupItems removes eac
   assert.equal(ids(arrangeItems(items, ['a'], 'front', 'o')), 'z c x a b y');
   assert.equal(ids(arrangeItems(items, ['x'], 'back', 'o')), 'z x a b c y');
   assert.equal(ids(arrangeItems(items, ['c'], 'front')), 'z y a b c x'); // the top level: o moves whole
+});
+
+test('layerRows: units topmost first, a group one row holding its own rows, nested groups nested', () => {
+  const items = [it('z'), it('a', 'i', 'o'), it('b', 'i', 'o'), it('c', 'o'), it('y')];
+  const tree = (rows) => rows.map((r) => (r.group ? `${r.group}@${r.scope}(${tree(r.rows)})` : `${ids(r.items)}@${r.scope}`)).join(' ');
+  assert.equal(tree(layerRows(items)), 'y@null o@null(c@o i@o(b@i a@i)) z@null');
+  assert.deepEqual(layerRows([]), []);
 });
 
 test('cloneItems: a group copied whole gets a new id, one copied in part is dropped', () => {

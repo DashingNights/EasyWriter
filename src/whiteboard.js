@@ -287,7 +287,7 @@ const CSS = `
 .wb-item{cursor:move}
 .sc-art *{pointer-events:none}
 .wb .wb-canvas-empty{outline:calc(1px*var(--wb-inv,1)) dashed #8a8ca0;outline-offset:calc(-1px*var(--wb-inv,1))}
-.wb-item.wb-sel{outline:calc(2px*var(--wb-inv,1)) solid #3d99f5;outline-offset:calc(1px*var(--wb-inv,1))}
+.wb-item.wb-sel,.wb-item.wb-hover{outline:calc(2px*var(--wb-inv,1)) solid #3d99f5;outline-offset:calc(1px*var(--wb-inv,1))}
 .wb-group{position:absolute;z-index:2;pointer-events:none;outline:calc(1px*var(--wb-inv,1)) dashed #3d99f5;outline-offset:calc(5px*var(--wb-inv,1))}
 .wb-marquee{position:absolute;box-sizing:border-box;pointer-events:none;border:calc(1px*var(--wb-inv,1)) solid #3d99f5;background:rgba(61,153,245,.1)}
 .wb-stroke,.wb-shape,.wb-conn{pointer-events:none}
@@ -318,7 +318,7 @@ const CSS = `
 .wb-port{width:calc(9px*var(--wb-inv,1));height:calc(9px*var(--wb-inv,1));margin:calc(-4.5px*var(--wb-inv,1));border-radius:50%;background:#fff;border-color:#3d99f5;pointer-events:none}
 .wb-port.on{background:#3d99f5;border-color:#fff;transform:scale(1.5)}
 .wb-end,.wb-wp,.wb-mid,.wb-qc{pointer-events:auto;cursor:move}
-.wb-item.wb-conn.wb-sel{outline:none}.wb-conn.wb-sel>svg{filter:drop-shadow(0 0 calc(1.5px*var(--wb-inv,1)) #3d99f5)}
+.wb-item.wb-conn:is(.wb-sel,.wb-hover){outline:none}.wb-conn:is(.wb-sel,.wb-hover)>svg{filter:drop-shadow(0 0 calc(1.5px*var(--wb-inv,1)) #3d99f5)}
 .wb-conn.wb-sel>.wb-text{z-index:1}
 .wb-end{width:calc(12px*var(--wb-inv,1));height:calc(12px*var(--wb-inv,1));margin:calc(-6px*var(--wb-inv,1));border-radius:50%;background:#fff;border-color:#3d99f5}
 .wb-end.bound{background:#3d99f5;border-color:#fff}
@@ -1059,6 +1059,7 @@ export class Board {
     this.gesture = null;
     this.nodeSelected = false;
     this.listeners = new Set();
+    this.rev = 0; // +1 per render and commit: the layers panel rebuilds its rows on it (§6c Layers panel)
     injectStyle();
 
     this.dom = make('div', fixed ? 'wb wb-fixed' : 'wb', { tabIndex: 0 });
@@ -1287,6 +1288,7 @@ export class Board {
 
   render() {
     this.stale = false;
+    this.rev++;
     const { bg, items } = this.attrs;
     const hadFocus = this.dom.contains(document.activeElement);
     if (this.fixed) {
@@ -1493,10 +1495,12 @@ export class Board {
   // The unrotated box routing measures (text: its rendered height).
   measure = (i) => (i.type === 'text' ? { x: i.x, y: i.y, w: i.w, h: this.itemHeight(i) } : i);
 
-  // ids: one id, an array of ids, or null (none). A hidden item is never selected (§6 Layer fields).
-  select(ids) {
+  // ids: one id, an array of ids, or null (none); `scope`: the group they count in (§6c Groups; the layers panel sets it). A
+  // hidden item is never selected (§6 Layer fields), nor one no longer on the board.
+  select(ids, scope = this.scope) {
+    this.scope = scope;
     this.sel = new Set(Array.isArray(ids) ? ids : ids ? [ids] : []);
-    for (const i of this.items) if (i.hidden) this.sel.delete(i.id);
+    for (const id of this.sel) if (!this.items.some((i) => i.id === id && !i.hidden)) this.sel.delete(id); // gone or hidden
     this.renderSelection();
   }
 
@@ -1630,6 +1634,7 @@ export class Board {
   commit(newGroup = false) {
     if (this.destroyed) return;
     if (this.newText) this.newText.alone = false;
+    this.rev++;
     let capped;
     // Groups made whole (§6 Layer fields), then routed before autoSize: arrows count.
     ({ items: this.items, geo: this.geo, capped } = resolveConnectors(normalizeGroups(this.items), this.measure));
@@ -1907,12 +1912,12 @@ export class Board {
 
   // Moves the selected items in z-order, keeping their order among themselves (model.mjs arrangeItems: a group moves whole;
   // inside a group stepped into, among its members, §6c Groups). where: 'front' | 'back' | 'forward' | 'backward' (one step
-  // past the unit above / below).
-  arrange(where) {
-    const items = arrangeItems(this.items, this.sel, where, this.scope);
+  // past the unit above / below) | {index} (the layers panel's drag: `ids` at `scope`, its own undo step).
+  arrange(where, ids = this.sel, scope = this.scope) {
+    const items = arrangeItems(this.items, ids, where, scope);
     if (items.every((i, k) => i === this.items[k])) return;
     this.items = items;
-    this.commit();
+    this.commit(typeof where === 'object');
     if (!this.editingId) return;
     // setAttrs() skips re-rendering mid-edit: move the others around the edited (focused) element to keep the caret.
     const els = this.items.map((i) => this.itemEl(i.id));
@@ -1922,11 +1927,11 @@ export class Board {
   }
 
   // Lock / Hide (§6 Layer fields; Ctrl+Shift+L / Ctrl+Shift+H, the board menu): `field` ('locked' | 'hidden') set on the
-  // selection, or cleared when every selected item has it; `all`: cleared on every item that has it (Unlock all, Show all).
-  // The edit ends first; an item locked or hidden leaves the selection. Its own undo step.
-  setLayer(field, all = false) {
+  // selection (`ids`: a layers panel row's items), or cleared when every one has it; `all`: cleared on every item that has it
+  // (Unlock all, Show all). The edit ends first; an item locked or hidden leaves the selection. Its own undo step.
+  setLayer(field, all = false, ids = this.sel) {
     this.finishEdit();
-    const items = toggleLayer(this.items, all ? this.items.filter((i) => i[field]).map((i) => i.id) : this.sel, field);
+    const items = toggleLayer(this.items, all ? this.items.filter((i) => i[field]).map((i) => i.id) : ids, field);
     if (items === this.items) return;
     this.items = items;
     for (const i of items) if (!selectable(i)) this.sel.delete(i.id);
@@ -1953,6 +1958,11 @@ export class Board {
   // Whether Ungroup would change anything: the selection covers a whole group (the board menu and tool search enable it on this).
   canUngroup() {
     return ungroupItems(this.items, this.sel) !== this.items;
+  }
+
+  // The layers panel's hovered row (§6c Layers panel): its items outlined as selected ones are, without handles.
+  hover(ids = []) {
+    for (const el of this.layer.children) el.classList.toggle('wb-hover', ids.includes(el.dataset.id));
   }
 
   // Selects item `id`'s unit (§6c Groups: its outermost group at the scope, model.mjs unitOf); the scope becomes where it is.
@@ -3249,6 +3259,14 @@ export class Board {
     this.select(live.flatMap((i) => unitOf(this.items, i.id, this.scope).ids));
   }
 
+  // Edits a text, a shape's label or a connector's middle label (added if missing): Enter, F2, a double-click on its layers
+  // panel row.
+  editItem(item) {
+    if (item.type === 'text') this.startEdit(item.id);
+    else if (item.type === 'shape') this.editShapeLabel(item);
+    else if (item.type === 'connector') this.editLabel(item.id, 'mid');
+  }
+
   // Edits a shape's label (double-click, Enter, F2); the shape becomes the selection.
   editShapeLabel(item) {
     if (this.selectedId !== item.id) this.select(item.id);
@@ -3363,9 +3381,7 @@ export class Board {
     // Enter / F2: edit the text, the shape's label or the connector's middle label (added if missing); Enter opens a canvas.
     if ((e.key === 'Enter' || e.key === 'F2') && ['text', 'shape', 'connector'].includes(item?.type)) {
       e.preventDefault();
-      if (item.type === 'text') this.startEdit(item.id);
-      else if (item.type === 'shape') this.editShapeLabel(item);
-      else this.editLabel(item.id, 'mid');
+      this.editItem(item);
       return;
     }
     if (e.key === 'Enter' && item?.type === 'canvas') {
