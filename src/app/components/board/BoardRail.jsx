@@ -259,15 +259,16 @@ export function BoardTools({ board }) {
         <Popover open={showTool('shape')}>
           <RailButton title={withKey('Shape', 'board.shape')} active={mode === 'shape'} onClick={tool('shape')} slot={PopoverAnchor}><Shapes /></RailButton>
           <ToolFlyout board={board}>
-            <ShapeControls board={board} value={snap.shape} set={(p) => board.setShapeTool(p)} live strokeFirst={inIsland} />
-            <PresetRow set={(p) => board.setShapeTool(p)} />
+            {/* The island already shows the shapes and the ribbon the styles, so its card has no shape list and no presets (§7d). */}
+            <ShapeControls board={board} value={snap.shape} set={(p) => board.setShapeTool(p)} live strokeFirst={inIsland} picker={!inIsland} />
+            {!inIsland && <PresetRow set={(p) => board.setShapeTool(p)} />}
           </ToolFlyout>
         </Popover>
         <Popover open={showTool('connector')}>
           <RailButton title={withKey('Connector', 'board.connector')} active={mode === 'connector'} onClick={tool('connector')} slot={PopoverAnchor}><Spline /></RailButton>
           <ToolFlyout board={board}>
             <ConnectorControls board={board} value={snap.conn} set={(p) => board.setConnTool(p)} live strokeFirst={inIsland} />
-            <PresetRow set={(p) => board.setConnTool(p)} connector />
+            {!inIsland && <PresetRow set={(p) => board.setConnTool(p)} connector />}
           </ToolFlyout>
         </Popover>
         <RailButton title={withKey('Keep tool on', 'board.keepTool')} active={snap.keepTool} onClick={act(() => board.setKeepTool(!snap.keepTool))}><Pin /></RailButton>

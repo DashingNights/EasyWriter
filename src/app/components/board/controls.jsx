@@ -755,8 +755,8 @@ export function RotateControls({ board, value = 0 }) {
 
 /** Shape, line colour, width, style, fill and fill colour of the shape tool (`live`; its shape list has prefabs) or a selected
  * shape (`strokeFirst`: line colour, width and style before the shape, as in the quick tools island). */
-export function ShapeControls({ board, value, set, live, strokeFirst }) {
-  const shape = <ShapePicker board={board} value={value.shape} onChange={(shape) => set({ shape })} prefabs={live} />;
+export function ShapeControls({ board, value, set, live, strokeFirst, picker = true }) {
+  const shape = picker && <ShapePicker board={board} value={value.shape} onChange={(shape) => set({ shape })} prefabs={live} />;
   return (
     <>
       {!strokeFirst && shape}
