@@ -6,7 +6,7 @@ import { cleanConnector, containedIn, defaultMeasure } from './model.mjs';
 import { flowPreset, kindOf, rotOf } from './shapes.mjs';
 
 const CONTAINERS = ['frame', 'lane'];
-const NODE_TYPES = ['shape', 'text', 'image', 'canvas'];
+const NODE_TYPES = ['shape', 'text', 'image'];
 const ROUND = ['ellipse', 'sm-circ', 'cross-circ', 'or-circ'];
 const PAD = 24; // a group's frame around its members, post px (when the positions are given)
 const ENTITY = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ' };

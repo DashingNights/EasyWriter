@@ -46,7 +46,7 @@ function busy(ctx, a) {
   const b = v.type === 'flows' && v.flowId === a.flowId ? document.querySelector('#flow-area .wb')?.wbView : null;
   if (b && (b.gesture || b.editingId)) return true;
   const s = canvasEditor.get();
-  return !!s && !s.target.parent && s.target.owner?.flow?.()?.id === a.flowId;
+  return !!s && s.target.owner?.flow?.()?.id === a.flowId;
 }
 
 // --- copied from board.mjs (private there; wave 2 edits that file): plain, int, briefItem, findText, itemDefaults, freshIds,

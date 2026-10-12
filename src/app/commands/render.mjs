@@ -11,7 +11,6 @@ import { DRAFT_ID, ref } from './schema-defs.mjs';
 // look at mid-turn, with numbered marks (marks.mjs) and the legend that names them. The loop (loop.js) takes `url` out of the
 // answer and sends the picture as the next user message, since OpenAI-style servers take images in user messages only.
 
-const NAMES = { whiteboard: 'Whiteboard', canvas: 'Canvas' };
 const lines = (items, all = items) => (items.length ? itemLines(items, all, 1).split('\n') : []);
 
 /** The page viewport ([data-viewport]) as main captures it (ctx.lib.capturePage), at most 1 280 px on the long side, with the marks
@@ -26,19 +25,18 @@ async function renderView(ctx) {
   const sections = [];
   const ed = ctx.state.view.type === 'editor' ? ctx.editor : null; // a workspace page hides the draft
   ed?.state.doc.descendants((node, pos) => {
-    const type = node.type.name;
-    if (!NAMES[type]) return true;
+    if (node.type.name !== 'canvas') return true;
     const dom = ed.view.nodeDOM(pos);
     const r = dom?.getBoundingClientRect();
     if (!r?.width || r.bottom < vp.top || r.top > vp.bottom || r.right < vp.left || r.left > vp.right) return false;
-    const b = type === 'whiteboard' ? { w: dom.wbView?.size().w ?? r.width, items: node.attrs.items } : dom.scView ? liveBoard(dom.scView) : node.attrs;
+    const b = dom.scView ? liveBoard(dom.scView) : node.attrs;
     const kb = r.width / b.w; // board px → CSS px (the page zoom, a canvas's displayed width)
     const toPx = (p) => ({ x: (r.left + p.x * kb - vp.left) * f, y: (r.top + p.y * kb - vp.top) * f });
     const shown = markCentres(markSpots(b.items), toPx).map((m, i) => [m, b.items[i]])
       .filter(([m]) => m.x >= 0 && m.y >= 0 && m.x <= width && m.y <= height);
     if (!shown.length) return false;
     marks.push(...shown.map(([m], i) => ({ ...m, n: i + 1 })));
-    sections.push(`${NAMES[type]} at block [${pathOfPos(ed.state.doc, pos)}]`, ...lines(shown.map(([, i]) => i), b.items));
+    sections.push(`Canvas at block [${pathOfPos(ed.state.doc, pos)}]`, ...lines(shown.map(([, i]) => i), b.items));
     return false;
   });
   const url = await drawMarks(blob, marks, { crop: { x: vp.left * k, y: vp.top * k, w: vp.width * k, h: vp.height * k }, width, height });

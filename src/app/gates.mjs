@@ -22,9 +22,6 @@ export const GATES = {
   'node.is': gate('node', (n, _args, kinds) => !!n?.kind && kinds.includes(n.kind), 'The selected block is not of the needed kind',
     'Select that block first'),
   'board.active': gate('board', (b) => !!b, 'No board is active', 'Edit a canvas'),
-  // The tool search's whiteboard tools only (tools.js WHITEBOARD); it goes with them (canvas-merge plan steps 4 and 6).
-  'board.whiteboard': gate('board', (b) => b?.kind === 'whiteboard', 'Only a whiteboard can do this, not a canvas',
-    'Address a whiteboard block'),
   // Canvas Mode (§6b): in the editor view the only board of kind 'canvas' is the one it edits.
   'board.canvasMode': gate('board', (b) => b?.kind === 'canvas', 'No canvas is open in Canvas Mode',
     'Double-click a canvas'),

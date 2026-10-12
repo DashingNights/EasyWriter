@@ -35,7 +35,7 @@ const flare = (side) => {
       + ` radial-gradient(${at}, transparent ${R - 1.5}px, var(--card) ${R - 0.5}px)`,
   };
 };
-// Resize mode's handles, as a canvas item's (whiteboard.js .wb-handle): [id, position, cursor]; corners 12 px, edges 10 px.
+// Resize mode's handles, as a board item's (whiteboard.js .wb-handle): [id, position, cursor]; corners 12 px, edges 10 px.
 const HANDLES = [['nw', 'top-0 left-0', 'cursor-nwse-resize'], ['n', 'top-0 left-1/2', 'cursor-ns-resize'], ['ne', 'top-0 left-full', 'cursor-nesw-resize'],
   ['e', 'top-1/2 left-full', 'cursor-ew-resize'], ['se', 'top-full left-full', 'cursor-nwse-resize'], ['s', 'top-full left-1/2', 'cursor-ns-resize'],
   ['sw', 'top-full left-0', 'cursor-nesw-resize'], ['w', 'top-1/2 left-0', 'cursor-ew-resize']];

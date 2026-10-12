@@ -1,6 +1,6 @@
-// Smart canvas: a whiteboard inside a resizable picture in the document, edited in place (SPEC §6b). The document NodeView
-// shows a scaled preview; edit mode draws a fixed Board whose artboard follows its content (smart artboard) over the canvas,
-// at its spot and scale in the post, for a canvas node or for a canvas item on a whiteboard.
+// Smart canvas: a board inside a resizable picture in the document, edited in place (SPEC §6b). The document NodeView
+// shows a scaled preview; edit mode draws a Board whose artboard follows its content (smart artboard) over the canvas,
+// at its spot and scale in the post.
 // The React chrome (src/app/components/board/CanvasBar.jsx: the canvas bar and the edit bar) follows the `canvasEditor`
 // and `activeCanvas` stores. A synced canvas (`flow` attr, flowchart plan §3.9) draws and edits the library flowchart it
 // names through `flowSource`, which the app's flowchart store (src/app/flows.js) fills.
@@ -28,7 +28,7 @@ const CSS = `
 .sc-editing{position:relative}
 .sc-editing .ProseMirror{opacity:.45;pointer-events:none}
 .sce-art{position:absolute;transform-origin:0 0}
-.sce-art>.wb.wb-fixed{outline:calc(1px*var(--wb-inv,1)) solid #3d99f5;box-shadow:0 4px 24px rgba(0,0,0,.55)}
+.sce-art>.wb{outline:calc(1px*var(--wb-inv,1)) solid #3d99f5;box-shadow:0 4px 24px rgba(0,0,0,.55)}
 .sce-rs{position:absolute}
 .sce-rs:hover{background:rgba(61,153,245,.45)}
 .sce-rs-e{left:100%;top:0;height:100%;width:calc(10px*var(--sce-inv,1));cursor:ew-resize}
@@ -45,7 +45,7 @@ function injectCanvasStyle() {
   document.head.append(make('style', '', { id: 'sc-style', textContent: CSS }));
 }
 
-// Items and bg validated like a whiteboard's (without canvas items: canvases do not nest); non-finite or ≤ 0 sizes
+// Items and bg validated by parseBoard (without canvas items: canvases do not nest); non-finite or ≤ 0 sizes
 // fall back to the defaults, an invalid frame to null (the whole artboard), an invalid `flow` to null (not synced), an
 // invalid `source` (the Mermaid text it was imported from) to null.
 function parseCanvas(json) {
@@ -223,7 +223,7 @@ class CanvasView {
     this.artSize = { w, h };
     Object.assign(this.dom.style, { width: `min(${this.dw}px, 100%)`, aspectRatio: `${w} / ${h}` });
     this.art?.remove();
-    this.art = drawCanvas(this.dom, { aw: w, ah: h, bg, items }); // the same drawing as a canvas item on a whiteboard
+    this.art = drawCanvas(this.dom, { aw: w, ah: h, bg, items });
     this.dom.classList.toggle('sc-empty', !items.length);
     this.drawBadge(f);
     this.scaleArt();
@@ -392,20 +392,17 @@ class CanvasView {
 }
 
 // ---------------------------------------------------------------------------------------------
-// What a session edits, {owner, editor, parent, attrs(), el(), commit(attrs, newGroup, at), done()}: the document canvas
-// node (a synced one: the live library board, written through, §3.9), or a canvas item of a whiteboard (committed through
-// that whiteboard's Board; `parent` is that board's element).
+// What a session edits, {owner, editor, attrs(), el(), commit(attrs, newGroup), done()}: the document canvas node (a synced
+// one: the live library board, written through, §3.9).
 // attrs() is null once the target is gone; el() is the canvas's element in the post (edit mode draws over it);
-// commit keeps the displayed size's ratio to the artboard width as edit mode began (a capped size never compounds), and
-// puts a canvas item `at` the place edit mode moved it to on its whiteboard (px); done() returns focus with the canvas
-// selected. owner.session is the session editing it.
+// commit keeps the displayed size's ratio to the artboard width as edit mode began (a capped size never compounds);
+// done() returns focus with the canvas selected. owner.session is the session editing it.
 
 function nodeTarget(cv) {
   const ratio = cv.node.attrs.dw / liveBoard(cv).w;
   return {
     owner: cv,
     editor: cv.editor,
-    parent: null,
     attrs: () => ({ ...cv.node.attrs, ...liveBoard(cv) }),
     el: () => cv.dom,
     commit(attrs, newGroup) {
@@ -422,52 +419,14 @@ function nodeTarget(cv) {
   };
 }
 
-function itemTarget(wv, id) {
-  const wb = wv.board;
-  const find = (items) => (wb.destroyed ? null : items.find((i) => i.id === id && i.type === 'canvas') ?? null);
-  const start = find(wb.items);
-  const ratio = start.w / start.aw;
-  return {
-    owner: wv,
-    editor: wv.editor,
-    parent: wb.dom,
-    attrs() {
-      const i = find(wb.attrs.items);
-      return i && { w: i.aw, h: i.ah, frame: i.frame, bg: i.bg, items: i.items };
-    },
-    el: () => wb.itemEl(id),
-    commit({ w, h, frame, bg, items }, newGroup, at) {
-      const i = find(wb.items);
-      if (!i) return;
-      const bottom = i.y + i.h;
-      if (w !== i.aw || h !== i.ah) {
-        i.w = Math.min(Math.round(ratio * w), wb.size().w);
-        i.h = Math.max(1, Math.round((i.w * h) / w));
-      }
-      // Moved by the artboard's growth on the left / top, so its content stayed put (clamped below).
-      [i.x, i.y] = [Math.round(at.x), Math.round(at.y)];
-      Object.assign(i, { aw: w, ah: h, frame, bg, items });
-      wb.clampItem(i);
-      wb.pushDown(i, bottom); // a taller canvas moves the items under it down instead of covering them
-      wb.commit(newGroup);
-    },
-    done() {
-      if (wb.destroyed) return;
-      if (find(wb.items)) wb.select(id);
-      wb.focus();
-    },
-  };
-}
-
 // ---------------------------------------------------------------------------------------------
-// Canvas edit mode (§6b): a fixed Board (smart artboard) drawn over the canvas in the post at its spot and display scale,
+// Canvas edit mode (§6b): a Board (smart artboard) drawn over the canvas in the post at its spot and display scale,
 // inside the page, so the main view's scrolling and zoom apply; the rest of the document is dimmed and inert, and a
 // pointer-down there leaves edit mode. Every change is committed live to the target. The edit bar (<CanvasEditBar/>)
 // subscribes like a store ({w, h}).
 
 class CanvasSession {
   constructor(target) {
-    injectCanvasStyle(); // a canvas item is edited without any document canvas having injected it
     this.id = ++opened;
     this.target = target;
     const editor = (this.editor = target.editor);
@@ -476,21 +435,18 @@ class CanvasSession {
     this.live = null; // artboard size while an artboard edge is dragged
     this.listeners = new Set();
     this.page = pm.dom.closest('.page');
-    // Artboard px → page px: the canvas's display scale, kept while editing (a size capped to the page or whiteboard width
-    // never shrinks the content on screen). Its inverse is the board's unit: item sizes show and are set in post px (§6c).
-    // A canvas item's element may be turned (§6d): its width on screen is its layout width at its whiteboard's scale.
-    const el = target.el();
-    this.k = (target.parent ? el.offsetWidth * scaleOf(target.parent) : el.getBoundingClientRect().width) / scaleOf(this.page) / target.attrs().w;
+    // Artboard px → page px: the canvas's display scale, kept while editing (a size capped to the page width never shrinks
+    // the content on screen). Its inverse is the board's unit: item sizes show and are set in post px (§6c).
+    this.k = target.el().getBoundingClientRect().width / scaleOf(this.page) / target.attrs().w;
     this.board = new Board(target.attrs(), {
-      commit: (attrs, newGroup) => target.commit(attrs, newGroup, this.min && { x: this.at.x - this.min.x, y: this.at.y - this.min.y }),
+      commit: (attrs, newGroup) => target.commit(attrs, newGroup),
       undo: () => withoutScroll(() => editor.commands.undo()),
       redo: () => withoutScroll(() => editor.commands.redo()),
       canUndo: () => !!editor.can().undo?.(),
       canRedo: () => !!editor.can().redo?.(),
       emptyClick: () => this.board.dom.focus({ preventScroll: true }),
-      deleteBoard: () => {},
-      shift: (dx, dy) => this.move(dx, dy),
-    }, { fixed: true, unit: 1 / this.k });
+      shift: (dx, dy) => ({ x: dx, y: dy }), // the canvas stays at its place in the post: its content shifts on screen
+    }, { unit: 1 / this.k });
     this.art = make('div', 'sce-art');
     const strips = ['e', 's', 'se'].map((edge) => {
       const el = make('div', `sce-rs sce-rs-${edge}`, { title: 'Drag to resize the artboard' });
@@ -540,23 +496,14 @@ class CanvasSession {
     this.emit();
   }
 
-  // Over the canvas's element in the post (hidden meanwhile), at its top-left in page px (`at`). A canvas item can move up
-  // to its whiteboard's top-left (`min`, see move()); a document canvas stays where it is (no min).
+  // Over the canvas's element in the post (hidden meanwhile), at its top-left in page px (`at`).
   place() {
     const el = this.target.el();
     el.style.visibility = 'hidden';
-    if (this.target.parent && !('turn' in el.dataset)) { // a turned canvas item is edited unturned, from its unturned box
-      el.dataset.turn = el.style.transform;
-      el.style.transform = '';
-    }
     const z = scaleOf(this.page);
     const p = this.page.getBoundingClientRect();
-    const at = (e) => {
-      const r = e.getBoundingClientRect();
-      return { x: (r.left - p.left) / z, y: (r.top - p.top) / z };
-    };
-    this.at = at(el);
-    this.min = this.target.parent && at(this.target.parent);
+    const r = el.getBoundingClientRect();
+    this.at = { x: (r.left - p.left) / z, y: (r.top - p.top) / z };
     this.show();
   }
 
@@ -564,17 +511,6 @@ class CanvasSession {
     Object.assign(this.art.style, { left: `${this.at.x}px`, top: `${this.at.y}px`, transform: `scale(${this.k})` });
     this.board.refreshScale(); // handles keep their on-screen size
     this.art.style.setProperty('--sce-inv', String(1 / this.board.scale()));
-  }
-
-  // The artboard grew or shrank on the left / top by dx, dy (artboard px; its items shifted by that): a canvas item moves
-  // the other way at its scale, so its content stays put on screen, but not past its whiteboard's top-left; a document
-  // canvas stays at its place in the post. → the part it could not follow (its content shifts on screen by that).
-  move(dx, dy) {
-    if (!this.min) return { x: dx, y: dy };
-    const { at, min, k } = this;
-    this.at = { x: Math.max(min.x, at.x - dx * k), y: Math.max(min.y, at.y - dy * k) };
-    this.show();
-    return { x: dx - (at.x - this.at.x) / k, y: dy - (at.y - this.at.y) / k };
   }
 
   // done: Done, the final Escape, a pointer-down outside (commit an open text edit, return focus with the canvas
@@ -590,10 +526,6 @@ class CanvasSession {
     this.page.classList.remove('sc-editing');
     const el = this.target.el();
     if (el) el.style.visibility = '';
-    if (el && 'turn' in el.dataset) {
-      el.style.transform = el.dataset.turn;
-      delete el.dataset.turn;
-    }
     window.removeEventListener('keydown', this.onKeyDown);
     window.removeEventListener('paste', this.board.pasteEvent, true);
     window.removeEventListener('pointerdown', this.onPointerDown, true);
@@ -712,9 +644,9 @@ class CanvasSession {
   };
 }
 
-// Artboard size of a fixed board (the in-place edit bar and the flowchart library editor's header).
+// Artboard size of a board (the in-place edit bar and the flowchart library editor's header).
 
-/** Sets fixed board `b`'s frame to {0, 0, w, h} (40…8000) and commits; the artboard still holds the content beyond it plus
+/** Sets board `b`'s frame to {0, 0, w, h} (40…8000) and commits; the artboard still holds the content beyond it plus
  * padding (§6b smart artboard). → false when nothing was committed (not numbers, or the same frame: drawn again). */
 export function setArtboardSize(b, w, h) {
   if (!Number.isFinite(w) || !Number.isFinite(h)) return false;
@@ -729,8 +661,7 @@ export function setArtboardSize(b, w, h) {
   return true;
 }
 
-/** Fit to content: frame = the items' bounding box, items shifted so it starts at 0,0 (the host keeps them in place on
- * screen: a canvas item moves). */
+/** Fit to content: frame = the items' bounding box, items shifted so it starts at 0,0. */
 export function fitArtboard(b) {
   b.finishEdit();
   const c = b.contentBox();
@@ -757,12 +688,6 @@ export function openCanvasEditor(editor, pos) {
   if (cv) open(cv, () => nodeTarget(cv));
 }
 
-// Enters edit mode for canvas item `id` of a whiteboard (its WhiteboardView `wv`; reached through the node's storage, so
-// whiteboard.js needs no import of this module).
-function openItemEditor(wv, id) {
-  if (wv.board.items.some((i) => i.id === id && i.type === 'canvas')) open(wv, () => itemTarget(wv, id));
-}
-
 // ---------------------------------------------------------------------------------------------
 // Node
 
@@ -784,10 +709,6 @@ export const Canvas = Node.create({
       flow: { default: null, rendered: false }, // {id, rev}: synced with that library flowchart (§3.9); the attrs above are its cache
       source: { default: null, rendered: false }, // {format: 'mermaid', text}: what it was imported from (§6d Formats)
     };
-  },
-
-  addStorage() {
-    return { openItem: openItemEditor }; // the whiteboard NodeView edits its canvas items with it
   },
 
   parseHTML() {

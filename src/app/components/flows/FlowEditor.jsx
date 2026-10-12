@@ -27,7 +27,6 @@ export function FlowEditor({ id, onBoard }) {
       canUndo: () => canUndoFlow(id),
       canRedo: () => canRedoFlow(id),
       emptyClick: () => board.dom.focus({ preventScroll: true }),
-      deleteBoard: () => {},
       dropArea: () => area,
       // The artboard grew or shrank on the left / top: scroll by as much, so the content stays put on screen.
       shift: (dx, dy) => {
@@ -36,7 +35,7 @@ export function FlowEditor({ id, onBoard }) {
         area.scrollTop += dy * z;
         return { x: dx - (area.scrollLeft - left) / z, y: dy - (area.scrollTop - top) / z };
       },
-    }, { fixed: true, unit: 1 });
+    }, { unit: 1 });
     wrap.append(board.dom);
     const zoomTo = (percent, anchor) => {
       zoomAround(area, wrap, Math.min(400, Math.max(10, percent)) / 100, anchor);

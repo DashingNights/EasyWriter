@@ -14,7 +14,7 @@ const DOC = {
     { type: 'heading', attrs: { level: 2 }, content: [t('Week 3')] },
     p(t('Alpha beta'), { type: 'hardBreak' }, t('gamma Week 3')),
     { type: 'bulletList', content: [{ type: 'listItem', content: [p(t('one'))] }, { type: 'listItem', content: [p(t('two week 3'))] }] },
-    { type: 'whiteboard', attrs: { items: [{ id: 'a' }, { id: 'b' }], height: 300 } },
+    { type: 'canvas', attrs: { items: [{ id: 'a' }, { id: 'b' }], w: 600, h: 300 } },
     p(),
   ],
 };
@@ -26,7 +26,7 @@ const schema = new Schema({
     heading: { group: 'block', content: 'inline*', attrs: { level: { default: 1 } } },
     bulletList: { group: 'block', content: 'listItem+' },
     listItem: { content: 'paragraph block*' },
-    whiteboard: { group: 'block', atom: true, attrs: { items: { default: [] }, height: { default: 200 } } },
+    canvas: { group: 'block', atom: true, attrs: { items: { default: [] }, w: { default: 800 }, h: { default: 450 } } },
     text: { group: 'inline' },
     hardBreak: { group: 'inline', inline: true, leafText: () => '\n' },
   },
@@ -45,7 +45,7 @@ test('outline: top level by default, text capped, board and heading attrs', () =
   assert.deepEqual(o[0], { path: [0], type: 'heading', text: 'Week 3', attrs: { level: 2 } });
   assert.equal(o[1].text, 'Alpha beta\ngamma Week 3');
   assert.equal(o[2].text, 'one two week 3');
-  assert.deepEqual(o[3].attrs, { kind: 'whiteboard', items: 2, w: null, h: 300 });
+  assert.deepEqual(o[3].attrs, { kind: 'canvas', items: 2, w: 600, h: 300 });
   assert.deepEqual(outline(DOC, { depth: 3 }).filter((e) => e.path[0] === 2).map((e) => e.path), [[2], [2, 0], [2, 0, 0], [2, 1], [2, 1, 0]]);
   assert.equal(outline({ content: [p(t('x'.repeat(200)))] })[0].text, `${'x'.repeat(120)}... (cut, 200 characters in all)`);
   assert.equal(outline({ content: [p(t('x'.repeat(120)))] })[0].text, 'x'.repeat(120));

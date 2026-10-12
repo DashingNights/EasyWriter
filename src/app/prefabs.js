@@ -2,7 +2,7 @@ import { useSyncExternalStore } from 'react';
 import { toast } from 'sonner';
 import { makePrefab, parsePrefab, prefabItems, summaryOfPrefab } from '../flow/prefab.mjs';
 import { KINDS } from '../flow/shapes.mjs';
-import { rasterizeWhiteboard } from '../whiteboard.js';
+import { flattenCanvases, rasterizeWhiteboard } from '../whiteboard.js';
 import { confirmDialog, saveSettings } from './actions.js';
 import { cleanRefs, defaultFavourites, liveRefs, moveRef, resetOrder, shapeSections, toggleFavourite } from './shape-list.mjs';
 import { getState, setState } from './store.js';
@@ -149,7 +149,7 @@ export async function removePrefab(id) {
   notify();
 }
 
-/** Arms `board`'s shape tool with prefab `id`: its next click places it (§6g). A canvas drops canvas items (they do not nest). */
+/** Arms `board`'s shape tool with prefab `id`: its next click places it (§6g). */
 export async function armPrefab(board, id) {
   const what = await prefabTile(board, id);
   if (what) board.setMode('shape', { id, ...what });
@@ -160,10 +160,7 @@ export async function armPrefab(board, id) {
 export async function prefabTile(board, id) {
   const r = await loadPrefab(id);
   if (!r || board.destroyed) return null;
-  const items = prefabItems(r, board.unit).filter((i) => !board.fixed || i.type !== 'canvas');
-  if (items.length) return { items };
-  toast.error('Canvases cannot go inside a canvas');
-  return null;
+  return { items: flattenCanvases(prefabItems(r, board.unit)) }; // an older prefab's canvas items come flattened (§6b)
 }
 
 // --- the shape list's order (settings.shapeFavourites, settings.shapeOrder) ---

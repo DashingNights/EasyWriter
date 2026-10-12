@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState, useSyncExternalStore } from 'react';
 import { cn } from 'cn';
-import { ChevronDown, ChevronRight, Eye, EyeOff, Group, Image, LayoutTemplate, Lock, LockOpen, PenLine, Spline, Square, Type } from 'lucide-react';
+import { ChevronDown, ChevronRight, Eye, EyeOff, Group, Image, Lock, LockOpen, PenLine, Spline, Square, Type } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { htmlToText } from '../../../flow/graph.mjs';
 import { layerRows, selectable } from '../../../flow/model.mjs';
@@ -22,7 +22,6 @@ const LOOK = {
   connector: (i) => [<Spline />, text((i.labels?.mid ?? Object.values(i.labels ?? {})[0])?.html) || 'Connector'],
   image: () => [<Image />, 'Image'],
   stroke: () => [<PenLine />, 'Pen stroke'],
-  canvas: () => [<LayoutTemplate />, 'Canvas'],
 };
 const keyOf = (r) => (r.group ? `g:${r.group}` : r.items[0].id);
 const idsOf = (rows) => rows.flatMap((r) => r.items.map((i) => i.id));

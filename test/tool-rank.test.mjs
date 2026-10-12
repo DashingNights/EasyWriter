@@ -70,7 +70,7 @@ test('blockKind: what the palette calls a node-selected block', () => {
   assert.equal(blockKind('canvas', { items: [{ type: 'shape', shape: 'rect' }, { type: 'connector' }] }), 'flowchart');
   assert.equal(blockKind('canvas', { items: [{ type: 'image' }] }), 'image');
   assert.equal(blockKind('canvas', { items: [{ type: 'image' }, { type: 'text' }] }), 'canvas');
-  assert.deepEqual(['planChart', 'whiteboard', 'table', 'horizontalRule'].map((t) => blockKind(t, {})), ['planChart', 'whiteboard', null, null]);
+  assert.deepEqual(['planChart', 'table', 'horizontalRule'].map((t) => blockKind(t, {})), ['planChart', null, null]);
 });
 
 test('tie-break: the block section, then Suggested, then the rest; match quality first', () => {

@@ -4,11 +4,11 @@ const DELAY = 700; // ms the pointer rests on an object before its hint shows
 const SLOP = 4; // px the pointer may drift while resting
 const TOP = 34; // the title strip
 
-// The hint for element `t` in the document: a smart canvas, plan chart or whiteboard (each NodeView's hint(): what a click
+// The hint for element `t` in the document: a smart canvas or plan chart (each NodeView's hint(): what a click
 // and a double-click do, null once it is selected or in use); null elsewhere.
 function hintAt(t) {
-  const el = t instanceof Element && t.closest('.ProseMirror') ? t.closest('.sc, .pc, .wb') : null;
-  const v = el && (el.scView ?? el.pcView ?? el.wbView);
+  const el = t instanceof Element && t.closest('.ProseMirror') ? t.closest('.sc, .pc') : null;
+  const v = el && (el.scView ?? el.pcView);
   return v?.hint?.(t) ?? null;
 }
 

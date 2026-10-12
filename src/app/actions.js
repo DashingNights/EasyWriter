@@ -906,14 +906,13 @@ async function installUpdate() {
 
 // A click on the editor area's background (around the page or in its padding; §7 Background clicks) puts the caret at the
 // nearest text position at the click's height, as a word processor's margin does: a node-selected block or a text selection
-// gives way to it and the whiteboards' item selections clear; nothing scrolls. Canvas Mode handles such a click first (§6b).
+// gives way to it; nothing scrolls. Canvas Mode handles such a click first (§6b).
 function marginClick(e) {
   const view = state.editor?.view;
   const area = e.currentTarget;
   const bg = (t) => t === area || t === area.firstElementChild || t.id === 'page-wrap' || t.id === 'editor' || t.classList.contains('page');
   if (!view || !backgroundClick(e, bg)) return;
   e.preventDefault(); // no focus change, no native selection
-  for (const el of view.dom.querySelectorAll('.wb')) if (el.wbView?.sel.size) el.wbView.select(null);
   const r = view.dom.getBoundingClientRect();
   const y = Math.min(Math.max(e.clientY, r.top + 1), r.bottom - 1);
   const hit = view.posAtCoords({ left: Math.min(Math.max(e.clientX, r.left + 1), r.right - 1), top: y });
@@ -921,7 +920,7 @@ function marginClick(e) {
     const { doc } = view.state;
     const node = hit.inside >= 0 ? doc.nodeAt(hit.inside) : null;
     let [$pos, dir] = [doc.resolve(hit.pos), 1];
-    if (node?.isBlock && node.isAtom) { // a whiteboard, canvas or chart: before or after it by the click's height
+    if (node?.isBlock && node.isAtom) { // a canvas or chart: before or after it by the click's height
       const b = view.nodeDOM(hit.inside)?.getBoundingClientRect();
       if (b && y < b.top + b.height / 2) dir = -1;
       $pos = doc.resolve(dir < 0 ? hit.inside : hit.inside + node.nodeSize);

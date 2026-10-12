@@ -48,7 +48,7 @@ const int = (v) => (typeof v === 'number' ? Math.round(v) : undefined); // undef
 
 /** Item `i` in board.get's brief form (`byId`: the board's items, for a connector's ends): id, type, shape, label, the box in
  * whole px, hidden, locked and groups when set (§6 Layer fields); a connector's ends ({item, label, side (attach.mjs endSide)} | {x, y}), route, end head and bends (its waypoint count, as the attachment's item
- * lines name it, attach.mjs itemLines); a canvas item's item count. No d, src, vw / vh or html; a label past 120 characters is
+ * lines name it, attach.mjs itemLines). No d, src, vw / vh or html; a label past 120 characters is
  * cut (a long text item stays one short line; board.find matches the whole). */
 function briefItem(i, byId) {
   const short = (it) => {
@@ -61,7 +61,6 @@ function briefItem(i, byId) {
     id: i.id, type: i.type, shape: i.shape, label, x: int(i.x), y: int(i.y), w: int(i.w), h: int(i.h),
     ...(i.hidden && { hidden: true }), ...(i.locked && { locked: true }), ...(i.groups && { groups: i.groups }),
     ...(i.type === 'connector' && { from: end(i.from), to: end(i.to), route: i.route, head: i.heads?.end, bends: i.points?.length ?? 0 }),
-    ...(i.type === 'canvas' && { items: i.items?.length ?? 0 }),
   };
 }
 
@@ -84,12 +83,11 @@ function itemDefaults(item, color, items = [], page = []) {
   if (i.type === 'text') return { size: 20, color, bold: false, align: 'left', bg: null, ...i };
   if (i.type === 'shape') return { color, width: 2, opacity: 1, fill: 'none', fillColor: color, textColor: color, ...i };
   if (i.type === 'connector') return { color, ...i };
-  if (i.type === 'canvas') return { bg: 'post', frame: null, ...i, items: (i.items ?? []).map((x) => itemDefaults(x, color, [], page)) };
   return i;
 }
 
 /** `items` with ids unused among `used` (which grows): a given id is kept when free; connector ends that name an item of the
- * same call follow its final id (cloneItems); a canvas item's own items get ids of their own. */
+ * same call follow its final id (cloneItems). */
 function freshIds(items, used) {
   const ids = new Map();
   const out = items.map((i) => {
@@ -97,7 +95,7 @@ function freshIds(items, used) {
     while (used.has(id)) id = newId();
     used.add(id);
     if (typeof i.id === 'string' && !ids.has(i.id)) ids.set(i.id, id);
-    return i.type === 'canvas' ? { ...i, id, items: freshIds(i.items, new Set()) } : { ...i, id };
+    return { ...i, id };
   });
   const end = (e) => (typeof e?.item === 'string' && ids.has(e.item) ? { ...e, item: ids.get(e.item) } : e);
   return out.map((i) => (i.type === 'connector' ? { ...i, from: end(i.from), to: end(i.to) } : i));

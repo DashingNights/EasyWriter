@@ -222,7 +222,6 @@ export const DEFS = [
   board('board.eraser', 'Eraser', ['E']),
   board('board.shape', 'Shape tool', ['S']),
   board('board.connector', 'Connector tool', ['A']),
-  board('board.canvas', 'Add canvas (whiteboards)', ['C']),
   board('board.box', 'Box shape', ['B']),
   board('board.circle', 'Circle shape', ['O']),
   board('board.line', 'Line shape', ['L']),

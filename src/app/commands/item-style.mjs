@@ -2,9 +2,9 @@
 // themes as well, like the flowchart item's colors, fills, or text notes spawned to have the correct text color that is
 // consistent with the existing page's theme"). A style field an agent leaves out is taken from the board's own items of the same
 // type (a shape: of the same kind when there is one, else any shape): the most common style among them, the latest on a tie.
-// A board with no item of that type looks at the rest of the page (`page`: every board's items in the draft, canvas items' own
-// too), so a blank board's marks match the marks on the page's other boards. Fields the agent sets stay as set. With no item of
-// that type anywhere the theme defaults apply (board.mjs, flow.mjs itemDefaults). Pure.
+// A board with no item of that type looks at the rest of the page (`page`: every board's items in the draft), so a blank
+// board's marks match the marks on the page's other boards. Fields the agent sets stay as set. With no item of that type
+// anywhere the theme defaults apply (board.mjs, flow.mjs itemDefaults). Pure.
 
 export const STYLE_KEYS = {
   text: ['size', 'color', 'bold', 'align', 'bg'],
@@ -47,12 +47,12 @@ export function matchStyle(i, items, page = []) {
   return s ? { ...s, ...i } : i;
 }
 
-/** Every board item of ProseMirror `doc` (whiteboards' and canvases' items, and canvas items' own items): matchStyle's `page`. */
+/** Every board item of ProseMirror `doc` (the canvases' items): matchStyle's `page`. */
 export function pageItems(doc) {
   const out = [];
   doc?.descendants((n) => {
     if (!Array.isArray(n.attrs?.items)) return true;
-    for (const i of n.attrs.items) out.push(i, ...(i?.type === 'canvas' && Array.isArray(i.items) ? i.items : []));
+    out.push(...n.attrs.items);
     return false;
   });
   return out;

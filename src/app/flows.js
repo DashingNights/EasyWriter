@@ -9,7 +9,7 @@ import { parseMermaid, toMermaid } from '../flow/mermaid.mjs';
 import { defaultMeasure, moveItem } from '../flow/model.mjs';
 import { resolveConnectors } from '../flow/route.mjs';
 import { flowPreset, rotBox, rotOf } from '../flow/shapes.mjs';
-import { contentWidth, diagramPaste, groupBox, rasterizeWhiteboard, scaleItem, setConnTool, setShapeTool } from '../whiteboard.js';
+import { contentWidth, diagramPaste, groupBox, rasterizeWhiteboard, setConnTool, setShapeTool } from '../whiteboard.js';
 import { afterNodeSel, confirmDialog } from './actions.js';
 import { can } from './gates.mjs';
 import { getState, setState } from './store.js';
@@ -358,7 +358,7 @@ export function diagramItems(text, { dir = null, unit = 1, taken } = {}) {
 // and of the library flowchart the board edits (the library editor, a synced canvas).
 function keepSource(board, source) {
   const s = canvasEditor.get();
-  const node = s?.board === board && !s.target.parent ? s.target.owner : null;
+  const node = s?.board === board ? s.target.owner : null;
   if (node) board.attrs = { ...board.attrs, source };
   const r = records.get(state.view.type === 'flows' ? state.view.flowId : node?.flow()?.id);
   if (!r) return;
@@ -384,7 +384,7 @@ async function insertDiagram({ text, dir }, source) {
 
 /** Import diagram… (tool search; Mermaid text pasted onto a board offers it, prefilled): the dialog, then the diagram onto
  * `board` (one undo step, selected: at the middle of its visible part, or with "Replace board contents" (or on an empty
- * board) at its top-left; a whiteboard shrinks it to its width), else into a new canvas after the selection, edited in place.
+ * board) at its top-left), else into a new canvas after the selection, edited in place.
  * An import that fills the whole canvas or library flowchart keeps the text as its `source`. */
 export async function importDiagram({ board = null, text = '' } = {}) {
   const result = await openDialog('importDiagram', { text, board: !!board });
@@ -397,18 +397,13 @@ export async function importDiagram({ board = null, text = '' } = {}) {
   const u = board.unit;
   const r = diagramItems(result.text, { dir: result.dir, unit: u, taken: new Set(result.replace ? [] : board.items.map((i) => i.id)) });
   if (r.error) return;
-  let { items, w, h } = r;
-  const room = board.size().w - 2 * MARGIN * u;
-  if (!board.fixed && w > room) {
-    items = items.map((i) => scaleItem(i, room / w));
-    [w, h] = [room, (h * room) / w];
-  }
+  const { items, w, h } = r;
   const whole = result.replace || !board.items.length;
   const f = board.frame ?? { x: 0, y: 0 };
   const c = board.visibleCentre();
   const at = whole ? { x: f.x + MARGIN * u, y: f.y + MARGIN * u } : { x: c.x - w / 2, y: c.y - h / 2 };
   if (result.replace) board.items = [];
-  board.moveBy(items, Math.round(at.x), Math.round(at.y)); // a whiteboard keeps them inside
+  board.moveBy(items, Math.round(at.x), Math.round(at.y));
   board.items.push(...items);
   board.sel = new Set(items.map((i) => i.id));
   if (whole) keepSource(board, source);
@@ -418,7 +413,7 @@ export async function importDiagram({ board = null, text = '' } = {}) {
 
 /** Auto layout (tool search; its options pick the direction): the board's shapes, text, images and canvases laid out by
  * dagre in direction `dir`, swimlanes and frames around their members, starting where the diagram began; connectors between
- * them lose their bends and re-route. A whiteboard shrinks the result to its width. One undo step. */
+ * them lose their bends and re-route. One undo step. */
 export function autoLayout(board, dir) {
   board.finishEdit();
   const u = board.unit;
@@ -429,18 +424,14 @@ export function autoLayout(board, dir) {
   const byId = new Map(board.items.map((i) => [i.id, i]));
   const laid = [...graph.nodes, ...graph.groups].map((n) => byId.get(n.id));
   const before = drawnBox(laid);
-  let moved = laid.map((i) => {
+  const moved = laid.map((i) => {
     const p = r.nodes[i.id] ?? r.groups[i.id];
     return { ...i, x: Math.round(p.x * u), y: Math.round(p.y * u), ...(r.groups[i.id] && { w: Math.round(p.w * u), h: Math.round(p.h * u) }) };
   });
-  const room = board.size().w - 2 * MARGIN * u;
-  const wide = drawnBox(moved).w;
-  if (!board.fixed && wide > room) moved = moved.map((i) => scaleItem(i, room / wide));
   const now = drawnBox(moved);
   for (const m of moved) Object.assign(byId.get(m.id), moveItem(m, before.x - now.x, before.y - now.y));
   const ids = new Set(laid.map((i) => i.id));
   for (const c of board.items) if (c.type === 'connector' && ids.has(c.from.item) && ids.has(c.to.item)) c.points = [];
-  board.moveBy(laid, 0, 0); // a whiteboard keeps them inside
   board.commit(true);
 }
 

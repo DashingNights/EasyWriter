@@ -1,6 +1,6 @@
 import { Extension } from '@tiptap/core';
 import { NodeSelection, Plugin, PluginKey } from '@tiptap/pm/state';
-import { ArrowRight, Frame, ImagePlus, Minus, PanelTop, Presentation, Square, SquareKanban, Table, Type, Workflow } from 'lucide-react';
+import { ArrowRight, Frame, ImagePlus, Minus, PanelTop, Square, SquareKanban, Table, Type, Workflow } from 'lucide-react';
 import { cn } from 'cn';
 import { useLayoutEffect, useRef } from 'react';
 import { getState, setState, useStore } from '../store.js';
@@ -54,9 +54,8 @@ export function Notices() {
 }
 
 // Paste notices (SPEC §7c Notices): a paste over a non-empty text selection shows "Paste replaced text" (T → T; Ctrl+Z
-// brings it back). A paste that would replace a node-selected block is refused with a mode notice saying how to paste
-// (a node-selected whiteboard takes the paste itself, WhiteboardPaste).
-const BLOCK_ICONS = { whiteboard: Presentation, planChart: SquareKanban, table: Table, box: PanelTop, horizontalRule: Minus };
+// brings it back). A paste that would replace a node-selected block is refused with a mode notice saying how to paste.
+const BLOCK_ICONS = { planChart: SquareKanban, table: Table, box: PanelTop, horizontalRule: Minus };
 const HOW = { canvas: 'Enter Canvas Mode to paste', planChart: 'Open the plan to paste' };
 
 /** The toolbar icon of block `node`. */

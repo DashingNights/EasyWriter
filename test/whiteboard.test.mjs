@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { boxBetween, clampMove, groupBox, marqueeHits, parseBoard, smartArtboard } from '../src/whiteboard.js';
+import { boxBetween, groupBox, marqueeHits, parseBoard, smartArtboard } from '../src/whiteboard.js';
 
 const canvas = (extra = {}) => ({ id: 'c', type: 'canvas', x: 10, y: 20, w: 400, h: 225, aw: 800, ah: 450, bg: 'post', items: [], ...extra });
 const parse = (items) => parseBoard(JSON.stringify({ height: 400, items })).items;
@@ -97,12 +97,3 @@ test('group box: union of the boxes, null for none', () => {
   assert.equal(groupBox([]), null);
 });
 
-test('group move: cut at the left, top and right bounds, open at the bottom; a too wide group is pinned left', () => {
-  const box = { x: 100, y: 40, w: 300, h: 100 };
-  const wb = { l: 0, t: 0, r: 1000, b: Infinity };
-  assert.deepEqual(clampMove(box, 50, 500, wb), { dx: 50, dy: 500 });
-  assert.deepEqual(clampMove(box, -150, -70, wb), { dx: -100, dy: -40 });
-  assert.deepEqual(clampMove(box, 800, 0, wb), { dx: 600, dy: 0 });
-  assert.deepEqual(clampMove({ ...box, w: 1200 }, 30, 0, wb), { dx: -100, dy: 0 });
-  assert.deepEqual(clampMove(box, -500, -500, { l: -Infinity, t: -Infinity, r: Infinity, b: Infinity }), { dx: -500, dy: -500 }); // a canvas
-});

@@ -2,8 +2,8 @@ import { createContext, useContext, useLayoutEffect, useRef, useState } from 're
 import { cn } from 'cn';
 import {
   AlignCenterHorizontal, AlignCenterVertical, AlignEndHorizontal, AlignEndVertical, AlignHorizontalDistributeCenter, AlignStartHorizontal,
-  AlignStartVertical, AlignVerticalDistributeCenter, BringToFront, Copy, Eraser, FoldVertical, Frame, ImagePlus, Layers, Magnet, MousePointer2,
-  MoveHorizontal, MoveVertical, PaintBucket, Pen, Pin, Redo2, SendToBack, Shapes, Spline, SquareX, Trash2, Type, Undo2,
+  AlignStartVertical, AlignVerticalDistributeCenter, BringToFront, Copy, Eraser, ImagePlus, Layers, Magnet, MousePointer2,
+  MoveHorizontal, MoveVertical, PaintBucket, Pen, Pin, Redo2, SendToBack, Shapes, Spline, Trash2, Type, Undo2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -216,8 +216,6 @@ export function BoardTools({ board }) {
       onClick={act(() => armTile(board, { kind: k.kind }))}><ShapeIcon shape={k.kind} /></RailButton>
   );
 
-  // Text, canvas and image are placement tools: a click on the board places the item there (§6c). Canvases do not nest.
-  const addCanvas = <RailButton title={withKey('Add canvas', 'board.canvas')} disabled={snap.kind !== 'whiteboard'} active={mode === 'canvas'} onClick={tool('canvas')}><Frame /></RailButton>;
   const background = (
     <DropdownMenu {...flyout('bg')}>
       <RailButton title="Background" slot={DropdownMenuTrigger}><PaintBucket /></RailButton>
@@ -242,7 +240,6 @@ export function BoardTools({ board }) {
           <RailButton title={withKey('Undo', 'edit.undo')} disabled={!snap.canUndo} onClick={act(() => board.undo())}><Undo2 /></RailButton>
           <RailButton title={withKey('Redo', 'edit.redo')} disabled={!snap.canRedo} onClick={act(() => board.redo())}><Redo2 /></RailButton>
           <RailButton title={withKey('Add image', 'board.image')} active={mode === 'image'} onClick={act(() => (mode === 'image' ? board.setMode(null) : board.pickImages()))}><ImagePlus /></RailButton>
-          {addCanvas}
         </Group>
       )}
       <Group first={inIsland}>
@@ -294,7 +291,7 @@ export function BoardTools({ board }) {
         <RailButton title={withKey('Delete', 'board.delete')} disabled={!count} onClick={act(() => board.removeItem())}><Trash2 /></RailButton>
       </Group>
       {inIsland ? (
-        <Group>{addCanvas}{background}</Group>
+        <Group>{background}</Group>
       ) : (
         <Group>
           <Popover {...flyout('snap')}>
@@ -308,10 +305,6 @@ export function BoardTools({ board }) {
           {background}
         </Group>
       )}
-      <Group>
-        <RailButton title="Fit height" disabled={snap.kind !== 'whiteboard'} onClick={act(() => board.fitHeight())}><FoldVertical /></RailButton>
-        <RailButton title="Delete board" disabled={snap.kind !== 'whiteboard'} onClick={act(() => board.deleteBoard())}><SquareX /></RailButton>
-      </Group>
     </>
   );
 }

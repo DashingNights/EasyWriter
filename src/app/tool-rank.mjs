@@ -28,7 +28,6 @@ export const BLOCK_SECTIONS = {
   image: ['Image', ['canvas-edit', 'canvas-actual-size', 'canvas-full-width', 'canvas-delete'], ['assistant']],
   planChart: ['Plan chart', ['chart-open', 'chart-kanban', 'chart-backlog', 'chart-gantt', 'chart-freeze', 'chart-refresh', 'chart-live', 'chart-full-width',
     'chart-delete'], ['plan-open', 'assistant']],
-  whiteboard: ['Whiteboard', ['pen', 'add-text', 'shape', 'add-canvas', 'fit-height', 'background', 'delete-board'], ['assistant']],
 };
 const TIE_ORDER = ['block', 'suggested', ...FLOW_SECTIONS.map(([category]) => category)];
 
@@ -69,10 +68,10 @@ export function paletteSections(entries, { flow, block }) {
 }
 
 /** What the tool search calls a node-selected block of type `type` with `attrs`: flowchart (a canvas that is a flowchart, as
- * flowchartMode), image (a canvas holding one image), canvas, planChart, whiteboard; null for any other block. */
+ * flowchartMode), image (a canvas holding one image), canvas, planChart; null for any other block. */
 export function blockKind(type, attrs) {
   if (type === 'canvas') return flowchartMode(null, attrs) ? 'flowchart' : attrs.items?.length === 1 && attrs.items[0].type === 'image' ? 'image' : 'canvas';
-  return type === 'planChart' || type === 'whiteboard' ? type : null;
+  return type === 'planChart' ? type : null;
 }
 
 /** Flowchart mode (§7c): the flowchart library editor (`view`), or `canvas` (the attrs of the canvas being edited in place)

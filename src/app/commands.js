@@ -617,9 +617,7 @@ function boardBusy(path) {
   const ed = state.editor;
   const pos = ed && posOfPath(ed.state.doc, path);
   if (pos == null) return false;
-  if (canvasEditor.get()?.target.owner?.getPos?.() === pos) return true;
-  const board = ed.view.nodeDOM(pos)?.wbView;
-  return !!(board && (board.gesture || board.editingId));
+  return canvasEditor.get()?.target.owner?.getPos?.() === pos;
 }
 
 /** Whether any live board is mid-gesture or editing text (undo / redo would fight it). */

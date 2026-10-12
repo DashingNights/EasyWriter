@@ -48,12 +48,11 @@ export function captureSelection() {
   const session = canvasEditor.get();
   const board = session?.board ?? activeBoard.get();
   if (board?.sel.size) {
-    let pos = session?.target.owner?.getPos?.();
-    if (!session) doc?.forEach((n, off) => { if (ed.view.nodeDOM(off)?.wbView === board) pos = off; });
+    const pos = session?.target.owner?.getPos?.();
     const path = typeof pos === 'number' ? ` at block [${pathOfPos(doc, pos)}]` : '';
-    const where = view.type === 'flows' ? 'the flowchart in the library editor' : session ? `the canvas being edited${path}` : `the whiteboard${path}`;
+    const where = view.type === 'flows' ? 'the flowchart in the library editor' : `the canvas being edited${path}`;
     const sel = board.items.filter((i) => board.sel.has(i.id));
-    const { w, h } = board.size(); // a whiteboard's drawn width and height, a canvas's artboard
+    const { w, h } = board.size(); // the artboard
     const items = [...board.items];
     const att = itemsAttachment(sel, where, items);
     // The whole board, the selected items' marks first (their legend lines come first, attach.mjs boardOrder).
@@ -100,7 +99,7 @@ export function situation(parts = [], viewKey = '') {
   // whiteboard.js updateActive) are still the selection (wave 1c).
   const items = parts.find((p) => typeof p !== 'string' && p.kind === 'items');
   if (items && sel?.kind !== 'items') sel = items;
-  // Its first line, the selected items' lines after it without their numbers: "1 selected item on the whiteboard at block [4]:
+  // Its first line, the selected items' lines after it without their numbers: "1 selected item on the canvas being edited at block [4]:
   // g3n7c1f shape rect "Gearbox" at 40,40 size 160x80".
   const lines = sel?.body.split('\n') ?? [];
   const others = lines.indexOf(OTHER_ITEMS);

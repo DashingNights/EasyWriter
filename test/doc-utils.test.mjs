@@ -40,7 +40,7 @@ test('applyBaseStyles keeps existing font/size marks and does not mutate input',
 });
 
 test('replaceWhiteboards replaces nested boards in document order', () => {
-  const wb = (h) => ({ type: 'whiteboard', attrs: { height: h, bg: 'post', items: [] } });
+  const wb = (h) => ({ type: 'canvas', attrs: { w: 800, h, dw: 800, bg: 'post', items: [] } });
   const input = doc(
     wb(100),
     { type: 'blockquote', content: [para(text('q')), wb(200)] },
@@ -50,8 +50,8 @@ test('replaceWhiteboards replaces nested boards in document order', () => {
   const before = structuredClone(input);
   const { doc: out, boards } = replaceWhiteboards(input);
   assert.deepEqual(input, before);
-  assert.deepEqual(boards.map((b) => b.height), [100, 200, 300]);
-  assert.deepEqual(boards[0], { height: 100, bg: 'post', items: [], kind: 'whiteboard' });
+  assert.deepEqual(boards.map((b) => b.h), [100, 200, 300]);
+  assert.deepEqual(boards[0], { w: 800, h: 100, dw: 800, bg: 'post', items: [], kind: 'canvas' });
   const ph = (i) => para(text(`[[IMG:${i}]]`));
   assert.deepEqual(out.content[0], ph(0));
   assert.deepEqual(out.content[1].content[1], ph(1));
@@ -61,9 +61,9 @@ test('replaceWhiteboards replaces nested boards in document order', () => {
 
 test('replaceWhiteboards: canvases share the numbering and carry their kind', () => {
   const canvas = { type: 'canvas', attrs: { w: 600, h: 300, dw: 300, bg: 'post', items: [] } };
-  const input = doc({ type: 'whiteboard', attrs: { height: 100, bg: 'post', items: [] } }, canvas, para(text('end')));
+  const input = doc(canvas, canvas, para(text('end')));
   const { doc: out, boards } = replaceWhiteboards(input);
-  assert.deepEqual(boards.map((b) => b.kind), ['whiteboard', 'canvas']);
+  assert.deepEqual(boards.map((b) => b.kind), ['canvas', 'canvas']);
   assert.deepEqual(boards[1], { ...canvas.attrs, kind: 'canvas' });
   assert.deepEqual(out.content[1], para(text('[[IMG:1]]')));
   assert.equal(input.content[1].attrs.kind, undefined);
@@ -78,7 +78,7 @@ test('draftTitle', () => {
   assert.equal(t.length, 60);
   assert.ok(t.endsWith('...'));
   assert.equal(draftTitle(doc(para(text('y'.repeat(60))))), 'y'.repeat(60));
-  const wbFirst = doc({ type: 'whiteboard', attrs: { height: 400, bg: 'post', items: [] } }, para(text('After board')));
+  const wbFirst = doc({ type: 'canvas', attrs: { w: 800, h: 400, bg: 'post', items: [] } }, para(text('After board')));
   assert.equal(draftTitle(wbFirst), 'After board');
 });
 
@@ -111,16 +111,16 @@ test('flowRefs lists the synced canvases with their path and label', () => {
   assert.deepEqual(input, before);
 });
 
-test('replaceWhiteboards: a plan chart between a whiteboard and a canvas is image 1; chartRefs lists the charts', () => {
+test('replaceWhiteboards: a plan chart between two canvases is image 1; chartRefs lists the charts', () => {
   const chart = (id) => ({ type: 'planChart', attrs: { id, planId: 'p', view: 'kanban', options: {}, frozen: null, dw: null } });
   const input = doc(
-    { type: 'whiteboard', attrs: { height: 100, bg: 'post', items: [] } },
+    { type: 'canvas', attrs: { w: 800, h: 100, dw: 800, bg: 'post', items: [] } },
     chart('q7w3e9r'),
     { type: 'canvas', attrs: { w: 600, h: 300, dw: 300, bg: 'post', items: [] } },
     { type: 'blockquote', content: [chart('a1b2c3d')] },
   );
   const { doc: out, boards } = replaceWhiteboards(input);
-  assert.deepEqual(boards.map((b) => b.kind), ['whiteboard', 'planChart', 'canvas', 'planChart']);
+  assert.deepEqual(boards.map((b) => b.kind), ['canvas', 'planChart', 'canvas', 'planChart']);
   assert.deepEqual(out.content[1], para(text('[[IMG:1]]')));
   assert.equal(boards[1].id, 'q7w3e9r');
   assert.deepEqual(chartRefs(input), [{ id: 'q7w3e9r', planId: 'p' }, { id: 'a1b2c3d', planId: 'p' }]);

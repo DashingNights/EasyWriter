@@ -27,11 +27,10 @@ test('window.visible reads {visible} (needed by the in-app assistant for headles
 
 test('board gates read a snapshot; no board fails them all', () => {
   const one = { kind: 'canvas', count: 1, item: { type: 'image' }, canUndo: true, canRedo: false };
-  const many = { kind: 'whiteboard', count: 3, item: null };
+  const many = { kind: 'canvas', count: 3, item: null };
   assert.equal(can('board.active', one), true);
-  assert.equal(can('board.whiteboard', one), false);
-  assert.equal(can('board.whiteboard', many), true);
-  assert.deepEqual([one, many, null].map((b) => can('board.canvasMode', b)), [true, false, false]);
+  assert.ok(!('board.whiteboard' in GATES));
+  assert.deepEqual([one, many, null].map((b) => can('board.canvasMode', b)), [true, true, false]);
   assert.equal(can('board.selection', one), true);
   assert.equal(can('board.selectionMany', one), false);
   assert.equal(can('board.selectionMany', many), true);
@@ -39,7 +38,7 @@ test('board gates read a snapshot; no board fails them all', () => {
   assert.equal(can('board.itemIs', many, null, ['image']), false);
   assert.equal(can('history.canUndo', one), true);
   assert.equal(can('history.canRedo', one), false);
-  for (const id of ['board.active', 'board.whiteboard', 'board.selection', 'board.selectionMany']) assert.equal(can(id, null), false, id);
+  for (const id of ['board.active', 'board.selection', 'board.selectionMany']) assert.equal(can(id, null), false, id);
   assert.equal(can('board.itemIs', null, null, ['image']), false);
 });
 

@@ -6,7 +6,7 @@ import TextAlign from '@tiptap/extension-text-align';
 import Subscript from '@tiptap/extension-subscript';
 import Superscript from '@tiptap/extension-superscript';
 import { Table, TableRow, TableHeader, TableCell } from '@tiptap/extension-table';
-import { Whiteboard, WhiteboardPaste } from './whiteboard.js';
+import { WhiteboardPaste } from './whiteboard.js';
 import { Canvas } from './canvas.js';
 import { PlanChart } from './plan-chart.js';
 import { FONT_SIZES, FONTS, HIGHLIGHTS, presetChain, TEXT_COLORS } from './format.mjs';
@@ -301,7 +301,6 @@ export function buildExtensions(historyDepth) {
     Box,
     BoxTitle,
     BoxContent,
-    Whiteboard,
     WhiteboardPaste,
     Canvas,
     PlanChart,

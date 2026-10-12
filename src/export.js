@@ -39,7 +39,7 @@ export async function buildPayload(editor, settings) {
 
   // Boards nested in a list, quote, box or table are narrower than the page; use the drawn width.
   // NodeView DOM order matches replaceWhiteboards' document order. offsetWidth ignores CSS zoom.
-  const widths = [...editor.view.dom.querySelectorAll('.wb, .sc, .pc')].map((el) => el.offsetWidth);
+  const widths = [...editor.view.dom.querySelectorAll('.sc, .pc')].map((el) => el.offsetWidth);
   const images = [];
   let charts = 0;
   for (const [i, board] of boards.entries()) {
@@ -52,14 +52,10 @@ export async function buildPayload(editor, settings) {
       height = Math.round((width * board.h) / board.w);
       const scale = Math.min(4, Math.max(0.25, (2 * width) / board.w));
       ({ blob } = await rasterizeWhiteboard({ height: board.h, bg: board.bg, items: board.items }, { width: board.w, theme: settings.theme, scale }));
-    } else if (board.kind === 'planChart') {
-      // Laid out at the width the readability rules need, shown at the drawn width (SPEC §6e).
+    } else {
+      // A plan chart: laid out at the width the readability rules need, shown at the drawn width (SPEC §6e).
       width = widths[i] || Math.min(board.dw ?? settings.forumWidth, settings.forumWidth);
       ({ blob, height } = await rasterizePlanChart(board, { width, theme: settings.theme, n: ++charts }));
-    } else {
-      width = widths[i] || settings.forumWidth;
-      height = board.height;
-      ({ blob } = await rasterizeWhiteboard(board, { width, theme: settings.theme, scale: 2 }));
     }
     if (!blob) throw new Error(`Could not render ${board.kind} ${i + 1}`);
     let type = 'image/png';

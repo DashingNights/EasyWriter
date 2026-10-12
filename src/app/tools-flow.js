@@ -33,7 +33,7 @@ const ARRANGE_WORDS = {
 function canvasOf(c) {
   if (!can('view.editor', c)) return null;
   const target = canvasEditor.get()?.target;
-  if (target) return target.parent ? null : target.owner; // a canvas item of a whiteboard is never synced
+  if (target) return target.owner;
   const sel = c.ed?.state.selection;
   return sel instanceof NodeSelection && sel.node.type.name === 'canvas' ? c.ed.view.nodeDOM(sel.from)?.scView ?? null : null;
 }

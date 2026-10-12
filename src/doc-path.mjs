@@ -4,7 +4,7 @@
 // Text offsets are block-local: the characters of the textblock's text, a hard break counting one ('\n'), as ProseMirror's
 // parentOffset counts them.
 
-export const BOARD_TYPES = ['whiteboard', 'canvas', 'planChart'];
+export const BOARD_TYPES = ['canvas', 'planChart'];
 
 /** The node of TipTap JSON `doc` at `path`, or null. */
 export function nodeAt(doc, path) {
@@ -26,7 +26,7 @@ export function nodeText(node) {
 
 function boardAttrs(node) {
   const a = node.attrs ?? {};
-  return { kind: node.type, items: Array.isArray(a.items) ? a.items.length : 0, w: a.w ?? null, h: a.h ?? a.height ?? null };
+  return { kind: node.type, items: Array.isArray(a.items) ? a.items.length : 0, w: a.w ?? null, h: a.h ?? null };
 }
 
 /** A block's plain text for outline(): the first 120 characters, and when it is longer, a marker with its full length, so the

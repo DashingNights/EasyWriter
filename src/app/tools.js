@@ -1,9 +1,9 @@
 import { createElement as h } from 'react';
 import { NodeSelection } from '@tiptap/pm/state';
 import {
-  ALargeSmall, AppWindow, BringToFront, CaseSensitive, Copy, Crop, Eraser, Eye, EyeOff, FilePlus, FoldVertical, FolderInput, Frame, Group, Heading1,
+  ALargeSmall, AppWindow, BringToFront, CaseSensitive, Copy, Crop, Eraser, Eye, EyeOff, FilePlus, FolderInput, Group, Heading1,
   Heading2, Heading3, Globe, Heading4, Heading5, Heading6, ImagePlus, Layers, Lock, LockOpen, Magnet, MessagesSquare, MousePointer2, MoveHorizontal, PaintBucket, Palette, Pen, Pilcrow, Pin, Redo2, Save,
-  Scaling, MessageSquare, Send, SendToBack, Settings, Shapes, SlidersHorizontal, SquarePen, SquareX, TableColumnsSplit, TableRowsSplit, Tag, Trash2,
+  Scaling, MessageSquare, Send, SendToBack, Settings, Shapes, SlidersHorizontal, SquarePen, TableColumnsSplit, TableRowsSplit, Tag, Trash2,
   Type, Undo2, Ungroup, Workflow, X,
 } from 'lucide-react';
 import { SelectItem } from '@/components/ui/select';
@@ -50,19 +50,19 @@ export function toolContext(board) {
   const { editor: ed, settings, view } = getState();
   const snap = board && !board.destroyed ? board.getSnapshot() : null;
   return { ed, view, T: textTools(ed), board, snap, presets: settings?.presets ?? [], flow: flowchartMode(view, snap?.kind === 'canvas' ? board.attrs : null),
-    block: selectedBlock(ed, view, board, snap) };
+    block: selectedBlock(ed, view) };
 }
 
 /** The editor's node-selected block as the gates' `node` subject {type, attrs, kind, view}, null with a caret or text
- * selection. `kind` (tool-rank.mjs blockKind) and `view` (its NodeView, a whiteboard's Board) are set only where its bar
- * would serve it: the editor view, no canvas edited in place, a whiteboard the search serves with no item selected. */
-function selectedBlock(ed, view, board, snap) {
+ * selection. `kind` (tool-rank.mjs blockKind) and `view` (its NodeView) are set only where its bar would serve it: the
+ * editor view, no canvas edited in place. */
+function selectedBlock(ed, view) {
   const sel = ed?.state.selection;
   if (!(sel instanceof NodeSelection)) return null;
   const node = { type: sel.node.type.name, attrs: sel.node.attrs, kind: null, view: null };
   const dom = ed.view.nodeDOM(sel.from);
-  const v = dom?.scView ?? dom?.pcView ?? dom?.wbView;
-  const served = view?.type === 'editor' && !canvasEditor.get() && !!v && (node.type !== 'whiteboard' || (v === board && snap?.count === 0));
+  const v = dom?.scView ?? dom?.pcView;
+  const served = view?.type === 'editor' && !canvasEditor.get() && !!v;
   return served ? { ...node, kind: blockKind(node.type, node.attrs), view: v } : node;
 }
 
@@ -102,7 +102,6 @@ const FORMAT = [...TEXT, 'node.none'];
 const noBoard = (c) => !c.board;
 const inText = (c) => noBoard(c) && !failedNeeds({ needs: TEXT }, c).length;
 const BOARD = ['board.active'];
-const WHITEBOARD = ['board.whiteboard'];
 const SELECTION = ['board.selection']; // Duplicate, Front / Back, Delete act on every selected item
 const itemIs = (...types) => [{ gate: 'board.itemIs', with: types }]; // the one selected item
 const blockIs = (...kinds) => [{ gate: 'node.is', with: kinds }]; // the node-selected block (selectedBlock)
@@ -164,16 +163,10 @@ const CORE = [
   { id: 'layers', label: 'Layers', group: 'Board', icon: h(Layers), needs: BOARD, toggle: true, active: () => getState().layers, run: toggleLayers,
     keywords: ['layers panel', 'layer list', 'layer', 'outline', 'tree', 'objects', 'item list', 'z order', 'order', 'reorder', 'stack',
       'hide', 'lock', 'show', 'unlock', 'groups', 'layres', 'layrs'] },
-  { id: 'fit-height', label: 'Fit height', group: 'Board', icon: h(FoldVertical), needs: WHITEBOARD, run: (c) => c.board.fitHeight(),
-    keywords: ['shrink', 'fit', 'height', 'trim', 'auto height', 'tighten', 'resize board', 'board height'] },
-  { id: 'delete-board', label: 'Delete board', group: 'Board', icon: h(SquareX), needs: WHITEBOARD, run: (c) => c.board.deleteBoard(), risk: 'destructive',
-    keywords: ['remove board', 'delete whiteboard', 'remove whiteboard', 'trash board', 'discard board'] },
   { id: 'add-text', label: 'Add text', group: 'Insert', icon: h(Type), key: 'board.text', needs: BOARD, run: tool('text'), notice: 'Text: click to place',
     keywords: ['text', 'type', 'write', 'label', 'caption', 'text box', 'textbox', 'words', 'sticky note', 'note', 'title'] },
   { id: 'add-image', label: 'Add image', group: 'Insert', icon: h(ImagePlus), key: 'board.image', needs: BOARD, run: (c) => c.board.pickImages(), headless: false,
     keywords: ['image', 'picture', 'photo', 'img', 'pic', 'upload', 'file', 'png', 'jpg', 'screenshot', 'insert image', 'imgae'] },
-  { id: 'add-canvas', label: 'Add canvas', group: 'Insert', icon: h(Frame), key: 'board.canvas', needs: WHITEBOARD, run: tool('canvas'), notice: 'Canvas: click to place',
-    keywords: ['canvas', 'frame', 'artboard', 'smart canvas', 'insert canvas', 'nested', 'canvass'] },
 
   // Selected board items (§6c ribbon: a single item; rail: the whole selection).
   { id: 'item', label: 'Item properties', group: 'Item', icon: h(SlidersHorizontal), needs: itemIs('text', 'stroke', 'shape'),
@@ -206,12 +199,10 @@ const CORE = [
     run: (c) => c.board.setLayer('hidden', true), keywords: ['show', 'unhide', 'hidden', 'visible', 'reveal', 'all items'] },
   { id: 'delete', label: 'Delete', group: 'Item', icon: h(Trash2), key: 'board.delete', notice: 'Deleted', needs: SELECTION, risk: 'destructive',
     run: (c) => c.board.removeItem(), keywords: ['remove', 'delete item', 'remove item', 'trash', 'bin', 'erase item', 'clear', 'del', 'backspace', 'destroy', 'delet'] },
-  { id: 'reset-size', label: 'Reset size', group: 'Item', icon: h(Scaling), needs: itemIs('image', 'canvas'), run: (c) => c.board.resetSize(),
+  { id: 'reset-size', label: 'Reset size', group: 'Item', icon: h(Scaling), needs: itemIs('image'), run: (c) => c.board.resetSize(),
     keywords: ['natural size', 'original size', 'actual size', '100%', 'restore size', 'full size', 'resize', 'reset'] },
   { id: 'reset-crop', label: 'Reset crop', group: 'Item', icon: h(Crop), needs: itemIs('image'), also: (c) => c.snap.item.cropped,
     run: (c) => c.board.resetCrop(), keywords: ['uncrop', 'remove crop', 'undo crop', 'full image', 'whole image', 'restore image', 'crop'] },
-  { id: 'edit-canvas', label: 'Edit canvas', group: 'Item', icon: h(SquarePen), shortcut: 'Enter', needs: itemIs('canvas'),
-    run: (c) => c.board.editCanvas(), notice: 'Canvas Mode', keywords: ['open canvas', 'edit', 'enter canvas', 'canvas editor', 'open'] },
 
   // A node-selected canvas (§6b canvas bar, CanvasBar.jsx): the bar's actions, on the same NodeView methods; listed first under
   // the block's heading (tool-rank.mjs BLOCK_SECTIONS). Unlink and Save to library are tools-flow.js's entries.

@@ -1,5 +1,5 @@
 import { useLayoutEffect, useRef } from 'react';
-import { AlignCenter, AlignLeft, AlignRight, ArrowLeftRight, Bold, Captions, Crop, MoveHorizontal, Palette, RouteOff, Scaling, SquarePen } from 'lucide-react';
+import { AlignCenter, AlignLeft, AlignRight, ArrowLeftRight, Bold, Captions, Crop, MoveHorizontal, Palette, RouteOff, Scaling } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Toggle } from '@/components/ui/toggle';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
@@ -156,18 +156,6 @@ export function ItemControls({ board, item, group, mixed = [] }) {
             </Tip>
           </>
         )}
-      </>
-    );
-  } else if (item.type === 'canvas') {
-    // Edit hands focus to the canvas being edited, so no board.focus() after it.
-    controls = (
-      <>
-        <Tip title="Edit the canvas (double-click, Enter)" {...CHROME}>
-          <Button variant="ghost" size="sm" onClick={() => board.editCanvas()}><SquarePen />Edit</Button>
-        </Tip>
-        <Tip title="Artboard size, capped to the board" {...CHROME}>
-          <Button variant="ghost" size="sm" onClick={() => { board.resetSize(); board.focus(); }}><Scaling />Reset size</Button>
-        </Tip>
       </>
     );
   } else {
