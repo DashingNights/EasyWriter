@@ -8,19 +8,10 @@ import { kindOf } from '../../../flow/shapes.mjs';
 import { getState, setState, useStore } from '../../store.js';
 import { CHROME, keepFocus, ShapeIcon } from './controls.jsx';
 
-// The open state, kept in this browser profile (closed by default).
-const KEY = 'daf-writer.layers';
-try {
-  if (localStorage.getItem(KEY) === '1') setState({ layers: true });
-} catch {}
-
-/** Opens or closes the layers panel (the rail's Layers button, tool search). */
+/** Hides or shows the layers panel for this session (the rail's Layers button, tool search); it is open whenever a board is
+ * active (store.js `layers`). */
 export function toggleLayers() {
-  const layers = !getState().layers;
-  setState({ layers });
-  try {
-    localStorage.setItem(KEY, layers ? '1' : '0');
-  } catch {}
+  setState({ layers: !getState().layers });
 }
 
 const text = (html) => htmlToText(html).replace(/\s+/g, ' ').trim().slice(0, 80);

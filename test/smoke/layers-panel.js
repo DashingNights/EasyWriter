@@ -90,8 +90,7 @@ async function run(win) {
   await wait(500);
   const wb = await at('.wb');
   const empty = { x: wb.r - 30, y: wb.b - 30 };
-  await click(empty); // the board becomes the active one
-  await invoke('tool.run', { id: 'layers' });
+  await click(empty); // the board becomes the active one, and the panel opens by itself (§6c Layers panel)
   await check('panel open');
   const IMAGE = `[...document.querySelectorAll('div[aria-label="Layers"] [data-layer] > div')].find((e) => e.textContent === 'Image')`;
   const image = () => J(`(() => { const r = ${IMAGE}?.getBoundingClientRect(); return r && { x: r.left + 60, y: r.top + r.height / 2 }; })()`);
