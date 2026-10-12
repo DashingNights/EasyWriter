@@ -1,10 +1,10 @@
 import { createElement as h } from 'react';
 import { NodeSelection } from '@tiptap/pm/state';
 import {
-  ALargeSmall, AppWindow, BringToFront, CaseSensitive, Copy, Crop, Eraser, Eye, EyeOff, FilePlus, FoldVertical, FolderInput, Frame, Heading1, Heading2,
-  Heading3, Globe, Heading4, Heading5, Heading6, ImagePlus, Lock, LockOpen, Magnet, MessagesSquare, MousePointer2, MoveHorizontal, PaintBucket, Palette, Pen, Pilcrow, Pin, Redo2, Save,
+  ALargeSmall, AppWindow, BringToFront, CaseSensitive, Copy, Crop, Eraser, Eye, EyeOff, FilePlus, FoldVertical, FolderInput, Frame, Group, Heading1,
+  Heading2, Heading3, Globe, Heading4, Heading5, Heading6, ImagePlus, Lock, LockOpen, Magnet, MessagesSquare, MousePointer2, MoveHorizontal, PaintBucket, Palette, Pen, Pilcrow, Pin, Redo2, Save,
   Scaling, MessageSquare, Send, SendToBack, Settings, Shapes, SlidersHorizontal, SquarePen, SquareX, TableColumnsSplit, TableRowsSplit, Tag, Trash2,
-  Type, Undo2, Workflow, X,
+  Type, Undo2, Ungroup, Workflow, X,
 } from 'lucide-react';
 import { SelectItem } from '@/components/ui/select';
 import { canvasEditor, flowSource } from '../canvas.js';
@@ -190,6 +190,12 @@ const CORE = [
     keywords: ['unlock', 'lock item', 'freeze', 'pin down', 'fix in place', 'protect', 'background', 'screenshot'] },
   { id: 'hide', label: 'Hide', group: 'Item', icon: h(EyeOff), key: 'board.hide', needs: SELECTION, run: (c) => c.board.setLayer('hidden'),
     keywords: ['show', 'hide item', 'invisible', 'visibility', 'conceal', 'unhide'] },
+  // Group and ungroup (§6c Groups): two or more items; a selection that covers a whole group.
+  { id: 'group', label: 'Group', group: 'Item', icon: h(Group), key: 'board.group', needs: ['board.selectionMany'], run: (c) => c.board.group(),
+    keywords: ['group items', 'combine', 'join', 'bundle', 'gather', 'keep together', 'link'] },
+  { id: 'ungroup', label: 'Ungroup', group: 'Item', icon: h(Ungroup), key: 'board.ungroup', needs: SELECTION,
+    also: (c) => c.board.canUngroup(), run: (c) => c.board.group(false),
+    keywords: ['ungroup items', 'split', 'separate', 'break apart', 'unbundle'] },
   { id: 'unlock-all', label: 'Unlock all', group: 'Board', icon: h(LockOpen), needs: BOARD, also: (c) => c.board.items.some((i) => i.locked),
     run: (c) => c.board.setLayer('locked', true), keywords: ['unlock', 'locked', 'unfreeze', 'all items'] },
   { id: 'show-all', label: 'Show all', group: 'Board', icon: h(Eye), needs: BOARD, also: (c) => c.board.items.some((i) => i.hidden),

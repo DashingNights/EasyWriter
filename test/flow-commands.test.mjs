@@ -15,7 +15,7 @@ const caps = CATALOGUE.map((d) => ({ id: d.id, title: d.title, args: d.args, nee
 const model = (ids, family) => toolsFor(caps, { ids, $defs: MODEL_DEFS, form: 'model', family });
 
 test('flow.*: valid schemas, examples that validate, the risks and undo of the coverage plan', () => {
-  assert.equal(FLOW.length, 14);
+  assert.equal(FLOW.length, 16);
   for (const d of FLOW) {
     checkSchema(d.args);
     for (const ex of d.examples) assert.deepEqual(validate(d.args, ex.args, $defs), [], `${d.id} ${JSON.stringify(ex.args)}`);

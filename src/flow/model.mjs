@@ -117,23 +117,77 @@ export function normalizeGroups(items) {
   });
 }
 
-/** Normalised `items` (normalizeGroups) cut into z-order units: a top-level group's members together, every other item alone. */
-export function units(items) {
+/** Normalised `items` (normalizeGroups) cut into z-order units at group `scope` (null: the top level; a group: `items` are its
+ * members): the members of each group directly inside `scope` together, every other item alone. */
+export function units(items, scope = null) {
   const out = [];
+  let last;
   for (const i of items) {
-    const g = i.groups?.at(-1);
-    if (g && out.at(-1)?.[0].groups?.at(-1) === g) out.at(-1).push(i);
+    const gs = i.groups ?? [];
+    const g = gs[(scope ? gs.indexOf(scope) : gs.length) - 1];
+    if (g && g === last) out.at(-1).push(i);
     else out.push([i]);
+    last = g;
   }
   return out;
 }
 
+/** Item `id`'s unit at group `scope` (null: the top level; SPEC §6c Groups) → {group, scope, ids}: `scope` is where it counts
+ * from (the scope itself when the item is inside it, else the innermost group around the scope that holds the item, else null),
+ * `group` the item's outermost group inside that (null: the item alone) and `ids` its members, or [id]. */
+export function unitOf(items, id, scope = null) {
+  const gs = items.find((i) => i.id === id)?.groups ?? [];
+  const around = items.find((i) => i.groups?.includes(scope))?.groups ?? [];
+  const at = around.slice(around.indexOf(scope)).find((g) => gs.includes(g)) ?? null;
+  const group = gs[(at ? gs.indexOf(at) : gs.length) - 1] ?? null;
+  return { group, scope: at, ids: group ? items.filter((i) => i.groups?.includes(group)).map((i) => i.id) : [id] };
+}
+
+// Whether the ids in `want` (a Set) hold every member of group `g` but the hidden ones (the board never selects those).
+const fills = (items, want, g) => items.every((i) => i.hidden || !i.groups?.includes(g) || want.has(i.id));
+
+/** `items` with a new group (id `makeId()`) around the items `ids` names, as whole units: its parent is the innermost group they
+ * all carry that `ids` does not fill (null: the top level), and each of them brings its unit there (unitOf), so the new group
+ * sits between those units and the parent. Fewer than 2 items: `items` itself. Not normalised (normalizeGroups gathers it). */
+export function groupItems(items, ids, makeId) {
+  const want = new Set(ids);
+  const on = items.filter((i) => want.has(i.id));
+  const parent = (on[0]?.groups ?? []).find((g) => on.every((i) => i.groups?.includes(g)) && !fills(items, want, g)) ?? null;
+  const take = new Set(on.flatMap((i) => unitOf(items, i.id, parent).ids));
+  if (take.size < 2) return items;
+  const id = makeId();
+  return items.map((i) => {
+    if (!take.has(i.id)) return i;
+    const gs = i.groups ?? [];
+    const k = parent ? gs.indexOf(parent) : gs.length;
+    return { ...i, groups: [...gs.slice(0, k), id, ...gs.slice(k)] };
+  });
+}
+
+/** `items` without the groups `ids` selects: for each item it names, the outermost group of its own whose members `ids` all
+ * names (a selected group; several selected groups each lose theirs). None: `items` itself. */
+export function ungroupItems(items, ids) {
+  const want = new Set(ids);
+  const drop = new Set(items.filter((i) => want.has(i.id)).map((i) => i.groups?.findLast((g) => fills(items, want, g))).filter(Boolean));
+  if (!drop.size) return items;
+  return items.map((i) => {
+    if (!i.groups?.some((g) => drop.has(g))) return i;
+    const { groups, ...rest } = i;
+    const gs = groups.filter((g) => !drop.has(g));
+    return gs.length ? { ...rest, groups: gs } : rest;
+  });
+}
+
 /** `items` with the units (units()) that hold any of `ids` moved in z-order, keeping their order among themselves. where:
  * 'front' | 'back' | 'forward' | 'backward' (one step: each moved unit swaps with the unit above / below it) | {index} (put in at
- * that place among the other units, 0 the back). → a new array. */
-export function arrangeItems(items, ids, where) {
+ * that place among the other units, 0 the back). `scope`: a group stepped into (§6c Groups), whose members move among
+ * themselves, its units at that level. → a new array. */
+export function arrangeItems(items, ids, where, scope = null) {
+  const inside = (i) => i.groups?.includes(scope);
+  const s = scope && items.some(inside) ? scope : null;
+  const [a, b] = s ? [items.findIndex(inside), items.findLastIndex(inside) + 1] : [0, items.length]; // the scope's members
   const want = new Set(ids);
-  const all = units(items);
+  const all = units(items.slice(a, b), s);
   const on = (u) => u.some((i) => want.has(i.id));
   const up = (list) => {
     for (let k = list.length - 2; k >= 0; k--) if (on(list[k]) && !on(list[k + 1])) [list[k], list[k + 1]] = [list[k + 1], list[k]];
@@ -147,7 +201,7 @@ export function arrangeItems(items, ids, where) {
     forward: () => up([...all]),
     backward: () => up([...all].reverse()).reverse(),
   }[where]?.() ?? [...rest.slice(0, at), ...sel, ...rest.slice(at)];
-  return next.flat();
+  return [...items.slice(0, a), ...next.flat(), ...items.slice(b)];
 }
 
 /** Whether a click, the selection rectangle, Tab or Ctrl+A on the board may select `i`: not hidden and not locked. */
@@ -251,11 +305,11 @@ export function flipItem(item, c, axis, field = null, h = item.h) {
 }
 
 /** Deep copies with new ids (`makeId()`); connector ends bound inside the copied set follow the copies, ends bound outside it
- * become free at their tips. A group copied whole (no item of `all`, the board's items, outside the set carries it) gets a new
- * id (`makeId()`); a group copied in part is dropped from the copies. */
+ * become free at their tips. A group copied whole (no shown item of `all`, the board's items, outside the set carries it) gets
+ * a new id (`makeId()`); a group copied in part is dropped from the copies. */
 export function cloneItems(items, makeId, all = items) {
   const ids = new Map(items.map((i) => [i.id, makeId()]));
-  const partial = new Set(all.filter((i) => !ids.has(i.id)).flatMap((i) => i.groups ?? []));
+  const partial = new Set(all.filter((i) => !ids.has(i.id) && !i.hidden).flatMap((i) => i.groups ?? []));
   const groups = new Map(); // old group id → new
   return items.map((i) => {
     const copy = { ...structuredClone(i), id: ids.get(i.id) };

@@ -6,9 +6,9 @@ import { toBlob } from 'html-to-image';
 import { toast } from 'sonner';
 import { anchorPoint, kindOf, portNormal, portsOf, rotatePoint, rotBox, rotOf, turns } from './flow/shapes.mjs';
 import {
-  align as alignBoxes, arrangeItems, boundIndex, cleanConnector, cleanLayers, cloneItems, containedIn, DASHES, distribute as distributeBoxes, HEADS,
-  hitTarget, JUMPS, flipItem, LABEL_SLOTS, MAX_POINTS, moveItem, normalizeGroups, repairEnds, resizeInFrame, ROUTES, sameSize as sameBoxes, selectable,
-  toggleLayer, turnItem, unbindFrom, validConnector,
+  align as alignBoxes, arrangeItems, boundIndex, cleanConnector, cleanLayers, cloneItems, containedIn, DASHES, distribute as distributeBoxes,
+  groupItems, HEADS, hitTarget, JUMPS, flipItem, LABEL_SLOTS, MAX_POINTS, moveItem, normalizeGroups, repairEnds, resizeInFrame, ROUTES,
+  sameSize as sameBoxes, selectable, toggleLayer, turnItem, unbindFrom, ungroupItems, unitOf, validConnector,
 } from './flow/model.mjs';
 import { headPath, LABEL_PAD, nearestT, polylineHitsRect, polylinePoint, resolveConnectors } from './flow/route.mjs';
 import { isMermaid } from './flow/mermaid.mjs';
@@ -1047,6 +1047,7 @@ export class Board {
     this.fixed = fixed;
     this.unit = unit; // board px per post px (§6c Units): 1 on a whiteboard, 1 / display scale on a canvas being edited
     this.sel = new Set(); // ids of the selected items (§6c multi-selection)
+    this.scope = null; // the group stepped into (§6c Groups), null at the top level
     this.editingId = null;
     this.editingSlot = null; // the connector label being edited (start | mid | end), else null
     this.savedRange = null; // caret inside the text being edited, restored after a chrome change
@@ -1321,8 +1322,10 @@ export class Board {
     if (hadFocus && !this.dom.contains(document.activeElement)) this.dom.focus({ preventScroll: true });
   }
 
-  // Every selected item has its outline; a single one also its handles (decorate), several the group box.
+  // Every selected item has its outline; a single one also its handles (decorate), several the group box. The scope ends when
+  // no selected item is inside it (§6c Groups: nothing selected, the group gone, copies made outside it).
   renderSelection() {
+    if (this.scope && !this.selectedItems().some((i) => i.groups?.includes(this.scope))) this.scope = null;
     this.refreshScale();
     const one = this.selectedId;
     for (const el of this.layer.children) {
@@ -1902,10 +1905,11 @@ export class Board {
     this.commit();
   }
 
-  // Moves the selected items in z-order, keeping their order among themselves (model.mjs arrangeItems: a group moves whole).
-  // where: 'front' | 'back' | 'forward' | 'backward' (one step past the unit above / below).
+  // Moves the selected items in z-order, keeping their order among themselves (model.mjs arrangeItems: a group moves whole;
+  // inside a group stepped into, among its members, §6c Groups). where: 'front' | 'back' | 'forward' | 'backward' (one step
+  // past the unit above / below).
   arrange(where) {
-    const items = arrangeItems(this.items, this.sel, where);
+    const items = arrangeItems(this.items, this.sel, where, this.scope);
     if (items.every((i, k) => i === this.items[k])) return;
     this.items = items;
     this.commit();
@@ -1927,6 +1931,55 @@ export class Board {
     this.items = items;
     for (const i of items) if (!selectable(i)) this.sel.delete(i.id);
     this.commit(true);
+  }
+
+  // Group (Ctrl+G) / Ungroup (`on` false, Ctrl+Shift+G) the selection (§6c Groups; model.mjs groupItems, ungroupItems): the new
+  // group becomes the selection, the scope its parent group (or null); ungrouped items stay selected. The edit ends first. Its
+  // own undo step.
+  group(on = true) {
+    this.finishEdit();
+    let id = null;
+    const items = on ? groupItems(this.items, this.sel, () => (id = newId())) : ungroupItems(this.items, this.sel);
+    if (items === this.items) return;
+    this.items = items;
+    if (id) {
+      const m = items.find((i) => i.groups?.includes(id));
+      this.scope = m.groups[m.groups.indexOf(id) + 1] ?? null;
+      this.sel = new Set(items.filter((i) => i.groups?.includes(id) && !i.hidden).map((i) => i.id));
+    }
+    this.commit(true);
+  }
+
+  // Whether Ungroup would change anything: the selection covers a whole group (the board menu and tool search enable it on this).
+  canUngroup() {
+    return ungroupItems(this.items, this.sel) !== this.items;
+  }
+
+  // Selects item `id`'s unit (§6c Groups: its outermost group at the scope, model.mjs unitOf); the scope becomes where it is.
+  selectUnit(id) {
+    const u = unitOf(this.items, id, this.scope);
+    this.scope = u.scope;
+    this.select(u.ids);
+  }
+
+  // Esc inside a group (§6c Groups): the group stepped into becomes the selection, the scope its parent group (or null).
+  stepOut() {
+    const s = this.scope;
+    const m = this.items.find((i) => i.groups?.includes(s));
+    this.scope = m?.groups[m.groups.indexOf(s) + 1] ?? null;
+    this.select(this.items.filter((i) => i.groups?.includes(s)).map((i) => i.id));
+  }
+
+  // A double-click on a member of the selected group (§6c Groups) steps in: the scope becomes that group and the member's unit
+  // there the selection. → true when the double-click ends there: that unit is a group (the next double-click goes on in), or
+  // the member does not edit (an image, a stroke, a canvas).
+  stepIn(item) {
+    const u = unitOf(this.items, item.id, this.scope);
+    if (!u.group || !this.sel.has(item.id)) return false;
+    const inner = unitOf(this.items, item.id, u.group);
+    this.scope = u.group;
+    this.select(inner.ids);
+    return !!inner.group || !['text', 'shape', 'connector'].includes(item.type);
   }
 
   // --- arranging, rotating and style (§6d; one commit each) ---
@@ -2327,7 +2380,7 @@ export class Board {
       return { id: i.id, x: b.x + b.w / 2, y: b.y + b.h / 2 };
     };
     const id = pickInDirection(centre(src), this.items.filter((i) => ids.has(i.id) && selectable(i)).map(centre), dir);
-    if (id) this.select(id);
+    if (id) this.selectUnit(id); // a group as one (§6c Groups)
   }
 
   // Shows sticking target `hit` ({item, anchor} | null): the item outlined and its ports as dots (children of its element,
@@ -2718,12 +2771,19 @@ export class Board {
     this.finishEdit();
     if (!this.items.some((i) => i.id === id)) return; // a new text left untouched went (finishEdit)
     if (this.connectorPart(e, id)) return;
-    // Shift + click adds the item to the selection, or takes a selected one out on release (so Shift + drag still moves
-    // it). Pressing one of several selected items moves them all; released without a drag, only it stays selected.
+    // A click selects the item's unit: its outermost group at the scope, or the item (§6c Groups); Ctrl + click in a group the
+    // item itself (deep select, at once). Shift + click adds the unit to the selection, or takes a selected one out on release
+    // (so Shift + drag still moves it). Pressing one of several selected units moves them all; released without a drag, only
+    // its unit stays selected.
+    const unit = unitOf(this.items, id, this.scope);
+    const deep = (e.ctrlKey || e.metaKey) && unit.group;
+    const ids = deep ? [id] : unit.ids;
     let click = null; // the selection a release without a drag leaves
-    if (!this.sel.has(id)) this.select(e.shiftKey ? [...this.sel, id] : id);
-    else if (e.shiftKey && !corner) click = [...this.sel].filter((s) => s !== id);
-    else if (this.sel.size > 1) click = [id];
+    if (!this.sel.has(id) || (deep && !e.shiftKey)) {
+      if (!e.shiftKey) this.scope = deep ? this.items.find((i) => i.id === id).groups[0] : unit.scope;
+      this.select(e.shiftKey ? [...this.sel, ...ids] : ids);
+    } else if (e.shiftKey && !corner) click = [...this.sel].filter((s) => !ids.includes(s));
+    else if (this.sel.size > 1) click = ids;
     this.dom.focus({ preventScroll: true });
     const crop = corner && (e.ctrlKey || e.metaKey) && this.selected()?.type === 'image';
     // A label of the one selected connector drags along / beside its path (§6d; the pointer keeps its grip on it); in a
@@ -2764,7 +2824,8 @@ export class Board {
   }
 
   // The board menu (§6c) in place of Electron's native menu, except over the text being edited (its spelling menu). A
-  // right-click leaves the tool; on an item outside the selection it selects that item alone, elsewhere it keeps the selection.
+  // right-click leaves the tool; on an item outside the selection it selects that item's unit alone, elsewhere it keeps the
+  // selection.
   onContextMenu = (e) => {
     if (this.editingId && this.editText()?.contains(e.target)) return;
     e.preventDefault();
@@ -2775,7 +2836,7 @@ export class Board {
     this.finishEdit();
     if (this.mode) this.setMode(null);
     const id = e.target.closest('.wb-item')?.dataset.id;
-    if (id && !this.sel.has(id)) this.select(id);
+    if (id && !this.sel.has(id)) this.selectUnit(id); // a group as one (§6c Groups)
     this.dom.focus({ preventScroll: true });
     boardMenu.open(this, { x: e.clientX, y: e.clientY });
   };
@@ -2895,8 +2956,9 @@ export class Board {
     placeItem(g.marquee, { ...g.rect, type: 'shape' });
   }
 
-  // Release on empty board area: the items the rectangle touches become the selection (Shift: are added; hidden and locked
-  // items never); a click without a drag deselects (a whiteboard becomes node-selected).
+  // Release on empty board area: the units of the items the rectangle touches become the selection (Shift: are added; a group
+  // whole at the scope, §6c Groups; hidden and locked items touch nothing); a click without a drag deselects (a whiteboard
+  // becomes node-selected).
   finishMarquee(g, add) {
     if (!g.marquee) {
       this.select(null);
@@ -2907,7 +2969,8 @@ export class Board {
     const live = this.items.filter(selectable);
     const [conns, rest] = [live.filter((i) => i.type === 'connector'), live.filter((i) => i.type !== 'connector')];
     const hits = [...marqueeHits(g.rect, rest.map((i) => ({ id: i.id, ...this.itemBox(i) }))),
-      ...conns.filter((c) => polylineHitsRect(this.geo.get(c.id)?.pts ?? [], g.rect)).map((c) => c.id)]; // by their line
+      ...conns.filter((c) => polylineHitsRect(this.geo.get(c.id)?.pts ?? [], g.rect)).map((c) => c.id)] // by their line
+      .flatMap((id) => unitOf(this.items, id, this.scope).ids);
     this.select(add ? [...this.sel, ...hits] : hits);
     this.dom.focus({ preventScroll: true });
   }
@@ -3152,6 +3215,7 @@ export class Board {
     const el = hit?.closest('.wb-item');
     let item = el && this.dom.contains(el) ? this.items.find((i) => i.id === el.dataset.id) : null;
     if (item?.type === 'connector') {
+      if (this.stepIn(item)) return; // a member of the selected group: in, then its label as below (§6c Groups)
       // A waypoint handle: that bend goes. A label: edit it. The line: the slot by where it was hit (§6d).
       if (hit.classList.contains('wb-wp')) return this.removeWaypoint(item, Number(hit.dataset.k));
       const slot = hit.closest('.wb-text[data-slot]')?.dataset.slot;
@@ -3171,16 +3235,18 @@ export class Board {
     const inside = geo && this.items.find((i) => i.id === geo.item);
     if (inside && (!item || (lineish(item) && this.items.indexOf(inside) > this.items.indexOf(item)))) item = inside;
     if (!item) return hit === this.dom || hit === this.layer ? this.addText(this.snapped(e)) : undefined; // empty board: a text (§6c)
-    if (item.id === this.editingId) return;
+    if (item.id === this.editingId || this.stepIn(item)) return; // a member of the selected group: in, a text or shape edited
     if (item.type === 'text') this.startEdit(item.id);
     else if (item.type === 'shape') this.editShapeLabel(item);
     else if (item.type === 'image') this.imageToCanvas(item);
     else this.editCanvas(item);
   };
 
+  // Every unit that holds an item not hidden or locked (§6 Layer fields); inside a group stepped into, its members (§6c Groups).
   selectAll() {
     if (this.mode) this.setMode(null);
-    this.select(this.items.filter(selectable).map((i) => i.id)); // not hidden or locked items (§6 Layer fields)
+    const live = this.items.filter((i) => selectable(i) && (!this.scope || i.groups?.includes(this.scope)));
+    this.select(live.flatMap((i) => unitOf(this.items, i.id, this.scope).ids));
   }
 
   // Edits a shape's label (double-click, Enter, F2); the shape becomes the selection.
@@ -3202,15 +3268,17 @@ export class Board {
       if (e.key === 'Escape') {
         e.preventDefault();
         this.finishEdit();
+        if (this.scope) this.stepOut(); // the edited member's group stays selected (§6c Groups)
         this.dom.focus({ preventScroll: true });
       }
       return;
     }
     const arrow = { ArrowLeft: 'w', ArrowRight: 'e', ArrowUp: 'n', ArrowDown: 's' }[e.key];
-    // Escape: end a text edit (above) → leave the tool → deselect.
+    // Escape: end a text edit (above) → leave the tool → step out of a group (§6c Groups) → deselect.
     if (e.key === 'Escape' && (this.mode || this.sel.size)) {
       e.preventDefault();
       if (this.mode) this.setMode(null);
+      else if (this.scope) this.stepOut();
       else this.select(null);
       this.dom.focus({ preventScroll: true });
       return;
@@ -3243,6 +3311,8 @@ export class Board {
         'board.flipV': () => this.flip('y'),
         'board.lock': () => this.setLayer('locked'), // §6 Layer fields
         'board.hide': () => this.setLayer('hidden'),
+        'board.group': () => this.group(), // §6c Groups
+        'board.ungroup': () => this.group(false),
       }),
     };
     const id = keyAmong(Object.keys(commands), e);
@@ -3273,13 +3343,19 @@ export class Board {
     }
     if (e.ctrlKey || e.metaKey || e.altKey) return;
     if (e.key === 'Tab' && this.items.some(selectable)) {
-      // Next / previous item in z-order, past hidden and locked items (§6 Layer fields).
+      // Next / previous unit in z-order at the scope (a group as one, §6c Groups), past hidden and locked items (§6 Layer
+      // fields); from the unit of the first selected item.
       e.preventDefault();
       if (this.mode) this.setMode(null);
-      const list = this.items.filter(selectable);
+      const units = new Map(); // group id or item id → its ids
+      for (const it of this.items.filter((i) => selectable(i) && (!this.scope || i.groups?.includes(this.scope)))) {
+        const u = unitOf(this.items, it.id, this.scope);
+        if (!units.has(u.group ?? it.id)) units.set(u.group ?? it.id, u.ids);
+      }
+      const list = [...units.values()];
       const n = list.length;
-      const i = list.findIndex((it) => it.id === this.selectedId);
-      this.select(list[i < 0 ? (e.shiftKey ? n - 1 : 0) : (i + (e.shiftKey ? n - 1 : 1)) % n].id);
+      const i = list.findIndex((ids) => ids.includes([...this.sel][0]));
+      if (n) this.select(list[i < 0 ? (e.shiftKey ? n - 1 : 0) : (i + (e.shiftKey ? n - 1 : 1)) % n]);
       return;
     }
     if (!this.sel.size) return;

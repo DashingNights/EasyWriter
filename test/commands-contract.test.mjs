@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { fromThousandths, patched, placeAt } from '../src/app/commands/board.mjs';
+import { fromThousandths, grouped, patched, placeAt, ungrouped } from '../src/app/commands/board.mjs';
 import { $defs, byId, CATALOGUE, MODEL_DEFS } from '../src/app/commands/catalogue.mjs';
 import { endBoxes, facing, straightPatch } from '../src/app/commands/connectors.mjs';
 import { argsMessage, ID_RE, RISKS, UNDOS } from '../src/app/commands/define.mjs';
@@ -154,6 +154,15 @@ test('board.items.update: route straight drops a connector\'s waypoints unless t
   assert.deepEqual(patched(c, { route: 'ortho' }).points, [{ x: 1, y: 2 }]);
   assert.deepEqual(patched(c, { labels: { end: null }, heads: { start: 'bar' } }), { ...c, labels: { mid: { html: 'yes' } }, heads: { end: 'arrow', start: 'bar' } });
   assert.match(byId('board.items.update').brief, /route straight also drops an arrow's bends/);
+});
+
+test('board.items.group wraps whole units and answers the members; board.items.ungroup takes each item\'s outermost group', () => {
+  const items = [{ id: 'a', groups: ['g'] }, { id: 'b', groups: ['g'] }, { id: 'c' }];
+  const g = grouped(items, ['a', 'c']);
+  assert.deepEqual(g.result.ids, ['a', 'b', 'c']);
+  assert.deepEqual(ungrouped(g.items, ['c']).items.map((i) => i.groups), [['g'], ['g'], undefined]);
+  assert.throws(() => grouped(items, ['a', 'a']), (e) => e.code === 'invalid_args');
+  assert.throws(() => ungrouped(items, ['c']), (e) => e.code === 'invalid_args');
 });
 
 test('board.items.place: the box goes gap px beside the other one, the other axis lined up unless align is false', () => {

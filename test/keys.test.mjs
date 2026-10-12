@@ -87,3 +87,8 @@ test('board keys: Ctrl+Shift+L locks and Ctrl+Shift+H hides (Figma), Align left 
   assert.deepEqual([b['board.lock'], b['board.hide'], b['text.alignLeft']], [['Ctrl+Shift+L'], ['Ctrl+Shift+H'], ['Ctrl+Shift+L']]);
   assert.equal(collisions(DEFS, b)['board.lock'], undefined);
 });
+
+test('board keys: Ctrl+G groups and Ctrl+Shift+G ungroups (Figma)', () => {
+  const b = effective(DEFS);
+  assert.deepEqual([b['board.group'], b['board.ungroup']], [['Ctrl+G'], ['Ctrl+Shift+G']]);
+});

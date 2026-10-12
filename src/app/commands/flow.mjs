@@ -11,7 +11,7 @@ import {
 } from '../../whiteboard.js';
 import { validate } from '../schema.mjs';
 import { endSide } from '../assistant/attach.mjs';
-import { patched, placeAt } from './board.mjs';
+import { grouped, patched, placeAt, ungrouped } from './board.mjs';
 import { connectorOf, endBoxes, straightPatch } from './connectors.mjs';
 import { define, fail, failGates } from './define.mjs';
 import { matchStyle } from './item-style.mjs';
@@ -399,6 +399,41 @@ export const defs = [
       const item = after.find((i) => i.id === a.id);
       return { id: a.id, item: ctx.lib.stripImages(item), ...endBoxes(after, item, boxOf) };
     },
+  }),
+  define({
+    id: 'flow.items.group',
+    title: 'Group flowchart items',
+    brief: 'A group selects and moves as one.',
+    group: GROUP,
+    risk: 'write',
+    undo: 'own',
+    args: {
+      type: 'object', required: ['flowId', 'ids'], additionalProperties: false,
+      properties: { flowId: FLOW_ID, ids: { ...IDS, minItems: 2, description: 'Two or more items. An item in a group brings its group' } },
+    },
+    result: { type: 'object', required: ['group', 'ids'] },
+    examples: [{ args: { flowId: EX, ids: ['k3j9x0a', 'q2m1f8z'] } }],
+    busy,
+    run: (ctx, a) => write(ctx, a.flowId, (items) => {
+      mustHave(items, a.ids);
+      return grouped(items, a.ids);
+    }),
+  }),
+  define({
+    id: 'flow.items.ungroup',
+    title: 'Ungroup flowchart items',
+    brief: 'Each item\'s outermost group goes.',
+    group: GROUP,
+    risk: 'write',
+    undo: 'own',
+    args: { type: 'object', required: ['flowId', 'ids'], additionalProperties: false, properties: { flowId: FLOW_ID, ids: IDS } },
+    result: { type: 'object', required: ['ungrouped'] },
+    examples: [{ args: { flowId: EX, ids: ['k3j9x0a'] } }],
+    busy,
+    run: (ctx, a) => write(ctx, a.flowId, (items) => {
+      mustHave(items, a.ids);
+      return ungrouped(items, a.ids);
+    }),
   }),
   define({
     id: 'flow.items.remove',

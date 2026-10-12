@@ -1,8 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  arrangeItems, cleanConnector, cloneItems, containedIn, flipItem, hitTarget, moveItem, normalizeGroups, selectable, toggleLayer, turnItem,
-  unbindFrom, units,
+  arrangeItems, cleanConnector, cloneItems, containedIn, flipItem, groupItems, hitTarget, moveItem, normalizeGroups, selectable, toggleLayer,
+  turnItem, unbindFrom, ungroupItems, unitOf, units,
 } from '../src/flow/model.mjs';
 import { parseBoard } from '../src/whiteboard.js';
 
@@ -137,6 +137,33 @@ test('units and arrangeItems: a group is one unit and moves whole; front, back, 
   assert.equal(ids(arrangeItems(items, ['e'], { index: 1 })), 'a e b c d');
 });
 
+test('unitOf: the outermost group at the scope; inside its own group an item alone; outside the scope it counts from around it', () => {
+  const items = [it('a', 'i', 'o'), it('b', 'i', 'o'), it('c', 'o'), it('d')];
+  assert.deepEqual(unitOf(items, 'a'), { group: 'o', scope: null, ids: ['a', 'b', 'c'] });
+  assert.deepEqual(unitOf(items, 'a', 'o'), { group: 'i', scope: 'o', ids: ['a', 'b'] });
+  assert.deepEqual(unitOf(items, 'a', 'i'), { group: null, scope: 'i', ids: ['a'] });
+  assert.deepEqual(unitOf(items, 'c', 'i'), { group: null, scope: 'o', ids: ['c'] });
+  assert.deepEqual(unitOf(items, 'd', 'i'), { group: null, scope: null, ids: ['d'] });
+});
+
+test('groupItems wraps whole units inside their parent; ungroupItems removes each selected group; arrangeItems at a scope', () => {
+  const items = [it('z'), it('a', 'i', 'o'), it('b', 'i', 'o'), it('c', 'o'), it('x', 'o'), it('y')];
+  const n = () => 'n';
+  const groups = (list) => list.map((i) => i.groups?.join() ?? '');
+  assert.deepEqual(groups(groupItems(items, ['z', 'b'], n)), ['n', 'i,o,n', 'i,o,n', 'o,n', 'o,n', '']); // b brings o whole
+  assert.deepEqual(groups(groupItems(items, ['a', 'c'], n)), ['', 'i,n,o', 'i,n,o', 'n,o', 'o', '']); // inside o: i and c
+  assert.deepEqual(groups(groupItems(items, ['a', 'b', 'c', 'x'], n)), ['', 'i,o,n', 'i,o,n', 'o,n', 'o,n', '']); // o itself
+  assert.equal(groupItems(items, ['z'], n), items);
+  assert.deepEqual(groups(ungroupItems(items, ['a', 'b', 'c', 'x'])), ['', 'i', 'i', '', '', '']); // o selected
+  assert.deepEqual(groups(ungroupItems(items, ['a', 'b'])), ['', 'o', 'o', 'o', 'o', '']); // i selected inside o
+  assert.equal(ungroupItems(items, ['a', 'z']), items);
+  assert.deepEqual(groups(ungroupItems([it('a', 'g'), it('b', 'g'), it('c', 'h'), it('d', 'h')], ['a', 'b', 'c', 'd'])), ['', '', '', '']);
+  assert.equal(ids(arrangeItems(items, ['c'], 'front', 'o')), 'z a b x c y');
+  assert.equal(ids(arrangeItems(items, ['a'], 'front', 'o')), 'z c x a b y');
+  assert.equal(ids(arrangeItems(items, ['x'], 'back', 'o')), 'z x a b c y');
+  assert.equal(ids(arrangeItems(items, ['c'], 'front')), 'z y a b c x'); // the top level: o moves whole
+});
+
 test('cloneItems: a group copied whole gets a new id, one copied in part is dropped', () => {
   const board = [it('a', 'i', 'o'), it('b', 'i', 'o'), it('c', 'o')];
   let n = 0;
@@ -144,6 +171,14 @@ test('cloneItems: a group copied whole gets a new id, one copied in part is drop
   assert.deepEqual(copies.map((i) => i.groups), [['n2'], ['n2']]); // i kept (whole) as n2, o dropped (c not copied)
   const all = cloneItems(board, () => `m${n++}`);
   assert.deepEqual(all.map((i) => i.groups), [['m6', 'm7'], ['m6', 'm7'], ['m7']]);
+});
+
+test('a hidden member does not keep its group from counting as selected or copied whole', () => {
+  const items = [it('a', 'g'), it('b', 'g'), { ...it('h', 'g'), hidden: true }, it('c')];
+  const groups = (list) => list.map((i) => i.groups?.join() ?? '');
+  assert.deepEqual(groups(ungroupItems(items, ['a', 'b'])), ['', '', '', '']);
+  assert.deepEqual(groups(groupItems(items, ['a', 'b'], () => 'n')), ['g,n', 'g,n', 'g,n', '']);
+  assert.deepEqual(cloneItems(items.slice(0, 2), () => 'k', items).map((i) => i.groups), [['k'], ['k']]);
 });
 
 test('toggleLayer: sets the flag on the named items unless all have it, then clears it; selectable skips hidden and locked', () => {

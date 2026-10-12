@@ -2,7 +2,9 @@ import { closeHistory } from '@tiptap/pm/history';
 import { commitSynced, liveBoard } from '../../canvas.js';
 import { pathOfPos, posOfPath } from '../../doc-path.mjs';
 import { validFlow } from '../../flow/library.mjs';
-import { arrangeItems, cleanConnector, moveItem, normalizeGroups, repairEnds, unbindFrom, validConnector } from '../../flow/model.mjs';
+import {
+  arrangeItems, cleanConnector, groupItems, moveItem, normalizeGroups, repairEnds, unbindFrom, ungroupItems, validConnector,
+} from '../../flow/model.mjs';
 import { resolveConnectors } from '../../flow/route.mjs';
 import { KINDS, rotBox, rotOf } from '../../flow/shapes.mjs';
 import {
@@ -275,6 +277,23 @@ export function placeAt(A, B, relation, gap, align) {
   const x = relation === 'left' ? B.x - gap - A.w : relation === 'right' ? B.x + B.w + gap : align ? B.x : A.x;
   const y = relation === 'above' ? B.y - gap - A.h : relation === 'below' ? B.y + B.h + gap : align ? B.y : A.y;
   return { x, y };
+}
+
+/** board.items.group, flow.items.group: `items` with a new group around `ids`, as whole units (model.mjs groupItems, as the
+ * board's Ctrl+G) → {items, result: {group, ids (its members)}}; fewer than two different items → invalid_args. */
+export function grouped(items, ids) {
+  const group = newId();
+  const next = groupItems(items, ids, () => group);
+  if (next === items) fail('invalid_args', 'Give two or more different items', { path: '/ids', message: 'needs two or more different items', expected: {} });
+  return { items: next, result: { group, ids: next.filter((i) => i.groups?.includes(group)).map((i) => i.id) } };
+}
+
+/** board.items.ungroup, flow.items.ungroup: `items` without the outermost group of each item `ids` names (model.mjs
+ * ungroupItems over those groups' members) → {items, result: {ungrouped (the group ids)}}; none in a group → invalid_args. */
+export function ungrouped(items, ids) {
+  const outer = new Set(items.filter((i) => ids.includes(i.id)).map((i) => i.groups?.at(-1)).filter(Boolean));
+  if (!outer.size) fail('invalid_args', 'None of these items is in a group', { path: '/ids', message: 'holds no grouped item', expected: {} });
+  return { items: ungroupItems(items, items.filter((i) => outer.has(i.groups?.at(-1))).map((i) => i.id)), result: { ungrouped: [...outer] } };
 }
 
 /** The ids of `ids` that are not among `items`, as not_found. */
@@ -659,6 +678,46 @@ export const defs = [
       mustHave(items, a.ids);
       const next = arrangeItems(items, a.ids, a.where); // Board.arrange over `ids` instead of the selection: a group moves whole
       return { items: next, result: { order: next.map((i) => i.id) } };
+    }),
+  }),
+  define({
+    id: 'board.items.group',
+    title: 'Group items of a whiteboard or canvas',
+    brief: 'A group selects and moves as one. draftId: another draft to work on without opening it (drafts_list gives it); leave it out for the open draft.',
+    group: 'board',
+    risk: 'write',
+    undo: 'doc',
+    needs: BOARD_NEEDS,
+    args: {
+      type: 'object', required: ['path', 'ids'], additionalProperties: false,
+      properties: { path: BOARD_PATH, itemPath: ITEM_PATH, ids: { ...IDS, minItems: 2, description: 'Two or more items. An item in a group brings its group' }, draftId: DRAFT_ID },
+    },
+    result: { type: 'object', required: ['group', 'ids'] },
+    examples: [{ args: { path: [4], ids: ['k3j9x0a', 'q2m1f8z'] } }],
+    busy,
+    run: (ctx, a) => write(ctx, a, (items) => {
+      mustHave(items, a.ids);
+      return grouped(items, a.ids);
+    }),
+  }),
+  define({
+    id: 'board.items.ungroup',
+    title: 'Ungroup items of a whiteboard or canvas',
+    brief: 'Each item\'s outermost group goes. draftId: another draft to work on without opening it (drafts_list gives it); leave it out for the open draft.',
+    group: 'board',
+    risk: 'write',
+    undo: 'doc',
+    needs: BOARD_NEEDS,
+    args: {
+      type: 'object', required: ['path', 'ids'], additionalProperties: false,
+      properties: { path: BOARD_PATH, itemPath: ITEM_PATH, ids: IDS, draftId: DRAFT_ID },
+    },
+    result: { type: 'object', required: ['ungrouped'] },
+    examples: [{ args: { path: [4], ids: ['k3j9x0a'] } }],
+    busy,
+    run: (ctx, a) => write(ctx, a, (items) => {
+      mustHave(items, a.ids);
+      return ungrouped(items, a.ids);
     }),
   }),
   define({
