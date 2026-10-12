@@ -53,7 +53,7 @@ export const demoDoc = () => ({
   content: [
     { type: 'heading', attrs: { level: 1, textAlign: 'center' }, content: [text('Welcome to EasyWriter')] },
     para(text('EasyWriter is a desktop editor for Digital Academy Forum development threads. You write each post here, with '
-      + 'whiteboards, flowcharts and plans built in, and push it to your thread when it is ready. This draft shows what a post '
+      + 'canvases, flowcharts and plans built in, and push it to your thread when it is ready. This draft shows what a post '
       + 'can hold.')),
     h2('Text and presets'),
     para(text('Presets apply a saved text style in one click. Select some text and pick one from the toolbar. The app comes '
@@ -66,7 +66,7 @@ export const demoDoc = () => ({
     list(
       'Headings, bold, italic, underline, colours and font sizes',
       'Bullet and numbered lists, quotes and code blocks',
-      'Tables, boxes, whiteboards, flowcharts and plan charts',
+      'Tables, boxes, canvases, flowcharts and plan charts',
       'Undo history that is still there after a restart',
     ),
     h2('Tables and boxes'),
@@ -88,9 +88,9 @@ export const demoDoc = () => ({
       ],
     },
     h2('Annotated screenshots'),
-    para(text('Drop a screenshot on a whiteboard, then draw and write over it. The forum gets the whole board as one picture. '
-      + 'This board comes from a real dev thread post.')),
-    para(text('This board was inspired by the map '), text('"', [{ type: 'italic' }]),
+    para(text('Drop a screenshot into the post and it becomes a canvas. Double-click the canvas to draw and write over it. The '
+      + 'forum gets the whole canvas as one picture. This canvas comes from a real dev thread post.')),
+    para(text('It was inspired by the map '), text('"', [{ type: 'italic' }]),
       text('Imperial Dueling Grounds', [{ type: 'italic' }, { type: 'underline' }]), text('" ', [{ type: 'italic' }]), text('of Marvel Rivals.')),
     {
       type: 'whiteboard',

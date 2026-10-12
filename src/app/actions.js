@@ -7,7 +7,7 @@ import { canvasEditor, openCanvasEditor } from '../canvas.js';
 import { buildExtensions, applyPreset } from '../extensions.js';
 import { buildPayload, draftTitle, wordCount } from '../export.js';
 import { mergeThreads, normalizeThread, slugTitle, topicId } from '../thread-url.mjs';
-import { activeBoard, finishBoardEdits } from '../whiteboard.js';
+import { activeBoard, finishBoardEdits, migrateBoards } from '../whiteboard.js';
 import { captureSelection } from './assistant/capture.js';
 import { backgroundDraft, dropSession, flushSessions, handOver } from './assistant/sessions.js';
 import { installAgent } from './commands.js';
@@ -281,6 +281,10 @@ let undoLog = null; // the open draft's undo steps, saved with it (§7e, history
  * rebuilt from it, keeping `keep` undo steps; `onUpdate` after each change. → {editor, log (its undo steps, §7e)}. The open
  * draft's (mountEditor) and the assistant's background sessions' (assistant/sessions.js). */
 export function makeEditor(element, doc, historyFile, keep, onUpdate) {
+  // Whiteboards become canvases before `new Editor`, which blanks a doc with an unknown node; the history file the same way, so
+  // its replay reaches the converted doc (§6b Converted whiteboards).
+  doc = migrateBoards(doc, state.settings.forumWidth);
+  historyFile = migrateBoards(historyFile, state.settings.forumWidth);
   const editor = new Editor({
     element,
     extensions: [...buildExtensions(state.settings.historyLimit || 50), PasteNotice], // 0 keeps none after closing, still 50 while open
@@ -800,7 +804,7 @@ export async function push({ requireThread = false } = {}) {
   }))) return;
 
   let error = null;
-  showOverlay('Rendering whiteboards...');
+  showOverlay('Rendering canvases...');
   try {
     commitBoardEdit();
     await saveNow();
@@ -866,8 +870,6 @@ function onKeyDown(e) {
     go(e, openLinkDialog);
   } else if (keyIs('app.sidebar', e)) {
     go(e, toggleSidebar);
-  } else if (keyIs('insert.whiteboard', e)) {
-    go(e, () => run((c) => afterNodeSel(c).insertWhiteboard()));
   } else if (keyIs('insert.canvas', e)) {
     go(e, insertCanvas);
   } else if (keyAmong(PRESETS, e) && !e.target.closest?.('.wb')) {
@@ -1112,7 +1114,7 @@ window.__smoke = async () => {
   await ready;
   if (!can('view.editor', state)) await closeWorkspace({ remember: false }); // a restored lastView would hide the sample
   state.smoke = true; // never persist the sample over a real draft
-  state.editor.commands.setContent(sampleDoc());
+  state.editor.commands.setContent(migrateBoards(sampleDoc(), state.settings.forumWidth)); // its whiteboard: the converter's end-to-end check
   await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
   await new Promise((resolve) => setTimeout(resolve, 300));
   const payload = await buildPayload(state.editor, state.settings); // waits for the synced canvases' library records

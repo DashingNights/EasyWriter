@@ -169,7 +169,6 @@ function TextRail() {
       <RailButton {...t.undo} />
       <RailButton {...t.redo} />
       <RailButton {...t.image} />
-      <RailButton {...t.canvas} />
       <Sep />
       <RailButton {...t.bold} />
       <RailButton {...t.italic} />
@@ -186,7 +185,7 @@ function TextRail() {
       <RailButton {...t.link} />
       <RailButton {...t.clear} />
       <Sep />
-      <RailButton {...t.whiteboard} />
+      <RailButton {...t.canvas} />
     </>
   );
 }
@@ -328,7 +327,7 @@ try {
 /** §6c tool rail ("island") with its flyouts, at the left edge of the closest positioned ancestor (the editor area),
  * around its vertical centre; it scrolls (wheel, no scrollbar) when that ancestor is shorter than the rail. Serves the
  * active board of the document (also a canvas being edited); with none it is in text mode. It is always shown, and the
- * anchored zone (Undo, Redo, Add image, Add canvas) has the same slots in both modes. Its height follows the mode's
+ * anchored zone (Undo, Redo, Add image) starts both modes; a board's adds Add canvas. Its height follows the mode's
  * slots with a quick transition. `className` can cap its height further (App: room for the sidebar button below it). The
  * layers panel (§6c) docks right of it, level with its top and down to its cap's end. */
 export function BoardRail({ className }) {

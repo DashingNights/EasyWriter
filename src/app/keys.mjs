@@ -212,7 +212,6 @@ export const DEFS = [
   textEditor('text.link', 'Link', ['Ctrl+K']),
   ...[1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => textEditor(`text.preset${n}`, `Font preset ${n}`, [`Alt+${n}`])),
 
-  insert('insert.whiteboard', 'Insert whiteboard', ['Ctrl+Alt+W']),
   insert('insert.canvas', 'Insert canvas', ['Ctrl+Alt+C']),
   insert('insert.flowchart', 'Insert flowchart', ['Ctrl+Alt+F']),
 

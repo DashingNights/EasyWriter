@@ -34,7 +34,7 @@ const SNAP_PX = 6; // snap threshold in screen px
 const EDGE = 48; // auto-scroll zone in screen px from the scrolling area's edge
 const MAX_SCROLL = 24; // auto-scroll px per frame
 const FULL = { x: 0, y: 0, w: 1, h: 1 }; // uncropped
-const DEFAULT_WIDTH = 1454;
+export const DEFAULT_WIDTH = 1454;
 const DEFAULT_ATTRS = { height: 400, base: null, bg: 'post', items: [] };
 export const PEN_WIDTHS = [1, 2, 3, 4, 6, 8, 12, 16, 24];
 export const PEN_STYLES = [[1, 'Pen'], [0.7, 'Marker'], [0.35, 'Highlighter']]; // [opacity, label]
@@ -793,7 +793,8 @@ function imageFiles(data) {
 }
 
 // The items of the smart canvases and whiteboards in copied document HTML, converted to a board of `unit` so they keep
-// their look in post px (§6c Units; a canvas's unit is w / dw, a whiteboard's 1).
+// their look in post px (§6c Units; a canvas's unit is w / dw, a whiteboard's 1). A whiteboard's canvas items come flattened
+// (§6b Converted whiteboards).
 function copiedBoardItems(html, unit) {
   if (!html?.includes('data-json')) return [];
   const blocks = new DOMParser().parseFromString(html, 'text/html').querySelectorAll('div[data-canvas], div[data-whiteboard]');
@@ -804,7 +805,7 @@ function copiedBoardItems(html, unit) {
       const { w, dw } = JSON.parse(json);
       if (el.hasAttribute('data-canvas') && w > 0 && dw > 0) from = w / dw;
     } catch { /* parseBoard gives no items */ }
-    return parseBoard(json).items.map((i) => scaleItem(i, unit / from));
+    return flattenCanvases(parseBoard(json).items).map((i) => scaleItem(i, unit / from));
   });
 }
 
@@ -3623,10 +3624,7 @@ export const Whiteboard = Node.create({
     };
   },
 
-  parseHTML() {
-    return [{ tag: 'div[data-whiteboard]', getAttrs: (el) => parseBoard(el.getAttribute('data-json')) }];
-  },
-
+  // No parseHTML: copied whiteboard HTML parses as a canvas (canvas.js).
   renderHTML({ node }) {
     return ['div', { 'data-whiteboard': '', 'data-json': JSON.stringify(node.attrs) }];
   },

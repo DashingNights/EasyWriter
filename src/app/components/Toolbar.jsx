@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { cn } from 'cn';
 import {
   AlignCenter, AlignJustify, AlignLeft, AlignRight, Ban, Baseline, BetweenHorizontalEnd, BetweenVerticalEnd, Bold, ChevronDown, Code, Frame,
-  Grid2x2X, Highlighter, ImagePlus, Italic, Link, List, ListOrdered, Minus, Palette, PanelTop, Presentation, Quote, Redo2,
+  Grid2x2X, Highlighter, ImagePlus, Italic, Link, List, ListOrdered, Minus, Palette, PanelTop, Quote, Redo2,
   RemoveFormatting, SquareCode, SquareKanban, Strikethrough, Subscript, Superscript, Table, Underline, Undo2, Workflow,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -97,7 +97,6 @@ export function textTools(ed) {
     deleteTable: { title: 'Delete table', onClick: () => run((c) => c.deleteTable()), children: <Grid2x2X /> },
     box: { title: 'Insert titled box', active: is('box'), onClick: () => run((c) => afterNodeSel(c).insertBox()), children: <PanelTop /> },
     link: { title: withKey('Link', 'text.link'), keyId: 'text.link', active: is('link'), onClick: openLinkDialog, children: <Link /> },
-    whiteboard: { title: withKey('Insert whiteboard', 'insert.whiteboard'), keyId: 'insert.whiteboard', onClick: () => run((c) => afterNodeSel(c).insertWhiteboard()), children: <Presentation /> },
     canvas: { title: withKey('Insert canvas', 'insert.canvas'), keyId: 'insert.canvas', onClick: insertCanvas, children: <Frame /> },
     flowchart: { title: withKey('Insert flowchart', 'insert.flowchart'), keyId: 'insert.flowchart', disabled: !can('doc.open', { editor: ed }), onClick: insertFlowchartDialog, children: <Workflow /> },
     planChart: { title: 'Insert plan chart', disabled: !can('doc.open', { editor: ed }), onClick: insertPlanChartDialog, children: <SquareKanban /> },
@@ -312,7 +311,6 @@ export function Toolbar() {
           <TableTools T={T} ed={ed} />
           <ToolButton {...T.box} />
           <ToolButton {...T.link} />
-          <ToolButton {...T.whiteboard} />
           <ToolButton {...T.canvas} />
           <ToolButton {...T.flowchart} />
           <ToolButton {...T.planChart} />

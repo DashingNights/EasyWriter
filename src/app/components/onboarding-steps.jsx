@@ -68,12 +68,6 @@ export const STEPS = [
     target: '[data-agent-area="sidebar"] [aria-label="Settings"]', view: null, Actions: null,
   },
   {
-    id: 'whiteboard',
-    title: 'Whiteboards',
-    body: () => <p>{withKey('Insert whiteboard', 'insert.whiteboard')} adds a drawing board to the post. Click into it and the rail at the left of the editor shows the board tools. Paste or drop images onto it.</p>,
-    target: toolbar('Insert whiteboard'), view: 'editor', Actions: null,
-  },
-  {
     id: 'canvas',
     title: 'Smart canvas',
     body: () => <p>{withKey('Insert canvas', 'insert.canvas')} adds a smart canvas, a drawing area that goes into the post as one picture. It opens for editing at once and Done closes it. Double-click it later to edit it again.</p>,

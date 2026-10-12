@@ -8,7 +8,7 @@ import { Node } from '@tiptap/core';
 import { NodeSelection } from '@tiptap/pm/state';
 import { closeHistory } from '@tiptap/pm/history';
 import { stateOf, validFlow, validSource, writeBackOk } from './flow/library.mjs';
-import { Board, contentWidth, dismissOnly, drawCanvas, edgeSpeed, injectStyle, insertBoard, make, parseBoard, parseFrame, scrollParent, smartArtboard, topLevelPos, withoutScroll } from './whiteboard.js';
+import { Board, contentWidth, DEFAULT_WIDTH, dismissOnly, drawCanvas, edgeSpeed, injectStyle, insertBoard, make, parseBoard, parseFrame, scrollParent, smartArtboard, topLevelPos, whiteboardToCanvas, withoutScroll } from './whiteboard.js';
 
 const DEFAULT = { w: 800, h: 450 };
 const MIN_SIZE = 40; // artboard sides and display width
@@ -791,7 +791,12 @@ export const Canvas = Node.create({
   },
 
   parseHTML() {
-    return [{ tag: 'div[data-canvas]', getAttrs: (el) => parseCanvas(el.getAttribute('data-json')) }];
+    // Old whiteboard HTML (a copy from an older build) becomes a canvas at the page width, as a loaded draft does (§6b Converted whiteboards).
+    const forumWidth = () => parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--forum-width')) || DEFAULT_WIDTH;
+    return [
+      { tag: 'div[data-canvas]', getAttrs: (el) => parseCanvas(el.getAttribute('data-json')) },
+      { tag: 'div[data-whiteboard]', getAttrs: (el) => whiteboardToCanvas(parseBoard(el.getAttribute('data-json')), forumWidth()) },
+    ];
   },
 
   renderHTML({ node }) {

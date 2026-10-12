@@ -1,14 +1,14 @@
 # EasyWriter
 
-EasyWriter is a Windows desktop editor for writing Digital Academy Forum development-thread posts, with whiteboards, flowcharts and plans built in.
+EasyWriter is a Windows desktop editor for writing Digital Academy Forum development-thread posts, with canvases, flowcharts and plans built in.
 
 ![The EasyWriter editor with the welcome draft open](docs/img/editor.png)
 
 ## What it does
 
 - A rich text editor with headings, lists, quotes, code blocks, tables and boxes. Text presets apply a saved style in one click.
-- Whiteboards inside a post for pictures, text and shapes. The forum gets each whiteboard as one picture.
-- Annotate screenshots. Drop a screenshot on a whiteboard, then draw and write over it.
+- Canvases inside a post for pictures, text and shapes. The forum gets each canvas as one picture.
+- Annotate screenshots. Drop a screenshot into a post, then double-click the canvas it makes to draw and write over it.
 - Flowcharts whose connectors stay attached to their shapes. Keep them in the flowchart library to reuse them in other drafts.
 - A plan for each thread, with a Kanban board, a backlog and a Gantt chart. A chart of the plan can go into a post.
 - Push to the forum. EasyWriter opens your thread with the post in the reply box, and you press Submit yourself.
@@ -21,9 +21,9 @@ On the first start EasyWriter opens a welcome draft that shows these features. D
 
 ## Screenshots
 
-Screenshots from a real dev thread post on a whiteboard, with drawings and notes over them.
+Screenshots from a real dev thread post on a canvas, with drawings and notes over them.
 
-![A whiteboard with annotated game screenshots](docs/img/annotate.png)
+![A canvas with annotated game screenshots](docs/img/annotate.png)
 
 A smart canvas open in Canvas Mode, where it is edited in place.
 
