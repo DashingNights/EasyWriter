@@ -1,6 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { cleanConnector, cloneItems, containedIn, flipItem, hitTarget, moveItem, turnItem, unbindFrom } from '../src/flow/model.mjs';
+import {
+  arrangeItems, cleanConnector, cloneItems, containedIn, flipItem, hitTarget, moveItem, normalizeGroups, turnItem, unbindFrom, units,
+} from '../src/flow/model.mjs';
 import { parseBoard } from '../src/whiteboard.js';
 
 const shape = (id, x, y, extra = {}) => ({ id, type: 'shape', shape: 'rect', x, y, w: 100, h: 60, color: '#fff', width: 2, opacity: 1, fill: 'none', fillColor: '#fff', ...extra });
@@ -86,6 +88,61 @@ test('flipItem: across x = 50 the centre mirrors, the angle negates and the flag
   assert.deepEqual([f.x, f.y, f.rot, f.mirrorX], [80, 0, 330, true]);
   const c = flipItem({ id: 'c', type: 'connector', from: { item: 'a', anchor: null }, to: { x: 60, y: 9 } }, { x: 50, y: 5 }, 'x');
   assert.deepEqual([c.from, c.to], [{ item: 'a', anchor: null }, { x: 40, y: 9 }]);
+});
+
+// --- layers (SPEC §6 Layer fields) ---
+
+const it = (id, ...groups) => ({ id, ...(groups.length && { groups }) });
+const ids = (items) => items.map((i) => i.id).join(' ');
+
+test('parseBoard keeps hidden and locked only as true and groups only as distinct ids, a canvas item\'s own items too', () => {
+  const [a, b, c, k] = parse([
+    shape('a', 0, 0, { hidden: true, locked: true, groups: ['g1', 'g2'] }),
+    shape('b', 0, 0, { hidden: 1, locked: false, groups: ['bad id'] }),
+    { ...shape('c', 0, 0), type: 'canvas', aw: 10, ah: 10, groups: ['g', 'g'], items: [shape('in', 0, 0, { hidden: 'yes', groups: ['g1'] })] },
+    conn('k', { x: 0, y: 0 }, { x: 1, y: 1 }, { locked: true, groups: [] }),
+  ]);
+  assert.deepEqual([a.hidden, a.locked, a.groups], [true, true, ['g1', 'g2']]);
+  assert.deepEqual(['hidden', 'locked', 'groups'].filter((f) => f in b), []);
+  assert.equal('groups' in c, false); // a repeated id
+  assert.deepEqual([c.items[0].hidden, c.items[0].groups], [undefined, ['g1']]);
+  assert.deepEqual([k.locked, 'groups' in k], [true, false]);
+});
+
+test('normalizeGroups: lone ids go, members gather at the topmost one, an inner group takes its outer groups; unchanged → the same array', () => {
+  const plain = [it('a'), it('b')];
+  assert.equal(normalizeGroups(plain), plain);
+  const whole = [it('a', 'g'), it('b', 'g')];
+  assert.equal(normalizeGroups(whole), whole);
+  // g gathers at c's place (its topmost member); h has one member and goes.
+  const out = normalizeGroups([it('a', 'g'), it('x'), it('c', 'g'), it('y', 'h'), it('z')]);
+  assert.equal(ids(out), 'x a c y z');
+  assert.equal('groups' in out[3], false);
+  // Nested: i inside o, gathered at a; b names i inside p and takes o instead (the topmost chain wins); o's own member d sits
+  // below the inner group, as it was.
+  const nest = normalizeGroups([it('b', 'i', 'p'), it('d', 'o'), it('x'), it('a', 'i', 'o')]);
+  assert.equal(ids(nest), 'x d b a');
+  assert.deepEqual(nest.map((i) => i.groups), [undefined, ['o'], ['i', 'o'], ['i', 'o']]);
+});
+
+test('units and arrangeItems: a group is one unit and moves whole; front, back, forward, backward, {index}', () => {
+  const items = [it('a'), it('b', 'g'), it('c', 'g'), it('d'), it('e')];
+  assert.deepEqual(units(items).map((u) => ids(u)), ['a', 'b c', 'd', 'e']);
+  assert.equal(ids(arrangeItems(items, ['b'], 'front')), 'a d e b c');
+  assert.equal(ids(arrangeItems(items, ['c'], 'back')), 'b c a d e');
+  assert.equal(ids(arrangeItems(items, ['b'], 'forward')), 'a d b c e');
+  assert.equal(ids(arrangeItems(items, ['d'], 'backward')), 'a d b c e');
+  assert.equal(ids(arrangeItems(items, ['a', 'e'], 'forward')), 'b c a d e');
+  assert.equal(ids(arrangeItems(items, ['e'], { index: 1 })), 'a e b c d');
+});
+
+test('cloneItems: a group copied whole gets a new id, one copied in part is dropped', () => {
+  const board = [it('a', 'i', 'o'), it('b', 'i', 'o'), it('c', 'o')];
+  let n = 0;
+  const copies = cloneItems(board.slice(0, 2), () => `n${n++}`, board);
+  assert.deepEqual(copies.map((i) => i.groups), [['n2'], ['n2']]); // i kept (whole) as n2, o dropped (c not copied)
+  const all = cloneItems(board, () => `m${n++}`);
+  assert.deepEqual(all.map((i) => i.groups), [['m6', 'm7'], ['m6', 'm7'], ['m7']]);
 });
 
 test('cleanConnector keeps pin only on a bound end with an anchor', () => {

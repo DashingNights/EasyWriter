@@ -3,7 +3,7 @@ import { pathOfPos, posOfPath } from '../../doc-path.mjs';
 import { toGraph } from '../../flow/graph.mjs';
 import { layout } from '../../flow/layout.mjs';
 import { FLOW_SIZE } from '../../flow/library.mjs';
-import { cleanConnector, defaultMeasure, moveItem, repairEnds, unbindFrom, validConnector } from '../../flow/model.mjs';
+import { cleanConnector, defaultMeasure, moveItem, normalizeGroups, repairEnds, unbindFrom, validConnector } from '../../flow/model.mjs';
 import { resolveConnectors } from '../../flow/route.mjs';
 import { KINDS, rotBox, rotOf } from '../../flow/shapes.mjs';
 import {
@@ -67,6 +67,7 @@ function briefItem(i, byId) {
   const end = (e) => (typeof e?.item === 'string' ? { item: e.item, label: short(byId.get(e.item)), side: endSide(e.anchor) } : { x: int(e?.x), y: int(e?.y) });
   return {
     id: i.id, type: i.type, shape: i.shape, label: short(i), x: int(i.x), y: int(i.y), w: int(i.w), h: int(i.h),
+    ...(i.hidden && { hidden: true }), ...(i.locked && { locked: true }), ...(i.groups && { groups: i.groups }),
     ...(i.type === 'connector' && { from: end(i.from), to: end(i.to), route: i.route, head: i.heads?.end, bends: i.points?.length ?? 0 }),
   };
 }
@@ -138,7 +139,7 @@ function settle(b, items) {
     return { x: i.x, y: i.y, w: i.w, h: heights.get(i.id) };
   };
   try {
-    let list = resolveConnectors(items, measure).items;
+    let list = resolveConnectors(normalizeGroups(items), measure).items;
     const box = (i) => {
       const r = rotBox({ ...measure(i), rot: rotOf(i) });
       return { x: r.x, y: r.y, w: r.w, h: r.h };

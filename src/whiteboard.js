@@ -6,8 +6,9 @@ import { toBlob } from 'html-to-image';
 import { toast } from 'sonner';
 import { anchorPoint, kindOf, portNormal, portsOf, rotatePoint, rotBox, rotOf, turns } from './flow/shapes.mjs';
 import {
-  align as alignBoxes, boundIndex, cleanConnector, cloneItems, containedIn, DASHES, distribute as distributeBoxes, HEADS, hitTarget, JUMPS,
-  flipItem, LABEL_SLOTS, MAX_POINTS, moveItem, repairEnds, resizeInFrame, ROUTES, sameSize as sameBoxes, turnItem, unbindFrom, validConnector,
+  align as alignBoxes, arrangeItems, boundIndex, cleanConnector, cleanLayers, cloneItems, containedIn, DASHES, distribute as distributeBoxes, HEADS,
+  hitTarget, JUMPS, flipItem, LABEL_SLOTS, MAX_POINTS, moveItem, normalizeGroups, repairEnds, resizeInFrame, ROUTES, sameSize as sameBoxes, turnItem,
+  unbindFrom, validConnector,
 } from './flow/model.mjs';
 import { headPath, LABEL_PAD, nearestT, polylineHitsRect, polylinePoint, resolveConnectors } from './flow/route.mjs';
 import { isMermaid } from './flow/mermaid.mjs';
@@ -221,7 +222,8 @@ const LABEL_CHECKS = {
 
 // Drops an invalid crop; a canvas item gets a valid frame and bg and its own items filtered like a board's (never a canvas),
 // and loses `flow` (a library link is a canvas node attr only, §6b). Connectors get their defaults; every other item's rot is
-// normalised to [0, 360) (non-finite: dropped); a shape's bad label fields are dropped; a text item's non-finite `h` is dropped.
+// normalised to [0, 360) (non-finite: dropped); a shape's bad label fields are dropped; a text item's non-finite `h` is dropped;
+// layer fields of the wrong kind are dropped (cleanLayers, §6 Layer fields).
 function cleanItem(item) {
   if (item.type === 'connector') return cleanConnector(item);
   const out = cleanFields(item);
@@ -233,7 +235,7 @@ function cleanFields(item) {
   if (item.type === 'canvas') {
     const items = Array.isArray(item.items) ? item.items.filter((i) => i?.type !== 'canvas' && validItem(i)).map(cleanItem) : [];
     const { flow, ...rest } = item;
-    return { ...rest, frame: parseFrame(item.frame), bg: Object.hasOwn(WB_BG, item.bg) ? item.bg : DEFAULT_ATTRS.bg, items: repairEnds(items) };
+    return cleanLayers({ ...rest, frame: parseFrame(item.frame), bg: Object.hasOwn(WB_BG, item.bg) ? item.bg : DEFAULT_ATTRS.bg, items: repairEnds(items) });
   }
   const out = { ...item };
   if (item.type === 'shape') for (const [k, ok] of Object.entries(LABEL_CHECKS)) if (k in out && !ok(out[k])) delete out[k];
@@ -241,7 +243,7 @@ function cleanFields(item) {
   if (item.type === 'image' && out.crop !== undefined && !validCrop(out.crop)) delete out.crop;
   for (const k of ['mirrorX', 'mirrorY']) if (out[k] !== true || item.type === 'text') delete out[k]; // §6d flips
   if (out.fit !== true || item.type !== 'text') delete out.fit; // a text item's width fitted to its text
-  return out;
+  return cleanLayers(out);
 }
 
 export function parseBoard(json) {
@@ -291,6 +293,7 @@ const CSS = `
 .wb-stroke,.wb-shape,.wb-conn{pointer-events:none}
 .wb-stroke.wb-sel,.wb-shape.wb-sel{pointer-events:auto}
 .wb-layer>.wb-conn .wb-text,.wb-layer>.wb-shape>.wb-label>.wb-text{pointer-events:auto}
+.wb-locked,.wb-locked *,.wb-hidden,.wb-hidden *{pointer-events:none!important}
 .wb[data-bg="post"] .wb-layer{--wb-bg:var(--wb-post,${WB_BG.post.dark})}
 .wb[data-bg="white"] .wb-layer{--wb-bg:${WB_BG.white}}
 .wb[data-bg="black"] .wb-layer{--wb-bg:${WB_BG.black}}
@@ -672,6 +675,13 @@ export function itemElement(item) {
     el.append(text);
   }
   placeItem(el, item);
+  // §6 Layer fields: hidden still lays out (text is measured, the board's size counts it), so not display:none.
+  // The class also drops the pointer: hit paths with pointer-events:stroke ignore visibility.
+  if (item.hidden) {
+    el.style.visibility = 'hidden';
+    el.classList.add('wb-hidden');
+  }
+  if (item.locked) el.classList.add('wb-locked');
   return el;
 }
 
@@ -1295,8 +1305,9 @@ export class Board {
     this.bg = bg;
     this.els = new Map(); // id → element; empty while routing, so text heights are measured fresh
     this.targetKey = ''; // the sticking target shown (showTarget), gone with the old elements
-    // Connectors are routed against the items as drawn (§6d); geo: their board px polylines (hit-testing, marquee).
-    ({ items: this.items, geo: this.geo } = resolveConnectors(items.map((i) => ({ ...i })), this.measure));
+    // Connectors are routed against the items as drawn (§6d); geo: their board px polylines (hit-testing, marquee). Groups made
+    // whole first (§6 Layer fields).
+    ({ items: this.items, geo: this.geo } = resolveConnectors(normalizeGroups(items).map((i) => ({ ...i })), this.measure));
     // Canvases made from an image before frames could be bound: a frame that is exactly the box of the only item binds to it.
     const one = this.fixed && !this.frame.item && this.items.length === 1 && this.items[0];
     if (one && one.type !== 'text' && ['x', 'y', 'w', 'h'].every((k) => Math.round(one[k]) === Math.round(this.frame[k]))) {
@@ -1616,7 +1627,8 @@ export class Board {
     if (this.destroyed) return;
     if (this.newText) this.newText.alone = false;
     let capped;
-    ({ items: this.items, geo: this.geo, capped } = resolveConnectors(this.items, this.measure)); // before autoSize: arrows count
+    // Groups made whole (§6 Layer fields), then routed before autoSize: arrows count.
+    ({ items: this.items, geo: this.geo, capped } = resolveConnectors(normalizeGroups(this.items), this.measure));
     if (capped) toast('Too many crossing lines: some line jumps are not drawn', { id: 'wb-jump-cap' });
     // A text item fitted to its text (`fit`) stores its rendered width.
     for (const i of this.items) {
@@ -1889,21 +1901,10 @@ export class Board {
     this.commit();
   }
 
-  // Moves the selected items in z-order, keeping their order among themselves. where: 'front' | 'back' | 'forward' |
-  // 'backward' (one step: each selected item swaps with the unselected item above / below it).
+  // Moves the selected items in z-order, keeping their order among themselves (model.mjs arrangeItems: a group moves whole).
+  // where: 'front' | 'back' | 'forward' | 'backward' (one step past the unit above / below).
   arrange(where) {
-    const on = (i) => this.sel.has(i.id);
-    const up = (list) => {
-      for (let k = list.length - 2; k >= 0; k--) if (on(list[k]) && !on(list[k + 1])) [list[k], list[k + 1]] = [list[k + 1], list[k]];
-      return list;
-    };
-    const [sel, rest] = [this.items.filter(on), this.items.filter((i) => !on(i))];
-    const items = {
-      front: () => [...rest, ...sel],
-      back: () => [...sel, ...rest],
-      forward: () => up([...this.items]),
-      backward: () => up([...this.items].reverse()).reverse(),
-    }[where]();
+    const items = arrangeItems(this.items, this.sel, where);
     if (items.every((i, k) => i === this.items[k])) return;
     this.items = items;
     this.commit();
@@ -2053,7 +2054,7 @@ export class Board {
   // kept inside the board together, and selects them; one commit.
   addCopies(sources, at = null) {
     this.finishEdit();
-    const copies = cloneItems(sources, newId); // connectors between copies follow them; ends outside become free
+    const copies = cloneItems(sources, newId, this.items); // connectors between copies follow them; ends outside become free
     const box = at && groupBox(copies.map((i) => this.itemBox(i)));
     this.moveBy(copies, box ? Math.round(at.x - box.x) : 20, box ? Math.round(at.y - box.y) : 20);
     this.items.push(...copies);
@@ -2162,7 +2163,8 @@ export class Board {
   copyItem(cut = false) {
     const items = this.selectedItems();
     if (!items.length) return;
-    itemClipboard = { token: `daf-writer-item:${newId()}`, unit: this.unit, items: structuredClone(items) };
+    // Copies (cloneItems): a group copied in part loses its id here, wherever it is pasted.
+    itemClipboard = { token: `daf-writer-item:${newId()}`, unit: this.unit, items: cloneItems(items, newId, this.items) };
     navigator.clipboard.writeText(itemClipboard.token).catch((err) => console.warn('Clipboard write failed:', err));
     if (cut) this.removeItem();
   }
@@ -2924,7 +2926,7 @@ export class Board {
       if (g.copy && !g.copied) {
         // Alt + drag: copies move, the originals stay.
         g.copied = this.altCopied = true;
-        g.moving = cloneItems(g.starts, newId);
+        g.moving = cloneItems(g.starts, newId, this.items);
         g.starts = g.moving.map((i) => ({ ...i }));
         this.items.push(...g.moving);
         this.layer.append(...g.moving.map((i) => this.addEl(i)));
@@ -3451,7 +3453,7 @@ export async function rasterizeWhiteboard(attrs, { width, theme, scale = 2 }) {
   const board = document.createElement('div');
   board.style.cssText = `position:relative;overflow:hidden;width:${width}px;height:${height}px`;
   board.style.setProperty('--wb-bg', resolveBg(attrs.bg, theme) ?? 'transparent'); // connector labels mask the line with it
-  board.append(...routed(attrs.items).map(itemElement));
+  board.append(...routed(attrs.items).filter((i) => !i.hidden).map(itemElement)); // routed first: a hidden item still binds ends
   host.append(board);
   document.body.append(host);
   try {

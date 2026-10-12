@@ -113,7 +113,7 @@ export async function createPrefab(board) {
   const name = await openDialog('prefabName', { name: `Prefab ${summaries.length + 1}` });
   board.focus();
   if (name == null) return;
-  const p = makePrefab(items, board.unit);
+  const p = makePrefab(items, board.unit, board.items);
   if (await write({ version: 1, name, keywords: [], ...p, thumb: await thumbOf(p) })) toast('Prefab saved');
 }
 

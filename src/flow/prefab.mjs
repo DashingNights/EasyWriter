@@ -19,10 +19,10 @@ const sizeOf = (items) => {
 
 /** {w, h, items} of board items `items` (board px of a board of `unit`): ids local to the prefab (p1, p2, …), a connector
  * bound only while both its ends are among them (else free at its tip), the group's top-left at 0,0, sizes in post px,
- * connector routes dropped (every renderer routes them again). */
-export function makePrefab(items, unit = 1) {
+ * connector routes dropped (every renderer routes them again), a group of `all` (the board's items) taken in part dropped. */
+export function makePrefab(items, unit = 1, all = items) {
   let n = 0;
-  const copies = resolveConnectors(cloneItems(items, () => `p${++n}`)).items; // dangling ends freed, bboxes fresh
+  const copies = resolveConnectors(cloneItems(items, () => `p${++n}`, all)).items; // dangling ends freed, bboxes fresh
   const box = groupBox(copies.map(boxOf)) ?? { x: 0, y: 0, w: 1, h: 1 };
   const out = copies.map((i) => strip(scaleItem(moveItem(i, -box.x, -box.y), 1 / unit)));
   return { w: Math.max(1, Math.round(box.w / unit)), h: Math.max(1, Math.round(box.h / unit)), items: out };

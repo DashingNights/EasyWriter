@@ -62,7 +62,92 @@ export function cleanConnector(c) {
   const derived = ['x', 'y', 'w', 'h'].every((k) => num(out[k])) && typeof out.d === 'string' && isObj(out.lps) &&
     Array.isArray(out.tips) && out.tips.length === 2 && out.tips.every((t) => isObj(t) && num(t.x) && num(t.y) && num(t.a));
   if (!derived) for (const k of DERIVED) delete out[k];
+  return cleanLayers(out);
+}
+
+// --- layers (SPEC §6 Layer fields; docs/plans/board-tools-layers.md Layering) ---
+
+const GROUP_ID = /^[A-Za-z0-9_-]{1,32}$/;
+
+/** Item `out` (changed in place) without layer fields of the wrong kind: `hidden` and `locked` only as true, `groups` only as a
+ * non-empty array of distinct group ids, innermost first. */
+export function cleanLayers(out) {
+  for (const k of ['hidden', 'locked']) if (k in out && out[k] !== true) delete out[k];
+  const g = out.groups;
+  const ok = Array.isArray(g) && g.length && g.every((id) => typeof id === 'string' && GROUP_ID.test(id)) && new Set(g).size === g.length;
+  if (g !== undefined && !ok) delete out.groups;
   return out;
+}
+
+/** `items` with their groups made whole: (3) items that share an inner group share its outer groups (the chain of the topmost
+ * item naming that group wins); (1) a group id stays only while 2 or more items carry it; (2) a group's members sit next to each
+ * other, gathered at its topmost member's place in z-order (nested groups likewise). Runs on a whole board's items only (Board
+ * render and commit, the agent writes' settle), never on one item. → `items` itself when nothing changed. */
+export function normalizeGroups(items) {
+  if (!items.some((i) => i.groups)) return items;
+  const parent = new Map(); // group id → its outer group id | null
+  for (let k = items.length - 1; k >= 0; k--) {
+    const gs = items[k].groups ?? [];
+    for (let j = 0; j < gs.length && !parent.has(gs[j]); j++) parent.set(gs[j], gs[j + 1] ?? null);
+  }
+  const chain = (g) => {
+    const out = [];
+    for (; g && !out.includes(g); g = parent.get(g)) out.push(g);
+    return out;
+  };
+  let lists = items.map((i) => (i.groups?.length ? chain(i.groups[0]) : []));
+  const count = new Map();
+  for (const l of lists) for (const g of l) count.set(g, (count.get(g) ?? 0) + 1);
+  lists = lists.map((l) => l.filter((g) => count.get(g) > 1));
+  // Sort key: each enclosing group's topmost member index, outermost first, then the item's own index.
+  const top = new Map();
+  lists.forEach((l, k) => l.forEach((g) => top.set(g, k)));
+  const keys = lists.map((l, k) => [...l.map((g) => top.get(g)).reverse(), k]);
+  const order = items.map((_, k) => k).sort((a, b) => {
+    const [p, q] = [keys[a], keys[b]];
+    for (let j = 0; j < Math.min(p.length, q.length); j++) if (p[j] !== q[j]) return p[j] - q[j];
+    return 0;
+  });
+  const same = (k) => (items[k].groups ?? []).join() === lists[k].join() && (!items[k].groups || lists[k].length);
+  if (order.every((k, j) => k === j && same(k))) return items;
+  return order.map((k) => {
+    if (same(k)) return items[k];
+    const { groups, ...rest } = items[k];
+    return lists[k].length ? { ...rest, groups: lists[k] } : rest;
+  });
+}
+
+/** Normalised `items` (normalizeGroups) cut into z-order units: a top-level group's members together, every other item alone. */
+export function units(items) {
+  const out = [];
+  for (const i of items) {
+    const g = i.groups?.at(-1);
+    if (g && out.at(-1)?.[0].groups?.at(-1) === g) out.at(-1).push(i);
+    else out.push([i]);
+  }
+  return out;
+}
+
+/** `items` with the units (units()) that hold any of `ids` moved in z-order, keeping their order among themselves. where:
+ * 'front' | 'back' | 'forward' | 'backward' (one step: each moved unit swaps with the unit above / below it) | {index} (put in at
+ * that place among the other units, 0 the back). → a new array. */
+export function arrangeItems(items, ids, where) {
+  const want = new Set(ids);
+  const all = units(items);
+  const on = (u) => u.some((i) => want.has(i.id));
+  const up = (list) => {
+    for (let k = list.length - 2; k >= 0; k--) if (on(list[k]) && !on(list[k + 1])) [list[k], list[k + 1]] = [list[k + 1], list[k]];
+    return list;
+  };
+  const [sel, rest] = [all.filter(on), all.filter((u) => !on(u))];
+  const at = Number.isInteger(where?.index) ? Math.max(0, Math.min(where.index, rest.length)) : 0;
+  const next = {
+    front: () => [...rest, ...sel],
+    back: () => [...sel, ...rest],
+    forward: () => up([...all]),
+    backward: () => up([...all].reverse()).reverse(),
+  }[where]?.() ?? [...rest.slice(0, at), ...sel, ...rest.slice(at)];
+  return next.flat();
 }
 
 /** {x, y, w, h}: an item's unrotated box. Text without a stored `h`: the estimate size · 1.3 · lines + 12. */
@@ -149,11 +234,19 @@ export function flipItem(item, c, axis, field = null, h = item.h) {
 }
 
 /** Deep copies with new ids (`makeId()`); connector ends bound inside the copied set follow the copies, ends bound outside it
- * become free at their tips. */
-export function cloneItems(items, makeId) {
+ * become free at their tips. A group copied whole (no item of `all`, the board's items, outside the set carries it) gets a new
+ * id (`makeId()`); a group copied in part is dropped from the copies. */
+export function cloneItems(items, makeId, all = items) {
   const ids = new Map(items.map((i) => [i.id, makeId()]));
+  const partial = new Set(all.filter((i) => !ids.has(i.id)).flatMap((i) => i.groups ?? []));
+  const groups = new Map(); // old group id → new
   return items.map((i) => {
     const copy = { ...structuredClone(i), id: ids.get(i.id) };
+    if (i.groups) {
+      const gs = i.groups.filter((g) => !partial.has(g)).map((g) => groups.get(g) ?? groups.set(g, makeId()).get(g));
+      if (gs.length) copy.groups = gs;
+      else delete copy.groups;
+    }
     if (i.type !== 'connector') return copy;
     const end = (e, k) => {
       if (!bound(e)) return e;

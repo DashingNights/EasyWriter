@@ -47,10 +47,13 @@ const OPACITY = { type: 'number', minimum: 0, maximum: 1 };
 const BOOL = { type: 'boolean' };
 const XY = { x: NUM, y: NUM };
 const BOX = { ...XY, w: SIZE, h: SIZE };
+// Every type's layer fields (SPEC §6 Layer fields): the board keeps hidden and locked only as true (false clears one in a
+// patch) and groups only as distinct ids, innermost first ([] clears them).
+const LAYER = { hidden: BOOL, locked: BOOL, groups: { type: 'array', items: ITEM_ID } };
 // The description names the required fields, so a wrong item's invalid_args message lists what each type needs (define.mjs unionText).
 const item = (type, required, properties) => ({
   title: type, description: `type ${type} needs ${required.join(' ')}`, type: 'object', required: ['type', ...required],
-  properties: { id: ITEM_ID, type: { const: type }, ...properties },
+  properties: { id: ITEM_ID, type: { const: type }, ...properties, ...LAYER },
 });
 
 const TEXT = item('text', ['x', 'y', 'w', 'html'], {
@@ -110,15 +113,15 @@ const CANVAS = item('canvas', ['x', 'y', 'w', 'h', 'aw', 'ah'], {
 export const ITEM = { oneOf: [...FLAT, CANVAS] };
 
 // ITEM as the assistant sees it (MODEL_DEFS, catalogue.mjs; SPEC §8 Tool schemas): one flat object with the union of the
-// fields and the shape enums, a sixth of ITEM's size (connector ends, heads and labels described in words). The executor still
-// validates every item against ITEM.
+// fields and the shape enums, a sixth of ITEM's size (connector ends, heads, labels and the layer fields described in words, the
+// last within MAX_SET). The executor still validates every item against ITEM.
 const S = { type: 'string' };
 const OBJ = { type: 'object' };
 export const ITEM_BRIEF = {
   type: 'object', required: ['type'],
   description: 'Fields by type. text: x y w html. shape: shape x y w h, html its label. connector: from, to as {item, anchor} or '
     + '{x, y}, anchor n e s w ne nw se sw c. image: src x y w h. canvas (whiteboard only): x y w h aw ah items, no canvas in them. '
-    + 'Colours #rrggbb.',
+    + 'Colours #rrggbb. hidden, locked: true. groups: ids.',
   properties: {
     type: { enum: ['text', 'shape', 'connector', 'image', 'stroke', 'canvas'] }, id: S, ...BOX,
     html: S, size: NUM, color: S, bold: BOOL, align: TEXT.properties.align, valign: SHAPE.properties.valign, bg: S,

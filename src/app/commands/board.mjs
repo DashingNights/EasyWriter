@@ -2,7 +2,7 @@ import { closeHistory } from '@tiptap/pm/history';
 import { commitSynced, liveBoard } from '../../canvas.js';
 import { pathOfPos, posOfPath } from '../../doc-path.mjs';
 import { validFlow } from '../../flow/library.mjs';
-import { cleanConnector, moveItem, repairEnds, unbindFrom, validConnector } from '../../flow/model.mjs';
+import { arrangeItems, cleanConnector, moveItem, normalizeGroups, repairEnds, unbindFrom, validConnector } from '../../flow/model.mjs';
 import { resolveConnectors } from '../../flow/route.mjs';
 import { KINDS, rotBox, rotOf } from '../../flow/shapes.mjs';
 import {
@@ -61,7 +61,7 @@ const plain = (i) => String(i?.html ?? i?.labels?.mid?.html ?? '').replace(/<[^>
 const int = (v) => (typeof v === 'number' ? Math.round(v) : undefined); // undefined fields drop out of the JSON
 
 /** Item `i` in board.get's brief form (`byId`: the board's items, for a connector's ends): id, type, shape, label, the box in
- * whole px; a connector's ends ({item, label, side (attach.mjs endSide)} | {x, y}), route, end head and bends (its waypoint count, as the attachment's item
+ * whole px, hidden, locked and groups when set (§6 Layer fields); a connector's ends ({item, label, side (attach.mjs endSide)} | {x, y}), route, end head and bends (its waypoint count, as the attachment's item
  * lines name it, attach.mjs itemLines); a canvas item's item count. No d, src, vw / vh or html; a label past 120 characters is
  * cut (a long text item stays one short line; board.find matches the whole). */
 function briefItem(i, byId) {
@@ -73,6 +73,7 @@ function briefItem(i, byId) {
   const end = (e) => (typeof e?.item === 'string' ? { item: e.item, label: short(byId.get(e.item)), side: endSide(e.anchor) } : { x: int(e?.x), y: int(e?.y) });
   return {
     id: i.id, type: i.type, shape: i.shape, label, x: int(i.x), y: int(i.y), w: int(i.w), h: int(i.h),
+    ...(i.hidden && { hidden: true }), ...(i.locked && { locked: true }), ...(i.groups && { groups: i.groups }),
     ...(i.type === 'connector' && { from: end(i.from), to: end(i.to), route: i.route, head: i.heads?.end, bends: i.points?.length ?? 0 }),
     ...(i.type === 'canvas' && { items: i.items?.length ?? 0 }),
   };
@@ -136,9 +137,10 @@ function endWarnings(before, after, ids) {
   return out;
 }
 
-/** The artboard of board `b` ({w, h, frame}) after its items became `items` (§6b smart artboard, as Board.autoSize): connectors
- * routed, text measured offscreen (Board.itemHeight without a Board), a frame bound to an item following it, everything
- * shifted so the artboard starts at 0,0 → {w, h, dx, dy, frame, items} (text items carry their measured h). */
+/** The artboard of board `b` ({w, h, frame}) after its items became `items` (§6b smart artboard, as Board.autoSize): groups
+ * made whole (§6 Layer fields, as Board.commit), connectors routed, text measured offscreen (Board.itemHeight without a Board), a
+ * frame bound to an item following it, everything shifted so the artboard starts at 0,0 → {w, h, dx, dy, frame, items} (text
+ * items carry their measured h). */
 function settle(b, items) {
   injectStyle();
   const host = make('div', 'wb');
@@ -158,7 +160,7 @@ function settle(b, items) {
     return { x: i.x, y: i.y, w: i.w, h: heights.get(i.id) };
   };
   try {
-    let list = resolveConnectors(items, measure).items;
+    let list = resolveConnectors(normalizeGroups(items), measure).items;
     const box = (i) => {
       const r = rotBox({ ...measure(i), rot: rotOf(i) });
       return { x: r.x, y: r.y, w: r.w, h: r.h };
@@ -655,16 +657,7 @@ export const defs = [
     busy,
     run: (ctx, a) => write(ctx, a, (items) => {
       mustHave(items, a.ids);
-      // Board.arrange over `ids` instead of the selection.
-      const on = (i) => a.ids.includes(i.id);
-      const up = (list) => {
-        for (let k = list.length - 2; k >= 0; k--) if (on(list[k]) && !on(list[k + 1])) [list[k], list[k + 1]] = [list[k + 1], list[k]];
-        return list;
-      };
-      const [sel, rest] = [items.filter(on), items.filter((i) => !on(i))];
-      const next = {
-        front: () => [...rest, ...sel], back: () => [...sel, ...rest], forward: () => up([...items]), backward: () => up([...items].reverse()).reverse(),
-      }[a.where]();
+      const next = arrangeItems(items, a.ids, a.where); // Board.arrange over `ids` instead of the selection: a group moves whole
       return { items: next, result: { order: next.map((i) => i.id) } };
     }),
   }),

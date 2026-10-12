@@ -40,8 +40,9 @@ export function nodeSize(node) {
  * label: the label as text), swimlanes and frames as groups (members: the items whose turned bounds lie inside, the
  * innermost group only), connectors bound at both ends to nodes or groups as edges (a free end: left out); `dir` from the
  * edges' prevailing direction. A shape's style {fill, stroke, text} holds the colours that differ from `preset` (flowPreset:
- * the theme's default look; without it, all of them). */
-export function toGraph(items, { unit = 1, preset = null } = {}) {
+ * the theme's default look; without it, all of them). Hidden items (SPEC §6 Layer fields) are left out. */
+export function toGraph(all, { unit = 1, preset = null } = {}) {
+  const items = all.filter((i) => !i.hidden);
   const post = (v) => r2(v / unit);
   const boxOf = (i) => {
     const b = defaultMeasure(i);

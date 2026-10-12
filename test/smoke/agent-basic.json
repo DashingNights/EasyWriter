@@ -44,6 +44,13 @@
     "expect": { "ok": true, "result": { "width": 2400, "height": 800, "bytes": { "$gt": 1000 } } } },
   { "id": "board.items.remove", "args": { "path": "$steps[23].result.path", "ids": ["$steps[24].result.ids.1"] },
     "expect": { "ok": true, "undoSteps": 1, "result": { "removed": { "$length": 1 } } } },
+  { "id": "board.items.add", "args": { "path": "$steps[23].result.path", "items": [
+      { "type": "shape", "shape": "rect", "x": 40, "y": 300, "w": 120, "h": 60, "groups": ["g1"], "locked": true },
+      { "type": "text", "html": "Grouped", "x": 200, "y": 300, "w": 160, "groups": ["g1"], "hidden": true }] },
+    "expect": { "ok": true, "undoSteps": 1, "result": { "ids": { "$length": 2 } } } },
+  { "id": "board.get", "args": { "path": "$steps[23].result.path" },
+    "expect": { "ok": true, "result": { "board": { "items": [{}, { "type": "shape", "groups": ["g1"], "locked": true },
+      { "type": "text", "groups": ["g1"], "hidden": true }] } } } },
   { "id": "export.preview", "args": {}, "expect": { "ok": true, "result": { "html": { "$contains": "Intro" }, "images": { "$length": 1 } } } },
   { "id": "push.prepare", "args": { "draftId": "$steps[0].result.draftId" },
     "expect": { "ok": false, "code": "precondition_failed", "error": { "data": { "failed": [{ "gate": "draft.hasThread" }] } } } },
