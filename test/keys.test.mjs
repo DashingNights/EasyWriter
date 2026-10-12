@@ -81,3 +81,9 @@ test('board keys: B, O, L and Shift+L arm Box, Circle, Line and Arrow (R stays R
   assert.deepEqual(b['board.rotate'], ['R']);
   assert.deepEqual(b['board.keepTool'], ['Q']);
 });
+
+test('board keys: Ctrl+Shift+L locks and Ctrl+Shift+H hides (Figma), Align left keeps Ctrl+Shift+L in text', () => {
+  const b = effective(DEFS);
+  assert.deepEqual([b['board.lock'], b['board.hide'], b['text.alignLeft']], [['Ctrl+Shift+L'], ['Ctrl+Shift+H'], ['Ctrl+Shift+L']]);
+  assert.equal(collisions(DEFS, b)['board.lock'], undefined);
+});

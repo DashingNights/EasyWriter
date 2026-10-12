@@ -150,6 +150,23 @@ export function arrangeItems(items, ids, where) {
   return next.flat();
 }
 
+/** Whether a click, the selection rectangle, Tab or Ctrl+A on the board may select `i`: not hidden and not locked. */
+export const selectable = (i) => !i.hidden && !i.locked;
+
+/** `items` with `field` ('hidden' | 'locked') set on the items `ids` names, or cleared on them when every one already has it.
+ * → a new array, or `items` itself when `ids` names none. */
+export function toggleLayer(items, ids, field) {
+  const want = new Set(ids);
+  const on = items.filter((i) => want.has(i.id));
+  if (!on.length) return items;
+  const set = !on.every((i) => i[field]);
+  return items.map((i) => {
+    if (!want.has(i.id)) return i;
+    const { [field]: _, ...rest } = i;
+    return set ? { ...rest, [field]: true } : rest;
+  });
+}
+
 /** {x, y, w, h}: an item's unrotated box. Text without a stored `h`: the estimate size · 1.3 · lines + 12. */
 export function defaultMeasure(i) {
   if (i.type !== 'text' || num(i.h)) return { x: i.x, y: i.y, w: i.w, h: i.h };

@@ -69,11 +69,12 @@ export const defs = [
       }
       const missing = a.ids.filter((id) => !board.items.some((i) => i.id === id));
       if (missing.length) fail('not_found', `No item has the id ${missing.join(', ')} on that board`, { ids: missing });
-      board.select(a.ids);
-      if (bg) return { kind: 'board', ids: a.ids };
+      board.select(a.ids); // a hidden item is left out (§6 Layer fields)
+      const ids = [...board.sel];
+      if (bg) return { kind: 'board', ids };
       board.focus(); // the board becomes the active one (its chrome shows)
       if (pos !== null) scrollToBlock(ed, pos);
-      return { kind: 'board', ids: a.ids };
+      return { kind: 'board', ids };
     },
   }),
   define({

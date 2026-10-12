@@ -245,6 +245,8 @@ export const DEFS = [
   board('board.rotateBack', 'Rotate back 90 degrees', ['Shift+R']),
   board('board.flipH', 'Flip horizontal', ['Shift+H']),
   board('board.flipV', 'Flip vertical', ['Shift+V']),
+  board('board.lock', 'Lock or unlock items', ['Ctrl+Shift+L']), // Align left's chord in the text scope, which never overlaps
+  board('board.hide', 'Hide or show items', ['Ctrl+Shift+H']),
   board('board.snap', 'Snapping on or off', ['Ctrl+Shift+;']),
   board('board.grid', 'Grid snap on or off', ["Ctrl+'"]),
 

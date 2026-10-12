@@ -1,7 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  arrangeItems, cleanConnector, cloneItems, containedIn, flipItem, hitTarget, moveItem, normalizeGroups, turnItem, unbindFrom, units,
+  arrangeItems, cleanConnector, cloneItems, containedIn, flipItem, hitTarget, moveItem, normalizeGroups, selectable, toggleLayer, turnItem,
+  unbindFrom, units,
 } from '../src/flow/model.mjs';
 import { parseBoard } from '../src/whiteboard.js';
 
@@ -143,6 +144,17 @@ test('cloneItems: a group copied whole gets a new id, one copied in part is drop
   assert.deepEqual(copies.map((i) => i.groups), [['n2'], ['n2']]); // i kept (whole) as n2, o dropped (c not copied)
   const all = cloneItems(board, () => `m${n++}`);
   assert.deepEqual(all.map((i) => i.groups), [['m6', 'm7'], ['m6', 'm7'], ['m7']]);
+});
+
+test('toggleLayer: sets the flag on the named items unless all have it, then clears it; selectable skips hidden and locked', () => {
+  const items = [it('a'), { ...it('b'), locked: true }, it('c')];
+  assert.equal(toggleLayer(items, ['x'], 'locked'), items);
+  const on = toggleLayer(items, ['a', 'b'], 'locked'); // b has it, a not: both set
+  assert.deepEqual(on.map((i) => !!i.locked), [true, true, false]);
+  assert.equal(on[2], items[2]);
+  const off = toggleLayer(on, new Set(['a', 'b']), 'locked');
+  assert.deepEqual(off.map((i) => 'locked' in i), [false, false, false]);
+  assert.deepEqual(toggleLayer(items, ['c'], 'hidden').map(selectable), [true, false, false]);
 });
 
 test('cleanConnector keeps pin only on a bound end with an anchor', () => {

@@ -1,8 +1,8 @@
 import { createElement as h } from 'react';
 import { NodeSelection } from '@tiptap/pm/state';
 import {
-  ALargeSmall, AppWindow, BringToFront, CaseSensitive, Copy, Crop, Eraser, FilePlus, FoldVertical, FolderInput, Frame, Heading1, Heading2, Heading3,
-  Globe, Heading4, Heading5, Heading6, ImagePlus, Magnet, MessagesSquare, MousePointer2, MoveHorizontal, PaintBucket, Palette, Pen, Pilcrow, Pin, Redo2, Save,
+  ALargeSmall, AppWindow, BringToFront, CaseSensitive, Copy, Crop, Eraser, Eye, EyeOff, FilePlus, FoldVertical, FolderInput, Frame, Heading1, Heading2,
+  Heading3, Globe, Heading4, Heading5, Heading6, ImagePlus, Lock, LockOpen, Magnet, MessagesSquare, MousePointer2, MoveHorizontal, PaintBucket, Palette, Pen, Pilcrow, Pin, Redo2, Save,
   Scaling, MessageSquare, Send, SendToBack, Settings, Shapes, SlidersHorizontal, SquarePen, SquareX, TableColumnsSplit, TableRowsSplit, Tag, Trash2,
   Type, Undo2, Workflow, X,
 } from 'lucide-react';
@@ -185,6 +185,15 @@ const CORE = [
   { id: 'back', label: 'Send to back', group: 'Item', icon: h(SendToBack), key: 'board.back', notice: 'Sent to back',
     needs: SELECTION, run: (c) => c.board.arrange('back'),
     keywords: ['back', 'bottom', 'lower', 'behind', 'backward', 'send backward', 'below', 'z order', 'layer', 'arrange', 'order'] },
+  // Lock and hide (§6 Layer fields): the selection; Unlock all and Show all while the board has such items.
+  { id: 'lock', label: 'Lock', group: 'Item', icon: h(Lock), key: 'board.lock', needs: SELECTION, run: (c) => c.board.setLayer('locked'),
+    keywords: ['unlock', 'lock item', 'freeze', 'pin down', 'fix in place', 'protect', 'background', 'screenshot'] },
+  { id: 'hide', label: 'Hide', group: 'Item', icon: h(EyeOff), key: 'board.hide', needs: SELECTION, run: (c) => c.board.setLayer('hidden'),
+    keywords: ['show', 'hide item', 'invisible', 'visibility', 'conceal', 'unhide'] },
+  { id: 'unlock-all', label: 'Unlock all', group: 'Board', icon: h(LockOpen), needs: BOARD, also: (c) => c.board.items.some((i) => i.locked),
+    run: (c) => c.board.setLayer('locked', true), keywords: ['unlock', 'locked', 'unfreeze', 'all items'] },
+  { id: 'show-all', label: 'Show all', group: 'Board', icon: h(Eye), needs: BOARD, also: (c) => c.board.items.some((i) => i.hidden),
+    run: (c) => c.board.setLayer('hidden', true), keywords: ['show', 'unhide', 'hidden', 'visible', 'reveal', 'all items'] },
   { id: 'delete', label: 'Delete', group: 'Item', icon: h(Trash2), key: 'board.delete', notice: 'Deleted', needs: SELECTION, risk: 'destructive',
     run: (c) => c.board.removeItem(), keywords: ['remove', 'delete item', 'remove item', 'trash', 'bin', 'erase item', 'clear', 'del', 'backspace', 'destroy', 'delet'] },
   { id: 'reset-size', label: 'Reset size', group: 'Item', icon: h(Scaling), needs: itemIs('image', 'canvas'), run: (c) => c.board.resetSize(),

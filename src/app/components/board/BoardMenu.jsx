@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { BringToFront, ClipboardPaste, Copy, CopyPlus, FlipHorizontal2, FlipVertical2, PackagePlus, Scissors, SendToBack, Trash2 } from 'lucide-react';
+import {
+  BringToFront, ClipboardPaste, Copy, CopyPlus, Eye, EyeOff, FlipHorizontal2, FlipVertical2, Lock, LockOpen, PackagePlus, Scissors, SendToBack, Trash2,
+} from 'lucide-react';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuShortcut, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
@@ -49,6 +51,9 @@ export function BoardMenu() {
   const item = (label, Icon, shortcut, run, enabled = selected) => (
     <DropdownMenuItem disabled={!enabled} onSelect={run}><Icon />{label}<DropdownMenuShortcut>{shortcut}</DropdownMenuShortcut></DropdownMenuItem>
   );
+  // Lock and Hide name the change they make (§6 Layer fields: Unlock / Show when every selected item already has it).
+  const every = (field) => selected && board.selectedItems().every((i) => i[field]);
+  const any = (field) => board.items.some((i) => i[field]);
   return (
     <PointerMenu key={menu.n} at={menu.at} board={board} onClose={() => setMenu(null)}>
       <DropdownMenuItem disabled={!selected} onSelect={() => createPrefab(board)} className="flex-wrap">
@@ -67,6 +72,11 @@ export function BoardMenu() {
       <DropdownMenuSeparator />
       {item('Flip horizontal', FlipHorizontal2, keyLabel('board.flipH'), () => board.flip('x'))}
       {item('Flip vertical', FlipVertical2, keyLabel('board.flipV'), () => board.flip('y'))}
+      <DropdownMenuSeparator />
+      {item(every('locked') ? 'Unlock' : 'Lock', Lock, keyLabel('board.lock'), () => board.setLayer('locked'))}
+      {item('Hide', EyeOff, keyLabel('board.hide'), () => board.setLayer('hidden'))}
+      {any('locked') && item('Unlock all', LockOpen, '', () => board.setLayer('locked', true), true)}
+      {any('hidden') && item('Show all', Eye, '', () => board.setLayer('hidden', true), true)}
     </PointerMenu>
   );
 }

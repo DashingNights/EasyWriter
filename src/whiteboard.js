@@ -7,8 +7,8 @@ import { toast } from 'sonner';
 import { anchorPoint, kindOf, portNormal, portsOf, rotatePoint, rotBox, rotOf, turns } from './flow/shapes.mjs';
 import {
   align as alignBoxes, arrangeItems, boundIndex, cleanConnector, cleanLayers, cloneItems, containedIn, DASHES, distribute as distributeBoxes, HEADS,
-  hitTarget, JUMPS, flipItem, LABEL_SLOTS, MAX_POINTS, moveItem, normalizeGroups, repairEnds, resizeInFrame, ROUTES, sameSize as sameBoxes, turnItem,
-  unbindFrom, validConnector,
+  hitTarget, JUMPS, flipItem, LABEL_SLOTS, MAX_POINTS, moveItem, normalizeGroups, repairEnds, resizeInFrame, ROUTES, sameSize as sameBoxes, selectable,
+  toggleLayer, turnItem, unbindFrom, validConnector,
 } from './flow/model.mjs';
 import { headPath, LABEL_PAD, nearestT, polylineHitsRect, polylinePoint, resolveConnectors } from './flow/route.mjs';
 import { isMermaid } from './flow/mermaid.mjs';
@@ -1313,7 +1313,7 @@ export class Board {
     if (one && one.type !== 'text' && ['x', 'y', 'w', 'h'].every((k) => Math.round(one[k]) === Math.round(this.frame[k]))) {
       this.frame = { ...this.frame, item: one.id };
     }
-    for (const id of this.sel) if (!this.items.some((i) => i.id === id)) this.sel.delete(id);
+    for (const id of this.sel) if (!this.items.some((i) => i.id === id && !i.hidden)) this.sel.delete(id); // gone or hidden
     this.dom.style.height = `${this.size().h}px`;
     this.dom.dataset.bg = bg;
     this.layer.replaceChildren(...this.items.map((i) => this.addEl(i)));
@@ -1490,9 +1490,10 @@ export class Board {
   // The unrotated box routing measures (text: its rendered height).
   measure = (i) => (i.type === 'text' ? { x: i.x, y: i.y, w: i.w, h: this.itemHeight(i) } : i);
 
-  // ids: one id, an array of ids, or null (none).
+  // ids: one id, an array of ids, or null (none). A hidden item is never selected (§6 Layer fields).
   select(ids) {
     this.sel = new Set(Array.isArray(ids) ? ids : ids ? [ids] : []);
+    for (const i of this.items) if (i.hidden) this.sel.delete(i.id);
     this.renderSelection();
   }
 
@@ -1704,9 +1705,9 @@ export class Board {
     this.pin(e);
   }
 
-  // The pointer of event `e` in board px, snapped like a shape start (no gesture under way).
+  // The pointer of event `e` in board px, snapped like a shape start (no gesture under way; hidden items are no snap target).
   snapped(e) {
-    return this.pointAt(e, 0, { kind: 'place', boxes: this.items.map((i) => this.itemBox(i)), starts: [], guides: [] });
+    return this.pointAt(e, 0, { kind: 'place', boxes: this.items.filter((i) => !i.hidden).map((i) => this.itemBox(i)), starts: [], guides: [] });
   }
 
   // A new text item with its top-left at `p` (board px): 200 post px wide, the text defaults (textTool), note colour `bg`.
@@ -1914,6 +1915,18 @@ export class Board {
     const k = els.indexOf(this.itemEl(this.editingId));
     els[k].before(...els.slice(0, k));
     els[k].after(...els.slice(k + 1));
+  }
+
+  // Lock / Hide (§6 Layer fields; Ctrl+Shift+L / Ctrl+Shift+H, the board menu): `field` ('locked' | 'hidden') set on the
+  // selection, or cleared when every selected item has it; `all`: cleared on every item that has it (Unlock all, Show all).
+  // The edit ends first; an item locked or hidden leaves the selection. Its own undo step.
+  setLayer(field, all = false) {
+    this.finishEdit();
+    const items = toggleLayer(this.items, all ? this.items.filter((i) => i[field]).map((i) => i.id) : this.sel, field);
+    if (items === this.items) return;
+    this.items = items;
+    for (const i of items) if (!selectable(i)) this.sel.delete(i.id);
+    this.commit(true);
   }
 
   // --- arranging, rotating and style (§6d; one commit each) ---
@@ -2313,7 +2326,7 @@ export class Board {
       const b = this.itemBox(i);
       return { id: i.id, x: b.x + b.w / 2, y: b.y + b.h / 2 };
     };
-    const id = pickInDirection(centre(src), this.items.filter((i) => ids.has(i.id)).map(centre), dir);
+    const id = pickInDirection(centre(src), this.items.filter((i) => ids.has(i.id) && selectable(i)).map(centre), dir);
     if (id) this.select(id);
   }
 
@@ -2340,9 +2353,10 @@ export class Board {
     }
   }
 
-  // The ids connector ends never stick to: strokes (a freehand box is no node) and `skip`.
+  // The ids connector ends never stick to: strokes (a freehand box is no node), hidden and locked items (§6 Layer fields) and
+  // `skip`.
   noTargets(skip = null) {
-    return new Set(this.items.filter((i) => i.type === 'stroke' || i.id === skip).map((i) => i.id));
+    return new Set(this.items.filter((i) => i.type === 'stroke' || !selectable(i) || i.id === skip).map((i) => i.id));
   }
 
   // Where a dragged connector end goes (§6d Sticking): onto the topmost item under the pointer, at a port within 12 screen
@@ -2786,7 +2800,7 @@ export class Board {
       moving, // the items the gesture changes
       starts: moving.map((i) => ({ ...i })), // the same at the start
       group: groupBox(moving.map((i) => this.itemBox(i))), // their box at the start
-      boxes: others.map((i) => this.itemBox(i)), // snap targets
+      boxes: others.filter((i) => !i.hidden).map((i) => this.itemBox(i)), // snap targets (a locked item is one, §6 Layer fields)
       base: this.base,
       height: this.height,
       guides: [],
@@ -2798,14 +2812,15 @@ export class Board {
   }
 
   // `moving` plus what lies fully inside a moving lane or frame (§6d containment, by geometry at the drag's start): items by
-  // their turned bounds, connectors by their box (so their bends move too). Nothing is re-parented.
+  // their turned bounds, connectors by their box (so their bends move too); hidden and locked items stay. Nothing is re-parented.
   withContents(moving) {
     const take = new Set(moving);
+    const live = this.items.filter(selectable);
     for (const box of moving.filter((i) => i.type === 'shape' && kindOf(i.shape)?.group === 'container')) {
-      const ids = new Set(containedIn(box, this.items, this.measure));
+      const ids = new Set(containedIn(box, live, this.measure));
       const c = this.itemBox(box);
       const inside = (b) => b.x >= c.x && b.y >= c.y && b.x + b.w <= c.x + c.w && b.y + b.h <= c.y + c.h;
-      for (const i of this.items) if (ids.has(i.id) || (i.type === 'connector' && inside(this.itemBox(i)))) take.add(i);
+      for (const i of live) if (ids.has(i.id) || (i.type === 'connector' && inside(this.itemBox(i)))) take.add(i);
     }
     return take.size === moving.length ? moving : this.items.filter((i) => take.has(i));
   }
@@ -2880,8 +2895,8 @@ export class Board {
     placeItem(g.marquee, { ...g.rect, type: 'shape' });
   }
 
-  // Release on empty board area: the items the rectangle touches become the selection (Shift: are added); a click
-  // without a drag deselects (a whiteboard becomes node-selected).
+  // Release on empty board area: the items the rectangle touches become the selection (Shift: are added; hidden and locked
+  // items never); a click without a drag deselects (a whiteboard becomes node-selected).
   finishMarquee(g, add) {
     if (!g.marquee) {
       this.select(null);
@@ -2889,7 +2904,8 @@ export class Board {
       return;
     }
     g.marquee.remove();
-    const [conns, rest] = [this.items.filter((i) => i.type === 'connector'), this.items.filter((i) => i.type !== 'connector')];
+    const live = this.items.filter(selectable);
+    const [conns, rest] = [live.filter((i) => i.type === 'connector'), live.filter((i) => i.type !== 'connector')];
     const hits = [...marqueeHits(g.rect, rest.map((i) => ({ id: i.id, ...this.itemBox(i) }))),
       ...conns.filter((c) => polylineHitsRect(this.geo.get(c.id)?.pts ?? [], g.rect)).map((c) => c.id)]; // by their line
     this.select(add ? [...this.sel, ...hits] : hits);
@@ -3147,9 +3163,11 @@ export class Board {
       return this.editLabel(item.id, at, at === 'mid' && Math.abs(t - 0.5) < 0.1 ? 0.5 : Math.round(t * 1000) / 1000);
     }
     // Where no item takes the pointer (or only a line does), the topmost shape whose outline holds it, also where it is
-    // unfilled (geometric hit; strokes, lines and arrows count by their line only), so its label can be edited.
+    // unfilled (geometric hit; strokes, lines and arrows count by their line only), so its label can be edited. Hidden and
+    // locked items take no pointer and no geometric hit: a double-click there acts as on empty board (§6 Layer fields).
     const lineish = (i) => i.type === 'stroke' || (i.type === 'shape' && isLineish(i.shape));
-    const geo = hitTarget(this.items, this.local(e), { exclude: new Set(this.items.filter(lineish).map((i) => i.id)), measure: this.measure });
+    const skip = new Set(this.items.filter((i) => lineish(i) || !selectable(i)).map((i) => i.id));
+    const geo = hitTarget(this.items, this.local(e), { exclude: skip, measure: this.measure });
     const inside = geo && this.items.find((i) => i.id === geo.item);
     if (inside && (!item || (lineish(item) && this.items.indexOf(inside) > this.items.indexOf(item)))) item = inside;
     if (!item) return hit === this.dom || hit === this.layer ? this.addText(this.snapped(e)) : undefined; // empty board: a text (§6c)
@@ -3162,7 +3180,7 @@ export class Board {
 
   selectAll() {
     if (this.mode) this.setMode(null);
-    this.select(this.items.map((i) => i.id));
+    this.select(this.items.filter(selectable).map((i) => i.id)); // not hidden or locked items (§6 Layer fields)
   }
 
   // Edits a shape's label (double-click, Enter, F2); the shape becomes the selection.
@@ -3223,6 +3241,8 @@ export class Board {
         'board.rotateBack': () => this.rotate(-90),
         'board.flipH': () => this.flip('x'), // §6d flips
         'board.flipV': () => this.flip('y'),
+        'board.lock': () => this.setLayer('locked'), // §6 Layer fields
+        'board.hide': () => this.setLayer('hidden'),
       }),
     };
     const id = keyAmong(Object.keys(commands), e);
@@ -3252,13 +3272,14 @@ export class Board {
       return;
     }
     if (e.ctrlKey || e.metaKey || e.altKey) return;
-    if (e.key === 'Tab' && this.items.length) {
-      // Next / previous item in z-order.
+    if (e.key === 'Tab' && this.items.some(selectable)) {
+      // Next / previous item in z-order, past hidden and locked items (§6 Layer fields).
       e.preventDefault();
       if (this.mode) this.setMode(null);
-      const n = this.items.length;
-      const i = this.items.findIndex((it) => it.id === this.selectedId);
-      this.select(this.items[i < 0 ? (e.shiftKey ? n - 1 : 0) : (i + (e.shiftKey ? n - 1 : 1)) % n].id);
+      const list = this.items.filter(selectable);
+      const n = list.length;
+      const i = list.findIndex((it) => it.id === this.selectedId);
+      this.select(list[i < 0 ? (e.shiftKey ? n - 1 : 0) : (i + (e.shiftKey ? n - 1 : 1)) % n].id);
       return;
     }
     if (!this.sel.size) return;
