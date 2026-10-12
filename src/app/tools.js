@@ -2,7 +2,7 @@ import { createElement as h } from 'react';
 import { NodeSelection } from '@tiptap/pm/state';
 import {
   ALargeSmall, AppWindow, BringToFront, CaseSensitive, Copy, Crop, Eraser, FilePlus, FoldVertical, FolderInput, Frame, Heading1, Heading2, Heading3,
-  Globe, Heading4, Heading5, Heading6, ImagePlus, Magnet, MessagesSquare, MousePointer2, MoveHorizontal, PaintBucket, Palette, Pen, Pilcrow, Redo2, Save,
+  Globe, Heading4, Heading5, Heading6, ImagePlus, Magnet, MessagesSquare, MousePointer2, MoveHorizontal, PaintBucket, Palette, Pen, Pilcrow, Pin, Redo2, Save,
   Scaling, MessageSquare, Send, SendToBack, Settings, Shapes, SlidersHorizontal, SquarePen, SquareX, TableColumnsSplit, TableRowsSplit, Tag, Trash2,
   Type, Undo2, Workflow, X,
 } from 'lucide-react';
@@ -29,6 +29,7 @@ import { getState, useStore } from './store.js';
 import { blockKind, flowchartMode } from './tool-rank.mjs';
 import { showPage } from './views.js';
 import { keyLabel } from './keybinds.js';
+import { SHAPE_KEYS } from './keys.mjs';
 import { FLOW_TOOLS } from './tools-flow.js';
 import { PLAN_TOOLS } from './tools-plan.js';
 
@@ -140,9 +141,12 @@ const CORE = [
     keywords: ['erase', 'rubber', 'remove stroke', 'delete stroke', 'erasor', 'eraser tool', 'errase', 'rub out', 'wipe', 'clear ink', 'undraw'] },
   { id: 'shape', label: 'Shape', group: 'Board', icon: h(Shapes), key: 'board.shape', needs: BOARD, run: tool('shape'), options: shapeOptions,
     keywords: ['shapes', 'draw shape', 'geometry', 'figure', 'polygon', 'shap', 'fill', 'outline'] },
-  // One entry per registry kind (src/flow/shapes.mjs): its label, keywords and preview.
+  { id: 'keep-tool', label: 'Keep tool', group: 'Board', icon: h(Pin), key: 'board.keepTool', needs: BOARD, toggle: true,
+    active: (c) => c.snap.keepTool, run: (c) => c.board.setKeepTool(!c.snap.keepTool),
+    keywords: ['keep tool on', 'lock tool', 'tool lock', 'sticky tool', 'stay', 'repeat', 'keep drawing', 'draw many', 'again'] },
+  // One entry per registry kind (src/flow/shapes.mjs): its label, keywords, preview and key (SHAPE_KEYS).
   ...KINDS.map(({ kind: shape, label, group, keywords }) => ({
-    id: `shape-${shape}`, label, group: 'Board', icon: h(ShapeIcon, { shape, className: 'size-4 text-muted-foreground' }), needs: BOARD, options: shapeOptions,
+    id: `shape-${shape}`, label, group: 'Board', icon: h(ShapeIcon, { shape, className: 'size-4 text-muted-foreground' }), key: SHAPE_KEYS[shape], needs: BOARD, options: shapeOptions,
     keywords: [...keywords, 'shape'], category: group === 'basic' ? 'basic' : 'flowchart',
     run: (c) => {
       c.board.setShapeTool({ shape });

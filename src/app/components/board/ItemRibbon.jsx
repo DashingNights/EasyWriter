@@ -82,9 +82,9 @@ export function ItemRibbon() {
 }
 
 /** The properties of the selected `item` (the snapshot's) of `board`, most used first (the main colour first): the ribbon's
- * controls, also the quick tools' item row and the tool search's options. `group` (several items selected, whiteboard.js
- * groupProps): their type, or 'lines' for shapes, connectors and pen strokes together; `item` is then the first one's and a
- * change goes to each (board.setItem → setItems). Controls that act on one item (rotate, labels of an arrow, reverse,
+ * controls, also the tool search's options. `group` (several items selected, whiteboard.js groupProps): their type, or
+ * 'lines' for shapes, connectors and pen strokes together; `item` is then the first one's and a change goes to each
+ * (board.setItem → setItems). Controls that act on one item (rotate, labels of an arrow, reverse,
  * straighten) are left out then; 'lines' shows colour, width and line style. */
 export function ItemControls({ board, item, group, mixed = [] }) {
   const set = (patch) => {

@@ -5,8 +5,7 @@ import { activeBoard } from '../../whiteboard.js';
 import { closeQuickTools } from '../actions.js';
 import { getState, useEditor, useStore } from '../store.js';
 import { AlignMenu, BoardTools, RailLayout } from './board/BoardRail.jsx';
-import { CHROME, keepFocus, PresetRow, ShapeControls, useSnapshot } from './board/controls.jsx';
-import { ItemControls } from './board/ItemRibbon.jsx';
+import { CHROME, keepFocus } from './board/controls.jsx';
 import { BlockSelect, Group, GroupRows, PresetsMenu, SizeSelect, SwatchMenu, TableTools, textTools, ToolButton } from './Toolbar.jsx';
 
 // §7d quick tools (Ctrl+Tab): the bottom toolbar island and the §6c rail merged into one island at the pointer, built
@@ -67,34 +66,10 @@ function TextTools({ anchor }) {
   );
 }
 
-/** Board mode: the rail's board tools, then the selected item's ribbon controls in a last row. Shapes version (the shape tool
- * is on, or was the last tool that adds items and Select is on, which arms it with the last used shape): the basic shapes in
- * place of the mode tools and the shape tool's options in a row under them; All tools shows the usual version until the
- * island closes or its Shape is clicked. */
+/** Board mode: the rail's board tools and the basic shapes, one fixed layout. Opening it never changes the board: the
+ * selection, the ribbon and a text edit stay (§7d). */
 function BoardQuickTools({ board }) {
-  const snap = useSnapshot(board);
-  const [all, setAll] = useState(false);
-  const shapes = !all && (snap?.mode === 'shape' || (!snap?.mode && snap?.lastTool === 'shape'));
-  const item = snap?.item;
-  useEffect(() => {
-    if (!snap?.mode && snap?.lastTool === 'shape') board.setMode('shape'); // the last used shape, preselected
-  }, []); // once, as the island opens
-  return (
-    <>
-      <GroupRows><BoardTools board={board} shapes={shapes} onAllTools={() => setAll(true)} onShapes={() => setAll(false)} /></GroupRows>
-      {shapes && (
-        <div className="mt-1 flex flex-wrap items-center gap-1 border-t pt-1">
-          <ShapeControls board={board} value={snap.shape} set={(p) => board.setShapeTool(p)} live strokeFirst />
-          <PresetRow set={(p) => board.setShapeTool(p)} />
-        </div>
-      )}
-      {item && (
-        <div className="mt-1 flex flex-wrap items-center gap-1 border-t pt-1">
-          <ItemControls board={board} item={item} />
-        </div>
-      )}
-    </>
-  );
+  return <GroupRows><BoardTools board={board} /></GroupRows>;
 }
 
 function Island({ open }) {

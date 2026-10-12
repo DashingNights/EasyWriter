@@ -12,7 +12,8 @@ import {
 import { headPath, LABEL_PAD, nearestT, polylineHitsRect, polylinePoint, resolveConnectors } from './flow/route.mjs';
 import { isMermaid } from './flow/mermaid.mjs';
 import { cleanPoints, dragSegment, labelSlotAt, midHandles, OPPOSITE, pickInDirection, reverseConnector, SIDES, sideToward } from './flow/edit.mjs';
-import { keyAmong, keyLabel } from './app/keybinds.js';
+import { keyAmong, keyIs, keyLabel } from './app/keybinds.js';
+import { SHAPE_KEYS } from './app/keys.mjs';
 
 export const WB_BG = { post: { dark: '#303039', light: '#ffffff' }, transparent: null, white: '#ffffff', black: '#000000' };
 
@@ -47,9 +48,7 @@ const shapeTool = { shape: 'rect', color: '#e05252', width: 4, opacity: 1, fill:
 const textTool = { size: 20, color: null, bold: false, bg: null };
 const connTool = { route: 'ortho', corner: 8, heads: { start: 'none', end: 'arrow' }, color: null, width: 2, opacity: 1, dash: 'solid', jump: 'none' };
 const toolSettings = { pen, shape: shapeTool, text: textTool, conn: connTool };
-// The last tool that adds items, on any board (§7d: the shape tool's last → Ctrl+Tab shows the shapes first, also back in Select).
-const SPAWNERS = ['text', 'pen', 'shape', 'connector', 'canvas', 'image'];
-let lastTool = null;
+let keepTool = false; // Keep tool on (§6c Spawning, Q): every board, this session only
 {
   // Saved values are checked like parseBoard checks items, so new items always pass it.
   const size = (v) => Number.isFinite(v) && v > 0;
@@ -850,11 +849,19 @@ export const WhiteboardPaste = Extension.create({
             return true;
           },
           // A node-selected whiteboard (a click on its empty area) is the working area: its tool keys go to it (focus and
-          // key, as on the board itself), so T starts placing text instead of typing a "t".
+          // key, as on the board itself), so T starts placing text instead of typing a "t". While it holds items, Delete and
+          // Backspace never remove the whole block (the rail's Delete board does) and Ctrl+A selects its items (§6c Keyboard).
           handleKeyDown(view, event) {
             const sel = view.state.selection;
             if (!(sel instanceof NodeSelection) || sel.node.type.name !== 'whiteboard') return false;
-            return !!view.nodeDOM(sel.from)?.wbView?.toolKey(event); // a tool's chord only (§7k): Shift+T types a capital after it
+            const board = view.nodeDOM(sel.from)?.wbView;
+            if (board?.items.length && (event.key === 'Delete' || event.key === 'Backspace')) return true;
+            if (board?.items.length && keyIs('board.selectAll', event)) {
+              board.focus();
+              board.selectAll();
+              return true;
+            }
+            return !!board?.toolKey(event); // a tool's chord only (§7k): Shift+T types a capital after it
           },
           // Typing never replaces a node-selected board: on a whiteboard it goes into the block after it; on a canvas (a
           // click on it, a canvas edit's Done) letters do nothing.
@@ -950,6 +957,17 @@ export function setConnTool(patch) {
   for (const b of boards) b.emit();
 }
 
+// The line style last set on a shape or connector in the ribbon is the next new one's (§6c Tool settings), as for text.
+const STYLE_MEMORY = {
+  shape: [['color', 'width', 'opacity', 'fill', 'fillColor'], setShapeTool],
+  connector: [['color', 'width', 'opacity', 'dash', 'route', 'heads'], setConnTool],
+};
+function rememberStyle(type, patch) {
+  const [keys, set] = STYLE_MEMORY[type] ?? [[]];
+  const p = Object.fromEntries(keys.filter((k) => k in patch).map((k) => [k, structuredClone(patch[k])]));
+  if (Object.keys(p).length) set(p);
+}
+
 /** The board menu (§6c): a right-click on a board calls open(board, {x, y}) (client px). The app fills it (BoardMenu.jsx), so
  * the editor layer imports no app code. */
 export const boardMenu = { open: () => {} };
@@ -970,12 +988,13 @@ export function finishBoardEdits() {
 // Transient popups (§6c Dismiss-only clicks): selects, menus, popovers except a tool's options flyout, the tool search palette
 // and its options panel, the quick tools island. The persistent chrome (rail, tool flyout, ribbon, bars) does not count.
 const POPUPS = '[data-slot=select-content],[data-slot=dropdown-menu-content],[data-slot=dropdown-menu-sub-content],' +
-  '[data-slot=popover-content]:not([data-tool-flyout]),[data-slot=dialog-content],[data-quick-tools]';
+  '[data-slot=popover-content]:not([data-tool-flyout]),[data-slot=dialog-content]';
 
 /** A pointer-down on a board while a transient popup is open only closes the popup (Radix closes it on the document's
- * pointerdown or click): → true, default prevented (no focus change). */
-export function dismissOnly(e) {
-  const open = [...document.querySelectorAll(POPUPS)].some((el) => el.dataset.state !== 'closed');
+ * pointerdown or click): → true, default prevented (no focus change). `armed` (a board tool is on): the quick tools island
+ * does not count, so the first press after picking a tool in it draws (§7d); that press closes it. */
+export function dismissOnly(e, armed = false) {
+  const open = [...document.querySelectorAll(armed ? POPUPS : `${POPUPS},[data-quick-tools]`)].some((el) => el.dataset.state !== 'closed');
   if (open) e.preventDefault();
   return open;
 }
@@ -1021,6 +1040,9 @@ export class Board {
     this.editingId = null;
     this.editingSlot = null; // the connector label being edited (start | mid | end), else null
     this.savedRange = null; // caret inside the text being edited, restored after a chrome change
+    // {id, alone} of the text item addText placed, until its first edit ends (finishEdit removes it untouched); alone:
+    // nothing committed since, so undoing the placement removes it.
+    this.newText = null;
     this.mode = null; // null | 'pen' | 'eraser' | 'shape' | 'connector' | placement: 'text' | 'canvas' | 'image'
     this.pending = null; // 'image' mode: the picked files a click places; 'shape' mode: an armed prefab {id, items} (§6g)
     this.gesture = null;
@@ -1116,7 +1138,7 @@ export class Board {
     const snap = {
       kind: this.fixed ? 'canvas' : 'whiteboard',
       mode: this.mode,
-      lastTool, // §7d
+      keepTool,
       prefab: (this.mode === 'shape' && this.pending?.id) || null, // the armed prefab (§6g)
       item: props, // only while exactly one item is selected
       group: this.groupProps(), // several selected: their common controls (groupProps)
@@ -1217,21 +1239,25 @@ export class Board {
     setConnTool(patch);
   }
 
+  setKeepTool(on) {
+    keepTool = on;
+    for (const b of boards) b.emit();
+  }
+
   setBg(bg) {
     this.bg = bg;
     this.dom.dataset.bg = bg; // render() is held back during a text edit
     this.commit();
   }
 
-  // An open text edit is committed first: setAttrs() would not show the undone state while it is open.
+  // An open text edit is committed first: setAttrs() would not show the undone state while it is open. When ending it
+  // undoes an untouched new text's placement (finishEdit), that is the undo step.
   undo() {
-    this.finishEdit();
-    this.host.undo();
+    if (!this.finishEdit()) this.host.undo();
   }
 
   redo() {
-    this.finishEdit();
-    this.host.redo();
+    if (!this.finishEdit()) this.host.redo();
   }
 
   deleteBoard() {
@@ -1383,7 +1409,7 @@ export class Board {
       // The last size, colour, bold and note chosen on a text item are the next new text's (shared, kept).
       for (const k of Object.keys(textTool)) if (k in patch) textTool[k] = patch[k];
       saveTools();
-    }
+    } else rememberStyle(item.type, patch);
     const text = item.type === 'text' ? this.itemEl(item.id)?.querySelector('.wb-text') : null;
     if (text) styleText(text, item); // the commit measures the restyled height
     // A shape whose label is being typed: the live label takes the style, the typed text is kept (as for text items).
@@ -1411,6 +1437,7 @@ export class Board {
       const text = item.type === 'text' ? this.itemEl(item.id)?.querySelector('.wb-text') : null;
       if (text) styleText(text, item); // the commit measures the restyled height
     }
+    for (const type of new Set(this.selectedItems().map((i) => i.type))) rememberStyle(type, patch); // as setItem
     this.commit();
   }
 
@@ -1587,6 +1614,7 @@ export class Board {
   // newGroup: own undo step, even right after another commit (history merges commits within 500 ms).
   commit(newGroup = false) {
     if (this.destroyed) return;
+    if (this.newText) this.newText.alone = false;
     let capped;
     ({ items: this.items, geo: this.geo, capped } = resolveConnectors(this.items, this.measure)); // before autoSize: arrows count
     if (capped) toast('Too many crossing lines: some line jumps are not drawn', { id: 'wb-jump-cap' });
@@ -1651,11 +1679,12 @@ export class Board {
   // --- actions ---
 
   // Placement tools ('text', 'canvas', 'image', a prefab armed in 'shape' mode): a click adds the item(s) with the top-left
-  // at the (snapped) pointer, kept inside the bounds, and the tool returns to Select. `e`: a pointer event over the board.
+  // at the (snapped) pointer, kept inside the bounds, and the tool returns to Select unless it is kept on (keeps()). `e`: a
+  // pointer event over the board.
   place(e) {
     const [mode, pending] = [this.mode, this.pending];
     const p = this.snapped(e);
-    this.setMode(null);
+    if (!this.keeps()) this.setMode(null);
     if (mode === 'text') this.addText(p, pending?.note);
     else if (mode === 'canvas') this.addCanvas(p);
     else if (mode === 'shape') this.addCopies(pending.items, p);
@@ -1693,6 +1722,7 @@ export class Board {
     this.items.push(item);
     this.sel = new Set([item.id]);
     this.commit(true);
+    this.newText = { id: item.id, alone: true };
     this.startEdit(item.id);
   }
 
@@ -2037,8 +2067,13 @@ export class Board {
 
   // Call before the commit that adds items `ids` (pen and eraser strokes stay continuous and do not call it).
   spawned(ids) {
-    if (this.mode) this.setMode(null);
+    if (this.mode && !this.keeps()) this.setMode(null);
     this.sel = new Set(ids);
+  }
+
+  // Keep tool on (§6c Spawning): the tool stays on after it adds items, except Add canvas and Add image.
+  keeps() {
+    return keepTool && this.mode !== 'canvas' && this.mode !== 'image';
   }
 
   // The box of a click-placed shape of `tool` (board px): 160 × 110 post px or its kind's own (a horizontal one for lines /
@@ -2416,7 +2451,6 @@ export class Board {
   // `pending`: the files an 'image' mode places, the prefab a 'shape' mode places (§6g); any mode change drops them.
   setMode(mode, pending = null) {
     this.mode = mode;
-    if (SPAWNERS.includes(mode)) lastTool = mode;
     this.pending = pending;
     this.finishEdit();
     this.showTarget(null);
@@ -2560,6 +2594,9 @@ export class Board {
   finishEdit() {
     const [id, slot] = [this.editingId, this.editingSlot];
     if (!id) return;
+    const fresh = id === this.newText?.id; // the first edit of a text addText placed
+    const undoable = fresh && this.newText.alone && !this.stale; // the last undo step is its placement
+    this.newText = null;
     this.editingId = this.editingSlot = null;
     this.savedRange = null;
     this.emit();
@@ -2587,6 +2624,14 @@ export class Board {
         return;
       }
       item.html = typed;
+    } else if (fresh && ['', 'Text'].includes(text?.textContent.trim())) {
+      // A new text still "Text" or emptied goes (§6c Placement tools): its placement is undone, so no undo step is left.
+      // Returns true then (Board.undo / redo take it as their step).
+      if (undoable) {
+        this.host.undo();
+        return true;
+      }
+      this.items = unbindFrom(this.items, new Set([id]));
     } else {
       if (!text || typed === item.html) return;
       item.html = typed;
@@ -2618,7 +2663,8 @@ export class Board {
   onPointerDown = (e) => {
     // A right-click while a popup is open only closes it (onContextMenu opens no menu then): Radix closes it right after this.
     if (e.button === 2) this.menuDismissed = dismissOnly(e);
-    if (e.button !== 0 || dismissOnly(e)) return;
+    if (e.button !== 0 || dismissOnly(e, !!this.mode)) return;
+    if (this.editingId && this.editText()?.contains(e.target)) return; // caret placement in the text being edited, also with a tool on
     if (e.target === this.hbar) {
       this.finishEdit();
       this.startGesture(e, 'height');
@@ -2653,8 +2699,8 @@ export class Board {
     const corner = [...CORNERS, ...EDGES].find((c) => e.target.classList.contains(`wb-h-${c}`))
       ?? (e.target.classList.contains('wb-rot') ? 'rot' : e.target.classList.contains('wb-tip') ? 'tip' : undefined);
     const id = itemEl.dataset.id;
-    if (id === this.editingId && this.editText()?.contains(e.target)) return; // caret placement inside the text being edited
     this.finishEdit();
+    if (!this.items.some((i) => i.id === id)) return; // a new text left untouched went (finishEdit)
     if (this.connectorPart(e, id)) return;
     // Shift + click adds the item to the selection, or takes a selected one out on release (so Shift + drag still moves
     // it). Pressing one of several selected items moves them all; released without a drag, only it stays selected.
@@ -3104,12 +3150,18 @@ export class Board {
     const geo = hitTarget(this.items, this.local(e), { exclude: new Set(this.items.filter(lineish).map((i) => i.id)), measure: this.measure });
     const inside = geo && this.items.find((i) => i.id === geo.item);
     if (inside && (!item || (lineish(item) && this.items.indexOf(inside) > this.items.indexOf(item)))) item = inside;
-    if (!item || item.id === this.editingId) return;
+    if (!item) return hit === this.dom || hit === this.layer ? this.addText(this.snapped(e)) : undefined; // empty board: a text (§6c)
+    if (item.id === this.editingId) return;
     if (item.type === 'text') this.startEdit(item.id);
     else if (item.type === 'shape') this.editShapeLabel(item);
     else if (item.type === 'image') this.imageToCanvas(item);
     else this.editCanvas(item);
   };
+
+  selectAll() {
+    if (this.mode) this.setMode(null);
+    this.select(this.items.map((i) => i.id));
+  }
 
   // Edits a shape's label (double-click, Enter, F2); the shape becomes the selection.
   editShapeLabel(item) {
@@ -3150,10 +3202,7 @@ export class Board {
     const commands = {
       'edit.undo': () => this.undo(),
       'edit.redo': () => this.redo(),
-      'board.selectAll': () => {
-        if (this.mode) this.setMode(null);
-        this.select(this.items.map((i) => i.id));
-      },
+      'board.selectAll': () => this.selectAll(),
       'board.deselect': () => this.select(null),
       'board.duplicate': () => this.duplicate(),
       'board.copy': () => this.copyItem(),
@@ -3245,6 +3294,12 @@ export class Board {
       'board.shape': () => this.setMode('shape'),
       'board.connector': () => this.setMode('connector'),
       'board.canvas': () => this.fixed || this.setMode('canvas'), // canvases do not nest
+      'board.keepTool': () => this.setKeepTool(!keepTool),
+      // B, O, L, Shift+L: the shape tool with that kind (S keeps the last kind used)
+      ...Object.fromEntries(Object.entries(SHAPE_KEYS).map(([shape, id]) => [id, () => {
+        this.setShapeTool({ shape });
+        this.setMode('shape');
+      }])),
     };
     const id = keyAmong(Object.keys(tools), e);
     if (!id) return false;

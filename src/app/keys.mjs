@@ -160,6 +160,10 @@ export function overridesOf(defs, binds) {
 // shadows?: ids this binding knowingly takes over in its scope (no collision)}. Keys that only move inside a widget (Enter,
 // Escape, arrows and Tab in menus, lists, dialogs and text boxes; arrow nudges and Alt+Arrow on boards) stay fixed.
 
+/** The shape kinds with a key of their own (SPEC §6c Keyboard: Figma's keys, except that R stays Rotate, so Box takes B):
+ * kind → binding id. The key arms the shape tool with that kind; S arms it with the last kind used. */
+export const SHAPE_KEYS = { rect: 'board.box', ellipse: 'board.circle', line: 'board.line', arrow: 'board.arrow' };
+
 export const GROUPS = ['General', 'Text', 'Insert', 'Boards', 'Plans', 'Flowcharts', 'Browser'];
 const def = (group, scope) => (id, label, keys, more) => ({ id, label, group, scope, keys, ...more });
 const general = def('General', 'global');
@@ -220,6 +224,11 @@ export const DEFS = [
   board('board.shape', 'Shape tool', ['S']),
   board('board.connector', 'Connector tool', ['A']),
   board('board.canvas', 'Add canvas (whiteboards)', ['C']),
+  board('board.box', 'Box shape', ['B']),
+  board('board.circle', 'Circle shape', ['O']),
+  board('board.line', 'Line shape', ['L']),
+  board('board.arrow', 'Arrow shape', ['Shift+L']),
+  board('board.keepTool', 'Keep tool on or off', ['Q']),
   board('board.selectAll', 'Select all items', ['Ctrl+A']),
   board('board.deselect', 'Deselect', ['Ctrl+D']),
   board('board.duplicate', 'Duplicate', ['Ctrl+J']),

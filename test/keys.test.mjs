@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { chordOf, codeOf, collisions, DEFS, effective, GROUPS, keyName, normalize, overridesOf, windowsUse } from '../src/app/keys.mjs';
+import { kindOf } from '../src/flow/shapes.mjs';
+import { chordOf, codeOf, collisions, DEFS, effective, GROUPS, keyName, normalize, overridesOf, SHAPE_KEYS, windowsUse } from '../src/app/keys.mjs';
 
 test('chordOf names the physical key with modifiers in a fixed order; Meta counts as Ctrl; a lone modifier is no chord', () => {
   assert.equal(chordOf({ code: 'KeyP', ctrlKey: true, altKey: true }), 'Ctrl+Alt+P');
@@ -71,4 +72,12 @@ test('the registry: unique ids, known groups and scopes, every default parses, a
     for (const k of d.keys) assert.equal(normalize(k), k, `${d.id} ${k}`);
   }
   assert.deepEqual(collisions(DEFS, effective(DEFS)), {});
+});
+
+test('board keys: B, O, L and Shift+L arm Box, Circle, Line and Arrow (R stays Rotate); Q keeps the tool on', () => {
+  const b = effective(DEFS);
+  assert.deepEqual(Object.fromEntries(Object.entries(SHAPE_KEYS).map(([kind, id]) => [kindOf(kind).label, b[id]])),
+    { Box: ['B'], Circle: ['O'], Line: ['L'], Arrow: ['Shift+L'] });
+  assert.deepEqual(b['board.rotate'], ['R']);
+  assert.deepEqual(b['board.keepTool'], ['Q']);
 });
