@@ -13,7 +13,7 @@
 // first, the numbered steps, then a "Check:" line, what a fail looks like (for a board change, on the picture after the change).
 // Keyboard characters only, at most about 300 tokens each.
 
-const BOARD_KINDS = ['flowchart', 'canvas', 'whiteboard', 'items', 'image'];
+const BOARD_KINDS = ['flowchart', 'canvas', 'items', 'image'];
 const ITEM_LINES = 'the attachment, whose lines read "1 id type label at x,y size wxh"';
 const NUMBERS = 'The numbers on the picture are the numbers of those lines.';
 // situation-question: a question word with a thing the situation note names ("what flowchart is open", "which draft"); "open"
@@ -120,7 +120,7 @@ export const PLAYBOOKS = [
     title: 'Answer from the attached picture',
     triggers: ['picture', 'image', 'photo', 'see', 'look', 'boxes', 'bbox', 'json', 'where', 'colour', 'color', 'what', 'describe', 'how many',
       'count', 'show', 'shows', 'coordinates', 'which', 'what would'],
-    when: { kinds: ['image', 'canvas', 'whiteboard', 'flowchart'], permission: 'any' },
+    when: { kinds: ['image', 'canvas', 'flowchart'], permission: 'any' },
     text: [
       'The picture after the message shows the attached block. Answer from it and from the text of the attachment.',
       '1. Call no tool. Reading the draft or opening Canvas Mode shows you nothing more.',
@@ -162,10 +162,10 @@ export const PLAYBOOKS = [
     id: 'canvas-mode',
     title: 'Open Canvas Mode for drawing by hand',
     triggers: ['canvas mode', 'by hand', 'freehand', 'sketch', 'myself', 'let me draw', 'i want to draw', ['open', 'canvas'], ['edit', 'canvas']],
-    when: { kinds: ['canvas', 'flowchart', 'image', 'whiteboard'], views: ['editor', 'board'] },
+    when: { kinds: ['canvas', 'flowchart', 'image'], views: ['editor', 'board'] },
     text: [
       'Use this only when the user asks to draw or edit by hand.',
-      '1. Call canvas_edit {"path":[4]} for a canvas block, or {"path":[6],"item":"k3j9x0a"} for a picture or canvas item on a whiteboard. {} opens the selected one.',
+      '1. Call canvas_edit {"path":[4]} for a canvas block. {} opens the selected one.',
       '2. Tell the user it is open and that Done closes it.',
       'To change items, do not open Canvas Mode. Use board_find and board_items_update.',
       'Check: canvas_edit answers without an error. If it fails, say why.',

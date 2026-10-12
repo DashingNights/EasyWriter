@@ -32,15 +32,15 @@ test('every playbook: unique id, triggers, short keyboard text with a Check line
 test('pickPlaybooks: the eval requests get the playbook they need, at most 2', () => {
   assert.deepEqual(ids({ parts: ['Straighten the yes arrow.', att('flowchart')], view: 'board' }), ['change-board-item']);
   assert.deepEqual(ids({ parts: ['Delete the selected item.', att('items')], view: 'editor' }), ['delete-board-item']);
-  assert.deepEqual(ids({ parts: ['Move Valve to the left of Pump.', att('whiteboard')], view: 'board' }), ['move-board-item']);
-  assert.deepEqual(ids({ parts: ['Rename the shape Pump to Pump 2.', att('whiteboard')], view: 'board' }), ['rename-board-item']);
-  assert.deepEqual(ids({ parts: ['Change the text of the shape at the top left to Motor.', att('whiteboard')], view: 'board' }), ['rename-board-item']);
+  assert.deepEqual(ids({ parts: ['Move Valve to the left of Pump.', att('canvas')], view: 'board' }), ['move-board-item']);
+  assert.deepEqual(ids({ parts: ['Rename the shape Pump to Pump 2.', att('canvas')], view: 'board' }), ['rename-board-item']);
+  assert.deepEqual(ids({ parts: ['Change the text of the shape at the top left to Motor.', att('canvas')], view: 'board' }), ['rename-board-item']);
   assert.deepEqual(ids({ text: 'Open my blockout draft.', view: 'editor' }), ['open-draft']);
   assert.deepEqual(ids({ text: "Set this draft's tag to Done.", view: 'editor' }), ['tag-draft']);
   assert.deepEqual(ids({ text: 'Add a heading called Valve puzzle above the second paragraph.', view: 'editor' }), ['edit-draft-text']);
   assert.deepEqual(ids({ parts: ['Give me the boxes of the red circle, blue square and green triangle as JSON.', att('image')], view: 'board' }), ['picture-question']);
   assert.deepEqual(ids({ text: 'Open the canvas so I can sketch.', parts: [att('canvas')], view: 'board' }), ['canvas-mode']);
-  for (const o of [{ text: 'hello', parts: [att('whiteboard')], view: 'board' }, { text: 'What is the difference between a blockout and a greybox?', view: 'editor' }]) {
+  for (const o of [{ text: 'hello', parts: [att('canvas')], view: 'board' }, { text: 'What is the difference between a blockout and a greybox?', view: 'editor' }]) {
     assert.deepEqual(ids(o), [], o.text);
   }
   // Wave 1c: a question about what is open or selected is answered from the situation note, in every mode, never with a change.
@@ -48,21 +48,21 @@ test('pickPlaybooks: the eval requests get the playbook they need, at most 2', (
   assert.deepEqual(ids({ text: 'What flowchart is open?', view: 'flows', permission: 'readonly' }), ['situation-question']);
   assert.deepEqual(ids({ text: "What's the open draft called?", view: 'editor' }), ['situation-question']);
   assert.deepEqual(ids({ parts: ['Which items are selected?', att('items')], view: 'board' }), ['situation-question']);
-  assert.ok(!ids({ parts: ['Rename Pump to Pump 2.', att('whiteboard')], view: 'board' }).includes('situation-question'));
+  assert.ok(!ids({ parts: ['Rename Pump to Pump 2.', att('canvas')], view: 'board' }).includes('situation-question'));
   assert.deepEqual(ids({ text: 'Which draft should I open?', view: 'editor' }), ['situation-question']); // not paired with open-draft
   assert.deepEqual(ids({ text: 'Open my blockout draft.', view: 'editor' }), ['open-draft']);
-  assert.ok(PLAYBOOKS.every((p) => ids({ text: p.triggers.flat().join(' '), parts: [att('whiteboard')], view: 'board' }).length <= 2));
+  assert.ok(PLAYBOOKS.every((p) => ids({ text: p.triggers.flat().join(' '), parts: [att('canvas')], view: 'board' }).length <= 2));
   // A change and "call no tool" never come together: the colour request gets only the change, the colour question only the picture.
   assert.deepEqual(ids({ parts: ['Change the colour of the start shape to red.', att('flowchart')], view: 'board' }), ['change-board-item']);
-  assert.deepEqual(ids({ parts: ['What colour is the pump?', att('whiteboard')], view: 'board' }), ['picture-question']);
+  assert.deepEqual(ids({ parts: ['What colour is the pump?', att('canvas')], view: 'board' }), ['picture-question']);
   assert.deepEqual(ids({ parts: ['Make the box bigger.', att('image')], view: 'board' }), ['change-board-item']);
 });
 
 test('pickPlaybooks: Read only gets the read-only playbook and none that changes things', () => {
-  assert.deepEqual(ids({ parts: ['Rename the shape Gearbox to Gearbox A.', att('whiteboard')], view: 'board', permission: 'readonly' }), ['read-only']);
+  assert.deepEqual(ids({ parts: ['Rename the shape Gearbox to Gearbox A.', att('canvas')], view: 'board', permission: 'readonly' }), ['read-only']);
   assert.deepEqual(ids({ text: 'Open my blockout draft.', view: 'editor', permission: 'readonly' }), []);
   assert.deepEqual(ids({ parts: ['What does this picture show?', att('image')], view: 'board', permission: 'readonly' }), ['picture-question']);
-  assert.ok(!ids({ parts: ['Rename the shape Pump.', att('whiteboard')], view: 'board' }).includes('read-only'));
+  assert.ok(!ids({ parts: ['Rename the shape Pump.', att('canvas')], view: 'board' }).includes('read-only'));
 });
 
 test('wave 2b: open-draft opens one match without asking; the risky tools name a real playbook; prerequisites where they help', () => {
@@ -78,16 +78,16 @@ test('wave 2b: open-draft opens one match without asking; the risky tools name a
   }
   assert.deepEqual(PLAYBOOKS.filter((p) => p.text.startsWith('Before: ')).map((p) => p.id), ['change-board-item', 'delete-board-item', 'tag-draft']);
   // "Add" on a board picks the board playbook that covers board_items_add, never the draft one.
-  const add = ids({ parts: ['Add a note that says Exit under the Pump.', att('whiteboard')], view: 'board' });
+  const add = ids({ parts: ['Add a note that says Exit under the Pump.', att('canvas')], view: 'board' });
   assert.ok(add[0] === 'change-board-item' && !add.includes('edit-draft-text'), add.join());
   assert.deepEqual(ids({ text: 'Add a heading called Valve puzzle.', view: 'editor' }), ['edit-draft-text']);
   // Review: drawing by hand never comes with the board playbook that forbids canvas_edit (its triggers have draw too).
   for (const text of ['Let me draw on it.', 'Open the canvas so I can draw.']) assert.deepEqual(ids({ parts: [text, att('flowchart')], view: 'board' }), ['canvas-mode'], text);
   // The eval's questions about an attached board get the call-no-tool playbook, never a change.
   assert.deepEqual(ids({ parts: ['What would you change about this flowchart?', att('flowchart')], view: 'board' }), ['picture-question']);
-  assert.deepEqual(ids({ parts: ['Which shape is widest?', att('whiteboard')], view: 'board' }), ['picture-question']);
+  assert.deepEqual(ids({ parts: ['Which shape is widest?', att('canvas')], view: 'board' }), ['picture-question']);
   const scene = 'Identify the things in this picture. Mark each one with a shape around it and an arrow from a text label naming it.';
-  assert.equal(ids({ parts: [scene, att('whiteboard')], view: 'board' })[0], 'change-board-item');
+  assert.equal(ids({ parts: [scene, att('canvas')], view: 'board' })[0], 'change-board-item');
 });
 
 test('findPlaybooks: commands.index q searches titles and words', () => {

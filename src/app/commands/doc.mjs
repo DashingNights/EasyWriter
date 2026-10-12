@@ -20,7 +20,7 @@ function boardStub(ctx, n) {
     const title = a.frozen?.ctx?.plan?.title ?? ctx.plans?.planById?.(a.planId)?.title ?? null;
     return { type: n.type, kind, plan: title, view: a.view, ...(a.frozen && { frozen: true }) };
   }
-  const out = { type: n.type, kind, size: n.type === 'whiteboard' ? `${Math.round(a.height)} px high` : `${Math.round(a.w)} x ${Math.round(a.h)}`, items: items.length };
+  const out = { type: n.type, kind, size: `${Math.round(a.w)} x ${Math.round(a.h)}`, items: items.length };
   const src = kind === 'image' ? String(items[0].src ?? '') : '';
   const data = src.match(/^data:image\/([a-z0-9.+-]+);/i);
   if (kind === 'image') out.source = data ? `pasted ${data[1].toUpperCase()}, ${Math.max(1, Math.round((src.length * 3) / 4 / 1024))} KB` : src.slice(0, 200) || 'none';

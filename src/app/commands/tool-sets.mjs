@@ -19,7 +19,7 @@ export const CATEGORIES = {
   app: 'What is shown and selected, settings, palette tools, tool lists, batch, and the controls on screen',
   drafts: 'Drafts, their tags and folders, and forum threads',
   doc: 'Read and edit the blocks of the open draft',
-  board: 'Whiteboards, canvases, their items and Canvas Mode',
+  board: 'Canvases, their items and Canvas Mode',
   export: 'Forum preview, push and login',
   history: 'Undo and redo in the open draft',
   flow: 'The flowchart library: its flowcharts, their items, layout and insertion into a draft',

@@ -19,12 +19,12 @@ test('every attachment is capped', () => {
   const long = textAttachment({ path: [0], from: 0, to: 9000, text: 'word '.repeat(1800), context: '' });
   assert.ok(long.body.length <= ATTACH_CHARS && long.body.endsWith('(cut)'));
   const items = Array.from({ length: 300 }, (_, i) => ({ id: `s${i}`, type: 'shape', shape: 'rect', html: `<p>Step ${i}</p>`, x: i, y: 0, w: 10, h: 10 }));
-  const many = itemsAttachment(items, 'the whiteboard at block [4]');
+  const many = itemsAttachment(items, 'the canvas being edited at block [4]');
   assert.equal(many.label, '300 items');
   assert.ok(many.body.length <= ATTACH_CHARS);
   assert.ok(blockAttachment('flowchart', { path: [1], mermaid: 'A --> B\n'.repeat(1000) }).body.length <= ATTACH_CHARS);
   // Wave 2: whole lines from the start, then "... and N more" for the item lines left out; the Mermaid goes first.
-  const wb = blockAttachment('whiteboard', { path: [4], attrs: { items } }).body.split('\n');
+  const wb = blockAttachment('canvas', { path: [4], attrs: { items } }).body.split('\n');
   const shown = wb.filter((l) => /^\d+ s\d+ /.test(l)).length;
   assert.equal(wb.at(-1), `... and ${300 - shown} more`);
   assert.equal(wb[1], '1 s0 shape rect "Step 0" at 0,0 size 10x10');
@@ -106,8 +106,8 @@ test('model content: each attachment block, the pictures, the note, then "Reques
   assert.equal(partsText(parts), '  fix this [Selection: 2 words] please ');
   assert.equal(modelContent(parts, 'From tool search.'), 'Attachment [Selection: 2 words]\nSelected text\n\nFrom tool search.\n\nRequest: fix this [Selection: 2 words] please');
   // Wave 2: a pill in the middle stays as [label]; only the pill that opens the message (the auto-attached selection) goes.
-  const wb = { kind: 'whiteboard', label: 'Whiteboard', body: 'Whiteboard at block [4]' };
-  assert.ok(modelContent(['Make ', wb, ' bigger']).endsWith('\n\nRequest: Make [Whiteboard] bigger'));
+  const wb = { kind: 'canvas', label: 'Smart canvas', body: 'Smart canvas at block [4]' };
+  assert.ok(modelContent(['Make ', wb, ' bigger']).endsWith('\n\nRequest: Make [Smart canvas] bigger'));
   assert.ok(modelContent([wb, ' Make it bigger']).endsWith('\n\nRequest: Make it bigger'));
   assert.equal(modelContent(['hello']), 'Request: hello');
   assert.equal(modelContent([pill]), 'Attachment [Selection: 2 words]\nSelected text\n\nRequest: [Selection: 2 words]'); // pills only

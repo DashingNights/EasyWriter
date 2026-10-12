@@ -78,8 +78,7 @@ export const defs = [
   define({
     id: 'board.items.straighten',
     title: 'Straighten an arrow',
-    // The orchestrator's brief, its colon a full stop after the title and two words shorter (MAX_SET); no itemPath for the same
-    // reason (an arrow in a canvas item: board_items_update). ponytail: add itemPath when MAX_SET has room.
+    // The orchestrator's brief, its colon a full stop after the title and two words shorter (MAX_SET).
     brief: "Route straight, no bends, ends moved to the facing sides. Use it for 'straighten', 'tidy' or 'fix this arrow'. draftId: another draft to work on without opening it (drafts_list gives it); leave it out for the open draft.",
     group: 'board',
     risk: 'write',
@@ -94,9 +93,8 @@ export const defs = [
     busy: (ctx, a) => ctx.lib.boardBusy(a.path),
     run: (ctx, a) => {
       const t = target(ctx, a.path);
-      // As board.items.place: a whiteboard measures its text items; elsewhere a stored text height is used.
-      const boxOf = t.kind === 'whiteboard' && t.wb ? (i) => t.wb.itemBox(i)
-        : (i) => rotBox({ x: i.x, y: i.y, w: i.w, h: i.h ?? 0, rot: rotOf(i) });
+      // As board.items.place: a stored text height is used.
+      const boxOf = (i) => rotBox({ x: i.x, y: i.y, w: i.w, h: i.h ?? 0, rot: rotOf(i) });
       const patch = straightPatch(itemsOf(t), connectorOf(itemsOf(t), a.id, 'board'), boxOf);
       const out = update.run(ctx, { path: a.path, id: a.id, patch });
       return { ...out, ...endBoxes(itemsOf(target(ctx, a.path)), out.item, boxOf) };

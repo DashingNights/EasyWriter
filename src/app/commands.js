@@ -6,7 +6,7 @@ import { NodeSelection } from '@tiptap/pm/state';
 import { version as appVersion } from '../../package.json';
 import { canvasEditor } from '../canvas.js';
 import { BOARD_TYPES, pathOfPos, posOfPath } from '../doc-path.mjs';
-import { activeBoard, contentWidth } from '../whiteboard.js';
+import { activeBoard, contentWidth, migrateBoards } from '../whiteboard.js';
 import * as actions from './actions.js';
 import { familyOf } from './assistant/prompts.mjs';
 import { IDLE as SESSION_IDLE, noteWrite, sessionFor, sessionIds } from './assistant/sessions.js';
@@ -78,7 +78,7 @@ async function execute(req) {
 const errorOf = (e) => (CODES.has(e?.code) ? error(e.code, e.message, e.data) : error('failed', String(e?.message ?? e)));
 
 /** `args` with a bare string where `schema` (an args object schema) wants an array at the top level wrapped in one, as
- * `itemPath: "k3j9x0a"` for ["k3j9x0a"] (eval set 5: the description "as its id" reads as a bare id); the rest as it is. */
+ * `ids: "k3j9x0a"` for ["k3j9x0a"]; the rest as it is. */
 function wrapStrings(schema, args) {
   if (!isObject(args)) return args;
   const wrap = Object.entries(args).filter(([k, v]) => typeof v === 'string' && schema.properties?.[k]?.type === 'array');
@@ -538,7 +538,7 @@ async function toNodes(content, ed = state.editor) {
   const [key] = Object.keys(content);
   let json;
   if (key === 'json') {
-    const j = content.json;
+    const j = migrateBoards(content.json, state.settings.forumWidth); // an old whiteboard becomes a canvas (§6b Converted whiteboards)
     json = Array.isArray(j) ? j : j?.type === 'doc' ? j.content ?? [] : [j];
   } else if (key === 'html') {
     if (/<img\b/i.test(content.html)) dropped.add('img'); // no image node: pictures go in as `images`
@@ -567,7 +567,7 @@ async function toNodes(content, ed = state.editor) {
   return { nodes, dropped: [...dropped] };
 }
 
-/** Markdown of TipTap JSON `node` (the doc, or the block at `path`): a board as `![whiteboard: 3 items](block:[4])`. */
+/** Markdown of TipTap JSON `node` (the doc, or the block at `path`): a board as `![canvas: 3 items](block:[4])`. */
 function toMarkdown(node, path = null) {
   const board = (n, p) => `![${n.type}: ${n.attrs?.items?.length ?? 0} items](block:[${p}])`;
   if (path) return BOARD_TYPES.includes(node.type) ? board(node, path) : markdown().serialize({ type: 'doc', content: [node] });

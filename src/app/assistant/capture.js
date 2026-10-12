@@ -23,7 +23,7 @@ import { sessionIds } from './sessions.js';
 
 // What the user has selected now, as an assistant attachment (attach.mjs), or null: the items selected on the canvas being edited
 // or the active board, else (the editor shown) the editor's text or node selection. Tool search takes it when it opens (SPEC §7c);
-// the chat box when it gains the focus (chat-input.js autoPill). A canvas, flowchart canvas, image or whiteboard, and board items,
+// the chat box when it gains the focus (chat-input.js autoPill). A canvas, flowchart canvas or image, and board items,
 // also carry `picture()`, its rendering for the model with its size line (SPEC §7i Vision), with numbered marks (`marked`, marks.mjs) except an image's;
 // situation() builds the note each turn starts with.
 
@@ -74,8 +74,6 @@ export function captureSelection() {
     });
     const marked = kind !== 'image'; // a picture's own content is what the model looks at
     if (type === 'canvas') Object.assign(att, { marked, picture: () => picture({ w: b.w, h: b.h, bg: b.bg, items }, marked ? items : [], marked ? 'board' : 'image') });
-    const width = dom?.offsetWidth || getState().settings?.forumWidth || 1000;
-    if (type === 'whiteboard') Object.assign(att, { marked, picture: () => picture({ w: width, h: attrs.height, bg: attrs.bg, items }, items) });
     return att;
   }
   if (sel.empty) return null;
@@ -139,14 +137,14 @@ export function situation(parts = [], viewKey = '') {
 const OUTLINE_BLOCKS = 120; // blocks in the note's outline; a longer draft says how many more
 
 /** The open draft's top-level blocks for the situation note (Google AI): "[3] paragraph: The first words..." per block, a board as
- * "[6] whiteboard, 7 items, 989 high" (a canvas: its size), the start of its text cut at 100 characters with its length. */
+ * "[6] canvas, 7 items, 1454 x 989", the start of its text cut at 100 characters with its length. */
 function outlineLines(doc) {
   const out = [];
   doc.forEach((n, _, i) => {
     if (i >= OUTLINE_BLOCKS) return;
     const a = n.attrs ?? {};
     if (Array.isArray(a.items)) {
-      out.push(`[${i}] ${n.type.name}, ${a.items.length} item${a.items.length === 1 ? '' : 's'}${n.type.name === 'whiteboard' ? `, ${a.height} high` : a.w ? `, ${a.w} x ${a.h}` : ''}`);
+      out.push(`[${i}] ${n.type.name}, ${a.items.length} item${a.items.length === 1 ? '' : 's'}${a.w ? `, ${a.w} x ${a.h}` : ''}`);
       return;
     }
     const t = n.textContent.replace(/\s+/g, ' ').trim();

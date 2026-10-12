@@ -97,7 +97,7 @@ export const boardOrder = (items, all) => {
   return [...items, ...all.filter((i) => !ids.has(i.id))];
 };
 
-/** Items selected on a board (`where`: e.g. "the whiteboard at block [4]"; `all`: the board's items), in the legend form: the
+/** Items selected on a board (`where`: e.g. "the canvas being edited at block [4]"; `all`: the board's items), in the legend form: the
  * selected ones numbered first, then OTHER_ITEMS and the rest in boardOrder (wave 2: the attachment's picture is the whole board
  * with these numbers on it, capture.js). */
 export function itemsAttachment(items, where, all = items) {
@@ -110,7 +110,7 @@ const VIEW_NAMES = { kanban: 'Board', backlog: 'Backlog', gantt: 'Gantt' };
 
 /** A node-selected block of `kind` (tool-rank.mjs blockKind, else its type) at `path`, with what describes it: `attrs.items` and
  * `mermaid` (a flowchart canvas: its item lines, then the Mermaid when the whole still fits ATTACH_CHARS), `flowTitle` (its
- * library flowchart), `plan` ({title, view, total, counts: [[column, n]], frozen}). A flowchart canvas, smart canvas or whiteboard
+ * library flowchart), `plan` ({title, view, total, counts: [[column, n]], frozen}). A flowchart canvas or smart canvas
  * lists its items in the legend form (numbered as the marks on its picture), cut from the tail when long (listBody). */
 export function blockAttachment(kind, { path, type, attrs = {}, mermaid = '', flowTitle = '', plan = null }) {
   const at = `at block [${path}] of the draft`;
@@ -129,10 +129,9 @@ export function blockAttachment(kind, { path, type, attrs = {}, mermaid = '', fl
     const source = data ? `a pasted ${data[1].toUpperCase()} picture (${Math.round((src.length * 3) / 4 / 1024)} KB)` : clip(src, 200) || 'no source';
     return attachment('image', 'Image', `Image ${at}, ${Math.round(img.w ?? attrs.w)} x ${Math.round(img.h ?? attrs.h)} px, ${source}`);
   }
-  if (kind === 'canvas' || kind === 'whiteboard') {
+  if (kind === 'canvas') {
     const items = attrs.items ?? [];
-    const label = kind === 'canvas' ? 'Smart canvas' : 'Whiteboard';
-    return attachment(kind, label, listBody(`${label} ${at} with ${plural(items.length, 'item')}`, items.length ? itemLines(items, items, 1).split('\n') : []));
+    return attachment(kind, 'Smart canvas', listBody(`Smart canvas ${at} with ${plural(items.length, 'item')}`, items.length ? itemLines(items, items, 1).split('\n') : []));
   }
   if (kind === 'planChart') {
     if (!plan) return attachment(kind, 'Plan chart', `Plan chart ${at}, its plan is gone`);

@@ -14,21 +14,20 @@ export const GATES = {
   'view.plan': gate('ui', (u) => u?.view?.type === 'plan', 'The plan workspace is not open', 'Open it with the Plans tab'),
   'view.flows': gate('ui', (u) => u?.view?.type === 'flows', 'The flowchart library is not open', 'Open it with the Flowcharts tab'),
   'view.browser': gate('ui', (u) => u?.view?.type === 'browser', 'The browser is not open', 'Open it with the Browser tab'),
-  'node.board': gate('node', (n) => n?.type === 'whiteboard' || n?.type === 'canvas', 'The block is not a whiteboard or canvas',
-    'Address a whiteboard or canvas block'),
+  'node.board': gate('node', (n) => n?.type === 'canvas', 'The block is not a canvas', 'Address a canvas block'),
   'node.canvas': gate('node', (n) => n?.type === 'canvas', 'The block is not a canvas', 'Address a canvas block'),
-  'node.whiteboard': gate('node', (n) => n?.type === 'whiteboard', 'The block is not a whiteboard', 'Address a whiteboard block'),
   // The node-selected block (no path: the editor's selection). node.none: a caret or text selection; node.is (param: the
   // kinds) reads the `kind` the tool search gives the block (tool-rank.mjs blockKind), so without one it is false.
   'node.none': gate('node', (n) => !n, 'A block is selected, not text', 'Click in the text first'),
   'node.is': gate('node', (n, _args, kinds) => !!n?.kind && kinds.includes(n.kind), 'The selected block is not of the needed kind',
     'Select that block first'),
-  'board.active': gate('board', (b) => !!b, 'No board is active', 'Click a whiteboard, or edit a canvas'),
+  'board.active': gate('board', (b) => !!b, 'No board is active', 'Edit a canvas'),
+  // The tool search's whiteboard tools only (tools.js WHITEBOARD); it goes with them (canvas-merge plan steps 4 and 6).
   'board.whiteboard': gate('board', (b) => b?.kind === 'whiteboard', 'Only a whiteboard can do this, not a canvas',
     'Address a whiteboard block'),
   // Canvas Mode (§6b): in the editor view the only board of kind 'canvas' is the one it edits.
   'board.canvasMode': gate('board', (b) => b?.kind === 'canvas', 'No canvas is open in Canvas Mode',
-    'Double-click a canvas, or a picture on a whiteboard'),
+    'Double-click a canvas'),
   'board.selection': gate('board', (b) => b?.count >= 1, 'Nothing is selected on the board', 'Select one or more items first'),
   'board.selectionMany': gate('board', (b) => b?.count >= 2, 'Fewer than two items are selected', 'Select two or more items first'),
   // param: the item types; `item` is set only while exactly one item is selected.

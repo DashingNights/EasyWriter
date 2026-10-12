@@ -3,8 +3,8 @@ import { pathOfPos } from '../../doc-path.mjs';
 import { itemLines, listBody } from '../assistant/attach.mjs';
 import { boardPicture, drawMarks, markCentres, markSpots, PICTURE_SIDE, sizeText } from '../assistant/marks.mjs';
 import { viewportRect } from '../viewport.js';
-import { drawnWidth, ITEM_PATH_SHORT, target } from './board.mjs';
-import { define, fail } from './define.mjs';
+import { target } from './board.mjs';
+import { define } from './define.mjs';
 import { DRAFT_ID, ref } from './schema-defs.mjs';
 
 // view.render (SPEC §8 Catalogue, §7i Tool loop; plan assistant-reliability.md wave 2): a picture the assistant's model can
@@ -60,18 +60,15 @@ export const defs = [
     needs: [{ gate: 'doc.open', if: (a) => !!a.path }, { gate: 'node.board', if: (a) => !!a.path }, { gate: 'window.visible', if: (a) => !a.path }],
     args: {
       type: 'object', additionalProperties: false,
-      properties: { path: ref('PATH', 'Board block path. Omit it for the whole view'), itemPath: ITEM_PATH_SHORT, draftId: DRAFT_ID },
+      properties: { path: ref('PATH', 'Board block path. Omit it for the whole view'), draftId: DRAFT_ID },
     },
     result: { type: 'object', required: ['legend', 'width', 'height', 'size', 'picture'] },
     examples: [{ args: {} }, { args: { path: [4] } }],
     run: async (ctx, a) => {
-      if (!a.path) return a.itemPath ? fail('invalid_args', 'itemPath needs the path of its whiteboard', { path: '/path', message: 'is required with itemPath', expected: {} }) : renderView(ctx);
-      const t = target(ctx, a.path, a.itemPath);
-      const b = t.kind === 'whiteboard' ? { ...t.node.attrs, w: drawnWidth(ctx, t.pos), h: t.node.attrs.height }
-        : t.kind === 'item' ? { w: t.item.aw, h: t.item.ah, bg: t.item.bg, items: t.item.items } : t.board;
+      if (!a.path) return renderView(ctx);
+      const b = target(ctx, a.path).board;
       const pic = await boardPicture({ w: b.w, h: b.h, bg: b.bg, items: b.items }, { theme: ctx.state.settings.theme === 'light' ? 'light' : 'dark' });
-      const name = t.kind === 'item' ? `Canvas item ${t.item.id} of the whiteboard` : NAMES[t.kind];
-      const legend = listBody(`${name} at block [${a.path}] with ${b.items.length} item${b.items.length === 1 ? '' : 's'}`, lines(b.items));
+      const legend = listBody(`Canvas at block [${a.path}] with ${b.items.length} item${b.items.length === 1 ? '' : 's'}`, lines(b.items));
       return { legend, width: pic.width, height: pic.height, size: pic.size, picture: 'next message', url: pic.url };
     },
   }),

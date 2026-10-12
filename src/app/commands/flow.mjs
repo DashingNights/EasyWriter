@@ -13,7 +13,7 @@ import { validate } from '../schema.mjs';
 import { endSide } from '../assistant/attach.mjs';
 import { grouped, patched, placeAt, ungrouped } from './board.mjs';
 import { connectorOf, endBoxes, straightPatch } from './connectors.mjs';
-import { define, fail, failGates } from './define.mjs';
+import { define, fail } from './define.mjs';
 import { matchStyle } from './item-style.mjs';
 import { DRAFT_ID, ITEM, ITEM_ID, ref } from './schema-defs.mjs';
 
@@ -165,7 +165,6 @@ function mustHave(items, ids) {
 
 /** `items` plus the new items `add` (defaults, fresh ids, the board's checks; `at`: their args pointer) → {items, result}. */
 function added(ctx, items, add, at = '/items') {
-  if (add.some((i) => i.type === 'canvas')) failGates(['board.whiteboard']); // a flowchart is a canvas: no canvas items
   const color = ink(ctx);
   const fresh = freshIds(add.map((i) => itemDefaults(i, color, items)), new Set(items.map((i) => i.id))).map((i, k) => checked(i, `${at}/${k}`));
   const ids = new Set(fresh.map((i) => i.id));

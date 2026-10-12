@@ -261,7 +261,7 @@ async function afterWrite(session, call, res) {
   } catch {}
   const path = Array.isArray(a.path) ? a.path : res.result?.path;
   if (!Array.isArray(path)) return null;
-  const args = { path, ...(Array.isArray(a.itemPath) && { itemPath: a.itemPath }), ...(typeof a.draftId === 'string' && { draftId: a.draftId }) };
+  const args = { path, ...(typeof a.draftId === 'string' && { draftId: a.draftId }) };
   const pic = await invoke({ id: 'view.render', args, source: 'agent:assistant', signal: session.signal });
   return pic.ok ? pictureMessage(`${afterWriteText(pic.result.size)}\n${pic.result.legend}`, pic.result.url) : null;
 }

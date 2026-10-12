@@ -162,7 +162,7 @@ test('calls left, reads after a write and the done reply (wave 1c)', () => {
   assert.equal(guardWrite('board.get', 'read'), false);
   const nav = { write: guardWrite('drafts.open', 'write'), ok: true };
   assert.equal(readsAfterWrite([nav, r, r, r]), false);
-  assert.equal(doneReply('Change one item of a whiteboard or canvas'), 'Done: changed one item of a whiteboard or canvas.');
+  assert.equal(doneReply('Change one item of a canvas'), 'Done: changed one item of a canvas.');
   assert.equal(doneReply('Replace one block of the open draft (not a board)'), 'Done: replaced one block of the open draft.');
   assert.equal(doneReply('Insert blocks into the open draft'), 'Done: inserted blocks into the open draft.');
   assert.equal(doneReply('Opened the canvas'), 'Done: opened the canvas.');
@@ -252,13 +252,13 @@ test('clipResult: an oversized doc_get is sparse, its first whole blocks and the
 
 test('clipResult: an oversized board_get or board_find is sparse, its first whole items and the ids left out with a board_find hint', () => {
   const items = Array.from({ length: 120 }, (_, i) => ({ id: `i${i}`, type: 'shape', shape: 'rect', label: `Step ${i} ${'x'.repeat(60)}`, x: i, y: 0, w: 10, h: 10 }));
-  const get = JSON.parse(clipResult('board_get', '{"path":[4],"itemPath":["k3j9x0a"]}', { ok: true, result: { rev: 2, board: { kind: 'canvas', w: 800, h: 450, items } } }, 8000));
+  const get = JSON.parse(clipResult('board_get', '{"path":[4]}', { ok: true, result: { rev: 2, board: { kind: 'canvas', w: 800, h: 450, items } } }, 8000));
   const k = get.result.board.items.length;
   assert.ok(k > 0 && k < 120 && JSON.stringify(get).length <= 8000, String(k));
   assert.deepEqual(get.result.board.items.at(-1), items[k - 1]);
   assert.equal(get.result.sparse, true);
   assert.deepEqual(get.result.next, items.slice(k).map((i) => i.id));
-  assert.equal(get.result.hint, `Read one with board_find {"path":[4],"itemPath":["k3j9x0a"],"q":"i${k}"}.`);
+  assert.equal(get.result.hint, `Read one with board_find {"path":[4],"q":"i${k}"}.`);
   // board.find past its 40 already named ids in next: those stay after the ones this cut leaves out.
   const find = JSON.parse(clipResult('board_find', '{"path":[4],"q":"step"}', { ok: true, result: { rev: 2, hits: 160, items, sparse: true, next: ['z1', 'z2'] } }, 8000));
   assert.ok(find.result.items.length < 120 && find.result.hits === 160 && find.result.sparse && JSON.stringify(find).length <= 8000);

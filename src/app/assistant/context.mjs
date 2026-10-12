@@ -222,8 +222,8 @@ export function readsAfterWrite(calls, n = READS_AFTER_WRITE) {
 const PAST = { find: 'found', set: 'set', run: 'ran', leave: 'left', format: 'formatted', undo: 'undid', redo: 'redid' };
 
 /** The reply that ends a turn readsAfterWrite caught: "Done: " and the change's step title (a command title, or a past-tense
- * step label) in the past tense up to its first colon or "and", without brackets: "Change one item of a whiteboard or
- * canvas" → "Done: changed one item of a whiteboard or canvas.", "Rename or recolour a status tag" → "Done: renamed or recoloured
+ * step label) in the past tense up to its first colon or "and", without brackets: "Change one item of a canvas" →
+ * "Done: changed one item of a canvas.", "Rename or recolour a status tag" → "Done: renamed or recoloured
  * a status tag." */
 export function doneReply(title) {
   const head = title.replace(/\s*\([^)]*\)/g, '').split(/:| and /)[0].trim();
@@ -360,7 +360,7 @@ export function clipResult(name, args, res, max) {
   const out = Array.isArray(board?.items) ? sparse(res, board.items, {
     key: (i) => i.id,
     wrap: (part, f) => (name === 'board_get' ? { ...res.result, board: { ...board, items: part }, ...f } : { ...res.result, items: part, ...f }),
-    hint: (id) => `Read one with board_find ${JSON.stringify({ path: base, ...(Array.isArray(a.itemPath) && { itemPath: a.itemPath }), q: id })}.`,
+    hint: (id) => `Read one with board_find ${JSON.stringify({ path: base, q: id })}.`,
     after: name === 'board_find' && Array.isArray(res.result.next) ? res.result.next : [],
   }, max) : blocks && sparse(res, blocks, {
     key: (b, k) => (outline ? b.path : [...base, k]),

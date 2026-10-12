@@ -81,19 +81,18 @@ test('every command the palette runs is in the catalogue', () => {
   for (const id of PALETTE_COMMANDS) assert.ok(byId(id), id);
 });
 
-test('ITEM: board items take #/$defs/ITEM; it accepts what parseBoard keeps and refuses a nested canvas', () => {
+test('ITEM: board items take #/$defs/ITEM; it accepts what parseBoard keeps and refuses a canvas item', () => {
   for (const d of CATALOGUE) if (d.args.properties?.items) assert.ok(JSON.stringify(d.args.properties.items).includes('"#/$defs/ITEM"'), d.id);
   const items = [
     { id: 't', type: 'text', html: 'Hi', x: 0, y: 0, w: 200, size: 20, color: '#ffffff', bold: false, align: 'left', bg: null },
     { id: 's', type: 'shape', shape: 'diam', x: 0, y: 80, w: 160, h: 110, color: '#ffffff', width: 2, opacity: 1, fill: 'none', fillColor: '#ffffff', rot: 30 },
     { id: 'c', type: 'connector', from: { item: 't', anchor: 's' }, to: { item: 's', anchor: [0.5, 0] }, labels: { mid: { html: 'yes' } } },
     { id: 'k', type: 'stroke', x: 0, y: 0, w: 10, h: 10, vw: 10, vh: 10, d: 'M0 0L10 10', color: '#e05252', width: 4, opacity: 1 },
-    { id: 'v', type: 'canvas', x: 300, y: 0, w: 400, h: 225, aw: 800, ah: 450, frame: null, bg: 'post', items: [{ id: 'i', type: 'text', html: 'In', x: 0, y: 0, w: 100 }] },
   ];
   assert.equal(parseBoard(JSON.stringify({ items })).items.length, items.length);
   for (const i of items) assert.deepEqual(validate($defs.ITEM, i), [], i.type);
-  const nested = { ...items[4], items: [{ ...items[4], id: 'w', items: [] }] };
-  assert.notDeepEqual(validate($defs.ITEM, nested), []);
+  const canvas = { id: 'v', type: 'canvas', x: 300, y: 0, w: 400, h: 225, aw: 800, ah: 450, frame: null, bg: 'post', items: [] };
+  assert.notDeepEqual(validate($defs.ITEM, canvas), []);
   assert.notDeepEqual(validate($defs.ITEM, { type: 'shape', shape: 'blob', x: 0, y: 0, w: 1, h: 1 }), []);
 });
 
@@ -130,8 +129,7 @@ test('commands.index filters the catalogue; commands.describe returns model-form
 
 test('argsMessage: the validator line, the nearest description up the path and the first example', () => {
   const msg = (id, args, at) => argsMessage(byId(id), validate(byId(id).args, args, $defs)[0], $defs, at);
-  assert.equal(msg('board.get', { path: [4], itemPath: ['the yes arrow'] }),
-    'args/itemPath/0 must match ^[A-Za-z0-9_-]{1,32}$. itemPath: Only for a canvas item inside a whiteboard, as its id. Omit it for a canvas block. Example: {"path":[4]}');
+  assert.equal(msg('board.get', { path: [4], itemPath: ['k3j9x0a'] }), 'args/itemPath is not allowed (allowed: path, format, images, draftId). Example: {"path":[4]}');
   assert.equal(msg('board.items.update', { path: [4], id: 'k3j9x0a' }),
     'args/patch is required. patch: Item fields to set, such as x, y, html or route. A null label slot removes it. Example: {"path":[4],"id":"k3j9x0a","patch":{"x":300,"y":140}}');
   assert.match(msg('drafts.open', { draftId: 'Week 1' }), /^args\/draftId must match .+\. draftId: The draft id from drafts_list\. Example: \{"draftId":"0b2c8f0e-/); // beside a $ref
@@ -224,19 +222,25 @@ test('board.find: past 40 hits it is sparse; a q that is an item id puts that it
   for (const id of ['a', 'rect', 's59']) assert.equal(find(id).items[0].id, id, id);
 });
 
-test('board.items.add and .update with coords thousandths: x and w scale by the drawn width, y and h by the height, to whole px', () => {
-  // Qwen Cloud (2026-10-08): its box for a map's mid area on a 1454 x 730 whiteboard, in thousandths.
-  const node = { type: { name: 'whiteboard' }, attrs: { items: [], height: 730 }, nodeSize: 2 };
-  const wb = { items: [], clampItem() {}, commit() { node.attrs.items = this.items; } };
+test('board.items.add and .update with coords thousandths: x and w scale by the artboard width, y and h by its height, to whole px', () => {
+  // Qwen Cloud (2026-10-08): its box for a map's mid area on a 1454 x 730 board, in thousandths.
+  const node = { type: { name: 'canvas' }, attrs: { w: 1454, h: 730, dw: 1454, frame: { x: 0, y: 0, w: 1454, h: 730 }, bg: 'post', items: [], flow: null }, nodeSize: 2 };
+  const tr = { setMeta() { return this; }, setNodeMarkup(_, __, attrs) { node.attrs = attrs; return this; } };
+  const cv = { node, view: { state: { tr }, dispatch() {} } };
   const doc = { childCount: 1, child: () => node, nodeAt: () => node, descendants() {} };
-  const view = { nodeDOM: () => ({ offsetWidth: 1454, wbView: wb }), state: { tr: { setMeta() { return this; } } }, dispatch() {} };
+  const view = { nodeDOM: () => ({ scView: cv }), dom: { clientWidth: 1454 }, state: { tr }, dispatch() {} };
   const ctx = { editor: { state: { doc }, view }, state: { rev: 1, settings: { theme: 'dark' } }, lib: { stripImages: (i) => i } };
+  // settle's offscreen host and contentWidth, without a DOM (shapes only: nothing is measured).
+  const el = () => ({ style: {}, append() {}, remove() {} });
+  Object.assign(globalThis, { document: { getElementById: () => true, createElement: el, body: el() }, getComputedStyle: () => ({ paddingLeft: '0', paddingRight: '0' }) });
   byId('board.items.add').run(ctx, { path: [0], coords: 'thousandths', items: [{ type: 'shape', shape: 'rect', x: 571, y: 297, w: 329, h: 418 }] });
-  const [s] = wb.items;
+  const [s] = node.attrs.items;
   assert.deepEqual([s.x, s.y, s.w, s.h], [830, 217, 478, 305]);
   // update converts its patch before it validates and checks it.
   const { item } = byId('board.items.update').run(ctx, { path: [0], id: s.id, coords: 'thousandths', patch: { x: 500, w: 100 } });
   assert.deepEqual([item.x, item.y, item.w, item.h], [727, 217, 145, 305]);
+  delete globalThis.document;
+  delete globalThis.getComputedStyle;
   // A w or h that rounds to 0 stays 1 px.
   assert.deepEqual(fromThousandths({ x: 1, w: 1, h: 1 }, { w: 300, h: 300 }), { x: 0, w: 1, h: 1 });
   // A connector's free ends and waypoints scale too; a bound end stays.

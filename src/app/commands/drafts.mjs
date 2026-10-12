@@ -1,3 +1,4 @@
+import { migrateBoards } from '../../whiteboard.js';
 import { sortDrafts } from '../draft-order.mjs';
 import { draftTag, tagList } from '../drafts-meta.js';
 import { define, fail } from './define.mjs';
@@ -59,8 +60,10 @@ export const defs = [
     examples: [{ args: { draftId: EXAMPLE_ID } }],
     run: async (ctx, a) => {
       const open = ctx.state.draft?.id === a.draftId;
-      const draft = open ? { ...ctx.state.draft, doc: ctx.editor.getJSON() } : await ctx.api.drafts.load(a.draftId);
-      if (!draft) fail('not_found', `The draft ${a.draftId} could not be loaded`);
+      const loaded = open ? { ...ctx.state.draft, doc: ctx.editor.getJSON() } : await ctx.api.drafts.load(a.draftId);
+      if (!loaded) fail('not_found', `The draft ${a.draftId} could not be loaded`);
+      // A draft not opened since the merge still holds whiteboards on disk: shown as the canvases it opens as (§6b Converted whiteboards).
+      const draft = open ? loaded : { ...loaded, doc: migrateBoards(loaded.doc, ctx.state.settings.forumWidth) };
       const out = a.images ? draft : ctx.lib.stripImages(draft);
       return open ? { draft: out, rev: ctx.state.rev } : { draft: out };
     },

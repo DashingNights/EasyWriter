@@ -73,10 +73,10 @@ test('model form: title, brief, Not-for line, first example and guide lines; no 
     }
   }
   const get = model(['board.get'])[0].function;
-  assert.equal(get.description, 'Read the items of a whiteboard or canvas with their ids and labels. A sparse answer lists the ids left out in next. draftId: another draft to work on without opening it (drafts_list gives it); leave it out for the open draft. Not for: draft text. e.g. {"path":[4]}\n'
+  assert.equal(get.description, 'Read the items of a canvas with their ids and labels. A sparse answer lists the ids left out in next. draftId: another draft to work on without opening it (drafts_list gives it); leave it out for the open draft. Not for: draft text. e.g. {"path":[4]}\n'
     + 'Errors: precondition_failed means that path is not a board. Call board_list.');
   assert.ok(model(['board.items.add'])[0].function.description.endsWith('\nPlaybook: change-board-item.')); // wave 2b
-  assert.equal(get.parameters.properties.itemPath.description, 'Only for a canvas item inside a whiteboard, as its id. Omit it for a canvas block.');
+  assert.ok(!get.parameters.properties.itemPath);
   assert.equal(get.parameters.properties.path.description, 'Board block path, from board_list'); // a description beside a $ref is kept
   assert.equal(get.parameters.properties.path.type, 'array');
 });
@@ -155,7 +155,7 @@ test('ITEM_BRIEF: small, and accepts the board.items.add examples', () => {
   assert.ok(JSON.stringify(ITEM_BRIEF).length <= 2100, JSON.stringify(ITEM_BRIEF).length);
   for (const ex of byId('board.items.add').examples) for (const i of ex.args.items) assert.deepEqual(validate(ITEM_BRIEF, i), [], i.type);
   const add = model(['board.items.add'])[0].function.parameters;
-  assert.equal(add.properties.items.items.properties.type.enum.length, 6);
+  assert.equal(add.properties.items.items.properties.type.enum.length, 5);
 });
 
 test('viewOf: the page, no draft, the caret in text, a board, a canvas being edited, a node-selected board block', () => {

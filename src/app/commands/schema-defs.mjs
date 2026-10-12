@@ -1,6 +1,6 @@
 import { DASHES, HEADS, JUMPS, MAX_POINTS, ROUTES } from '../../flow/model.mjs';
 import { KINDS } from '../../flow/shapes.mjs';
-import { FILLS, WB_BG } from '../../whiteboard.js';
+import { FILLS } from '../../whiteboard.js';
 
 // Shared argument schemas of the command catalogue (SPEC §8; agent-automation plan §3.5): referenced as `{$ref: '#/$defs/X'}`
 // and listed in `$defs` (catalogue.mjs). Plain JSON; ITEM takes its enums from the board model (whiteboard.js, flow/*.mjs).
@@ -102,15 +102,7 @@ const CONNECTOR = item('connector', ['from', 'to'], {
   color: COLOR, width: SIZE, opacity: OPACITY, dash: { enum: DASHES }, jump: { enum: JUMPS },
   labels: { type: 'object', additionalProperties: false, properties: { start: LABEL, mid: LABEL, end: LABEL } },
 });
-const FLAT = [TEXT, IMAGE, SHAPE, STROKE, CONNECTOR];
-// A canvas item (a whiteboard's only): its artboard aw × ah shown at w × h; its own items never hold a canvas.
-const CANVAS = item('canvas', ['x', 'y', 'w', 'h', 'aw', 'ah'], {
-  ...BOX, aw: { type: 'number', minimum: 1, maximum: 8000 }, ah: { type: 'number', minimum: 1, maximum: 8000 },
-  frame: { anyOf: [{ type: 'null' }, { type: 'object', required: ['x', 'y', 'w', 'h'], properties: { ...BOX, item: ITEM_ID } }] },
-  bg: { enum: Object.keys(WB_BG) }, items: { type: 'array', maxItems: 2000, items: { oneOf: FLAT } }, rot: NUM, mirrorX: BOOL, mirrorY: BOOL,
-});
-
-export const ITEM = { oneOf: [...FLAT, CANVAS] };
+export const ITEM = { oneOf: [TEXT, IMAGE, SHAPE, STROKE, CONNECTOR] };
 
 // ITEM as the assistant sees it (MODEL_DEFS, catalogue.mjs; SPEC §8 Tool schemas): one flat object with the union of the
 // fields and the shape enums, a sixth of ITEM's size (connector ends, heads, labels and the layer fields described in words, the
@@ -120,15 +112,15 @@ const OBJ = { type: 'object' };
 export const ITEM_BRIEF = {
   type: 'object', required: ['type'],
   description: 'Fields by type. text: x y w html. shape: shape x y w h, html its label. connector: from, to as {item, anchor} or '
-    + '{x, y}, anchor n e s w ne nw se sw c. image: src x y w h. canvas (whiteboard only): x y w h aw ah items, no canvas in them. '
+    + '{x, y}, anchor n e s w ne nw se sw c. image: src x y w h. '
     + 'Colours #rrggbb. hidden, locked: true. groups: ids.',
   properties: {
-    type: { enum: ['text', 'shape', 'connector', 'image', 'stroke', 'canvas'] }, id: S, ...BOX,
+    type: { enum: ['text', 'shape', 'connector', 'image', 'stroke'] }, id: S, ...BOX,
     html: S, size: NUM, color: S, bold: BOOL, align: TEXT.properties.align, valign: SHAPE.properties.valign, bg: S,
     shape: SHAPE.properties.shape, width: NUM, opacity: NUM, fill: SHAPE.properties.fill, fillColor: S, rot: NUM, textColor: S,
     // heads: the common ones only (wave 1c, board.items.add within MAX_TOOL); a wrong name's invalid_args lists them all.
     from: OBJ, to: OBJ, route: { enum: ROUTES }, heads: { ...OBJ, description: 'start, end: such as none, arrow, triangle, diamond, circle, bar' }, dash: { enum: DASHES },
     labels: { ...OBJ, description: 'start, mid, end: {html}' },
-    src: S, aw: NUM, ah: NUM, frame: OBJ, items: { type: 'array' },
+    src: S,
   },
 };

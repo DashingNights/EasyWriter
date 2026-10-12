@@ -25,7 +25,7 @@ const MCP_VERSIONS = ['2025-11-25', '2025-06-18', '2025-03-26', '2024-11-05']; /
 const MAX_BODY = 64 * 1024 * 1024;
 const IDLE_MS = 30 * 60 * 1000; // an HTTP session unused this long is dropped; its client starts a new one on the 404
 const RPC = '2.0';
-const INSTRUCTIONS = 'EasyWriter is a desktop editor for forum post drafts with whiteboards, plans and flowcharts. '
+const INSTRUCTIONS = 'EasyWriter is a desktop editor for forum post drafts with canvases, plans and flowcharts. '
   + 'Start with ui_state or drafts_list; commands_index and commands_describe explain the commands. Blocks are addressed by path '
   + '(indices from doc_get or doc_find). Writes run at once and the user can undo them; deletes and pushes ask the user in the app.';
 // The stdio relay, outside the asar archive in a packaged app (package.json build.asarUnpack).

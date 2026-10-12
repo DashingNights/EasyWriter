@@ -1,3 +1,4 @@
+import { canvasEditor } from '../../canvas.js';
 import { BOARD_TYPES, posOfPath } from '../../doc-path.mjs';
 import { KEYS } from '../assistant/ui-tree.mjs';
 import { define, fail } from './define.mjs';
@@ -42,8 +43,8 @@ export const defs = [
     args: {
       type: 'object', additionalProperties: false, minProperties: 1,
       properties: {
-        path: ref('PATH', 'Block path, or the whiteboard holding ids'),
-        ids: { type: 'array', items: { type: 'string', minLength: 1, maxLength: 32 }, minItems: 1, maxItems: 500, description: 'Item ids on that whiteboard' },
+        path: ref('PATH', 'Block path, or the canvas in Canvas Mode holding ids'),
+        ids: { type: 'array', items: { type: 'string', minLength: 1, maxLength: 32 }, minItems: 1, maxItems: 500, description: 'Item ids on the active board' },
         draftId: DRAFT_ID,
       },
     },
@@ -61,10 +62,12 @@ export const defs = [
         }
         return { kind: 'node', path: a.path };
       }
-      const board = pos === null ? ctx.board : ed.view.nodeDOM(pos)?.wbView;
+      // With a path: that canvas's board, only while it is open in Canvas Mode.
+      const s = canvasEditor.get();
+      const board = pos === null ? ctx.board : !bg && s?.target.owner?.getPos?.() === pos ? s.board : null;
       if (!board) {
-        fail('refused', `The block at [${a.path}] is not a whiteboard`, {
-          code: 'not_a_whiteboard', hint: 'A canvas\'s items are selected while it is edited: canvas.edit {path}, then ui.select {ids}',
+        fail('refused', `The block at [${a.path}] is not open in Canvas Mode`, {
+          code: 'not_in_canvas_mode', hint: 'A canvas\'s items are selected while it is edited: canvas.edit {path}, then ui.select {ids}',
         });
       }
       const missing = a.ids.filter((id) => !board.items.some((i) => i.id === id));

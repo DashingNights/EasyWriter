@@ -1,6 +1,6 @@
 'use strict';
-// Layers panel smoke (§6c Layers panel; the black screen of 2026-10-12): a whiteboard with a text, a shape, an image and a
-// group, the panel open, the image row clicked, then a click back out on the board, in the document text and on the rail's
+// Layers panel smoke (§6c Layers panel; the black screen of 2026-10-12): a canvas in Canvas Mode with a text, a shape, an image
+// and a group, the panel open, the image row clicked, then a click back out on the board, in the document text and on the rail's
 // Layers button. Each must leave the app on screen with no uncaught error and no error boundary. Real input events
 // (sendInputEvent) on a throwaway profile (.smoke-data/layers-panel), the window on screen, inactive, ignoring the mouse.
 // Manual, never part of npm test:
@@ -80,16 +80,21 @@ async function run(win) {
     c.getContext('2d').fillRect(0, 0, 40, 30); return c.toDataURL(); })()`);
   await invoke('drafts.create');
   await invoke('doc.insert', { at: 'end', content: { markdown: 'Text before the board.' } });
-  const { result: { path: board } } = await invoke('board.insert', { kind: 'whiteboard', at: 'end' });
+  const { result: { path: board } } = await invoke('board.insert', { at: 'end', attrs: { w: 1000, h: 400 } });
   await invoke('board.items.add', { path: board, items: [
     { type: 'text', html: 'Text', x: 20, y: 20, w: 200 },
     { type: 'shape', shape: 'rect', x: 40, y: 120, w: 160, h: 100 },
     { type: 'image', src: png, x: 300, y: 40, w: 200, h: 150 },
     { type: 'shape', shape: 'rect', x: 600, y: 40, w: 80, h: 60, groups: ['g'] },
     { type: 'shape', shape: 'ellipse', x: 700, y: 40, w: 80, h: 60, groups: ['g'] }] });
-  await wait(500);
-  const wb = await at('.wb');
-  const empty = { x: wb.r - 30, y: wb.b - 30 };
+  let empty;
+  const edit = async () => { // Canvas Mode; its board is the one the panel lists
+    await invoke('canvas.edit', { path: board });
+    await wait(500);
+    const wb = await at('.sce-art .wb');
+    empty = { x: wb.r - 30, y: wb.b - 30 };
+  };
+  await edit();
   await click(empty); // the board becomes the active one, and the panel opens by itself (§6c Layers panel)
   await check('panel open');
   const IMAGE = `[...document.querySelectorAll('div[aria-label="Layers"] [data-layer] > div')].find((e) => e.textContent === 'Image')`;
@@ -104,6 +109,7 @@ async function run(win) {
   await click(await at('#editor .ProseMirror p'));
   await check('image row, then the document text clicked');
 
+  if (!(await at('.sce-art .wb'))) await edit(); // the click outside closed Canvas Mode
   await click(empty);
   await click(await image());
   await click(await at('[role=toolbar] [aria-label="Layers"]'));

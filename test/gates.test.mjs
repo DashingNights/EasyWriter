@@ -53,9 +53,9 @@ test('draft, doc, node and flow gates', () => {
   const synced = { type: 'canvas', attrs: { flow: { id: '3f1c2a9e-4b7d-4f1e-9c2a-7d5e1f0b8a21', rev: 2 } } };
   const plain = { type: 'canvas', attrs: { flow: null } };
   const wb = { type: 'whiteboard', attrs: {} };
-  assert.deepEqual([synced, plain, wb].map((n) => can('node.board', n)), [true, true, true]);
+  assert.deepEqual([synced, plain, wb, null].map((n) => can('node.board', n)), [true, true, false, false]);
   assert.deepEqual([synced, plain, wb].map((n) => can('node.canvas', n)), [true, true, false]);
-  assert.deepEqual([plain, wb, null].map((n) => can('node.whiteboard', n)), [false, true, false]);
+  assert.ok(!('node.whiteboard' in GATES));
   assert.deepEqual([synced, plain, wb].map((n) => can('flow.synced', n)), [true, false, false]);
   assert.deepEqual([synced, plain, wb].map((n) => can('flow.unsynced', n)), [false, true, false]);
   assert.equal(can('flow.open', { id: 'r', board: {} }), true);
