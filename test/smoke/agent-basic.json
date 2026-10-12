@@ -63,7 +63,7 @@
     "expect": { "ok": false, "code": "precondition_failed", "error": { "data": { "failed": [{ "gate": "draft.hasThread" }] } } } },
   { "id": "commands.index", "args": {}, "expect": { "ok": true, "result": { "categories": [{ "category": "app" }] } } },
   { "id": "commands.index", "args": { "category": "board" },
-    "expect": { "ok": true, "result": { "tools": [{ "name": "board_list" }, {}, {}, { "name": "board_items_add", "risk": "write" }] } } },
+    "expect": { "ok": true, "result": { "tools": [{ "name": "board_list" }, {}, {}, {}, { "name": "board_items_add", "risk": "write" }] } } },
   { "id": "commands.describe", "args": { "names": ["board_set", "nope"] },
     "expect": { "ok": true, "result": { "tools": { "$length": 1 }, "risk": { "board_set": "write" }, "unknown": ["nope"] } } },
   { "id": "batch", "args": { "steps": [
