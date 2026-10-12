@@ -148,7 +148,7 @@ export const partsText = (parts) => parts.map((p) => (typeof p === 'string' ? p 
 
 /** What the model gets for a user message (wave 1c: the request last, where a small model looks for it): each attachment as a
  * labelled block, then `pictures` (OpenAI content parts: a caption and its picture each, assistant.js), then `note` (where it came
- * from), then "Request: " and the user's words: a pill among them as "[label]" ("Request: Make [Whiteboard] bigger", wave 2), the
+ * from), then "Request: " and the user's words: a pill among them as "[label]" ("Request: Make [Canvas] bigger", wave 2), the
  * pills before the first word left out (the auto-attached selection; the situation note's "Selected:" line names it); a message of
  * pills only keeps their labels. Text, or content parts with neighbouring texts joined (a chat template may trim each text part and
  * glue it to the next). The situation note goes before all of it (context.mjs withNote). */

@@ -612,12 +612,14 @@ export function selection(ed = state.editor) {
   };
 }
 
-/** Whether the user is mid-gesture or editing text on the board at `path`, or editing that canvas (busy, §3.3 step 7). */
+/** Whether the user is mid-gesture or editing text on the canvas at `path` while it is open in Canvas Mode (busy, §3.3 step 7).
+ * An idle open canvas takes agent writes: CanvasView.update syncs the session. */
 function boardBusy(path) {
   const ed = state.editor;
   const pos = ed && posOfPath(ed.state.doc, path);
   if (pos == null) return false;
-  return canvasEditor.get()?.target.owner?.getPos?.() === pos;
+  const s = canvasEditor.get();
+  return s?.target.owner?.getPos?.() === pos && !!(s.board.gesture || s.board.editingId);
 }
 
 /** Whether any live board is mid-gesture or editing text (undo / redo would fight it). */

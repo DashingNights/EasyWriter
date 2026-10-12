@@ -42,10 +42,10 @@ export const VIEW_SETS = {
     'flow.layout'],
 };
 
-/** The VIEW_SETS key: the page when it is not the editor; no open draft → 'none'; the caret in text → 'editor'; a whiteboard
- * active, a canvas being edited (ui.state mode 'board' | 'canvas-edit'), a node-selected canvas, flowchart canvas, image or
- * whiteboard block (`nodeBoard`: ui.state's gate node.board) or a message that attaches board items (`boardItems`, wave 1c:
- * the chat box's focus ends the board's active state, so the mode is text again) → 'board'. */
+/** The VIEW_SETS key: the page when it is not the editor; no open draft → 'none'; the caret in text → 'editor'; a board
+ * active or a canvas being edited (ui.state mode 'board' | 'canvas-edit'), a node-selected canvas, flowchart canvas or image
+ * block (`nodeBoard`: ui.state's gate node.board) or a message that attaches board items (`boardItems`, wave 1c: the chat
+ * box's focus can end the board's active state) → 'board'. */
 export function viewOf({ view, mode, hasDoc, nodeBoard = false, boardItems = false }) {
   if (view !== 'editor') return Object.hasOwn(VIEW_SETS, view) ? view : 'none';
   if (!hasDoc) return 'none';

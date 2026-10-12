@@ -2827,8 +2827,8 @@ export class Board {
   }
 
   // Release on empty board area: the units of the items the rectangle touches become the selection (Shift: are added; a group
-  // whole at the scope, §6c Groups; hidden and locked items touch nothing); a click without a drag deselects (a whiteboard
-  // becomes node-selected).
+  // whole at the scope, §6c Groups; hidden and locked items touch nothing); a click without a drag deselects (the host's
+  // emptyClick).
   finishMarquee(g, add) {
     if (!g.marquee) {
       this.select(null);
@@ -3238,7 +3238,7 @@ export class Board {
   };
 
   // Tool keys (§6c Keyboard, §7k keybinds; `e` a key event): the board takes the focus and runs the tool → true; false for other
-  // keys. Also reached from the document while the whiteboard is node-selected (WhiteboardPaste).
+  // keys.
   toolKey(e) {
     const tools = {
       'board.select': () => this.mode && this.setMode(null),
@@ -3304,7 +3304,7 @@ export async function rasterizeWhiteboard(attrs, { width, theme, scale = 2 }) {
       skipFonts: true, // items only use system fonts
       imagePlaceholder: 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', // unfetchable <img> in old drafts
     });
-    if (!blob) throw new Error('Whiteboard rasterization produced no image');
+    if (!blob) throw new Error('Board rasterization produced no image');
     return { blob, width, height };
   } finally {
     host.remove();

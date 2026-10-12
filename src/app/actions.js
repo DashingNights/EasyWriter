@@ -135,7 +135,7 @@ export function run(fn) {
   if (state.editor) fn(state.editor.chain().focus()).run();
 }
 
-/** Moves a node selection (e.g. a clicked whiteboard) to just after the node, so an insert does not replace it. */
+/** Moves a node selection (e.g. a clicked canvas) to just after the node, so an insert does not replace it. */
 export const afterNodeSel = (c) => c.command(({ tr }) => {
   if (tr.selection instanceof NodeSelection) tr.setSelection(TextSelection.near(tr.doc.resolve(tr.selection.to)));
   return true;
@@ -150,7 +150,7 @@ export function insertCanvas() {
   openCanvasEditor(ed, $after.pos - $after.nodeBefore.nodeSize);
 }
 
-/** Whiteboard text edits reach the doc only when they end; commit an open one before saving or closing. Pending plan and
+/** Board text edits reach the doc only when they end; commit an open one before saving or closing. Pending plan and
  * library flowchart writes go out with it. */
 export function commitBoardEdit() {
   finishBoardEdits(); // the edited board keeps the focus, so a canvas being edited keeps its keys
@@ -763,7 +763,7 @@ export async function changeSettings(values) {
   const remount = ('theme' in values && values.theme !== s.theme) || ('historyLimit' in values && values.historyLimit !== s.historyLimit);
   await saveSettings(values);
   applySettings();
-  // Whiteboard NodeViews read the theme when they render and the history depth is set when the editor is built: remount
+  // Canvas NodeViews read the theme when they render and the history depth is set when the editor is built: remount
   // the editor, its history rebuilt (all the steps the open draft keeps in memory), so they pick the change up.
   if (remount && state.editor && await saveNow()) {
     const keep = state.settings.historyLimit || 50;
