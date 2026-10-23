@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { cn } from 'cn';
 import {
-  ChevronRight, CircleCheck, ExternalLink, Folder, FolderInput, FolderOpen, FolderPlus, Globe, LoaderCircle, LogIn, PanelLeftClose, PanelLeftOpen, Plus, Save,
-  Search, Send, Settings, SquareKanban, Tag, Undo2, Workflow, X,
+  ChevronRight, CircleCheck, ExternalLink, Folder, FolderInput, FolderOpen, FolderPlus, Globe, Link2, LoaderCircle, LogIn, PanelLeftClose, PanelLeftOpen, Plus,
+  Save, Send, Settings, SquareKanban, Tag, Undo2, Workflow, X,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -13,10 +13,11 @@ import {
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { SelectItem } from '@/components/ui/select';
 import {
-  addThreadUrl, deleteDraft, deleteFolder, discoverThreads, draftGroups, isForum, login, moveDraft, moveFolder, newFolder, openDraft, openInForum,
+  addThreadUrl, deleteDraft, deleteFolder, draftGroups, editProjectThread, hasForum, login, moveDraft, moveFolder, newFolder, openDraft, openInForum,
   openSettings, placeDraft, push, refocusEditor, removeThread, renameFolder, saveNow, selectThread, setDraftTag, setDraftThread,
   startNewDraft, threadLabel, toggleFolder, toggleSidebar, unpushDraft,
 } from '../actions.js';
+import { isProject, topicOf } from '../../thread-url.mjs';
 import { draftTag, tagList } from '../drafts-meta.js';
 import { keyLabel, withKey } from '../keybinds.js';
 import { can } from '../gates.mjs';
@@ -67,27 +68,19 @@ function RowAction({ title, onClick, slot: Slot, risk, children }) {
 function Account() {
   const status = useStore((s) => s.status);
   const loggingIn = useStore((s) => s.loggingIn);
-  const discovering = useStore((s) => s.discovering);
-  const forum = useStore((s) => isForum(s.settings));
+  const forum = useStore((s) => hasForum(s.settings));
   const label = !forum ? 'EasyWriter' : status.loggedIn ? `Logged in as ${status.name || `member ${status.memberId}`}` : 'Not logged in';
-  // One row: the label takes what is left (ellipsis), the icon buttons keep fixed slots, so nothing shifts. Projects mode has
-  // no forum to log in to or search.
+  // One row: the label takes what is left (ellipsis), the icon buttons keep fixed slots, so nothing shifts. The forum's sign-in
+  // shows once a project has a forum thread (settings.forumUrl).
   return (
     <Card className={FLAT}>
       <CardHeader className="flex items-center gap-1 px-2.5">
         <CardTitle className="min-w-0 flex-1 truncate text-sm" title={label}>{label}</CardTitle>
-        {forum && <>
-        <Tip title={status.loggedIn ? 'Open the forum window' : 'Log in to the forum in the forum window'}>
+        {forum && <Tip title={status.loggedIn ? 'Open the forum window' : 'Log in to the forum in the forum window'}>
           <Button variant="ghost" size="icon-sm" aria-label={status.loggedIn ? 'Forum window' : 'Log in'} data-agent-risk="approval" disabled={loggingIn} onClick={login}>
             {status.loggedIn ? <ExternalLink /> : <LogIn />}
           </Button>
-        </Tip>
-        <Tip title="Find my threads (your development threads on the forum)">
-          <Button variant="ghost" size="icon-sm" aria-label="Find my threads" disabled={discovering} onClick={discoverThreads}>
-            {discovering ? <LoaderCircle className="animate-spin" /> : <Search />}
-          </Button>
-        </Tip>
-        </>}
+        </Tip>}
         <Tip title="Settings">
           <Button variant="ghost" size="icon-sm" aria-label="Settings" onClick={openSettings}><Settings /></Button>
         </Tip>
@@ -96,14 +89,15 @@ function Account() {
   );
 }
 
-/** The open draft's post actions: thread select, Save, and Push / Unpush in one slot of the same width. */
+/** The open draft's post actions: project select, Save, and Push / Unpush in one slot of the same width (Push: its project has a
+ * forum thread). */
 function Post() {
   const threads = useStore((s) => s.settings?.threads) ?? [];
   const hasDraft = useStore((s) => !!s.draft);
   const draftThread = useStore((s) => s.draft?.threadUrl) || '';
   const pushed = useStore((s) => can('draft.pushed', s.draft));
-  const forum = useStore((s) => isForum(s.settings));
-  const unit = forum ? 'thread' : 'project';
+  const forum = useStore((s) => !!topicOf(s.settings?.threads, s.draft?.threadUrl));
+  const unit = 'project';
   return (
     <Card className={FLAT}>
       {/* One line: thread select (ellipsis), then Save and Push / Unpush as same-size icon buttons, so nothing shifts. */}
@@ -115,13 +109,13 @@ function Post() {
           <SelectItem value={NONE}>{`No ${unit}`}</SelectItem>
           {/* truncate: the capped trigger shows a long label with an ellipsis */}
           {threads.map((t) => <SelectItem key={t.url} value={t.url}><span className="truncate">{threadLabel(t)}</span></SelectItem>)}
-          {draftThread && !threads.some((t) => t.url === draftThread) && <SelectItem value={draftThread}><span className="truncate">{draftThread}</span></SelectItem>}
+          {draftThread && !threads.some((t) => t.url === draftThread) && <SelectItem value={draftThread}><span className="truncate">{isProject(draftThread) ? 'Removed project' : draftThread}</span></SelectItem>}
         </ToolSelect>
         </div>
         <Tip title={withKey('Save now', 'app.save')}>
           <Button variant="outline" size="icon-sm" aria-label={withKey('Save now', 'app.save')} onMouseDown={keepFocus} onClick={() => saveNow()}><Save /></Button>
         </Tip>
-        {forum && <Tip title={pushed ? 'Unpush: mark as not pushed (Submit was not pressed in the forum)' : 'Push to forum: fill the forum reply box with this draft'}>
+        {(forum || pushed) && <Tip title={pushed ? 'Unpush: mark as not pushed (Submit was not pressed in the forum)' : 'Push to forum: fill the forum reply box with this draft'}>
           {pushed
             ? <Button variant="outline" size="icon-sm" aria-label="Unpush" data-agent-risk="destructive" onMouseDown={keepFocus} onClick={() => unpushDraft(getState().draft)}><Undo2 /></Button>
             : <Button size="icon-sm" aria-label="Push to forum" data-agent-risk="approval" onMouseDown={keepFocus} onClick={push}><Send /></Button>}
@@ -136,53 +130,56 @@ function Threads() {
   usePlans(); // the plan counts
   if (!settings) return null;
   const { threads, selectedThread } = settings;
-  const forum = isForum(settings);
 
-  // Forum threads group by year and subject; projects have neither and show as one list (no headings).
+  // Projects whose forum thread names a year and subject group under them; the rest come first, with no headings.
   const years = new Map();
   for (const t of threads) {
-    const year = forum ? t.year || 'Other' : '';
-    const subject = forum ? t.subject || 'Other' : '';
+    const year = t.year || '';
+    const subject = t.subject || '';
     if (!years.has(year)) years.set(year, new Map());
     const subjects = years.get(year);
     if (!subjects.has(subject)) subjects.set(subject, []);
     subjects.get(subject).push(t);
   }
-  const byName = (a, b) => (a === 'Other') - (b === 'Other') || a.localeCompare(b);
-  const yearOrder = [...years.keys()].sort((a, b) => (a === 'Other') - (b === 'Other') || b.localeCompare(a));
+  const byName = (a, b) => (b === '') - (a === '') || a.localeCompare(b);
+  const yearOrder = [...years.keys()].sort((a, b) => (b === '') - (a === '') || b.localeCompare(a));
 
   return (
     <Card className={`${FLAT} gap-1.5`}>
-      <CardHeader className="px-2.5"><SectionTitle>{forum ? 'Threads' : 'Projects'}</SectionTitle></CardHeader>
+      <CardHeader className="px-2.5"><SectionTitle>Projects</SectionTitle></CardHeader>
       <CardContent className="px-1">
         <Row active={!selectedThread} onClick={() => selectThread(null)}>
           <span className="min-w-0 flex-1 truncate">All drafts</span>
         </Row>
-        {!threads.length && <p className="px-1.5 py-1 text-xs text-muted-foreground">{forum ? 'No threads yet. Use "Find my threads" or add a URL.' : 'No projects yet.'}</p>}
+        {!threads.length && <p className="px-1.5 py-1 text-xs text-muted-foreground">No projects yet.</p>}
         {yearOrder.map((year) => (
           <div key={year}>
             {year && <div className="mt-1.5 px-1.5 text-xs text-muted-foreground">{year}</div>}
             {[...years.get(year).keys()].sort(byName).map((subject) => (
               <div key={subject}>
                 {subject && <div className="mt-1 truncate px-1.5 font-semibold" title={subject}>{subject}</div>}
-                {years.get(year).get(subject).map((t) => (
-                  <Row key={t.url} active={t.url === selectedThread} title={!forum ? t.title : t.forum ? `${t.forum}\n${t.url}` : t.url}
+                {years.get(year).get(subject).map((t) => {
+                  const topic = topicOf(threads, t.url);
+                  return (
+                  <Row key={t.url} active={t.url === selectedThread} title={t.forum ? `${t.forum}\n${topic}` : topic || t.title}
                     onClick={() => selectThread(t.url)}>
                     <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground group-hover:text-foreground">{t.title || t.url}</span>
                     {planFor(t.url) && (
                       <Tip title="Open tickets in its plan"><span className="shrink-0 text-xs text-muted-foreground tabular-nums">{openCount(planFor(t.url).id)}</span></Tip>
                     )}
                     <RowAction title="Plan board" onClick={() => openPlan(t.url)}><SquareKanban /></RowAction>
-                    {forum && t.url.startsWith('https:') && <RowAction title="Open in forum" risk="approval" onClick={() => openInForum(t.url)}><ExternalLink /></RowAction>}
-                    <RowAction title={forum ? 'Remove thread from list' : 'Remove project from list'} risk="destructive" onClick={() => removeThread(t)}><X /></RowAction>
+                    {topic && <RowAction title="Open in forum" risk="approval" onClick={() => openInForum(topic)}><ExternalLink /></RowAction>}
+                    {isProject(t.url) && <RowAction title={topic ? 'Forum thread: change or unlink' : 'Link a forum thread'} onClick={() => editProjectThread(t)}><Link2 /></RowAction>}
+                    <RowAction title="Remove project from list" risk="destructive" onClick={() => removeThread(t)}><X /></RowAction>
                   </Row>
-                ))}
+                  );
+                })}
               </div>
             ))}
           </div>
         ))}
         <Button variant="ghost" size="xs" className="mt-0.5 h-7.5 w-full justify-start text-muted-foreground" data-add-thread onClick={addThreadUrl}>
-          <Plus />{forum ? 'Add thread URL' : 'New project'}
+          <Plus />New project
         </Button>
       </CardContent>
     </Card>

@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Slider } from '@/components/ui/slider';
 import { Textarea } from '@/components/ui/textarea';
 import { doneColumnOf, statusOf, unitOf } from '../../../plan/plan-model.mjs';
-import { isForum, openInForum, refocusEditor } from '../../actions.js';
+import { openInForum, refocusEditor } from '../../actions.js';
 import { getState } from '../../store.js';
 import { deleteTickets, dispatch, moveCards, planContext, usePlans } from '../../plans.js';
 import { openDraftFromPlan, PRIORITIES } from './Card.jsx';
@@ -168,7 +168,7 @@ export function TicketDialog({ planId, ticketId, init = {}, onClose }) {
   const removeUrl = (urlId) => (isNew ? set({ urls: t.urls.filter((u) => u.id !== urlId) }) : dispatch('plan.urls.remove', { planId, ticketId, urlId }));
   const openUrl = (url) => {
     const { settings } = getState(); // a link to the forum site opens in the forum window (its sign-in), any other outside
-    return isForum(settings) && settings.forumUrl && url.startsWith(`${settings.forumUrl}/`) ? openInForum(url) : window.open(url);
+    return settings.forumUrl && url.startsWith(`${settings.forumUrl}/`) ? openInForum(url) : window.open(url);
   };
   const setDraft = (draftId) => {
     if (isNew) return set({ draftId });

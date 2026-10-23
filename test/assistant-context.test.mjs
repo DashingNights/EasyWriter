@@ -117,9 +117,9 @@ test('situationNote: page, open draft, thread, selection, canvas and the thread\
   });
   const lines = note.split('\n');
   assert.equal(lines[0], '[Situation note from the app. It is current for this message.]');
-  assert.deepEqual(lines.slice(1, 7), ['Page: Editor', 'Open draft: "Week 2", tag Done', 'Thread: "Level design dev thread"',
+  assert.deepEqual(lines.slice(1, 7), ['Page: Editor', 'Open draft: "Week 2", tag Done', 'Project: "Level design dev thread"',
     'Selected: Flowchart canvas at block [4] of the draft. It is attached as [Flowchart canvas].', 'Canvas being edited: none',
-    'Drafts in this thread (34, the first 30 in sidebar order)']);
+    'Drafts in this project (34, the first 30 in sidebar order)']);
   assert.equal(lines.filter((l) => l.startsWith('- ')).length, NOTE_DRAFTS);
   assert.equal(lines[8], '- "Week 2", tag Done');
   assert.equal(lines.at(-1), '[End of situation note]');

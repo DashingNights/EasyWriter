@@ -126,7 +126,7 @@ const MODE_LINES = {
 /** The situation note the app puts before the user's message at send time; `s` = {page: 'editor' | 'plan' | 'flows', plan?,
  * flow? (the workspace's title), draft: {title, tag?} | null, thread?, selection: {label, summary, attached} | null, canvas? (the
  * canvas being edited, e.g. "the canvas at block [4]"), background?: [title] (the drafts with a background session, sessions.js),
- * drafts: [{title, tag?}], total, scope: 'thread' | 'all', projects? (projects mode: the entries are projects, no forum), permission?:
+ * drafts: [{title, tag?}], total, scope: 'thread' | 'all', forum? (the open draft's project has a forum thread: Push works), permission?:
  * 'standard' | 'ask' | 'readonly' | 'all', playbooks?: [{id?, title, text}] (playbooks.mjs pickPlaybooks, under "How to do this:")}. Never
  * stored. */
 export function situationNote(s) {
@@ -139,19 +139,17 @@ export function situationNote(s) {
     `Page: ${page}${where}`,
     `Open draft: ${s.draft ? `${tagged(s.draft)}${s.draftId ? ` (id ${s.draftId})` : ''}${s.page === 'editor' ? '' : ' (behind this page)'}` : 'none'}`,
   ];
-  const unit = s.projects ? 'Project' : 'Thread';
-  if (s.draft) lines.push(`${unit}: ${s.thread ? q(s.thread) : 'none'}`);
+  if (s.draft) lines.push(`Project: ${s.thread ? `${q(s.thread)}${s.forum ? ', linked to a forum thread' : ''}` : 'none'}`);
   if (s.background?.length) lines.push(`Working in the background on: ${s.background.map(q).join(', ')}`);
   const sel = s.selection;
   lines.push(`Selected: ${sel ? `${clip(sel.summary, 140)}${sel.attached ? `. It is attached as [${sel.label}].` : ''}` : 'nothing'}`);
   if (s.page === 'editor' && s.draft) lines.push(`Canvas being edited: ${s.canvas || 'none'}`);
   const shown = s.drafts.slice(0, NOTE_DRAFTS);
-  const head = s.scope === 'thread' ? `Drafts in this ${unit.toLowerCase()}` : 'Drafts';
+  const head = s.scope === 'thread' ? 'Drafts in this project' : 'Drafts';
   const count = s.total > shown.length ? `${s.total}, the first ${shown.length} in sidebar order` : String(s.total);
   lines.push(`${head} (${count})${shown.length ? '' : ': none'}`, ...shown.map((d) => `- ${tagged(d)}${d.id ? ` (id ${d.id})` : ''}`));
   // Google AI: the open draft's blocks with their paths (capture.js outlineLines), so the model knows the draft before it acts.
   if (s.outline?.length) lines.push('Open draft outline (block paths for the doc and board tools):', ...s.outline);
-  if (s.projects) lines.push('Projects mode: the threads tools work on projects. There is no forum to push to or log in to.');
   if (MODE_LINES[s.permission]) lines.push(MODE_LINES[s.permission]);
   // A playbook's id goes after its title (wave 2b): the tool text of board_items_add, batch and canvas_edit names it.
   if (s.playbooks?.length) lines.push('How to do this:', ...s.playbooks.map((p) => `${p.title}${p.id ? ` (playbook ${p.id})` : ''}\n${p.text}`));

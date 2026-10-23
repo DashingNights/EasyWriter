@@ -43,8 +43,8 @@ test('board gates read a snapshot; no board fails them all', () => {
 });
 
 test('draft, doc, node and flow gates', () => {
-  const pushed = { id: 'x', threadUrl: 'https://daf.staffs.ac.uk/topic/1-a/', pushedAt: 5 };
-  const fresh = { id: 'y', threadUrl: null, pushedAt: null };
+  const pushed = { id: 'x', threadUrl: 'project:0b2c8f0e-1c4e-4f8a-9d6a-2b7f3c9e1a55', pushedAt: 5, topic: 'https://forum.example.com/topic/1-a/' };
+  const fresh = { id: 'y', threadUrl: 'project:0b2c8f0e-1c4e-4f8a-9d6a-2b7f3c9e1a55', pushedAt: null, topic: '' };
   assert.deepEqual([can('draft.pushed', pushed), can('draft.unpushed', pushed), can('draft.hasThread', pushed)], [true, false, true]);
   assert.deepEqual([can('draft.pushed', fresh), can('draft.unpushed', fresh), can('draft.hasThread', fresh)], [false, true, false]);
   assert.equal(can('draft.unpushed', null), false);

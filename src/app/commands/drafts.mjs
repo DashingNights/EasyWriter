@@ -9,7 +9,7 @@ import { CONTENT, ID, ref, TAG_ID } from './schema-defs.mjs';
 
 const DRAFT = { type: 'object', required: ['draftId'], additionalProperties: false, properties: { draftId: ref('ID', 'The draft id from drafts_list') } };
 const EXAMPLE_ID = '0b2c8f0e-1c4e-4f8a-9d6a-2b7f3c9e1a55';
-const THREAD = 'project:3a7c9e1b-5d2f-4b8a-9c6e-1f0d2b4a6c8e'; // a project key (threads.list); forum mode: a topic URL
+const THREAD = 'project:3a7c9e1b-5d2f-4b8a-9c6e-1f0d2b4a6c8e'; // a project key (threads.list); a forum thread added before projects is keyed by its topic URL
 
 /** The draft `id` (the open one carries the live fields), or null. */
 const draftOf = (ctx, id) => (ctx.state.draft?.id === id ? ctx.state.draft : ctx.state.drafts.find((d) => d.id === id) ?? null);

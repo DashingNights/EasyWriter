@@ -22,7 +22,6 @@ const state = {
   zoom: 78,          // 'fit' or a percent; opens at 78 %
   zoomPct: 100,      // the page zoom applied, in percent (the computed one while zoom is 'fit')
   overlay: null,     // push overlay text, null = hidden
-  discovering: false,
   loggingIn: false,
   dialog: null,      // { type, props, resolve } — the open form dialog
   confirm: null,     // { title, description, confirmText, destructive, alert, resolve } — the open AlertDialog

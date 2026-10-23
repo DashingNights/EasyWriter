@@ -58,47 +58,6 @@ const TOPIC_HELPERS = `
       return threads.filter(Boolean);
     };`;
 
-// Async IIFE → {threads:[{url,title,subject,year,forum}]} or {error}.
-const DISCOVER_SCRIPT = `(async () => {
-  try {
-    const status = ${STATUS_SCRIPT};
-    if (!status.loggedIn) return { error: 'not-logged-in' };
-    if (!status.profileUrl) return { error: 'profile link not found on forum page' };
-${TOPIC_HELPERS}
-    const absolute = (href, base) => {
-      const u = new URL(href, base);
-      u.search = '';
-      u.hash = '';
-      return u.href;
-    };
-
-    // 1. Topic URLs from the profile's content list (max 10 pages).
-    const urls = [];
-    const visited = new Set();
-    let next = status.profileUrl + 'content/?type=forums_topic';
-    while (next && visited.size < 10 && !visited.has(next)) {
-      visited.add(next);
-      const pageUrl = next;
-      const doc = await fetchDoc(pageUrl);
-      for (const row of doc.querySelectorAll('li.ipsData__item')) {
-        const link = [...row.querySelectorAll('a[href*="/topic/"]')]
-          .find((a) => a.textContent.trim() !== 'Go to first unread post');
-        if (!link) continue;
-        const url = absolute(link.getAttribute('href'), pageUrl);
-        if (!urls.includes(url)) urls.push(url);
-      }
-      const nextEl = doc.querySelector('link[rel="next"], a[rel="next"]');
-      const nextHref = nextEl && nextEl.getAttribute('href');
-      next = nextHref ? new URL(nextHref, pageUrl).href : null;
-    }
-
-    // 2. Title, subject, year and forum from each topic page.
-    return { threads: await describeTopics(urls) };
-  } catch (e) {
-    return { error: String((e && e.message) || e) };
-  }
-})()`;
-
 // Async IIFE → {threads:[{url,title,subject,year,forum}]} (the topics `urls` that could be read) or {error}.
 function describeThreadsScript(urls) {
   return `(async (urls) => {
@@ -209,4 +168,4 @@ function buildPushScript(payload) {
 })(${JSON.stringify(payload)})`;
 }
 
-module.exports = { buildPushScript, describeThreadsScript, STATUS_SCRIPT, DISCOVER_SCRIPT };
+module.exports = { buildPushScript, describeThreadsScript, STATUS_SCRIPT };

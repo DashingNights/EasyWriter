@@ -60,7 +60,7 @@
     "expect": { "ok": true, "undoSteps": 1, "result": { "ungrouped": { "$length": 1 } } } },
   { "id": "export.preview", "args": {}, "expect": { "ok": true, "result": { "html": { "$contains": "Intro" }, "images": { "$length": 1 } } } },
   { "id": "push.prepare", "args": { "draftId": "$steps[0].result.draftId" },
-    "expect": { "ok": false, "code": "precondition_failed", "error": { "data": { "failed": [{ "gate": "draft.hasThread" }] } } } },
+    "expect": { "ok": false, "code": "precondition_failed", "error": { "data": { "failed": [{ "gate": "app.forum" }, { "gate": "draft.hasThread" }] } } } },
   { "id": "commands.index", "args": {}, "expect": { "ok": true, "result": { "categories": [{ "category": "app" }] } } },
   { "id": "commands.index", "args": { "category": "board" },
     "expect": { "ok": true, "result": { "tools": [{ "name": "board_list" }, {}, {}, {}, { "name": "board_items_add", "risk": "write" }] } } },

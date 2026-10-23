@@ -23,14 +23,27 @@ function LinkDialog({ href, onClose }) {
   );
 }
 
-/** Add thread URL (forum mode, a topic of `site`), or New project (`project`: a name only). */
-function AddThreadDialog({ project, site, validate, onClose }) {
-  const [value, setValue] = useState('');
+const THREAD_HINT = 'https://forum.example.com/topic/12345-.../';
+
+/** New project: a name, a forum thread (optional), or both → {name, thread}. */
+function AddThreadDialog({ validate, onClose }) {
+  const [name, setName] = useState('');
+  const [thread, setThread] = useState('');
   return (
-    <FormDialog title={project ? 'New project' : 'Add thread URL'} okText={project ? 'Create' : 'Add'} validate={() => validate(value)} result={() => value} onClose={onClose}>
-      {project
-        ? <Input aria-label="Project name" className="h-8" maxLength={200} value={value} placeholder="Project name" onChange={(e) => setValue(e.target.value)} />
-        : <Input type="url" className="h-8" value={value} placeholder={`${site || 'https://forum.example.com'}/topic/12345-.../`} onChange={(e) => setValue(e.target.value)} />}
+    <FormDialog title="New project" okText="Create" validate={() => validate({ name, thread })} result={() => ({ name, thread })} onClose={onClose}>
+      <Input aria-label="Project name" className="h-8" maxLength={200} value={name} placeholder="Project name" onChange={(e) => setName(e.target.value)} />
+      <Input aria-label="Forum thread" spellCheck={false} className="h-8" value={thread} placeholder="Forum thread link (optional)"
+        onChange={(e) => setThread(e.target.value)} />
+    </FormDialog>
+  );
+}
+
+/** A project's forum thread: its topic URL, or empty to unlink it. */
+function ProjectThreadDialog({ value: start, validate, onClose }) {
+  const [value, setValue] = useState(start);
+  return (
+    <FormDialog title="Forum thread" okText={value.trim() || !start ? 'Link' : 'Unlink'} validate={() => validate(value)} result={() => value} onClose={onClose}>
+      <Input aria-label="Forum thread" spellCheck={false} className="h-8" value={value} placeholder={THREAD_HINT} onChange={(e) => setValue(e.target.value)} />
     </FormDialog>
   );
 }
@@ -38,7 +51,7 @@ function AddThreadDialog({ project, site, validate, onClose }) {
 function ChooseThreadDialog({ threads, selected, onClose }) {
   const [value, setValue] = useState(threads.some((t) => t.url === selected) ? selected : threads[0].url);
   return (
-    <FormDialog title="Choose the thread for this draft" okText="Use thread" result={() => value} onClose={onClose}>
+    <FormDialog title="Choose the project to push this draft to" okText="Use project" result={() => value} onClose={onClose}>
       <Select value={value} onValueChange={setValue}>
         <SelectTrigger size="sm" className="w-full"><SelectValue /></SelectTrigger>
         <SelectContent>
@@ -49,7 +62,7 @@ function ChooseThreadDialog({ threads, selected, onClose }) {
   );
 }
 
-const CORE = { link: LinkDialog, addThread: AddThreadDialog, chooseThread: ChooseThreadDialog, settings: SettingsDialog };
+const CORE = { link: LinkDialog, addThread: AddThreadDialog, projectThread: ProjectThreadDialog, chooseThread: ChooseThreadDialog, settings: SettingsDialog };
 const FORMS = { ...CORE, ...PLAN_FORMS, ...FLOW_FORMS };
 
 /** confirmDialog(): AlertDialog with Cancel and a confirm button (only OK for an alert). */

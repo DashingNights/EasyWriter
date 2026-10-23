@@ -18,6 +18,7 @@ import { commandIdOf, toolsFor } from './commands/tools-schema.mjs';
 import { argsDigest, cyrb53 } from './digest.mjs';
 import * as flows from './flows.js';
 import { can, GATES } from './gates.mjs';
+import { topicOf } from '../thread-url.mjs';
 import * as plans from './plans.js';
 import { mapPath } from './rev.js';
 import { deref, validate, withDefaults } from './schema.mjs';
@@ -280,7 +281,7 @@ function subjectOf(kind, args = {}, sess = null) {
     case 'ui': return sess ? { editor: sess.editor, view: { type: 'editor' } } : state;
     case 'draft': {
       const d = args.draftId ? draftById(args.draftId) : state.draft;
-      return d && { id: d.id, threadUrl: d.threadUrl ?? null, pushedAt: d.pushedAt ?? null };
+      return d && { id: d.id, threadUrl: d.threadUrl ?? null, pushedAt: d.pushedAt ?? null, topic: topicOf(state.settings?.threads, d.threadUrl) };
     }
     case 'doc': return ed && { inTable: ed.isActive('table') };
     case 'history': return ed && { canUndo: undoDepth(ed.state) > 0, canRedo: redoDepth(ed.state) > 0 };

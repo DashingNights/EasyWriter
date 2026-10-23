@@ -866,7 +866,6 @@ const selectText = (el) => el?.select(); // stable ref callback: the first field
 
 /** Settings + presets manager, scrolled to `section` (a SECTIONS id) when given. Closes with the settings patch, or null. */
 export function SettingsDialog({ settings: s, section, onClose }) {
-  const [mode, setMode] = useState(s.mode === 'forum' ? 'forum' : 'projects');
   const [forumUrl, setForumUrl] = useState(s.forumUrl ?? '');
   const [width, setWidth] = useState(String(s.forumWidth));
   const [theme, setTheme] = useState(s.theme !== 'light' ? 'dark' : 'light');
@@ -937,7 +936,7 @@ export function SettingsDialog({ settings: s, section, onClose }) {
   // the click's own submit (dispatched synchronously); one the browser blocks (a number field out of range) must not leave it set.
   const tour = useRef(false);
   const validate = () => {
-    if (mode === 'forum' && !forumOrigin(forumUrl)) return 'Enter the forum site address, like https://forum.example.com.';
+    if (forumUrl.trim() && !forumOrigin(forumUrl)) return 'Enter the forum site address, like https://forum.example.com, or leave it empty.';
     const w = Number(width);
     if (!(Number.isInteger(w) && w >= 320 && w <= 4000)) return 'Forum width must be a whole number between 320 and 4000.';
     if (dictation.serverUrl.trim() && !URL_RE.test(dictation.serverUrl.trim())) return 'The dictation server URL must start with http:// or https://.';
@@ -950,8 +949,7 @@ export function SettingsDialog({ settings: s, section, onClose }) {
     return /^\d+$/.test(historyLimit) && Number(historyLimit) <= 500 ? '' : 'Undo history must be a whole number between 0 and 500.';
   };
   const result = () => ({
-    mode,
-    forumUrl: mode === 'forum' ? forumOrigin(forumUrl) : s.forumUrl ?? '', // projects mode keeps the site for a switch back
+    forumUrl: forumOrigin(forumUrl),
     forumWidth: Number(width),
     theme,
     baseFont,
@@ -998,16 +996,12 @@ export function SettingsDialog({ settings: s, section, onClose }) {
         <div ref={paneRef} onScroll={spy} className="relative -ml-1 min-h-0 overflow-y-auto pr-3 pl-1" data-settings-pane>
           <Section id="general" title="General">
             <div className={FIELDS}>
-              <Label className="text-muted-foreground">Drafts belong to</Label>
-              <Pick label="Drafts belong to" value={mode} onChange={setMode} options={[['projects', 'Projects'], ['forum', 'Forum threads']]} className="w-44" />
-              {mode === 'forum' && <>
-                <Label htmlFor="set-forum" className="text-muted-foreground">Forum site</Label>
-                <div className="flex items-center gap-2">
-                  <Input id="set-forum" type="url" className="h-8 w-72" spellCheck={false} placeholder="https://forum.example.com" value={forumUrl}
-                    onChange={(e) => setForumUrl(e.target.value)} />
-                  <span className="text-xs text-muted-foreground">An Invision Community site</span>
-                </div>
-              </>}
+              <Label htmlFor="set-forum" className="text-muted-foreground">Forum site</Label>
+              <div className="flex items-center gap-2">
+                <Input id="set-forum" type="url" className="h-8 w-72" spellCheck={false} placeholder="None yet" value={forumUrl}
+                  onChange={(e) => setForumUrl(e.target.value)} />
+                <span className="text-xs text-muted-foreground">The first forum thread you link to a project sets it</span>
+              </div>
               <Label htmlFor="set-width" className="text-muted-foreground">Forum width</Label>
               <div className="flex items-center gap-2">
                 <Input id="set-width" type="number" min={320} max={4000} step={1} className="h-8 w-28" value={width} autoFocus ref={selectText}

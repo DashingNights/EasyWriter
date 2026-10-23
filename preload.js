@@ -22,7 +22,6 @@ contextBridge.exposeInMainWorld('api', {
   forum: {
     status: call('forum.status'),
     login: call('forum.login'),
-    discover: call('forum.discover'),
     describe: call('forum.describe'),
     push: call('forum.push'),
     open: call('forum.open'),

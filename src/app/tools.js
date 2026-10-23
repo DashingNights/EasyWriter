@@ -10,7 +10,7 @@ import { SelectItem } from '@/components/ui/select';
 import { canvasEditor, flowSource } from '../canvas.js';
 import { FONTS, TEXT_COLORS } from '../extensions.js';
 import { KINDS } from '../flow/shapes.mjs';
-import { applyPresetAt, commitBoardEdit, isForum, openSettings, push, saveNow, threadLabel } from './actions.js';
+import { applyPresetAt, commitBoardEdit, openSettings, push, saveNow, threadLabel } from './actions.js';
 import { toggleChat } from './assistant/assistant.js';
 import { closePanes, HOME, newTab, openPane, openPanes } from './browser.js';
 import { invoke } from './commands.js';
@@ -26,6 +26,7 @@ import { BlockSelect, FontSelect, NONE, SizeSelect, Swatches, textTools, ToolBut
 import { draftTag, tagList } from './drafts-meta.js';
 import { openFlows } from './flows.js';
 import { can, GATES } from './gates.mjs';
+import { topicOf } from '../thread-url.mjs';
 import { getState, useStore } from './store.js';
 import { blockKind, flowchartMode } from './tool-rank.mjs';
 import { showPage } from './views.js';
@@ -73,7 +74,10 @@ function subjectOf(kind, c) {
     case 'board': return c.snap;
     case 'doc': return c.ed && { inTable: c.ed.isActive('table') };
     case 'history': return c.snap ?? (c.ed && { canUndo: c.ed.can().undo(), canRedo: c.ed.can().redo() });
-    case 'draft': return getState().draft;
+    case 'draft': {
+      const d = getState().draft;
+      return d && { ...d, topic: topicOf(getState().settings?.threads, d.threadUrl) };
+    }
     case 'settings': return getState().settings;
     case 'node': return c.block;
     case 'flow': { // the record a node-selected synced canvas shows
@@ -280,8 +284,7 @@ const saved = () => !!getState().draft?.id; // a draft not saved yet has no id t
 function ThreadPick() {
   const threads = useStore((s) => s.settings.threads);
   const value = useStore((s) => s.settings.selectedThread ?? NONE);
-  const forum = useStore((s) => isForum(s.settings));
-  return h(ToolSelect, { title: forum ? 'Thread' : 'Project', className: 'w-64', value, onChange: (v) => runCommand(PALETTE.selectThread, { url: v === NONE ? null : v }) },
+  return h(ToolSelect, { title: 'Project', className: 'w-64', value, onChange: (v) => runCommand(PALETTE.selectThread, { url: v === NONE ? null : v }) },
     h(SelectItem, { value: NONE }, 'All drafts'),
     ...threads.map((t) => h(SelectItem, { key: t.url, value: t.url }, h('span', { className: 'truncate' }, threadLabel(t)))));
 }
@@ -319,7 +322,7 @@ const APP = [
     keywords: ['settings', 'preferences', 'options', 'config', 'configure', 'theme', 'dark mode', 'light mode', 'forum width', 'tags'] },
   { id: 'assistant', label: 'Assistant', group: 'App', icon: h(MessageSquare), key: 'app.assistant', run: () => toggleChat(), headless: false,
     keywords: ['assistant', 'chat', 'ai', 'ask', 'help', 'bot', 'model', 'llm', 'local ai', 'agent', 'copilot', 'assistent', 'asistant'] },
-  { id: 'select-thread', label: 'Select project or thread...', group: 'App', icon: h(MessagesSquare), options: () => h(ThreadPick),
+  { id: 'select-thread', label: 'Select project...', group: 'App', icon: h(MessagesSquare), options: () => h(ThreadPick),
     keywords: ['project', 'select project', 'thread', 'select thread', 'filter', 'topic', 'show thread', 'switch thread', 'all drafts', 'subject'] },
   { id: 'tag-draft', label: 'Tag draft...', group: 'App', icon: h(Tag), also: saved, options: () => h(TagPick),
     keywords: ['tag', 'status', 'label', 'to do', 'todo', 'in progress', 'done', 'mark as', 'workflow'] },

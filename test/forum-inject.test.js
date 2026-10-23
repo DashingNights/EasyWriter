@@ -2,7 +2,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const vm = require('node:vm');
-const { buildPushScript, describeThreadsScript, STATUS_SCRIPT, DISCOVER_SCRIPT } = require('../src/forum-inject.js');
+const { buildPushScript, describeThreadsScript, STATUS_SCRIPT } = require('../src/forum-inject.js');
 
 // ---- Minimal ProseMirror-like document: paragraphs of text / ipsAttachment leaves ----
 
@@ -174,9 +174,8 @@ const payload = {
   ],
 };
 
-test('STATUS_SCRIPT, DISCOVER_SCRIPT, describe and push scripts are valid JS', () => {
+test('STATUS_SCRIPT, describe and push scripts are valid JS', () => {
   new vm.Script(STATUS_SCRIPT);
-  new vm.Script(DISCOVER_SCRIPT);
   new vm.Script(describeThreadsScript(['https://daf.staffs.ac.uk/topic/1-a/']));
   new vm.Script(buildPushScript(payload));
 });

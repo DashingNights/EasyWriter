@@ -27,7 +27,7 @@ import { DRAFT_ID, ITEM, ITEM_ID, ref } from './schema-defs.mjs';
 const GROUP = 'flow';
 const FLOW_ID = ref('ID', 'From flow_library_list');
 const EX = '5f0c2a9e-7b1d-4c3e-9a8f-1d2e3f4a5b6c';
-const THREAD = 'project:3a7c9e1b-5d2f-4b8a-9c6e-1f0d2b4a6c8e'; // a project key (threads.list); forum mode: a topic URL
+const THREAD = 'project:3a7c9e1b-5d2f-4b8a-9c6e-1f0d2b4a6c8e'; // a project key (threads.list); a forum thread added before projects is keyed by its topic URL
 const IDS = { type: 'array', items: ITEM_ID, minItems: 1, maxItems: 500 };
 const TITLE = { type: 'string', minLength: 1, maxLength: 120 };
 const SYNCED = 'Synced canvases update too.';

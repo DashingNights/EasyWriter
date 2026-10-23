@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Slider } from '@/components/ui/slider';
-import { isForum, openSettings, refocusEditor, setZoom } from '../actions.js';
+import { hasForum, openSettings, refocusEditor, setZoom } from '../actions.js';
 import { on } from '../commands.js';
 import { useStore } from '../store.js';
 import { InlineInput } from './InlineInput.jsx';
@@ -65,7 +65,7 @@ export function StatusBar() {
   const saveError = useStore((s) => s.saveError);
   const words = useStore((s) => s.words);
   const status = useStore((s) => s.status);
-  const forum = useStore((s) => isForum(s.settings));
+  const forum = useStore((s) => hasForum(s.settings));
   const zoom = useStore((s) => s.zoom);
   const zoomPct = useStore((s) => s.zoomPct);
   const [editing, setEditing] = useState(false);

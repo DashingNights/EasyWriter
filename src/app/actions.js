@@ -6,7 +6,7 @@ import { toast as sonner } from 'sonner';
 import { canvasEditor, openCanvasEditor } from '../canvas.js';
 import { buildExtensions, applyPreset } from '../extensions.js';
 import { buildPayload, draftTitle, wordCount } from '../export.js';
-import { isForum, isProject, mergeThreads, normalizeThread as normalizeTopic, slugTitle, topicId } from '../thread-url.mjs';
+import { hasForum, normalizeThread as normalizeTopic, siteOf, slugTitle, topicId, topicOf } from '../thread-url.mjs';
 import { activeBoard, finishBoardEdits, migrateBoards } from '../whiteboard.js';
 import { captureSelection } from './assistant/capture.js';
 import { backgroundDraft, dropSession, flushSessions, handOver } from './assistant/sessions.js';
@@ -30,9 +30,12 @@ import { closeWorkspace, restoreView, showPage } from './views.js';
 import { backgroundClick, viewportRect } from './viewport.js';
 
 export { notify }; // ui.notice (§8) reaches it through ctx.actions
-export { isForum }; // the components and threads.add (§8, through ctx.actions) read the mode
-/** `url` → the canonical topic URL on the set forum (settings.forumUrl), or ''. threads.add (§8) reaches it through ctx.actions. */
-export const normalizeThread = (url) => normalizeTopic(url, state.settings.forumUrl);
+export { hasForum }; // the sidebar, status bar and tour show the forum's sign-in by it
+/** `url` → the canonical topic URL on the set forum (none set yet: on its own site), or ''. threads.add (§8) reaches it through
+ * ctx.actions. */
+export const normalizeThread = (url) => normalizeTopic(url, state.settings.forumUrl || siteOf(url));
+/** The forum thread (topic URL) of the project keyed `key`, or ''. */
+export const projectTopic = (key) => topicOf(state.settings.threads, key);
 
 const api = window.api;
 export const DEFAULT_WIDTH = 1454;
@@ -551,19 +554,19 @@ export function threadLabel(t) {
   return t.subject ? `${t.subject} / ${t.title}` : t.title || t.url;
 }
 
-/** The listed thread of `url` (a project key, or any form normalizeThread takes, matched by topic id), or undefined. */
+/** The listed project of `url` (its key, or a form normalizeThread takes of its forum thread, matched by topic id), or undefined. */
 function findThread(url) {
   const id = topicId(url);
-  return state.settings.threads.find((t) => t.url === url || (id && topicId(t.url) === id));
+  return state.settings.threads.find((t) => t.url === url || (id && topicId(projectTopic(t.url)) === id));
 }
 
-// A draft's thread URL for `url`: the listed thread's or project's (a thread's may predate the canonical form, and its drafts
+// A draft's project key for `url`: the listed project's (a forum thread's key may predate the canonical form, and its drafts
 // must match it), else the canonical URL; null for none or neither.
 const draftThreadUrl = (url) => (url ? findThread(url)?.url ?? (normalizeThread(url) || null) : null);
 
 async function refreshStatus() {
   let status = { loggedIn: false };
-  if (!isForum(state.settings)) return setState({ status }); // projects mode never asks a forum
+  if (!hasForum(state.settings)) return setState({ status }); // no project links a forum thread: no forum to ask
   try {
     status = await api.forum.status();
   } catch {
@@ -573,8 +576,8 @@ async function refreshStatus() {
   if (status.loggedIn) describeUnnamed();
 }
 
-/** Threads added by URL that the forum has not described yet get their names (after a status check or a login). */
-const describeUnnamed = () => describeThreads(state.settings.threads.filter((t) => !t.year && !t.subject && !isProject(t.url)).map((t) => t.url).slice(0, 50));
+/** Projects whose forum thread the forum has not described yet get its names (after a status check or a login). */
+const describeUnnamed = () => describeThreads(state.settings.threads.filter((t) => !t.year && !t.subject).map((t) => projectTopic(t.url)).filter(Boolean).slice(0, 50));
 
 /** A thread row (or All drafts): filters the drafts and shows the editor page (§7g). */
 export async function selectThread(url) {
@@ -603,44 +606,61 @@ export function doRemoveThread(url) {
   return saveSettings({ threads, selectedThread });
 }
 
-export async function addThreadUrl() {
-  if (!isForum(state.settings)) {
-    const name = await openDialog('addThread', { project: true, validate: (input) => (input.trim() ? '' : 'Enter a name.') });
-    if (name != null) await selectThread(await addProject(name));
-    return;
-  }
+/** `value` → why it cannot be the forum thread of the project keyed `key` (null: a new one), or '' when it can. */
+function threadProblem(value, key = null) {
   const site = state.settings.forumUrl;
-  const value = await openDialog('addThread', {
-    site,
-    validate: (input) => {
-      if (!site) return 'Set the forum site in Settings first.';
-      if (!normalizeThread(input)) return `Enter a topic URL like ${site}/topic/12345-name/`;
-      if (findThread(input)) return 'That thread is already in the list.';
-      return '';
-    },
-  });
-  if (value != null) await addThread(value);
+  const topic = normalizeThread(value);
+  if (!topic) return `Enter a forum topic URL, like ${site || 'https://forum.example.com'}/topic/12345-name/`;
+  const other = findThread(topic);
+  return other && other.url !== key ? `That thread is already linked to "${threadLabel(other)}".` : '';
 }
 
-/** Adds a project titled `title` (projects mode: a settings.threads entry keyed project:<uuid>). Resolves its key. */
-export async function addProject(title) {
+/** New project: a name, a forum thread, or both (no name: the thread's title, from the forum). */
+export async function addThreadUrl() {
+  const value = await openDialog('addThread', {
+    validate: ({ name, thread }) => (thread.trim() ? threadProblem(thread) : name.trim() ? '' : 'Enter a name or a forum thread.'),
+  });
+  if (value) await selectThread(await addProject(value.name, value.thread));
+}
+
+/** Adds a project titled `title` (a settings.threads entry keyed project:<uuid>), linked to the forum thread `thread` when given
+ * (the first one sets the forum site), whose title, subject, year and forum are then looked up. Resolves its key. */
+export async function addProject(title, thread = '') {
   const url = `project:${crypto.randomUUID()}`;
-  await saveSettings({ threads: [...state.settings.threads, { url, title: title.trim().slice(0, 200), subject: '', year: '', forum: '' }] });
+  const topic = thread.trim() ? normalizeThread(thread) : '';
+  const entry = { url, title: title.trim().slice(0, 200) || slugTitle(topic), ...(topic && { thread: topic }), subject: '', year: '', forum: '' };
+  await linked(topic, { threads: [...state.settings.threads, entry] });
   return url;
 }
 
-/** Adds the thread `url` (canonical, thread-url.mjs) titled `title` (default: from the URL's slug), then looks it up on the
- * forum in the background. Resolves the URL, or null when it is not a forum topic URL or already listed. */
-export async function addThread(url, title) {
-  const u = normalizeThread(url);
-  if (!u || findThread(u)) return null;
-  await saveSettings({ threads: [...state.settings.threads, { url: u, title: title || slugTitle(u), subject: '', year: '', forum: '' }] });
-  describeThreads([u]);
-  return u;
+/** The row's Forum thread action: links a forum thread to the project `t`, changes it, or (an empty field) unlinks it. */
+export async function editProjectThread(t) {
+  const value = await openDialog('projectThread', { value: t.thread ?? '', validate: (v) => (v.trim() ? threadProblem(v, t.url) : '') });
+  if (value != null) await setProjectThread(t.url, value);
 }
 
-// A title the user did not choose: none, the URL (threads added before the forum lookup) or the slug's.
-const autoTitle = (t) => !t.title || t.title === t.url || t.title === slugTitle(t.url);
+/** Links the forum thread `thread` to the project keyed `key` ('' unlinks it, and the forum's names go with it). */
+export async function setProjectThread(key, thread) {
+  const topic = thread.trim() ? normalizeThread(thread) : '';
+  await linked(topic, { threads: state.settings.threads.map((t) => {
+    if (t.url !== key) return t;
+    const { thread: old, ...rest } = t;
+    const title = autoTitle(t) ? slugTitle(topic) || t.title : t.title;
+    return topic ? { ...rest, title, thread: topic, ...(topic !== old && { subject: '', year: '', forum: '' }) } : { ...rest, subject: '', year: '', forum: '' };
+  }) });
+}
+
+/** Saves `patch` (settings.threads after a link), setting the forum site from `topic` when none is set yet, then looks the topic
+ * up on the forum. */
+async function linked(topic, patch) {
+  const first = topic && !hasForum(state.settings);
+  await saveSettings({ ...patch, ...(topic && !state.settings.forumUrl && { forumUrl: siteOf(topic) }) });
+  if (first) refreshStatus(); // the sidebar's forum sign-in shows now
+  if (topic) describeThreads([topic]);
+}
+
+// A title the user did not choose: none, the key (threads added before the forum lookup) or the forum thread's slug.
+const autoTitle = (t) => !t.title || t.title === t.url || t.title === slugTitle(projectTopic(t.url));
 
 /** Looks the listed threads `urls` up on their topic pages and fills in subject, year and forum, and the title unless the user
  * chose it. Never throws: a thread the forum does not describe (offline, no access, removed) stays as it is. */
@@ -650,25 +670,11 @@ async function describeThreads(urls) {
     const found = new Map((await api.forum.describe(urls)).threads.map((f) => [f.url, f]));
     if (!found.size) return;
     await saveSettings({ threads: state.settings.threads.map((t) => {
-      const f = found.get(t.url);
+      const f = found.get(projectTopic(t.url));
       return f ? { ...t, title: autoTitle(t) ? f.title : t.title, subject: f.subject, year: f.year, forum: f.forum } : t;
     }) });
   } catch {
     // the thread keeps its title from the URL until the next lookup
-  }
-}
-
-export async function discoverThreads() {
-  setState({ discovering: true });
-  try {
-    const { threads } = await api.forum.discover();
-    await saveSettings({ threads: mergeThreads(state.settings.threads, threads).threads });
-    toast(`Found ${threads.length} thread${threads.length === 1 ? '' : 's'}.`);
-  } catch (e) {
-    const message = String(e.message || e);
-    await (message.includes('not-logged-in') ? alertDialog('Log in to the forum first.') : alertDialog('Could not find threads', message));
-  } finally {
-    setState({ discovering: false });
   }
 }
 
@@ -793,10 +799,9 @@ export async function openSettings(section) {
 export async function changeSettings(values) {
   const s = state.settings;
   const remount = ('theme' in values && values.theme !== s.theme) || ('historyLimit' in values && values.historyLimit !== s.historyLimit);
-  const site = (x) => `${x.mode}|${x.forumUrl}`;
   await saveSettings(values);
   applySettings();
-  if (!WORKER && site(state.settings) !== site(s)) refreshStatus(); // the mode or the forum site changed
+  if (!WORKER && state.settings.forumUrl !== s.forumUrl) refreshStatus(); // the forum site changed
   // Canvas NodeViews read the theme when they render and the history depth is set when the editor is built: remount
   // the editor, its history rebuilt (all the steps the open draft keeps in memory), so they pick the change up.
   if (remount && state.editor && await saveNow()) {
@@ -808,28 +813,33 @@ export async function changeSettings(values) {
 // ---------------------------------------------------------------------------------------------
 // Push
 
+/** The project with a forum thread a draft in no project pushes to: the one picked in the dialog, or null. */
 async function chooseThread() {
-  const threads = state.settings.threads;
+  const threads = state.settings.threads.filter((t) => projectTopic(t.url));
   if (!threads.length) {
-    await alertDialog('Add a thread first', 'Use "Find my threads" or "Add thread URL".');
+    await alertDialog('Link a forum thread first', 'Add one to a project with the link button on its row, or with New project.');
     return null;
   }
   return openDialog('chooseThread', { threads, selected: state.settings.selectedThread });
 }
 
-/** Fills the forum reply box with the open draft after the human confirm (never submits). A draft without a thread asks
- * for one, or with `requireThread` resolves {code: 'no_thread'} (agents get no thread dialog). */
+/** Fills the forum reply box of the open draft's project's forum thread after the human confirm (never submits). A draft in no
+ * project asks for a project with one; a project without one says to link it; with `requireThread` both resolve
+ * {code: 'no_thread'} (agents get no dialog). */
 export async function push({ requireThread = false } = {}) {
-  if (!state.editor || !state.draft || !isForum(state.settings)) return;
-  let url = state.draft.threadUrl;
-  if (!can('draft.hasThread', state.draft)) {
+  if (!state.editor || !state.draft) return;
+  let key = state.draft.threadUrl;
+  if (!projectTopic(key)) {
     if (requireThread) return { code: 'no_thread' };
-    url = await chooseThread();
-    if (!url) return;
-    state.draft.threadUrl = url;
+    const project = key && findThread(key);
+    if (project) return alertDialog(`Link a forum thread to "${threadLabel(project)}" first`, 'Use the link button on its row in the sidebar.');
+    key = await chooseThread();
+    if (!key) return;
+    state.draft.threadUrl = key;
     markDirty();
   }
-  const thread = findThread(url);
+  const url = projectTopic(key);
+  const thread = findThread(key);
   const label = thread ? threadLabel(thread) : url;
   if (!(await confirmDialog({
     title: `Fill the reply box of "${label}" with this draft?`,

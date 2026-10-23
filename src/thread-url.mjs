@@ -1,6 +1,7 @@
-// Threads and projects (SPEC §7 Sidebar): settings.threads holds forum topics (forum mode) and projects (projects mode, keyed
-// `project:<uuid>`). Topic URLs have one canonical form per topic, so a pasted link matches the one the forum lists. Pure and
-// import-free: actions.js, the command catalogue (node --test) and main.js (getSettings) share it.
+// Projects (SPEC §7 Sidebar): settings.threads holds the projects, keyed `project:<uuid>` (`thread`: the forum topic linked to it,
+// optional), and the forum threads added before projects, keyed by their topic URL (that topic is their forum thread). Topic URLs
+// have one canonical form per topic, so a pasted link matches the one the forum lists. Pure and import-free: actions.js, the
+// command catalogue (node --test) and main.js (getSettings) share it.
 
 // Scheme and www. optional; whatever follows the slug (/page/N/, query, hash) is dropped.
 const TOPIC = /^(?:https?:\/\/)?(?:www\.)?([^/\s]+)\/topic\/(\d+)(-[^/?#\s]+)?(?:[/?#]\S*)?$/i;
@@ -15,8 +16,16 @@ export const isThreadKey = (url) => typeof url === 'string' && KEY.test(url);
 /** Whether `url` is a project's key. */
 export const isProject = (url) => typeof url === 'string' && PROJECT.test(url);
 
-/** settings.mode: 'forum' (Invision Community threads) or 'projects' (the default, no forum). */
-export const isForum = (settings) => settings?.mode === 'forum';
+/** The forum topic of the project keyed `key` in `threads` (settings.threads): its linked thread, or the key itself for a forum
+ * thread added before projects (a draft may keep such a key after its entry was removed); '' for none. */
+export function topicOf(threads, key) {
+  if (!isProject(key)) return isThreadKey(key) ? key : '';
+  return threads?.find((t) => t.url === key)?.thread || '';
+}
+
+/** Whether a forum is in use: a forum site is set (settings.forumUrl, kept after the last unlink) and a project links one of
+ * its threads. Its sign-in, status and the forum commands need it. */
+export const hasForum = (settings) => !!settings?.forumUrl && !!settings.threads?.some((t) => topicOf(settings.threads, t.url));
 
 /** `value` (a typed forum address) → its https origin, or '' when it is not one. */
 export function forumOrigin(value) {
@@ -29,14 +38,20 @@ export function forumOrigin(value) {
   }
 }
 
-/** settings.json's `stored` object as read: one from before settings.mode with a saved thread gets forum mode and the forum
- * it was written for; any other keeps its mode (none: the default, projects). */
+/** settings.json's `stored` object as read: one with forum threads but no forum site (from before the site was a setting) gets
+ * the site of its first thread. */
 export function migrateSettings(stored) {
-  if (!stored || 'mode' in stored || !stored.threads?.length) return stored;
-  return { ...stored, mode: 'forum', forumUrl: stored.forumUrl || 'https://daf.staffs.ac.uk' };
+  const first = stored?.forumUrl ? null : stored?.threads?.map((t) => topicOf(stored.threads, t.url)).find(Boolean);
+  return first ? { ...stored, forumUrl: siteOf(first) } : stored;
 }
 
 const host = (origin) => forumOrigin(origin).replace(/^https:\/\/(?:www\.)?/, '').toLowerCase();
+
+/** The forum site (https origin, no www.) of topic URL `value`, or ''. */
+export const siteOf = (value) => {
+  const m = TOPIC.exec(String(value ?? '').trim());
+  return m ? forumOrigin(m[1]) : '';
+};
 
 /** `value` → the canonical topic URL `<site>/topic/<id>-<slug>/` of the forum at origin `site`, or '' when it is not a topic
  * URL of that forum. */
@@ -57,18 +72,4 @@ export function slugTitle(url) {
   try { words = decodeURIComponent(words); } catch { /* a stray % stays as it is */ }
   words = words.replace(/-+/g, ' ').trim();
   return words ? words[0].toUpperCase() + words.slice(1) : `Topic ${m[2]}`;
-}
-
-/** The listed threads with the forum's `found` ones merged in by topic: a known topic keeps its entry and stored URL (its drafts
- * and plan point at it), updated by what the forum says; a new one is appended. → {threads, added}. */
-export function mergeThreads(listed, found) {
-  const byTopic = new Map(listed.map((t) => [topicId(t.url) || t.url, t]));
-  let added = 0;
-  for (const t of found) {
-    const key = topicId(t.url) || t.url;
-    const old = byTopic.get(key);
-    if (!old) added++;
-    byTopic.set(key, { ...old, ...t, url: old?.url ?? t.url });
-  }
-  return { threads: [...byTopic.values()], added };
 }

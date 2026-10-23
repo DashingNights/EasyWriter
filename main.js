@@ -4,7 +4,7 @@ const path = require('path');
 const fs = require('fs/promises');
 const { pathToFileURL } = require('url');
 const { externalize, fileFamily, inline, isPlainObject, readJson, serialized, setAside, writeJsonAtomic } = require('./src/file-family.js');
-const { buildPushScript, describeThreadsScript, STATUS_SCRIPT, DISCOVER_SCRIPT } = require('./src/forum-inject.js');
+const { buildPushScript, describeThreadsScript, STATUS_SCRIPT } = require('./src/forum-inject.js');
 const dictation = require('./src/dictation-main.js');
 const assistant = require('./src/assistant-main.js');
 const computer = require('./src/computer-main.js');
@@ -78,8 +78,7 @@ const DEFAULT_SETTINGS = {
     { id: 'p3', name: 'Highlight', fontFamily: '', size: 100, color: 'root', highlight: 'yellow', bold: false, italic: false, underline: false },
     { id: 'p4', name: 'Statement', fontFamily: '', size: 150, color: 'hard', highlight: '', bold: true, italic: false, underline: false },
   ],
-  mode: 'projects', // or 'forum': threads of the Invision Community site at forumUrl (an https origin), its sign-in and Push
-  forumUrl: '',
+  forumUrl: '', // the Invision Community site (https origin) of the projects' forum threads: its sign-in and Push; '' = none
   threads: [],
   selectedThread: null,
   lastDraftId: null,
@@ -130,7 +129,6 @@ async function getSettings() {
 
 function setSettings(partial) {
   if (!isPlainObject(partial)) throw new Error('settings must be an object');
-  if ('mode' in partial && !['projects', 'forum'].includes(partial.mode)) throw new Error("mode must be 'projects' or 'forum'");
   return serialized(async () => {
     const { forumOrigin } = await threadUrl;
     if ('forumUrl' in partial && partial.forumUrl !== '' && forumOrigin(partial.forumUrl) !== partial.forumUrl) throw new Error('forumUrl must be an https origin or empty');
@@ -282,10 +280,10 @@ function loadAndWait(win, url, timeoutMs = 60000) {
   });
 }
 
-// The forum's origin (settings.forumUrl); none outside forum mode, so projects mode never loads a forum page.
+// The forum's origin (settings.forumUrl, set by the first linked forum thread); without one no forum page is ever loaded.
 async function forumSite() {
   const s = await getSettings();
-  if (s.mode !== 'forum' || !s.forumUrl) throw new Error('No forum is set. Choose forum mode and the forum site in Settings.');
+  if (!s.forumUrl) throw new Error('No forum is set. Link a forum thread to a project first.');
   return s.forumUrl;
 }
 // A page of the forum at origin `site`, with or without www. (a forum may redirect to either, and its links are of that one).
@@ -316,12 +314,6 @@ async function forumStatus() {
   } catch (e) {
     return { ...LOGGED_OUT, error: String(e.message || e) };
   }
-}
-
-async function forumDiscover() {
-  const result = await runInWorker(DISCOVER_SCRIPT, 45000);
-  if (result && result.error) throw new Error(result.error);
-  return { threads: (result && result.threads) || [] };
 }
 
 // Title, subject, year and forum of up to 50 topic URLs; topics whose page could not be read are left out.
@@ -472,7 +464,6 @@ handle('prefabs.save', prefabs.save);
 handle('prefabs.remove', prefabs.remove);
 handle('forum.status', forumStatus);
 handle('forum.login', forumLogin);
-handle('forum.discover', forumDiscover);
 handle('forum.describe', forumDescribe);
 handle('forum.push', forumPush);
 handle('forum.open', forumOpen);

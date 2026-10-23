@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { forumOrigin, isProject, migrateSettings, mergeThreads, normalizeThread, slugTitle, topicId } from '../src/thread-url.mjs';
+import { forumOrigin, hasForum, isProject, migrateSettings, normalizeThread, siteOf, slugTitle, topicId, topicOf } from '../src/thread-url.mjs';
 
 const SITE = 'https://forum.example.com';
 const CANON = 'https://forum.example.com/topic/12345-level-design/';
@@ -36,16 +36,6 @@ test('topicId matches one topic across slugs', () => {
   assert.equal(topicId('https://forum.example.com/forum/12-games/'), '');
 });
 
-test('mergeThreads merges by topic and keeps the stored URL', () => {
-  const old = { url: 'https://forum.example.com/topic/12345-old-name/', title: 'Old name', subject: '', year: '', forum: '' };
-  const found = [{ url: 'https://forum.example.com/topic/12345-new-name/', title: 'New name', subject: 'Games', year: '2026', forum: 'Dev' },
-    { url: 'https://forum.example.com/topic/9-other/', title: 'Other', subject: '', year: '', forum: '' }];
-  const { threads, added } = mergeThreads([old], found);
-  assert.equal(added, 1);
-  assert.deepEqual(threads[0], { ...found[0], url: old.url });
-  assert.equal(threads.length, 2);
-});
-
 test('normalizeThread takes only the set forum', () => {
   assert.equal(normalizeThread(CANON, 'https://other.example.org'), '');
   assert.equal(normalizeThread(CANON, ''), '');
@@ -58,10 +48,24 @@ test('a project key is a thread key', () => {
   assert.ok(!isProject('project:x') && !isProject(CANON));
 });
 
-test('migrateSettings: saved threads keep forum mode and the DAF site; anything else stays as it is', () => {
-  const threads = [{ url: 'https://daf.staffs.ac.uk/topic/1-a/', title: 'A' }];
-  assert.deepEqual(migrateSettings({ threads }), { threads, mode: 'forum', forumUrl: 'https://daf.staffs.ac.uk' });
+test("topicOf: a project's linked thread, an old thread's own key, else none", () => {
+  const key = 'project:0b2c8f0e-1c4e-4f8a-9d6a-2b7f3c9e1a55';
+  const threads = [{ url: key, title: 'A', thread: CANON }, { url: 'project:1b2c8f0e-1c4e-4f8a-9d6a-2b7f3c9e1a55', title: 'B' }];
+  assert.equal(topicOf(threads, key), CANON);
+  assert.equal(topicOf(threads, threads[1].url), '');
+  assert.equal(topicOf(threads, CANON), CANON); // keyed by its topic URL (added before projects), listed or not
+  assert.equal(topicOf(threads, null), '');
+  assert.equal(siteOf('http://www.forum.example.com/topic/1-a/'), SITE);
+  assert.ok(hasForum({ forumUrl: SITE, threads }));
+  assert.ok(!hasForum({ forumUrl: SITE, threads: threads.slice(1) })); // the site stays, but no project links a thread
+  assert.ok(!hasForum({ forumUrl: '', threads }));
+});
+
+test('migrateSettings: forum threads with no forum site get the site of the first one; anything else stays as it is', () => {
+  const threads = [{ url: 'project:0b2c8f0e-1c4e-4f8a-9d6a-2b7f3c9e1a55', title: 'P' }, { url: 'https://forum.example.com/topic/1-a/', title: 'A' }];
+  assert.deepEqual(migrateSettings({ threads }), { threads, forumUrl: SITE });
   assert.deepEqual(migrateSettings({ threads: [] }), { threads: [] });
-  assert.deepEqual(migrateSettings({ threads, mode: 'projects' }), { threads, mode: 'projects' });
+  assert.deepEqual(migrateSettings({ threads: threads.slice(0, 1) }), { threads: threads.slice(0, 1) });
+  assert.deepEqual(migrateSettings({ threads, forumUrl: 'https://other.example.org' }), { threads, forumUrl: 'https://other.example.org' });
   assert.equal(migrateSettings(null), null);
 });
