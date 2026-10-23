@@ -33,8 +33,9 @@ const HUE = {
 export const NONE = '-'; // Radix Select items need a non-empty value: stands for '' (no font, no thread)
 export const keepFocus = (e) => e.preventDefault(); // toolbar buttons never take focus, so the editor keeps its selection
 
-// Detached file input of the Image control (click() opens the picker): each picked image goes in as a canvas.
-const imageInput = Object.assign(document.createElement('input'), { type: 'file', accept: 'image/*', multiple: true });
+// Detached file input of the Image control (click() opens the picker): each picked image goes in as a canvas, a video or GIF
+// as a media node.
+const imageInput = Object.assign(document.createElement('input'), { type: 'file', accept: 'image/*,video/*', multiple: true });
 imageInput.addEventListener('change', () => {
   const files = [...imageInput.files];
   imageInput.value = '';
@@ -100,7 +101,7 @@ export function textTools(ed) {
     canvas: { title: withKey('Insert canvas', 'insert.canvas'), keyId: 'insert.canvas', onClick: insertCanvas, children: <Frame /> },
     flowchart: { title: withKey('Insert flowchart', 'insert.flowchart'), keyId: 'insert.flowchart', disabled: !can('doc.open', { editor: ed }), onClick: insertFlowchartDialog, children: <Workflow /> },
     planChart: { title: 'Insert plan chart', disabled: !can('doc.open', { editor: ed }), onClick: insertPlanChartDialog, children: <SquareKanban /> },
-    image: { title: 'Insert image(s), each as a canvas', onClick: () => imageInput.click(), children: <ImagePlus /> },
+    image: { title: 'Insert images or videos', onClick: () => imageInput.click(), children: <ImagePlus /> },
     clear: { title: 'Clear formatting', onClick: () => run((c) => c.unsetAllMarks().clearNodes()), children: <RemoveFormatting /> },
   };
 }

@@ -28,10 +28,10 @@ export function applyBaseStyles(doc, { baseFont = '', baseSize = 100 } = {}) {
   return out;
 }
 
-const IMAGE_NODES = ['canvas', 'planChart'];
+const IMAGE_NODES = ['canvas', 'planChart', 'media'];
 
-/** Replaces every canvas and plan chart node with a `[[IMG:i]]` paragraph; returns the nodes' attrs plus
- * `kind: 'canvas' | 'planChart'` in document order. */
+/** Replaces every canvas, plan chart and media node with a `[[IMG:i]]` paragraph; returns the nodes' attrs plus
+ * `kind: 'canvas' | 'planChart' | 'media'` in document order. */
 export function replaceWhiteboards(doc) {
   const out = structuredClone(doc);
   const boards = [];

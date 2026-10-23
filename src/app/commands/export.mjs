@@ -7,11 +7,11 @@ import { ref } from './schema-defs.mjs';
 // export.preview, push.prepare, forum.* (SPEC §8 Catalogue; agent-automation plan §6.4). Push stays the existing flow
 // (actions.js push): its human confirm, then the forum window's reply box is filled; Submit is always the human's click.
 
-/** The number of pictures a push attaches: one per canvas and plan chart of the open draft. */
+/** The number of files a push attaches: one per canvas, plan chart and media node of the open draft. */
 function pictures(doc) {
   let n = 0;
   doc.descendants((node) => {
-    if (!BOARD_TYPES.includes(node.type.name)) return true;
+    if (!BOARD_TYPES.includes(node.type.name) && node.type.name !== 'media') return true;
     n++;
     return false;
   });

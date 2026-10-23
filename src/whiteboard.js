@@ -766,6 +766,27 @@ function imageFiles(data) {
   return [...(data?.files ?? [])].filter((f) => f.type.startsWith('image/'));
 }
 
+// A video or GIF goes into the post as a media node (extensions.js Media), uploaded as it is, so it is capped at the forum's
+// attachment limit (SPEC §1).
+const MAX_MEDIA_BYTES = 100 * 1024 * 1024;
+const isMedia = (f) => f.type.startsWith('video/') || f.type === 'image/gif';
+const postFiles = (data) => [...(data?.files ?? [])].filter((f) => f.type.startsWith('image/') || f.type.startsWith('video/'));
+
+const dataUrlOf = (file) => new Promise((resolve, reject) => {
+  const reader = new FileReader();
+  reader.onload = () => resolve(reader.result);
+  reader.onerror = () => reject(reader.error);
+  reader.readAsDataURL(file);
+});
+
+async function readMedia(file) {
+  if (file.size > MAX_MEDIA_BYTES) {
+    toast(`${file.name} is too large for the forum (over 100 MB)`);
+    return null;
+  }
+  return { media: true, src: await dataUrlOf(file), name: file.name };
+}
+
 // The items of the smart canvases and whiteboards in copied document HTML, converted to a board of `unit` so they keep
 // their look in post px (§6c Units; a canvas's unit is w / dw, a whiteboard's 1). A whiteboard's canvas items come flattened
 // (§6b Converted whiteboards).
@@ -785,12 +806,7 @@ function copiedBoardItems(html, unit) {
 
 async function readImage(file) {
   try {
-    const src = await new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result);
-      reader.onerror = () => reject(reader.error);
-      reader.readAsDataURL(file);
-    });
+    const src = await dataUrlOf(file);
     const img = new Image();
     img.src = src;
     await img.decode();
@@ -819,13 +835,15 @@ function localPoint(wb, event) {
 }
 
 // One new smart canvas (§6b) per image at `insertPos` or the selection (after a node-selected canvas): artboard = the
-// image's natural size (≤ 8000 px), the image at 0,0, displayed at most as wide as the page content.
+// image's natural size (≤ 8000 px), the image at 0,0, displayed at most as wide as the page content. A video or GIF is a
+// media node instead.
 async function addImages(view, files, insertPos = null) {
-  const images = (await Promise.all(files.map(readImage))).filter(Boolean);
+  const images = (await Promise.all(files.map((f) => (isMedia(f) ? readMedia(f) : readImage(f))))).filter(Boolean);
   if (!images.length || view.isDestroyed) return;
   const { state } = view;
   const width = contentWidth(view);
   const nodes = images.map((img) => {
+    if (img.media) return state.schema.nodes.media.create({ src: img.src, name: img.name });
     const { w, h } = scaled(img, 8000, 8000);
     const items = [{ id: newId(), type: 'image', src: img.src, x: 0, y: 0, w, h }];
     return state.schema.nodes.canvas.create({ w, h, dw: Math.min(w, width), frame: { x: 0, y: 0, w, h, item: items[0].id }, bg: 'post', items });
@@ -841,7 +859,7 @@ async function addImages(view, files, insertPos = null) {
 }
 
 export function addImageFilesToEditor(editor, files) {
-  const list = imageFiles({ files });
+  const list = postFiles({ files });
   if (!list.length) return Promise.resolve();
   return addImages(editor.view, list);
 }
@@ -869,17 +887,19 @@ export const WhiteboardPaste = Extension.create({
           handlePaste(view, event) {
             if (itemClipboard && event.clipboardData.getData('text/plain') === itemClipboard.token) return true; // never paste the token text itself
             // Anything but images goes to the editor (a node-selected block refuses it: Notices.jsx PasteNotice).
-            const files = imageFiles(event.clipboardData);
+            const files = postFiles(event.clipboardData);
             if (!files.length) return false;
-            // Office apps put a bitmap next to the real HTML (e.g. Excel cells): keep the rich paste.
+            // Office apps put a bitmap next to the real HTML (e.g. Excel cells), and so does a block copied here (export.js
+            // CopyPicture): keep the rich paste.
             const html = event.clipboardData.getData('text/html');
+            if (/data-(canvas|plan-chart|media|whiteboard)\b/.test(html)) return false;
             if (html && new DOMParser().parseFromString(html, 'text/html').body.textContent.trim()) return false;
             addImages(view, files);
             return true;
           },
           handleDrop(view, event, _slice, moved) {
             if (moved) return false;
-            const files = imageFiles(event.dataTransfer);
+            const files = postFiles(event.dataTransfer);
             if (!files.length) return false;
             addImages(view, files, view.posAtCoords({ left: event.clientX, top: event.clientY })?.pos ?? null);
             return true;
@@ -1721,17 +1741,18 @@ export class Board {
     return files.length > 0;
   }
 
-  // A paste onto the board itself, centred in its visible part: a copied item or image files (pasteData), else the items of
-  // smart canvases and whiteboards copied from a document (an image block is a canvas), else the text as a text item.
+  // A paste onto the board itself, centred in its visible part: the items of smart canvases and whiteboards copied from a
+  // document (an image block is a canvas; their picture next to them is left), else a copied item or image files (pasteData),
+  // else the text as a text item.
   pasteClipboard(data) {
     const c = this.visibleCentre();
-    if (this.pasteData(data, c)) return;
     const items = copiedBoardItems(data.getData('text/html'), this.unit);
     if (items.length) {
       const box = groupBox(items.map((i) => this.itemBox(i)));
       this.addCopies(items, { x: c.x - box.w / 2, y: c.y - box.h / 2 });
       return;
     }
+    if (this.pasteData(data, c)) return;
     const text = data.getData('text/plain').trim();
     if (!text) return;
     const item = { ...this.textItem(c), html: make('div', '', { innerText: text }).innerHTML };

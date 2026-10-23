@@ -16,7 +16,12 @@ const API = 'https://api.github.com';
 const DIRS = ['drafts', 'plans', 'flowcharts', 'prefabs'];
 const NAME_RE = /^[a-f0-9-]{36}(\.history)?\.json$/;
 const IMAGES = 'images'; // the records' pictures (src/file-family.js externalize): only ever added, never changed
-const PATH_RE = new RegExp(`^((${DIRS.join('|')})/[a-f0-9-]{36}(\\.history)?\\.json|${IMAGES}/[a-f0-9]{64}\\.[a-z0-9.+-]+)$`);
+// A picture or video too large for a blob is an asset of the release RELEASE_TAG instead; `assets/<its name>` holds
+// {id, size}, the asset's id, and goes in the tree in its place.
+const ASSETS = 'assets';
+const RELEASE_TAG = 'easywriter-media';
+const BIG = 50 * 1024 * 1024; // a larger one skips the blob (GitHub refused a 90 MB blob on 2026-10-21)
+const PATH_RE = new RegExp(`^((${DIRS.join('|')})/[a-f0-9-]{36}(\\.history)?\\.json|(${IMAGES}|${ASSETS})/[a-f0-9]{64}\\.[a-z0-9.+-]+)$`);
 const isImage = (p) => p.startsWith(`${IMAGES}/`);
 const REPO_RE = /^[\w.-]+\/[\w.-]+$/;
 const SETTINGS_FILE = 'settings.json';
@@ -127,21 +132,23 @@ async function logout() {
 // ---------------------------------------------------------------------------------------------
 // REST API
 
-/** A GitHub API call → its JSON (raw: the body's bytes). A failure throws with the HTTP status as `status`. */
-async function gh(method, url, body, { raw = false, token = null } = {}) {
+/** A GitHub API call (`url` under API, or a whole URL) → its JSON (raw: the body's bytes). A Buffer `body` goes up as it is.
+ * `size`: the bytes a download brings, for its time limit. A failure throws with the HTTP status as `status`. */
+async function gh(method, url, body, { raw = false, token = null, accept = null, size = 0 } = {}) {
   token ??= (await getAuth())?.token;
   if (!token) throw new Error('Not logged in to GitHub.');
-  const res = await net.fetch(API + url, {
+  const bytes = Buffer.isBuffer(body);
+  const res = await net.fetch(url.startsWith('https:') ? url : API + url, {
     method,
     headers: {
       Authorization: `Bearer ${token}`,
-      Accept: raw ? 'application/vnd.github.raw+json' : 'application/vnd.github+json',
+      Accept: accept ?? (raw ? 'application/vnd.github.raw+json' : 'application/vnd.github+json'),
       'X-GitHub-Api-Version': '2022-11-28',
-      ...(body && { 'Content-Type': 'application/json' }),
+      ...(body && { 'Content-Type': bytes ? 'application/octet-stream' : 'application/json' }),
     },
-    body: body ? JSON.stringify(body) : undefined,
+    body: bytes ? body : body ? JSON.stringify(body) : undefined,
     cache: 'no-store', // GitHub's responses may be cached for 60 s: a stale branch head breaks the push
-    signal: AbortSignal.timeout(120000),
+    signal: AbortSignal.timeout(Math.max(120000, Math.ceil((bytes ? body.length : size) / 100))), // a big file: at least 100 KB/s
   });
   if (res.status === 401) {
     await setAuth(null);
@@ -232,20 +239,85 @@ async function readRecord(file) {
 }
 
 /** This computer's synced files → Map(repo path → bytes). `migrate`: records still holding base64 pictures move them to
- * images/ first (readRecord). The merge reads them as they are, so a format change alone never counts as a local edit. */
+ * images/ first (readRecord). The merge reads them as they are, so a format change alone never counts as a local edit. A
+ * picture held as a release asset is left out: its pointer in assets/ stands for it. */
 async function readLocal(migrate = true) {
   const files = new Map([[MARKER, MARKER_BODY]]);
-  for (const dir of [...DIRS, IMAGES]) { // the pictures last: reading the records may add some
+  for (const dir of [...DIRS, ASSETS, IMAGES]) { // the pictures last: reading the records may add some
     const names = await fs.readdir(userFile(dir)).catch((e) => (enoent(e), []));
+    const file = dir === IMAGES || dir === ASSETS;
     for (const n of names) {
-      if (!(dir === IMAGES ? IMAGE_NAME : NAME_RE).test(n) || n.endsWith('.tmp')) continue; // .tmp: a picture being written
-      const file = path.join(userFile(dir), n);
-      const buf = dir === IMAGES || !migrate ? await fs.readFile(file).catch(enoent) : await readRecord(file);
+      if (!(file ? IMAGE_NAME : NAME_RE).test(n) || n.endsWith('.tmp')) continue; // .tmp: a picture being written
+      const f = path.join(userFile(dir), n);
+      const buf = file || !migrate ? await fs.readFile(f).catch(enoent) : await readRecord(f);
       if (buf) files.set(`${dir}/${n}`, buf);
     }
   }
+  for (const p of files.keys()) if (p.startsWith(`${ASSETS}/`)) files.delete(`${IMAGES}/${path.basename(p)}`);
   files.set(SETTINGS_FILE, settingsBody(await hooks.getSettings()));
   return files;
+}
+
+const releases = new Map(); // repo → the id of its RELEASE_TAG release, once found or made this session
+
+async function mediaRelease(repo) {
+  if (!releases.has(repo)) {
+    let r;
+    try {
+      r = await gh('GET', `/repos/${repo}/releases/tags/${RELEASE_TAG}`);
+    } catch (e) {
+      if (e.status !== 404) throw e;
+      r = await gh('POST', `/repos/${repo}/releases`, {
+        tag_name: RELEASE_TAG, name: 'EasyWriter media', make_latest: 'false',
+        body: 'Videos and pictures too large for the backup files. EasyWriter downloads them from here. Do not delete them.',
+      });
+    }
+    releases.set(repo, r.id);
+  }
+  return releases.get(repo);
+}
+
+/** Uploads picture `p` (bytes `buf`) as an asset of the media release and writes its pointer to assets/ → the pointer's bytes.
+ * An asset of that name there already has the same bytes (the name is their hash); a broken one (a stopped upload) is replaced. */
+async function upload(repo, p, buf) {
+  const name = path.basename(p);
+  const rel = await mediaRelease(repo);
+  const send = () => gh('POST', `https://uploads.github.com/repos/${repo}/releases/${rel}/assets?name=${name}`, buf);
+  let id;
+  try {
+    ({ id } = await send());
+  } catch (e) {
+    if (e.status !== 422) throw e;
+    let found;
+    for (let page = 1; !found; page++) {
+      const list = await gh('GET', `/repos/${repo}/releases/${rel}/assets?per_page=100&page=${page}`);
+      found = list.find((a) => a.name === name);
+      if (list.length < 100 && !found) throw e;
+    }
+    if (found.state === 'uploaded') id = found.id;
+    else {
+      await gh('DELETE', `/repos/${repo}/releases/assets/${found.id}`);
+      ({ id } = await send());
+    }
+  }
+  const ptr = Buffer.from(JSON.stringify({ id, size: buf.length }));
+  await serialized(() => writeFileAtomic(userFile(path.join(ASSETS, name)), ptr));
+  return ptr;
+}
+
+/** Downloads the release assets whose pointers are here but whose pictures are not → how many. */
+async function fetchAssets(repo) {
+  let n = 0;
+  for (const name of await fs.readdir(userFile(ASSETS)).catch((e) => (enoent(e), []))) {
+    if (!IMAGE_NAME.test(name) || (await fs.stat(userFile(path.join(IMAGES, name))).then(() => true, () => false))) continue;
+    const { id, size } = parse(await fs.readFile(userFile(path.join(ASSETS, name)))) ?? {};
+    if (!Number.isInteger(id)) continue;
+    const buf = await gh('GET', `/repos/${repo}/releases/assets/${id}`, null, { raw: true, accept: 'application/octet-stream', size });
+    if (crypto.createHash('sha256').update(buf).digest('hex') !== name.slice(0, 64)) throw new Error(`GitHub: release asset ${name} does not match its name.`);
+    await serialized(() => writeFileAtomic(userFile(path.join(IMAGES, name)), buf));
+    n++;
+  }
+  return n;
 }
 
 /** Three-way merge per file of {path: sha} maps (a missing path = no file) → {take: the paths to copy from remote (missing
@@ -368,7 +440,7 @@ async function push(repo, remote, local, saved) {
   // it sent, and a draft never reaches GitHub before its pictures. These commits only add pictures to GitHub's files.
   let round = {};
   let bytes = 0;
-  for (const p of Object.keys(sha).filter((q) => isImage(q) && have[q] !== sha[q])) {
+  for (const p of Object.keys(sha).filter((q) => isImage(q) && have[q] !== sha[q] && local.get(q).length <= BIG)) {
     if (bytes && bytes + local.get(p).length > ROUND) {
       have = { ...have, ...round };
       const tree = await gh('POST', `/repos/${repo}/git/trees`, { tree: Object.entries(have).map(([q, s]) => entry(q, s)) });
@@ -383,15 +455,21 @@ async function push(repo, remote, local, saved) {
     }
   }
 
-  // Then every file: what GitHub refuses as too large stays as GitHub has it (gone if it has none).
+  // Then every file: a picture too large for a blob goes up as a release asset, its pointer in the tree instead; any other
+  // file GitHub refuses as too large stays as GitHub has it (gone if it has none).
   const files = {};
   const skipped = {};
+  const sent = async (p) => !(isImage(p) && local.get(p).length > BIG) && (await blob(p));
   for (const p of Object.keys(sha)) {
-    if (have[p] !== sha[p] && own(p) && !(await blob(p))) {
+    if (have[p] === sha[p] || !own(p) || (await sent(p))) {
+      files[p] = sha[p];
+    } else if (isImage(p)) {
+      const ptr = `${ASSETS}/${path.basename(p)}`;
+      local.set(ptr, await upload(repo, p, local.get(p)));
+      files[ptr] = sha[ptr] = blobSha(local.get(ptr));
+    } else {
       skipped[p] = sha[p];
       if (have[p]) files[p] = have[p];
-    } else {
-      files[p] = sha[p];
     }
   }
   if (same(files, have)) return { head, files, skipped };
@@ -474,10 +552,9 @@ async function doSync({ closing = false, retry = true } = {}) {
         }
         if (choice === 'cloud') paths = [...take, ...conflicts];
       }
-      if (paths.length) {
-        await apply(paths, bodies);
-        if (!closing) hooks.reload();
-      }
+      if (paths.length) await apply(paths, bodies);
+      const fetched = await fetchAssets(repo); // before the reload, so the drafts open with them
+      if ((paths.length || fetched) && !closing) hooks.reload();
       // Merged: GitHub's head is the new base, so a failed or retried push does not merge (or ask) again.
       await serialized(() => writeJsonAtomic(stateFile(), { repo, head: remote.head, files: remote.files }));
       local = await readLocal(); // the merged files, their base64 pictures moved out

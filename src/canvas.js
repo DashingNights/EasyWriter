@@ -64,7 +64,7 @@ function parseCanvas(json) {
 
 const sameBox = (a, b) => ['x', 'y', 'w', 'h'].every((k) => a[k] === b[k]);
 
-const scaleOf = (el) => {
+export const scaleOf = (el) => {
   const s = el.getBoundingClientRect().width / el.offsetWidth;
   return s > 0 && Number.isFinite(s) ? s : 1;
 };

@@ -109,6 +109,10 @@ test('images: base64 pictures are saved once as files and loaded back as data UR
   const shared = { src: png }; // one object reached twice, as IPC can send it
   const two = await fam.load((await fam.save({ a: shared, b: shared })).id);
   assert.deepEqual([two.a.src, two.b.src], [png, png]);
+  const mp4 = `data:video/mp4;base64,${Buffer.alloc(3000, 9).toString('base64')}`; // a video goes out the same way
+  const vid = await fam.save({ src: mp4 });
+  assert.match(JSON.parse(fs.readFileSync(path.join(dir, `${vid.id}.json`), 'utf8')).src, /^data:video\/mp4;sha256,[a-f0-9]{64}$/);
+  assert.equal((await fam.load(vid.id)).src, mp4);
   // A record from before keeps its data URL; a missing picture keeps its reference.
   fs.writeFileSync(path.join(dir, `${ID}.json`), JSON.stringify({ id: ID, a: png, b: `data:image/png;sha256,${'0'.repeat(64)}` }));
   assert.deepEqual(await fam.load(ID), { id: ID, a: png, b: `data:image/png;sha256,${'0'.repeat(64)}` });

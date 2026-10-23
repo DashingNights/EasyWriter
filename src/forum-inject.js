@@ -153,7 +153,7 @@ function buildPushScript(payload) {
       const bytes = Uint8Array.from(atob(image.base64), (c) => c.charCodeAt(0));
       const file = new File([bytes], image.name, { type: image.type || 'image/png' });
       const result = await new Promise((resolve) => {
-        const timer = setTimeout(() => resolve(null), 180000);
+        const timer = setTimeout(() => resolve(null), Math.max(180000, bytes.length / 100)); // a big video: at least 100 KB/s
         uploader.dispatchEvent(new InjectFileEvent({ file, data: {
           ready: (content, info) => { clearTimeout(timer); resolve({ content, fileId: Number(info && info.fileID) }); },
           error: () => { clearTimeout(timer); resolve(null); },

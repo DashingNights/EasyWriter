@@ -39,11 +39,11 @@ async function writeFileAtomic(file, data) {
 
 const writeJsonAtomic = (file, data) => writeFileAtomic(file, JSON.stringify(data));
 
-// Pictures out of the records (SPEC §3): a base64 data URL anywhere in a saved record is written once to
-// `images/<sha256 of the bytes>.<type>` and the record keeps `data:image/<type>;sha256,<hex>` in its place. Loading puts the
+// Pictures and videos out of the records (SPEC §3): a base64 data URL anywhere in a saved record is written once to
+// `images/<sha256 of the bytes>.<type>` and the record keeps `data:<image|video>/<type>;sha256,<hex>` in its place. Loading puts the
 // data URL back, so the renderer only ever sees data URLs. Records saved before this keep theirs until their next save.
-const DATA_URL = /^data:image\/([a-z0-9.+-]+);base64,/i;
-const IMAGE_REF = /^data:image\/([a-z0-9.+-]+);sha256,([a-f0-9]{64})$/;
+const DATA_URL = /^data:(image|video)\/([a-z0-9.+-]+);base64,/i;
+const IMAGE_REF = /^data:(image|video)\/([a-z0-9.+-]+);sha256,([a-f0-9]{64})$/;
 const IMAGE_NAME = /^[a-f0-9]{64}\.[a-z0-9.+-]+$/;
 
 /** [object, key] of every string value in `v` (nested objects and arrays) that passes `test`. */
@@ -51,7 +51,7 @@ function strings(v, test, out = []) {
   for (const k of Object.keys(v)) {
     const x = v[k];
     if (typeof x === 'string') {
-      if (x.startsWith('data:image/') && test(x)) out.push([v, k]);
+      if ((x.startsWith('data:image/') || x.startsWith('data:video/')) && test(x)) out.push([v, k]);
     } else if (x && typeof x === 'object') {
       strings(x, test, out);
     }
@@ -64,14 +64,14 @@ async function externalize(dir, v) {
   for (const [o, k] of strings(v, (s) => DATA_URL.test(s.slice(0, 80)))) {
     const m = o[k].slice(0, 80).match(DATA_URL);
     if (!m) continue; // done already: the same object reached twice (IPC keeps shared references)
-    const [head, type] = m;
+    const [head, kind, type] = m;
     const b64 = o[k].slice(head.length);
     const bytes = Buffer.from(b64, 'base64');
     if (!bytes.length || bytes.toString('base64') !== b64) continue; // not canonical base64: kept inline, so it loads back the same
     const hex = crypto.createHash('sha256').update(bytes).digest('hex');
     const file = path.join(dir, `${hex}.${type.toLowerCase()}`);
     if (!(await fs.stat(file).then((s) => s.size === bytes.length, () => false))) await writeFileAtomic(file, bytes);
-    o[k] = `data:image/${type.toLowerCase()};sha256,${hex}`;
+    o[k] = `data:${kind.toLowerCase()}/${type.toLowerCase()};sha256,${hex}`;
   }
   return v;
 }
@@ -83,10 +83,10 @@ async function inline(dir, v) {
   for (const [o, k] of strings(v, (s) => s.length < 200 && IMAGE_REF.test(s))) {
     const m = o[k].match(IMAGE_REF);
     if (!m) continue; // done already: the same object reached twice
-    const [, type, hex] = m;
+    const [, kind, type, hex] = m;
     const name = `${hex}.${type}`;
-    if (!read.has(name)) read.set(name, await fs.readFile(path.join(dir, name)).then((b) => `data:image/${type};base64,${b.toString('base64')}`, () => null));
-    o[k] = read.get(name) ?? o[k];
+    if (!read.has(o[k])) read.set(o[k], await fs.readFile(path.join(dir, name)).then((b) => `data:${kind}/${type};base64,${b.toString('base64')}`, () => null));
+    o[k] = read.get(o[k]) ?? o[k];
   }
   return v;
 }

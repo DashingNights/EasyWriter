@@ -1,4 +1,8 @@
-import { generateHTML } from '@tiptap/core';
+import { Extension, generateHTML, getHTMLFromFragment } from '@tiptap/core';
+import { Fragment } from '@tiptap/pm/model';
+import { NodeSelection, Plugin } from '@tiptap/pm/state';
+import { toast } from 'sonner';
+import { getState } from './app/store.js';
 import { flowSource } from './canvas.js';
 import { validFlow } from './flow/library.mjs';
 import { rasterizePlanChart } from './plan-chart.js';
@@ -29,6 +33,53 @@ async function toJpeg(blob, theme) {
   return canvas.convertToBlob({ type: 'image/jpeg', quality: 0.9 });
 }
 
+/** The picture of `board` (a canvas's or plan chart's attrs plus `kind`) drawn `width` post px wide → {blob, height}. `n`: a
+ * plan chart's number in the post. */
+async function boardPicture(board, width, theme, n) {
+  if (board.kind === 'canvas') {
+    // The artboard is rendered at its own size, at the pixel ratio that gives 2× its drawn size in the document.
+    const scale = Math.min(4, Math.max(0.25, (2 * width) / board.w));
+    const { blob } = await rasterizeWhiteboard({ height: board.h, bg: board.bg, items: board.items }, { width: board.w, theme, scale });
+    return { blob, height: Math.round((width * board.h) / board.w) };
+  }
+  // A plan chart: laid out at the width the readability rules need, shown at the drawn width (SPEC §6e).
+  return rasterizePlanChart(board, { width, theme, n });
+}
+
+// Copying (or cutting) a node-selected canvas, plan chart, picture or video also puts its picture on the clipboard (a video:
+// the frame shown), next to the HTML the editor pastes back as the block, so other apps paste the picture.
+const PICTURED = ['canvas', 'planChart', 'media'];
+
+async function nodePicture(node, dom) {
+  if (node.type.name === 'media') {
+    const el = dom.querySelector('video, img');
+    const c = new OffscreenCanvas(el.videoWidth || el.naturalWidth, el.videoHeight || el.naturalHeight);
+    c.getContext('2d').drawImage(el, 0, 0);
+    return c.convertToBlob({ type: 'image/png' });
+  }
+  let board = { ...node.attrs, kind: node.type.name };
+  const live = board.kind === 'canvas' && validFlow(board.flow) ? await flowSource.load(board.flow.id) : null; // as push draws it
+  if (live) board = { ...board, ...live.board };
+  return (await boardPicture(board, dom.offsetWidth, getState().settings.theme, 1)).blob;
+}
+
+export const CopyPicture = Extension.create({
+  name: 'copyPicture',
+  addProseMirrorPlugins() {
+    // Before ProseMirror's own copy (a cut deletes the block); it still fills the event's clipboard, which this write replaces.
+    const copy = (view) => {
+      const sel = view.state.selection;
+      if (!(sel instanceof NodeSelection) || !PICTURED.includes(sel.node.type.name)) return false;
+      const html = getHTMLFromFragment(Fragment.from(sel.node), view.state.schema);
+      const picture = nodePicture(sel.node, view.nodeDOM(sel.from));
+      navigator.clipboard.write([new ClipboardItem({ 'text/html': new Blob([html], { type: 'text/html' }), 'image/png': picture })])
+        .catch((e) => toast.error(`Could not copy the picture: ${e.message || e}`));
+      return false;
+    };
+    return [new Plugin({ props: { handleDOMEvents: { copy, cut: copy } } })];
+  },
+});
+
 /** Builds `{html, images}` for api.forum.push (SPEC §5). */
 export async function buildPayload(editor, settings) {
   const { doc, boards: nodes } = replaceWhiteboards(applyBaseStyles(editor.getJSON(), settings));
@@ -39,24 +90,18 @@ export async function buildPayload(editor, settings) {
 
   // Boards nested in a list, quote, box or table are narrower than the page; use the drawn width.
   // NodeView DOM order matches replaceWhiteboards' document order. offsetWidth ignores CSS zoom.
-  const widths = [...editor.view.dom.querySelectorAll('.sc, .pc')].map((el) => el.offsetWidth);
+  const widths = [...editor.view.dom.querySelectorAll('.sc, .pc, [data-media] > :is(video, img)')].map((el) => el.offsetWidth);
   const images = [];
   let charts = 0;
   for (const [i, board] of boards.entries()) {
-    let width;
-    let height;
-    let blob;
-    if (board.kind === 'canvas') {
-      // The artboard is rendered at its own size, at the pixel ratio that gives 2× its drawn size in the document.
-      width = widths[i] || Math.min(board.dw, settings.forumWidth);
-      height = Math.round((width * board.h) / board.w);
-      const scale = Math.min(4, Math.max(0.25, (2 * width) / board.w));
-      ({ blob } = await rasterizeWhiteboard({ height: board.h, bg: board.bg, items: board.items }, { width: board.w, theme: settings.theme, scale }));
-    } else {
-      // A plan chart: laid out at the width the readability rules need, shown at the drawn width (SPEC §6e).
-      width = widths[i] || Math.min(board.dw ?? settings.forumWidth, settings.forumWidth);
-      ({ blob, height } = await rasterizePlanChart(board, { width, theme: settings.theme, n: ++charts }));
+    if (board.kind === 'media') { // a video or GIF goes up as it is
+      const m = board.src?.match(/^data:([^;]+);base64,/);
+      if (!m) throw new Error(`The file of ${board.name} is missing`);
+      images.push({ name: board.name, base64: board.src.slice(m[0].length), width: widths[i], type: m[1] });
+      continue;
     }
+    const width = widths[i] || Math.min(board.dw ?? settings.forumWidth, settings.forumWidth);
+    let { blob, height } = await boardPicture(board, width, settings.theme, board.kind === 'planChart' ? ++charts : 0);
     if (!blob) throw new Error(`Could not render ${board.kind} ${i + 1}`);
     let type = 'image/png';
     let name = `${board.kind === 'planChart' ? 'plan' : board.kind}-${i + 1}.png`;

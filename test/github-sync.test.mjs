@@ -41,9 +41,10 @@ test('plan: a picture missing on GitHub is never deleted here', () => {
   assert.deepEqual(plan({}, { [p]: '1' }, {}).take, [p]);
 });
 
-test('push: new pictures go up in commits of 32 MB first; a file GitHub finds too large is skipped', async () => {
-  // A fake of the git database API: blobs, trees (with base_tree), commits and the branch ref.
+test('push: new pictures go up in commits of 32 MB first; a picture GitHub finds too large goes up as a release asset', async () => {
+  // A fake of the git database API (blobs, trees with base_tree, commits and the branch ref) and of the releases API.
   const blobs = new Set();
+  const assets = [];
   const trees = new Map();
   const commits = new Map();
   let head = 'c0';
@@ -52,8 +53,14 @@ test('push: new pictures go up in commits of 32 MB first; a file GitHub finds to
   commits.set('c0', 't0');
   let n = 0;
   stub.net.fetch = async (url, { method, body }) => {
-    const b = body && JSON.parse(body);
+    const b = typeof body === 'string' ? JSON.parse(body) : body;
     const json = (status, v) => ({ ok: status < 300, status, json: async () => v });
+    if (url.endsWith('/releases/tags/easywriter-media')) return json(404, { message: 'Not Found' });
+    if (url.endsWith('/me/backup/releases')) return json(201, { id: 7 });
+    if (url.startsWith('https://uploads.github.com/repos/me/backup/releases/7/assets?name=')) {
+      assets.push([url.split('name=')[1], b.length]);
+      return json(201, { id: 99 });
+    }
     if (url.endsWith('/git/blobs')) {
       if (b.content.length > 30e6) return json(422, { message: 'Sorry, your input was too large to process.' });
       const sha = blobSha(Buffer.from(b.content, 'base64'));
@@ -85,12 +92,16 @@ test('push: new pictures go up in commits of 32 MB first; a file GitHub finds to
   const local = new Map([['.easywriter', Buffer.from('m')], pic(1, 20), pic(2, 20), pic(4, 25), pic(3, 20), ['drafts/x.json', Buffer.from('{"a":1}')]]);
   const saves = [];
   const out = await push('me/backup', { branch: 'main', head: 'c0', files: { '.easywriter': marker } }, local, (s) => saves.push(s));
-  assert.deepEqual(Object.keys(out.skipped), [pic(4, 0)[0]]);
+  assert.deepEqual(out.skipped, {});
   assert.equal(saves.length, 2); // pictures 1 and 2 each in a commit of their own, then 3 and the draft in the last
   assert.deepEqual(Object.keys(saves[1].files).sort(), ['.easywriter', pic(1, 0)[0], pic(2, 0)[0]]);
   const files = trees.get(commits.get(head));
   assert.deepEqual(files, out.files);
-  assert.deepEqual(Object.keys(files).sort(), ['.easywriter', 'drafts/x.json', pic(1, 0)[0], pic(2, 0)[0], pic(3, 0)[0]]);
+  const ptr = `assets/${'4'.repeat(64)}.png`;
+  assert.deepEqual(Object.keys(files).sort(), ['.easywriter', ptr, 'drafts/x.json', pic(1, 0)[0], pic(2, 0)[0], pic(3, 0)[0]]);
+  assert.deepEqual(assets, [[`${'4'.repeat(64)}.png`, 25 * 1024 * 1024]]);
+  assert.deepEqual(JSON.parse(require('node:fs').readFileSync(`${home}/${ptr}`, 'utf8')), { id: 99, size: 25 * 1024 * 1024 });
+  local.delete(pic(4, 0)[0]); // as readLocal reads it now: its pointer stands for it
   const again = await push('me/backup', { branch: 'main', head, files }, local, () => assert.fail('nothing to send'));
   assert.equal(again.head, head);
 });

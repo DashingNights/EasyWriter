@@ -6,9 +6,10 @@ import TextAlign from '@tiptap/extension-text-align';
 import Subscript from '@tiptap/extension-subscript';
 import Superscript from '@tiptap/extension-superscript';
 import { Table, TableRow, TableHeader, TableCell } from '@tiptap/extension-table';
-import { WhiteboardPaste } from './whiteboard.js';
-import { Canvas } from './canvas.js';
+import { contentWidth, injectStyle, make, WhiteboardPaste } from './whiteboard.js';
+import { Canvas, scaleOf } from './canvas.js';
 import { PlanChart } from './plan-chart.js';
+import { CopyPicture } from './export.js';
 import { FONT_SIZES, FONTS, HIGHLIGHTS, presetChain, TEXT_COLORS } from './format.mjs';
 import { keyAmong } from './app/keybinds.js';
 import { chordOf } from './app/keys.mjs';
@@ -152,6 +153,127 @@ export const FontFamily = Mark.create({
         css ? commands.setMark(this.name, { font: css }) : commands.unsetMark(this.name),
       unsetFontFamily: () => ({ commands }) => commands.unsetMark(this.name),
     };
+  },
+});
+
+const MEDIA_MIN = 40; // display width
+const CORNERS = ['nw', 'ne', 'sw', 'se'];
+
+// The editor view of a media node: a click selects it (the video's controls still work); its corner handles change the
+// display width `dw` (the height follows the video or picture), live in the DOM and one commit on pointerup.
+class MediaView {
+  constructor({ node, view, getPos, editor }) {
+    Object.assign(this, { node, view, getPos, editor, drag: null, dw: node.attrs.dw });
+    injectStyle(); // .wb-handle
+    const { src, name } = node.attrs;
+    this.dom = make('div');
+    this.dom.dataset.media = '';
+    this.el = src?.startsWith('data:video/') ? make('video', '', { src, controls: true, preload: 'metadata' }) : make('img', '', { src, alt: name });
+    this.dom.append(this.el);
+    this.dom.addEventListener('pointerdown', this.onPointerDown);
+    this.dom.addEventListener('pointermove', this.onPointerMove);
+    this.dom.addEventListener('pointerup', this.onPointerUp);
+    this.dom.addEventListener('pointercancel', this.onPointerUp);
+    this.size();
+  }
+
+  size() {
+    this.el.style.width = this.dw ? `${this.dw}px` : '';
+  }
+
+  onPointerDown = (e) => {
+    if (e.button !== 0) return;
+    const corner = CORNERS.find((c) => e.target.classList.contains(`wb-h-${c}`));
+    if (!corner) {
+      const pos = this.getPos();
+      if (typeof pos === 'number') this.editor.commands.setNodeSelection(pos);
+      this.view.focus();
+      return;
+    }
+    e.preventDefault();
+    this.drag = { sign: corner.includes('w') ? -1 : 1, x: e.clientX, w0: this.el.offsetWidth, scale: scaleOf(this.dom) };
+    e.target.setPointerCapture(e.pointerId);
+  };
+
+  onPointerMove = (e) => {
+    const g = this.drag;
+    if (!g) return this.dom.style.setProperty('--wb-inv', String(1 / scaleOf(this.dom))); // the page zoom may have changed
+    this.dw = Math.round(Math.max(MEDIA_MIN, Math.min(g.w0 + (g.sign * (e.clientX - g.x)) / g.scale, contentWidth(this.view))));
+    this.size();
+  };
+
+  onPointerUp = () => {
+    if (!this.drag) return;
+    this.drag = null;
+    const pos = this.getPos();
+    if (this.dw !== this.node.attrs.dw && typeof pos === 'number') {
+      this.view.dispatch(this.view.state.tr.setNodeMarkup(pos, undefined, { ...this.node.attrs, dw: this.dw }));
+    }
+  };
+
+  update(node) {
+    if (node.type !== this.node.type || node.attrs.src !== this.node.attrs.src) return false;
+    this.node = node;
+    if (!this.drag) {
+      this.dw = node.attrs.dw;
+      this.size();
+    }
+    return true;
+  }
+
+  // Everything inside is ours, except paste/drop, which must reach WhiteboardPaste's handlers.
+  stopEvent(event) {
+    return !['paste', 'drop', 'dragover', 'dragenter', 'dragleave'].includes(event.type);
+  }
+
+  ignoreMutation() {
+    return true;
+  }
+
+  selectNode() {
+    if (this.dom.classList.contains('media-selected')) return;
+    this.dom.classList.add('media-selected');
+    this.dom.append(...CORNERS.map((c) => make('div', `wb-handle wb-h-${c}`, { title: 'Drag to resize' })));
+    this.dom.style.setProperty('--wb-inv', String(1 / scaleOf(this.dom)));
+  }
+
+  deselectNode() {
+    this.dom.classList.remove('media-selected');
+    for (const h of this.dom.querySelectorAll(':scope > .wb-handle')) h.remove();
+  }
+}
+
+// A video or GIF: pushed to the forum as its own file (export.js buildPayload), since a canvas would flatten it to one frame.
+export const Media = Node.create({
+  name: 'media',
+  group: 'block',
+  atom: true,
+  selectable: true,
+  draggable: false,
+  addAttributes() {
+    return {
+      src: { default: null, rendered: false },
+      name: { default: 'media', rendered: false },
+      dw: { default: null, rendered: false }, // display width in post px; null: its own width, at most the content width
+    };
+  },
+  parseHTML() {
+    return [{
+      tag: 'div[data-media]',
+      getAttrs: (el) => {
+        const src = el.firstElementChild?.getAttribute('src') ?? '';
+        const dw = Math.round(Number(el.getAttribute('data-dw'))) || null;
+        return /^data:(image|video)\//.test(src) ? { src, name: el.getAttribute('data-name') || 'media', dw } : false;
+      },
+    }];
+  },
+  renderHTML({ node: { attrs: { src, name, dw } } }) {
+    const style = dw ? `width: ${dw}px` : null;
+    const el = src?.startsWith('data:video/') ? ['video', { src, controls: '', preload: 'metadata', style }] : ['img', { src, alt: name, style }];
+    return ['div', { 'data-media': '', 'data-name': name, 'data-dw': dw }, el];
+  },
+  addNodeView() {
+    return (props) => new MediaView(props);
   },
 });
 
@@ -304,6 +426,8 @@ export function buildExtensions(historyDepth) {
     WhiteboardPaste,
     Canvas,
     PlanChart,
+    Media,
+    CopyPicture,
     InactiveSelection,
     TextKeys,
   ];

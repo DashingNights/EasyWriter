@@ -500,7 +500,7 @@ let mdManager = null;
 const markdown = () => (mdManager ??= new MarkdownManager({ extensions: state.editor.extensionManager.baseExtensions }));
 
 const IMG_MD = /!\[[^\]]*\]\([^)]*\)/g;
-const DATA_URL = /data:image\/[a-z0-9.+-]+;base64,[A-Za-z0-9+/=]+/gi;
+const DATA_URL = /data:(image|video)\/[a-z0-9.+-]+;base64,[A-Za-z0-9+/=]+/gi;
 
 /** A copy of JSON `v` with every data URL replaced by {$img: {len, hash}}. */
 function stripImages(v) {
@@ -569,9 +569,10 @@ async function toNodes(content, ed = state.editor) {
 
 /** Markdown of TipTap JSON `node` (the doc, or the block at `path`): a board as `![canvas: 3 items](block:[4])`. */
 function toMarkdown(node, path = null) {
-  const board = (n, p) => `![${n.type}: ${n.attrs?.items?.length ?? 0} items](block:[${p}])`;
-  if (path) return BOARD_TYPES.includes(node.type) ? board(node, path) : markdown().serialize({ type: 'doc', content: [node] });
-  return (node.content ?? []).map((n, i) => (BOARD_TYPES.includes(n.type) ? board(n, [i]) : markdown().serialize({ type: 'doc', content: [n] })))
+  const board = (n, p) => (n.type === 'media' ? `![media: ${n.attrs?.name}](block:[${p}])` : `![${n.type}: ${n.attrs?.items?.length ?? 0} items](block:[${p}])`);
+  const stub = (t) => BOARD_TYPES.includes(t) || t === 'media';
+  if (path) return stub(node.type) ? board(node, path) : markdown().serialize({ type: 'doc', content: [node] });
+  return (node.content ?? []).map((n, i) => (stub(n.type) ? board(n, [i]) : markdown().serialize({ type: 'doc', content: [n] })))
     .filter((s) => s.trim()).join('\n\n');
 }
 
@@ -584,7 +585,7 @@ function toHtml(path, images, ed = state.editor) {
     if (pos === null) fail('not_found', `No block at [${path}]`, { path });
     html = getHTMLFromFragment(Fragment.from(ed.state.doc.nodeAt(pos)), ed.schema);
   }
-  return images ? html : html.replace(DATA_URL, (s) => `data:image;len=${s.length};hash=${cyrb53(s)}`);
+  return images ? html : html.replace(DATA_URL, (s, kind) => `data:${kind};len=${s.length};hash=${cyrb53(s)}`);
 }
 
 const CONTEXT = 40;
