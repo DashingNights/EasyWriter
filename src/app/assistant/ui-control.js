@@ -1,3 +1,4 @@
+import { confirming } from '../actions.js';
 import { fail } from '../commands/define.mjs';
 import { changes, createRefs, denyReason, keyRefusal, riskOf, snapshotPage, TEXT_TYPES, textField } from './ui-tree.mjs';
 
@@ -302,12 +303,16 @@ export async function invokeControl(ctx, a) {
   }
   if (ctx.signal.aborted) fail('cancelled', 'The call was cancelled');
   const before = observe(el);
-  if (a.action === 'click') await click(el);
-  else if (a.action === 'type') {
-    el.focus({ preventScroll: true });
-    setValue(el, a.text);
-  } else if (a.action === 'key') key(el, a.key);
-  else await choose(el, a.value, r.name, ctx.signal);
-  await settle();
+  const act = async () => {
+    if (a.action === 'click') await click(el);
+    else if (a.action === 'type') {
+      el.focus({ preventScroll: true });
+      setValue(el, a.text);
+    } else if (a.action === 'key') key(el, a.key);
+    else await choose(el, a.value, r.name, ctx.signal);
+    await settle();
+  };
+  // Allow all: the app's own confirm that the control opens (Delete draft...) passes too, as the executor's ask would.
+  await (ctx.source === 'agent:assistant' && ctx.policy.destructive === true ? confirming(act) : act());
   return { ref: a.ref, action: a.action, name: r.name, ...(r.in && { in: r.in }), role: r.role, area: r.area, changes: changes(before, observe(el)) };
 }

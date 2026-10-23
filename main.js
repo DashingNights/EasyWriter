@@ -18,9 +18,9 @@ const { execFile, spawn } = require('child_process');
 const { Readable } = require('stream');
 const { pipeline } = require('stream/promises');
 
-const FORUM = 'https://daf.staffs.ac.uk';
-const FORUM_URL_RE = /^https:\/\/daf\.staffs\.ac\.uk\//;
-const TOPIC_URL_RE = /^https:\/\/daf\.staffs\.ac\.uk\/topic\/\d+[^\s]*$/;
+// What drafts, plans and flowcharts link to (src/thread-url.mjs): a topic URL of any forum (the forum site can change) or a project.
+const THREAD_KEY_RE = /^(?:https:\/\/[^/\s]+\/topic\/\d+\S*|project:[0-9a-f-]{36})$/;
+const threadUrl = import('./src/thread-url.mjs');
 const SMOKE = process.argv.includes('--smoke');
 const argValue = (name) => process.argv.find((a) => a.startsWith(`--${name}=`))?.slice(name.length + 3);
 const SCRIPT = argValue('script'); // smoke: run this command script (SPEC §8) instead of the sample
@@ -78,6 +78,8 @@ const DEFAULT_SETTINGS = {
     { id: 'p3', name: 'Highlight', fontFamily: '', size: 100, color: 'root', highlight: 'yellow', bold: false, italic: false, underline: false },
     { id: 'p4', name: 'Statement', fontFamily: '', size: 150, color: 'hard', highlight: '', bold: true, italic: false, underline: false },
   ],
+  mode: 'projects', // or 'forum': threads of the Invision Community site at forumUrl (an https origin), its sign-in and Push
+  forumUrl: '',
   threads: [],
   selectedThread: null,
   lastDraftId: null,
@@ -96,6 +98,7 @@ const DEFAULT_SETTINGS = {
   keybinds: {}, // §7k: {bindingId: [chord]} for the bindings changed from their defaults (src/app/keys.mjs)
   github: github.DEFAULTS, // the GitHub backup (SPEC §4b)
   demoSeeded: false, // the demo draft was created on the first start (actions.js init)
+  autoUpdate: false, // updates download in the background and install on quit; off: the update toast offers them (checkForUpdates)
 };
 
 // SSO providers block embedded browsers: drop the Electron and app tokens from the UA.
@@ -121,17 +124,23 @@ async function getSettings() {
     await setAside(settingsFile());
     stored = null;
   }
-  return { ...structuredClone(DEFAULT_SETTINGS), ...(isPlainObject(stored) ? stored : {}) };
+  const { migrateSettings } = await threadUrl;
+  return { ...structuredClone(DEFAULT_SETTINGS), ...(isPlainObject(stored) ? migrateSettings(stored) : {}) };
 }
 
 function setSettings(partial) {
   if (!isPlainObject(partial)) throw new Error('settings must be an object');
+  if ('mode' in partial && !['projects', 'forum'].includes(partial.mode)) throw new Error("mode must be 'projects' or 'forum'");
   return serialized(async () => {
+    const { forumOrigin } = await threadUrl;
+    if ('forumUrl' in partial && partial.forumUrl !== '' && forumOrigin(partial.forumUrl) !== partial.forumUrl) throw new Error('forumUrl must be an https origin or empty');
     const merged = { ...(await getSettings()), ...partial };
     await writeJsonAtomic(settingsFile(), merged);
     if ('keybinds' in partial) refreshKeys(merged);
-    if ('agent' in partial && !SMOKE) agentServer.sync(merged); // Settings > Local AI agents turns the gateway on or off live
+    // Settings > Local AI agents turns the gateway on or off live; the assistant on Claude Code or Codex keeps its pipe open
+    if (('agent' in partial || 'assistant' in partial) && !SMOKE) agentServer.sync(merged);
     if ('github' in partial && !SMOKE) github.configure(merged);
+    if ('autoUpdate' in partial) applyAutoUpdate(merged.autoUpdate);
     if (github.SETTINGS_KEYS.some((k) => k in partial)) github.touch();
     return merged;
   });
@@ -163,14 +172,14 @@ function saveHistory(id, data) {
 
 // Plans (Gantt plan §4) and the flowchart library (flowchart plan §4): main checks the envelope, the renderer the rest.
 const MB = 1024 * 1024;
-const isThread = (url) => typeof url === 'string' && TOPIC_URL_RE.test(url);
+const isThread = (url) => typeof url === 'string' && THREAD_KEY_RE.test(url);
 
 const plans = fileFamily(userDir('plans'), {
   keepPrevious: true,
   maxBytes: 8 * MB,
   images,
   validate: (p) => {
-    if (!isThread(p.threadUrl)) throw new Error('plan threadUrl must be a forum topic URL');
+    if (!isThread(p.threadUrl)) throw new Error('plan threadUrl must be a forum topic URL or a project key');
   },
 });
 
@@ -184,7 +193,7 @@ const flows = fileFamily(userDir('flowcharts'), {
   }),
   validate: (f) => {
     if (typeof f.title !== 'string' || f.title.length > 120) throw new Error('flowchart title must be a string of at most 120 characters');
-    if (f.threadUrl != null && !isThread(f.threadUrl)) throw new Error('flowchart threadUrl must be null or a forum topic URL');
+    if (f.threadUrl != null && !isThread(f.threadUrl)) throw new Error('flowchart threadUrl must be null, a forum topic URL or a project key');
     if (!isPlainObject(f.board)) throw new Error('flowchart board must be an object');
     if (!Number.isInteger(f.rev) || f.rev < 1) throw new Error('flowchart rev must be an integer of at least 1');
   },
@@ -218,7 +227,7 @@ const forumWebPreferences = () => ({
 
 function getForumWindow() {
   if (forumWin && !forumWin.isDestroyed()) return forumWin;
-  const win = new BrowserWindow({ width: 1500, height: 1000, title: 'Digital Academy Forum', icon: ICON, webPreferences: forumWebPreferences() });
+  const win = new BrowserWindow({ width: 1500, height: 1000, title: 'Forum', icon: ICON, webPreferences: forumWebPreferences() });
   // SSO popups open as child windows; they inherit the opener's session (persist:daf).
   win.webContents.setWindowOpenHandler(() => ({ action: 'allow', overrideBrowserWindowOptions: { parent: win } }));
   // A forum beforeunload handler would otherwise silently cancel loadURL and window close (and app.quit).
@@ -273,12 +282,24 @@ function loadAndWait(win, url, timeoutMs = 60000) {
   });
 }
 
+// The forum's origin (settings.forumUrl); none outside forum mode, so projects mode never loads a forum page.
+async function forumSite() {
+  const s = await getSettings();
+  if (s.mode !== 'forum' || !s.forumUrl) throw new Error('No forum is set. Choose forum mode and the forum site in Settings.');
+  return s.forumUrl;
+}
+// A page of the forum at origin `site`, with or without www. (a forum may redirect to either, and its links are of that one).
+const hostOf = (url) => new URL(url).host.toLowerCase().replace(/^www\./, '');
+const onForum = (site, url) => typeof url === 'string' && url.startsWith('https://') && URL.canParse(url) && hostOf(url) === hostOf(site);
+const isTopicOf = (site, url) => onForum(site, url) && THREAD_KEY_RE.test(url);
+
 // Runs script in a hidden window on the forum home page, then destroys the window.
 async function runInWorker(script, timeoutMs) {
+  const site = await forumSite();
   const win = new BrowserWindow({ show: false, webPreferences: forumWebPreferences() });
   let timer;
   try {
-    const work = loadAndWait(win, `${FORUM}/`, timeoutMs).then(() => win.webContents.executeJavaScript(script, true));
+    const work = loadAndWait(win, `${site}/`, timeoutMs).then(() => win.webContents.executeJavaScript(script, true));
     const timeout = new Promise((_, reject) => {
       timer = setTimeout(() => reject(new Error('forum request timed out')), timeoutMs);
     });
@@ -305,13 +326,15 @@ async function forumDiscover() {
 
 // Title, subject, year and forum of up to 50 topic URLs; topics whose page could not be read are left out.
 async function forumDescribe(urls) {
-  if (!Array.isArray(urls) || urls.length > 50 || !urls.every(isThread)) throw new Error('urls must be at most 50 forum topic URLs');
+  const site = await forumSite();
+  if (!Array.isArray(urls) || urls.length > 50 || !urls.every((u) => isTopicOf(site, u))) throw new Error('urls must be at most 50 forum topic URLs');
   const result = await runInWorker(describeThreadsScript(urls), 45000);
   if (result && result.error) throw new Error(result.error);
   return { threads: (result && result.threads) || [] };
 }
 
-function forumLogin() {
+async function forumLogin() {
+  const site = await forumSite();
   const win = getForumWindow();
   const wc = win.webContents;
   return new Promise((resolve) => {
@@ -333,7 +356,7 @@ function forumLogin() {
         const status = await wc.executeJavaScript(STATUS_SCRIPT, true);
         if (status && status.loggedIn && !done) {
           finish(status);
-          wc.loadURL(`${FORUM}/`).catch(() => {});
+          wc.loadURL(`${site}/`).catch(() => {});
         }
       } catch {
         // Page mid-navigation; the next tick or load event retries.
@@ -348,13 +371,14 @@ function forumLogin() {
     wc.on('did-navigate', check);
     win.show();
     win.focus();
-    wc.loadURL(`${FORUM}/login/`).catch(() => {});
+    wc.loadURL(`${site}/login/`).catch(() => {});
   });
 }
 
 async function forumPush(payload) {
   try {
-    if (!payload || typeof payload.threadUrl !== 'string' || !TOPIC_URL_RE.test(payload.threadUrl)) {
+    const site = await forumSite();
+    if (!payload || !isTopicOf(site, payload.threadUrl)) {
       return { ok: false, error: 'invalid thread URL' };
     }
     const win = getForumWindow();
@@ -362,7 +386,7 @@ async function forumPush(payload) {
     await loadAndWait(win, payload.threadUrl);
     const wc = win.webContents;
     // Logged out → redirected to SSO (never run the draft there) or the guest view.
-    if (new URL(wc.getURL()).origin !== FORUM || !(await wc.executeJavaScript(STATUS_SCRIPT)).loggedIn) {
+    if (!onForum(site, wc.getURL()) || !(await wc.executeJavaScript(STATUS_SCRIPT)).loggedIn) {
       return { ok: false, error: 'Not logged in to the forum. Use Log in, then push again.' };
     }
     const script = buildPushScript({ html: String(payload.html ?? ''), images: Array.isArray(payload.images) ? payload.images : [] });
@@ -396,7 +420,8 @@ async function forumPush(payload) {
 }
 
 async function forumOpen(url) {
-  if (typeof url !== 'string' || !FORUM_URL_RE.test(url)) throw new Error('not a daf.staffs.ac.uk URL');
+  const site = await forumSite();
+  if (!onForum(site, url)) throw new Error('not a URL of the forum site');
   const win = getForumWindow();
   win.show();
   win.focus();
@@ -474,8 +499,8 @@ assistant.register(handle, getSettings, () => mainWin, setSettings);
 computer.register(handle, () => mainWin, { index: INDEX_FILE, preload: path.join(__dirname, 'preload.js') });
 // Sign in with Chrome (§7j): a real Chrome/Edge signs in, then its cookies go into persist:browser. See src/chrome-signin.js.
 handle('browser.chromeSignIn', () => chromeSignIn.chromeSignIn()); // no renderer arguments reach the flow
-// Local AI agents (SPEC §8 Agents): the pipe bin/daf-agent.js (the MCP bridge) connects to; agent.disconnect, agent.ready|reply.
-agentServer.register(handle, () => mainWin);
+// Local AI agents (SPEC §8 Agents): the pipe bin/easywriter-agent.js (the MCP bridge) connects to; agent.disconnect, agent.ready|reply.
+agentServer.register(handle, () => mainWin, getSettings);
 // GitHub backup (SPEC §4b): github.status|login|loginWait|logout|repos|checkRepo|syncNow|start. Before it merges files from GitHub,
 // the background window and the renderer save (window.__sync.flush), and the renderer reloads after (window.__sync.reload).
 const inRenderer = (js) => (mainWin && !mainWin.isDestroyed() ? mainWin.webContents.executeJavaScript(js, true) : Promise.resolve());
@@ -489,9 +514,12 @@ github.register(handle, {
   busy: (text) => { inRenderer(`window.__sync?.busy(${JSON.stringify(text)})`).catch(() => {}); },
 });
 let updating = false; // Restart for an update closes the window without the GitHub question
+// The update toast's download: resolves once the update is ready to install (update.event progress meanwhile).
+handle('update.download', () => (PORTABLE ? downloadPortable() : autoUpdater.downloadUpdate()));
 // The renderer saved its draft; the background window saves its own, then a silent install relaunches.
 handle('update.install', () => {
   updating = true;
+  assistant.killRuns();
   return computer.close().finally(() => (PORTABLE ? applyPortableUpdate() : autoUpdater.quitAndInstall(true, true))).catch((e) => {
     updating = false;
     throw e;
@@ -630,6 +658,9 @@ function createMainWindow() {
   });
 
   wc.on('context-menu', (_event, params) => popupEditMenu(wc, params, win));
+  // A reload (GitHub sync) or a crash leaves no chat panel to stop the assistant's CLI runs.
+  wc.on('did-navigate', assistant.killRuns);
+  wc.on('render-process-gone', assistant.killRuns);
 
   // Logged in to GitHub with the backup on: unpushed changes are pushed (or the user is asked) before the window closes.
   let closeState = null; // 'checking' while it asks or pushes, 'done' once the window may close
@@ -651,21 +682,40 @@ function createMainWindow() {
   return win;
 }
 
-// Self-update from GitHub Releases (packaged builds only): downloads in the background, installs on quit or on the
-// renderer's Restart.
+// Self-update from GitHub Releases (packaged builds only): checks at start and every 4 hours. update.event tells the renderer
+// {type: 'available', version} (settings.autoUpdate off: the toast offers it and update.download fetches it), {type: 'progress',
+// percent} while downloading and {type: 'ready', version} once a background download is done (autoUpdate on: installs on quit or
+// on the renderer's Restart).
+// The last offer or ready event is kept: update.last replays it to a renderer that subscribed after it was sent.
+let lastUpdate = null;
+const sendUpdate = (ev) => {
+  if (ev.type !== 'progress') lastUpdate = ev;
+  mainWin?.webContents.send('update.event', ev);
+};
+handle('update.last', () => lastUpdate);
+let checkUpdate = null; // set by checkForUpdates
 function checkForUpdates() {
-  if (PORTABLE) {
-    checkPortableUpdate();
-    setInterval(checkPortableUpdate, 4 * 60 * 60 * 1000).unref();
-    return;
+  checkUpdate = PORTABLE ? checkPortableUpdate : () => autoUpdater.checkForUpdates().catch(() => {});
+  if (!PORTABLE) {
+    autoUpdater.autoDownload = false;
+    autoUpdater.autoInstallOnAppQuit = false; // until applyAutoUpdate reads the setting
+    autoUpdater.on('update-available', async (info) => {
+      if ((await getSettings()).autoUpdate) autoUpdater.downloadUpdate().then(() => sendUpdate({ type: 'ready', version: info.version }), () => {});
+      else sendUpdate({ type: 'available', version: info.version });
+    });
+    autoUpdater.on('download-progress', (p) => sendUpdate({ type: 'progress', percent: p.percent }));
+    autoUpdater.on('error', (e) => console.error('update', e));
   }
-  autoUpdater.autoDownload = true;
-  autoUpdater.autoInstallOnAppQuit = true;
-  autoUpdater.on('update-downloaded', (info) => mainWin?.webContents.send('update.ready', info.version));
-  autoUpdater.on('error', (e) => console.error('update', e));
-  const check = () => autoUpdater.checkForUpdates().catch(() => {});
-  check();
-  setInterval(check, 4 * 60 * 60 * 1000).unref();
+  getSettings().then((s) => applyAutoUpdate(s.autoUpdate));
+  checkUpdate();
+  setInterval(checkUpdate, 4 * 60 * 60 * 1000).unref();
+}
+
+// Settings > General's switch applies live: on checks again, so a waiting update downloads now.
+function applyAutoUpdate(on) {
+  if (!checkUpdate) return;
+  if (!PORTABLE) autoUpdater.autoInstallOnAppQuit = !!on;
+  if (on) checkUpdate();
 }
 
 // Portable copies: electron-updater cannot update a zip, so this downloads the release zip and extracts it into
@@ -674,6 +724,8 @@ const RELEASES = 'https://github.com/DashingNights/EasyWriter/releases/latest/do
 const UPDATE_DIR = path.join(DATA, 'update');
 let portableBusy = false;
 let portableReady = null; // the version waiting in data/update/new
+let portableOffer = null; // {version, yml} of the newer release not downloaded yet
+let portableDownload = null; // the download under way
 
 function newerVersion(a, b) {
   const x = a.split('.').map(Number);
@@ -683,7 +735,7 @@ function newerVersion(a, b) {
 }
 
 async function checkPortableUpdate() {
-  if (portableBusy || portableReady) return;
+  if (portableBusy || portableDownload || portableReady) return;
   portableBusy = true;
   try {
     // net.fetch uses the system proxy, which school networks often need. The /latest/download/ links have no API rate limit.
@@ -697,17 +749,46 @@ async function checkPortableUpdate() {
     const marker = path.join(UPDATE_DIR, 'version'); // written after a full extraction, so a quit without Restart does not download it again
     if (fsSync.existsSync(marker) && fsSync.readFileSync(marker, 'utf8') === version) {
       portableReady = version;
-      mainWin?.webContents.send('update.ready', version);
+      sendUpdate({ type: 'ready', version });
       return;
     }
+    portableOffer = { version, yml };
+    if ((await getSettings()).autoUpdate) {
+      await downloadPortable();
+      sendUpdate({ type: 'ready', version });
+    } else sendUpdate({ type: 'available', version });
+  } catch (e) {
+    console.error('update', e);
+  } finally {
+    portableBusy = false;
+  }
+}
+
+// Downloads and extracts portableOffer into data/update/new. Throws on a failure, which leaves the app as it was.
+function downloadPortable() {
+  if (portableReady) return Promise.resolve();
+  if (!portableOffer) return Promise.reject(new Error('No update to download'));
+  return portableDownload ??= (async () => {
+    const { version, yml } = portableOffer;
     fsSync.rmSync(UPDATE_DIR, { recursive: true, force: true }); // any half download or an older extracted update
     const name = `EasyWriter-${version}-win.zip`;
     const zip = path.join(UPDATE_DIR, name);
     const fresh = path.join(UPDATE_DIR, 'new');
+    const marker = path.join(UPDATE_DIR, 'version');
     fsSync.mkdirSync(fresh, { recursive: true });
     const res = await net.fetch(RELEASES + name);
     if (!res.ok) throw new Error(`${name}: HTTP ${res.status}`);
-    await pipeline(Readable.fromWeb(res.body), fsSync.createWriteStream(zip));
+    const total = Number(res.headers.get('content-length')) || 0;
+    let got = 0;
+    let sent = -1;
+    await pipeline(Readable.fromWeb(res.body), async function* (chunks) {
+      for await (const chunk of chunks) {
+        got += chunk.length;
+        const percent = total ? Math.floor((got * 100) / total) : 0;
+        if (percent !== sent) sendUpdate({ type: 'progress', percent: (sent = percent) });
+        yield chunk;
+      }
+    }, fsSync.createWriteStream(zip));
     const at = yml.indexOf(`url: ${name}`);
     const sha512 = at < 0 ? null : /sha512:\s*(\S+)/.exec(yml.slice(at))?.[1];
     if (sha512) {
@@ -721,12 +802,10 @@ async function checkPortableUpdate() {
     });
     fsSync.writeFileSync(marker, version);
     portableReady = version;
-    mainWin?.webContents.send('update.ready', version);
-  } catch (e) {
+  })().catch((e) => {
     console.error('update', e);
-  } finally {
-    portableBusy = false;
-  }
+    throw e;
+  }).finally(() => { portableDownload = null; });
 }
 
 // Runs after the background window saved its draft. The script waits up to a minute until it can open EasyWriter.exe

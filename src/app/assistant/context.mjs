@@ -120,13 +120,14 @@ const PAGES = { editor: 'Editor', plan: 'Plans', flows: 'Flowcharts' };
 const MODE_LINES = {
   ask: 'Permission mode: Ask first. The user approves every change on a card.',
   readonly: 'Permission mode: Read only. You can read and answer. Every change is refused.',
+  all: 'Permission mode: Allow all. Changes and deletions run at once with no card.',
 };
 
 /** The situation note the app puts before the user's message at send time; `s` = {page: 'editor' | 'plan' | 'flows', plan?,
  * flow? (the workspace's title), draft: {title, tag?} | null, thread?, selection: {label, summary, attached} | null, canvas? (the
  * canvas being edited, e.g. "the canvas at block [4]"), background?: [title] (the drafts with a background session, sessions.js),
- * drafts: [{title, tag?}], total, scope: 'thread' | 'all', permission?:
- * 'standard' | 'ask' | 'readonly', playbooks?: [{id?, title, text}] (playbooks.mjs pickPlaybooks, under "How to do this:")}. Never
+ * drafts: [{title, tag?}], total, scope: 'thread' | 'all', projects? (projects mode: the entries are projects, no forum), permission?:
+ * 'standard' | 'ask' | 'readonly' | 'all', playbooks?: [{id?, title, text}] (playbooks.mjs pickPlaybooks, under "How to do this:")}. Never
  * stored. */
 export function situationNote(s) {
   const q = (t) => `"${clip(t || 'Untitled draft', TITLE_CHARS)}"`;
@@ -138,17 +139,19 @@ export function situationNote(s) {
     `Page: ${page}${where}`,
     `Open draft: ${s.draft ? `${tagged(s.draft)}${s.draftId ? ` (id ${s.draftId})` : ''}${s.page === 'editor' ? '' : ' (behind this page)'}` : 'none'}`,
   ];
-  if (s.draft) lines.push(`Thread: ${s.thread ? q(s.thread) : 'none'}`);
+  const unit = s.projects ? 'Project' : 'Thread';
+  if (s.draft) lines.push(`${unit}: ${s.thread ? q(s.thread) : 'none'}`);
   if (s.background?.length) lines.push(`Working in the background on: ${s.background.map(q).join(', ')}`);
   const sel = s.selection;
   lines.push(`Selected: ${sel ? `${clip(sel.summary, 140)}${sel.attached ? `. It is attached as [${sel.label}].` : ''}` : 'nothing'}`);
   if (s.page === 'editor' && s.draft) lines.push(`Canvas being edited: ${s.canvas || 'none'}`);
   const shown = s.drafts.slice(0, NOTE_DRAFTS);
-  const head = s.scope === 'thread' ? 'Drafts in this thread' : 'Drafts';
+  const head = s.scope === 'thread' ? `Drafts in this ${unit.toLowerCase()}` : 'Drafts';
   const count = s.total > shown.length ? `${s.total}, the first ${shown.length} in sidebar order` : String(s.total);
   lines.push(`${head} (${count})${shown.length ? '' : ': none'}`, ...shown.map((d) => `- ${tagged(d)}${d.id ? ` (id ${d.id})` : ''}`));
   // Google AI: the open draft's blocks with their paths (capture.js outlineLines), so the model knows the draft before it acts.
   if (s.outline?.length) lines.push('Open draft outline (block paths for the doc and board tools):', ...s.outline);
+  if (s.projects) lines.push('Projects mode: the threads tools work on projects. There is no forum to push to or log in to.');
   if (MODE_LINES[s.permission]) lines.push(MODE_LINES[s.permission]);
   // A playbook's id goes after its title (wave 2b): the tool text of board_items_add, batch and canvas_edit names it.
   if (s.playbooks?.length) lines.push('How to do this:', ...s.playbooks.map((p) => `${p.title}${p.id ? ` (playbook ${p.id})` : ''}\n${p.text}`));
@@ -235,11 +238,12 @@ export function doneReply(title) {
 }
 
 /** A tool answer `res` with its pictures taken out (view.render's `url` beside `picture: 'next message'`, also as a batch step's
- * result) → {res, pictures: [{url, size}]} (`size`: the answer's size line, wave 2b): the model gets the answer as text and each
- * picture as the next user message (loop.js). */
+ * result or a calls step's {ok, result}) → {res, pictures: [{url, size}]} (`size`: the answer's size line, wave 2b): the model
+ * gets the answer as text and each picture as the next user message (loop.js). */
 export function takePictures(res) {
   const pictures = [];
   const take = (r) => {
+    if (r?.ok && r.result?.picture === 'next message') return { ...r, result: take(r.result) }; // a calls step
     if (r?.picture !== 'next message' || typeof r.url !== 'string') return r;
     const { url, ...rest } = r;
     pictures.push({ url, size: typeof r.size === 'string' ? r.size : '' });
@@ -373,4 +377,33 @@ export function clipResult(name, args, res, max) {
     : base.length ? `Read the blocks inside it one at a time with doc_get ${p(0)}, then ${p(1)}.`
       : 'Call doc_get with {"format":"outline"} for the block paths, then read one block with {"path":[n]}.';
   return `${s.slice(0, max)}... (cut. ${next})`;
+}
+
+/** The chat messages after `e`, one assistant.event of a Claude Code or Codex turn (SPEC §7i Coding CLIs): text and reasoning
+ * stream into the last assistant message while it streams, else into a new one named `newId`; tool_end, done and error end it
+ * (an error with its message). The step line of a tool_end is loop.js's (cliResult). */
+export function cliMessages(messages, e, newId) {
+  const last = messages.at(-1);
+  const open = last?.role === 'assistant' && last.streaming ? last : null;
+  const k = e.type === 'delta' ? 'text' : e.type === 'reasoning' ? 'reasoning' : null;
+  if (k) {
+    return open ? [...messages.slice(0, -1), { ...open, [k]: open[k] + e.text }]
+      : [...messages, { id: newId, role: 'assistant', text: '', reasoning: '', error: '', streaming: true, [k]: e.text }];
+  }
+  if (!['tool_end', 'done', 'error'].includes(e.type)) return messages;
+  const error = e.type === 'error' ? e.message : '';
+  if (open) return [...messages.slice(0, -1), { ...open, streaming: false, error }];
+  return error ? [...messages, { id: newId, role: 'assistant', text: '', reasoning: '', streaming: false, error }] : messages;
+}
+
+/** A CLI's tool_end {ok, result} → the command result it carried: the bridge sends the result's JSON without ok and ms, or the
+ * error's JSON (agent-server.js toolResult; a picture comes first as "[image]"); text that is not JSON is the error message. */
+export function cliResult({ ok, result }) {
+  let v = null;
+  try {
+    v = JSON.parse(String(result ?? '').replace(/^(\[image\])+/, ''));
+  } catch {}
+  const obj = v && typeof v === 'object' ? v : null;
+  if (ok) return { ok: true, ...(obj ?? { result }) };
+  return { ok: false, error: obj?.message ? obj : { code: 'failed', message: String(result || 'The tool failed') } };
 }

@@ -1,8 +1,8 @@
 // Flowchart library records and the sync rule of synced canvases (flowchart plan §3.8–§3.9). Pure: no DOM, no app state.
 import { parseBoard, parseFrame } from '../whiteboard.js';
+import { isThreadKey } from '../thread-url.mjs';
 
 const ID_RE = /^[a-f0-9-]{36}$/; // the uuid pattern of file-family.js
-const TOPIC_URL_RE = /^https:\/\/daf\.staffs\.ac\.uk\/topic\/\d+[^\s]*$/; // main.js
 export const FLOW_SIZE = { w: 1200, h: 675 };
 const TITLE_MAX = 120;
 
@@ -37,7 +37,7 @@ export function parseFlow(json) {
   return {
     version: Number.isInteger(r.version) ? r.version : 1,
     id: r.id,
-    threadUrl: typeof r.threadUrl === 'string' && TOPIC_URL_RE.test(r.threadUrl) ? r.threadUrl : null,
+    threadUrl: isThreadKey(r.threadUrl) ? r.threadUrl : null,
     title: typeof r.title === 'string' ? r.title.slice(0, TITLE_MAX) : 'Flowchart',
     rev: Number.isInteger(r.rev) && r.rev >= 1 ? r.rev : 1,
     board: parseFlowBoard(r.board),

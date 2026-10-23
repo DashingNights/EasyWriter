@@ -13,7 +13,7 @@ import {
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { SelectItem } from '@/components/ui/select';
 import {
-  addThreadUrl, deleteDraft, deleteFolder, discoverThreads, draftGroups, login, moveDraft, moveFolder, newFolder, openDraft, openInForum,
+  addThreadUrl, deleteDraft, deleteFolder, discoverThreads, draftGroups, isForum, login, moveDraft, moveFolder, newFolder, openDraft, openInForum,
   openSettings, placeDraft, push, refocusEditor, removeThread, renameFolder, saveNow, selectThread, setDraftTag, setDraftThread,
   startNewDraft, threadLabel, toggleFolder, toggleSidebar, unpushDraft,
 } from '../actions.js';
@@ -68,12 +68,15 @@ function Account() {
   const status = useStore((s) => s.status);
   const loggingIn = useStore((s) => s.loggingIn);
   const discovering = useStore((s) => s.discovering);
-  const label = status.loggedIn ? `Logged in as ${status.name || `member ${status.memberId}`}` : 'Not logged in';
-  // One row: the label takes what is left (ellipsis), the icon buttons keep fixed slots, so nothing shifts.
+  const forum = useStore((s) => isForum(s.settings));
+  const label = !forum ? 'EasyWriter' : status.loggedIn ? `Logged in as ${status.name || `member ${status.memberId}`}` : 'Not logged in';
+  // One row: the label takes what is left (ellipsis), the icon buttons keep fixed slots, so nothing shifts. Projects mode has
+  // no forum to log in to or search.
   return (
     <Card className={FLAT}>
       <CardHeader className="flex items-center gap-1 px-2.5">
         <CardTitle className="min-w-0 flex-1 truncate text-sm" title={label}>{label}</CardTitle>
+        {forum && <>
         <Tip title={status.loggedIn ? 'Open the forum window' : 'Log in to the forum in the forum window'}>
           <Button variant="ghost" size="icon-sm" aria-label={status.loggedIn ? 'Forum window' : 'Log in'} data-agent-risk="approval" disabled={loggingIn} onClick={login}>
             {status.loggedIn ? <ExternalLink /> : <LogIn />}
@@ -84,6 +87,7 @@ function Account() {
             {discovering ? <LoaderCircle className="animate-spin" /> : <Search />}
           </Button>
         </Tip>
+        </>}
         <Tip title="Settings">
           <Button variant="ghost" size="icon-sm" aria-label="Settings" onClick={openSettings}><Settings /></Button>
         </Tip>
@@ -98,15 +102,17 @@ function Post() {
   const hasDraft = useStore((s) => !!s.draft);
   const draftThread = useStore((s) => s.draft?.threadUrl) || '';
   const pushed = useStore((s) => can('draft.pushed', s.draft));
+  const forum = useStore((s) => isForum(s.settings));
+  const unit = forum ? 'thread' : 'project';
   return (
     <Card className={FLAT}>
       {/* One line: thread select (ellipsis), then Save and Push / Unpush as same-size icon buttons, so nothing shifts. */}
       <CardContent className="flex items-center gap-1 px-2.5">
         {/* Tip wraps the trigger in a span: the wrapper makes that span (and the trigger) take the free width. */}
         <div className="min-w-0 flex-1 *:w-full">
-        <ToolSelect title="Thread this draft is for" className="w-full min-w-0" disabled={!hasDraft} value={draftThread || NONE}
+        <ToolSelect title={`The ${unit} this draft is for`} className="w-full min-w-0" disabled={!hasDraft} value={draftThread || NONE}
           onChange={(v) => setDraftThread(v === NONE ? '' : v)}>
-          <SelectItem value={NONE}>No thread</SelectItem>
+          <SelectItem value={NONE}>{`No ${unit}`}</SelectItem>
           {/* truncate: the capped trigger shows a long label with an ellipsis */}
           {threads.map((t) => <SelectItem key={t.url} value={t.url}><span className="truncate">{threadLabel(t)}</span></SelectItem>)}
           {draftThread && !threads.some((t) => t.url === draftThread) && <SelectItem value={draftThread}><span className="truncate">{draftThread}</span></SelectItem>}
@@ -115,11 +121,11 @@ function Post() {
         <Tip title={withKey('Save now', 'app.save')}>
           <Button variant="outline" size="icon-sm" aria-label={withKey('Save now', 'app.save')} onMouseDown={keepFocus} onClick={() => saveNow()}><Save /></Button>
         </Tip>
-        <Tip title={pushed ? 'Unpush: mark as not pushed (Submit was not pressed in the forum)' : 'Push to forum: fill the forum reply box with this draft'}>
+        {forum && <Tip title={pushed ? 'Unpush: mark as not pushed (Submit was not pressed in the forum)' : 'Push to forum: fill the forum reply box with this draft'}>
           {pushed
             ? <Button variant="outline" size="icon-sm" aria-label="Unpush" data-agent-risk="destructive" onMouseDown={keepFocus} onClick={() => unpushDraft(getState().draft)}><Undo2 /></Button>
             : <Button size="icon-sm" aria-label="Push to forum" data-agent-risk="approval" onMouseDown={keepFocus} onClick={push}><Send /></Button>}
-        </Tip>
+        </Tip>}
       </CardContent>
     </Card>
   );
@@ -130,11 +136,13 @@ function Threads() {
   usePlans(); // the plan counts
   if (!settings) return null;
   const { threads, selectedThread } = settings;
+  const forum = isForum(settings);
 
+  // Forum threads group by year and subject; projects have neither and show as one list (no headings).
   const years = new Map();
   for (const t of threads) {
-    const year = t.year || 'Other';
-    const subject = t.subject || 'Other';
+    const year = forum ? t.year || 'Other' : '';
+    const subject = forum ? t.subject || 'Other' : '';
     if (!years.has(year)) years.set(year, new Map());
     const subjects = years.get(year);
     if (!subjects.has(subject)) subjects.set(subject, []);
@@ -145,36 +153,36 @@ function Threads() {
 
   return (
     <Card className={`${FLAT} gap-1.5`}>
-      <CardHeader className="px-2.5"><SectionTitle>Threads</SectionTitle></CardHeader>
+      <CardHeader className="px-2.5"><SectionTitle>{forum ? 'Threads' : 'Projects'}</SectionTitle></CardHeader>
       <CardContent className="px-1">
         <Row active={!selectedThread} onClick={() => selectThread(null)}>
           <span className="min-w-0 flex-1 truncate">All drafts</span>
         </Row>
-        {!threads.length && <p className="px-1.5 py-1 text-xs text-muted-foreground">No threads yet. Use "Find my threads" or add a URL.</p>}
+        {!threads.length && <p className="px-1.5 py-1 text-xs text-muted-foreground">{forum ? 'No threads yet. Use "Find my threads" or add a URL.' : 'No projects yet.'}</p>}
         {yearOrder.map((year) => (
           <div key={year}>
-            <div className="mt-1.5 px-1.5 text-xs text-muted-foreground">{year}</div>
+            {year && <div className="mt-1.5 px-1.5 text-xs text-muted-foreground">{year}</div>}
             {[...years.get(year).keys()].sort(byName).map((subject) => (
               <div key={subject}>
-                <div className="mt-1 truncate px-1.5 font-semibold" title={subject}>{subject}</div>
+                {subject && <div className="mt-1 truncate px-1.5 font-semibold" title={subject}>{subject}</div>}
                 {years.get(year).get(subject).map((t) => (
-                  <Row key={t.url} active={t.url === selectedThread} title={t.forum ? `${t.forum}\n${t.url}` : t.url}
+                  <Row key={t.url} active={t.url === selectedThread} title={!forum ? t.title : t.forum ? `${t.forum}\n${t.url}` : t.url}
                     onClick={() => selectThread(t.url)}>
                     <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground group-hover:text-foreground">{t.title || t.url}</span>
                     {planFor(t.url) && (
                       <Tip title="Open tickets in its plan"><span className="shrink-0 text-xs text-muted-foreground tabular-nums">{openCount(planFor(t.url).id)}</span></Tip>
                     )}
                     <RowAction title="Plan board" onClick={() => openPlan(t.url)}><SquareKanban /></RowAction>
-                    <RowAction title="Open in forum" risk="approval" onClick={() => openInForum(t.url)}><ExternalLink /></RowAction>
-                    <RowAction title="Remove thread from list" risk="destructive" onClick={() => removeThread(t)}><X /></RowAction>
+                    {forum && t.url.startsWith('https:') && <RowAction title="Open in forum" risk="approval" onClick={() => openInForum(t.url)}><ExternalLink /></RowAction>}
+                    <RowAction title={forum ? 'Remove thread from list' : 'Remove project from list'} risk="destructive" onClick={() => removeThread(t)}><X /></RowAction>
                   </Row>
                 ))}
               </div>
             ))}
           </div>
         ))}
-        <Button variant="ghost" size="xs" className="mt-0.5 h-7.5 w-full justify-start text-muted-foreground" onClick={addThreadUrl}>
-          <Plus />Add thread URL
+        <Button variant="ghost" size="xs" className="mt-0.5 h-7.5 w-full justify-start text-muted-foreground" data-add-thread onClick={addThreadUrl}>
+          <Plus />{forum ? 'Add thread URL' : 'New project'}
         </Button>
       </CardContent>
     </Card>

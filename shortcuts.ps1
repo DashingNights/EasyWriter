@@ -11,7 +11,7 @@ foreach ($folder in [Environment]::GetFolderPath('Desktop'), [Environment]::GetF
   $lnk.Arguments = '"' + (Join-Path $dir 'launch.vbs') + '"'
   $lnk.WorkingDirectory = $dir
   $lnk.IconLocation = "$(Join-Path $dir 'build\icon.ico'),0"
-  $lnk.Description = 'Write and push Digital Academy Forum posts'
+  $lnk.Description = 'EasyWriter'
   $lnk.Save()
 }
 "Shortcuts point to $dir"

@@ -6,7 +6,7 @@ import { toast as sonner } from 'sonner';
 import { canvasEditor, openCanvasEditor } from '../canvas.js';
 import { buildExtensions, applyPreset } from '../extensions.js';
 import { buildPayload, draftTitle, wordCount } from '../export.js';
-import { mergeThreads, normalizeThread, slugTitle, topicId } from '../thread-url.mjs';
+import { isForum, isProject, mergeThreads, normalizeThread as normalizeTopic, slugTitle, topicId } from '../thread-url.mjs';
 import { activeBoard, finishBoardEdits, migrateBoards } from '../whiteboard.js';
 import { captureSelection } from './assistant/capture.js';
 import { backgroundDraft, dropSession, flushSessions, handOver } from './assistant/sessions.js';
@@ -30,7 +30,9 @@ import { closeWorkspace, restoreView, showPage } from './views.js';
 import { backgroundClick, viewportRect } from './viewport.js';
 
 export { notify }; // ui.notice (§8) reaches it through ctx.actions
-export { normalizeThread }; // threads.add (§8) reaches it through ctx.actions
+export { isForum }; // the components and threads.add (§8, through ctx.actions) read the mode
+/** `url` → the canonical topic URL on the set forum (settings.forumUrl), or ''. threads.add (§8) reaches it through ctx.actions. */
+export const normalizeThread = (url) => normalizeTopic(url, state.settings.forumUrl);
 
 const api = window.api;
 export const DEFAULT_WIDTH = 1454;
@@ -61,8 +63,22 @@ function openDialog(type, props = {}) {
   return new Promise((resolve) => setState({ dialog: { type, props, resolve } }));
 }
 
+let autoConfirm = 0; // > 0 while the assistant in Allow all presses a control (ui-control.js): its confirm passes unseen
+
+/** Runs `fn` with every confirmDialog it opens confirmed at once (not an alert). */
+export async function confirming(fn) {
+  autoConfirm++;
+  try {
+    return await fn();
+  } finally {
+    autoConfirm--;
+  }
+}
+
 /** AlertDialog confirmation. Resolves true on confirm, false on Cancel/Escape. `alert: true` shows only the OK button. */
 export function confirmDialog({ title, description = '', confirmText = 'OK', destructive = false, alert = false }) {
+  // A confirm opened by the user's own click or key (a trusted event) shows even while the assistant presses a control.
+  if (autoConfirm && !alert && !window.event?.isTrusted) return Promise.resolve(true);
   state.confirm?.resolve(false);
   return new Promise((resolve) => setState({ confirm: { title, description, confirmText, destructive, alert, resolve } }));
 }
@@ -535,18 +551,19 @@ export function threadLabel(t) {
   return t.subject ? `${t.subject} / ${t.title}` : t.title || t.url;
 }
 
-/** The listed thread of the topic `url` (any form normalizeThread takes; matched by topic id), or undefined. */
+/** The listed thread of `url` (a project key, or any form normalizeThread takes, matched by topic id), or undefined. */
 function findThread(url) {
   const id = topicId(url);
-  return id ? state.settings.threads.find((t) => topicId(t.url) === id) : undefined;
+  return state.settings.threads.find((t) => t.url === url || (id && topicId(t.url) === id));
 }
 
-// A draft's thread URL for `url`: the listed thread's (it may predate the canonical form, and its drafts must match it), else
-// the canonical URL; null for none or not a forum topic URL.
+// A draft's thread URL for `url`: the listed thread's or project's (a thread's may predate the canonical form, and its drafts
+// must match it), else the canonical URL; null for none or neither.
 const draftThreadUrl = (url) => (url ? findThread(url)?.url ?? (normalizeThread(url) || null) : null);
 
 async function refreshStatus() {
-  let status;
+  let status = { loggedIn: false };
+  if (!isForum(state.settings)) return setState({ status }); // projects mode never asks a forum
   try {
     status = await api.forum.status();
   } catch {
@@ -557,7 +574,7 @@ async function refreshStatus() {
 }
 
 /** Threads added by URL that the forum has not described yet get their names (after a status check or a login). */
-const describeUnnamed = () => describeThreads(state.settings.threads.filter((t) => !t.year && !t.subject).map((t) => t.url).slice(0, 50));
+const describeUnnamed = () => describeThreads(state.settings.threads.filter((t) => !t.year && !t.subject && !isProject(t.url)).map((t) => t.url).slice(0, 50));
 
 /** A thread row (or All drafts): filters the drafts and shows the editor page (§7g). */
 export async function selectThread(url) {
@@ -587,14 +604,29 @@ export function doRemoveThread(url) {
 }
 
 export async function addThreadUrl() {
+  if (!isForum(state.settings)) {
+    const name = await openDialog('addThread', { project: true, validate: (input) => (input.trim() ? '' : 'Enter a name.') });
+    if (name != null) await selectThread(await addProject(name));
+    return;
+  }
+  const site = state.settings.forumUrl;
   const value = await openDialog('addThread', {
+    site,
     validate: (input) => {
-      if (!normalizeThread(input)) return 'Enter a forum topic URL like https://daf.staffs.ac.uk/topic/12345-name/';
+      if (!site) return 'Set the forum site in Settings first.';
+      if (!normalizeThread(input)) return `Enter a topic URL like ${site}/topic/12345-name/`;
       if (findThread(input)) return 'That thread is already in the list.';
       return '';
     },
   });
   if (value != null) await addThread(value);
+}
+
+/** Adds a project titled `title` (projects mode: a settings.threads entry keyed project:<uuid>). Resolves its key. */
+export async function addProject(title) {
+  const url = `project:${crypto.randomUUID()}`;
+  await saveSettings({ threads: [...state.settings.threads, { url, title: title.trim().slice(0, 200), subject: '', year: '', forum: '' }] });
+  return url;
 }
 
 /** Adds the thread `url` (canonical, thread-url.mjs) titled `title` (default: from the URL's slug), then looks it up on the
@@ -642,7 +674,7 @@ export async function discoverThreads() {
 
 export async function login() {
   if (state.status.loggedIn) {
-    openInForum('https://daf.staffs.ac.uk/');
+    openInForum(`${state.settings.forumUrl}/`);
     return;
   }
   setState({ loggingIn: true });
@@ -761,8 +793,10 @@ export async function openSettings(section) {
 export async function changeSettings(values) {
   const s = state.settings;
   const remount = ('theme' in values && values.theme !== s.theme) || ('historyLimit' in values && values.historyLimit !== s.historyLimit);
+  const site = (x) => `${x.mode}|${x.forumUrl}`;
   await saveSettings(values);
   applySettings();
+  if (!WORKER && site(state.settings) !== site(s)) refreshStatus(); // the mode or the forum site changed
   // Canvas NodeViews read the theme when they render and the history depth is set when the editor is built: remount
   // the editor, its history rebuilt (all the steps the open draft keeps in memory), so they pick the change up.
   if (remount && state.editor && await saveNow()) {
@@ -786,7 +820,7 @@ async function chooseThread() {
 /** Fills the forum reply box with the open draft after the human confirm (never submits). A draft without a thread asks
  * for one, or with `requireThread` resolves {code: 'no_thread'} (agents get no thread dialog). */
 export async function push({ requireThread = false } = {}) {
-  if (!state.editor || !state.draft) return;
+  if (!state.editor || !state.draft || !isForum(state.settings)) return;
   let url = state.draft.threadUrl;
   if (!can('draft.hasThread', state.draft)) {
     if (requireThread) return { code: 'no_thread' };
@@ -904,6 +938,40 @@ async function installUpdate() {
   if (await saveNow()) api.update.install();
 }
 
+const readyToast = (version) => sonner(`Update ${version} downloaded`, {
+  id: 'update', duration: Infinity, action: { label: 'Restart', onClick: installUpdate },
+});
+let downloading = null; // the version the update toast is downloading
+
+/** Download and install on the update toast (settings.autoUpdate off): the toast shows the progress, then installUpdate
+ * saves and installs. A failure shows in the toast and keeps the app open. */
+async function downloadUpdate(version, click) {
+  click.preventDefault(); // the toast stays to show the progress
+  downloading = version;
+  sonner.loading(`Downloading update ${version}`, { id: 'update', duration: Infinity, action: null });
+  try {
+    await api.update.download();
+  } catch (e) {
+    const why = String(e?.message || e).replace(/^Error invoking remote method '[^']+': (?:Error: )?/, '');
+    sonner.error(`Update ${version} could not download. ${why}`, {
+      id: 'update', duration: Infinity, action: { label: 'Try again', onClick: (e) => downloadUpdate(version, e) },
+    });
+    return;
+  } finally {
+    downloading = null;
+  }
+  readyToast(version); // stays when the save fails, so Restart can try again
+  await installUpdate();
+}
+
+function onUpdateEvent({ type, version, percent }) {
+  if (type === 'available' && !downloading) sonner(`Update ${version} available`, {
+    id: 'update', duration: Infinity, action: { label: 'Download and install', onClick: (e) => downloadUpdate(version, e) },
+  });
+  if (type === 'progress' && downloading) sonner.loading(`Downloading update ${downloading} (${Math.round(percent)}%)`, { id: 'update', duration: Infinity, action: null });
+  if (type === 'ready' && !downloading) readyToast(version);
+}
+
 // A click on the editor area's background (around the page or in its padding; §7 Background clicks) puts the caret at the
 // nearest text position at the click's height, as a word processor's margin does: a node-selected block or a text selection
 // gives way to it; nothing scrolls. Canvas Mode handles such a click first (§6b).
@@ -964,9 +1032,7 @@ async function init() {
   if (WORKER) return startWorker();
   initBrowser();
   watchWorker();
-  api.update.onReady((version) => sonner(`Update ${version} downloaded`, {
-    id: 'update', duration: Infinity, action: { label: 'Restart', onClick: installUpdate },
-  }));
+  api.update.onEvent(onUpdateEvent);
   if (!state.settings.demoSeeded && !SMOKE) { // the first start: the demo draft, once (samples/demo.js)
     if (!state.drafts.length) await createDraft({ threadUrl: null, doc: demoDoc() }).catch(() => {}); // saved; lastDraftId opens it below
     await saveSettings({ demoSeeded: true }).catch(() => {}); // deleting it later does not bring it back; a profile with drafts never gets it
@@ -1060,7 +1126,7 @@ function sampleDoc() {
         text('blue', [{ type: 'textColor', attrs: { color: 'blue' } }]), text(', '),
         text('highlighted', [{ type: 'highlight', attrs: { color: 'yellow' } }]), text(', '),
         text('Georgia', [{ type: 'fontFamily', attrs: { font: 'Georgia' } }]), text(' and a '),
-        text('link', [{ type: 'link', attrs: { href: 'https://daf.staffs.ac.uk/' } }]), text('.')),
+        text('link', [{ type: 'link', attrs: { href: 'https://example.com/' } }]), text('.')),
       { type: 'bulletList', content: [{ type: 'listItem', content: [para(text('Bullet one'))] }, { type: 'listItem', content: [para(text('Bullet two'))] }] },
       { type: 'orderedList', content: [{ type: 'listItem', content: [para(text('First'))] }, { type: 'listItem', content: [para(text('Second'))] }] },
       { type: 'blockquote', content: [para(text('A quoted paragraph.'))] },

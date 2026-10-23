@@ -57,6 +57,8 @@ contextBridge.exposeInMainWorld('api', {
     deleteLeftover: call('assistant.deleteLeftover'),
     chat: call('assistant.chat'),
     cancelChat: call('assistant.cancelChat'),
+    cliRun: call('assistant.cliRun'), // {rid, prompt, system, session}: one Claude Code or Codex turn (SPEC §7i Coding CLIs)
+    cliTest: call('assistant.cliTest'), // the dialog's fields → {ok, tools, reply, code, message}
     /** Install progress, server status and chat stream events (`assistant.event`); returns the unsubscribe function. */
     onEvent: (fn) => {
       const listener = (_e, p) => fn(p);
@@ -116,13 +118,16 @@ contextBridge.exposeInMainWorld('api', {
       return () => ipcRenderer.off('github.event', listener);
     },
   },
-  // Self-update: `update.ready` (version) once an update has downloaded; install() quits and runs the installer.
+  // Self-update: `update.event` {type: available|progress|ready, version, percent}; download() resolves once the update is
+  // ready; install() quits and runs the installer. onEvent first replays the last offer or ready event sent before it.
   update: {
+    download: call('update.download'),
     install: call('update.install'),
-    onReady: (fn) => {
-      const listener = (_e, version) => fn(version);
-      ipcRenderer.on('update.ready', listener);
-      return () => ipcRenderer.off('update.ready', listener);
+    onEvent: (fn) => {
+      const listener = (_e, ev) => fn(ev);
+      ipcRenderer.on('update.event', listener);
+      ipcRenderer.invoke('update.last').then((ev) => ev && fn(ev), () => {});
+      return () => ipcRenderer.off('update.event', listener);
     },
   },
 });

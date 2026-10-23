@@ -5,7 +5,12 @@
 // (+ apiKey) takes its place only while settings.assistant.provider is not 'google' (the eval's stub server). The local llama.cpp
 // runtime (downloads, llama-server, MTP, degrade steps, sleep, idle unload, power events) is commented out at the end of this
 // file, the module as it was, so uncommenting that part (and dropping this one) brings it back.
+const fs = require('fs');
 const path = require('path');
+const { app } = require('electron');
+const agentServer = require('./agent-server.js');
+const { advanced } = require('./assistant/advanced.js');
+const cli = require('./assistant/cli.js');
 const { props, streamChat } = require('./assistant/runtime.js');
 const QWEN_MODELS = require('./assistant/qwen-models.json'); // [{id, label, ctx}], also the Settings checklist
 
@@ -28,6 +33,7 @@ const CLOUD = {
 let getSettings = null;
 let getWin = null;
 const chats = new Map(); // rid → AbortController
+const runs = new Map(); // rid → a CLI run's {kill}
 
 /** The context window of `c.googleModel`: its inputTokenLimit from Google AI's model page (GET v1beta/models/<model>). */
 async function googleWindow(c) {
@@ -70,6 +76,16 @@ async function config(over = {}) {
 /** {ready (a cloud provider: its key), provider ('qwen' | 'google' | 'deepseek' | 'server'), providerLabel, ctx (the context window), url,
  * missing: [], server: {state: 'ready'}, model: {label, file, bytes}} for settings.assistant + `over`. */
 async function status(over) {
+  const a = { ...(await getSettings()).assistant, ...over };
+  if (cli.isCli(a.provider)) {
+    // Claude Code or Codex: {state: ready | not_found | signed_out, cli: cli.js probe()}; over.fresh asks the CLI again.
+    const p = await cli.probe(a.provider, a, over?.fresh === true);
+    const model = String(a[cli.CLIS[p.id].modelField] ?? '').trim();
+    return {
+      ready: p.state === 'ready', provider: p.id, providerLabel: p.label, state: p.state, cli: p, ctx: null, url: null, missing: [],
+      server: { state: 'ready', sleeping: false }, model: { label: model || 'Default', file: model, bytes: 0 },
+    };
+  }
   const c = await config(over);
   const ext = c.cloud ? null : await props(fetch, c.url, c.key); // a server names its model and context through /props (llama-server)
   return {
@@ -123,6 +139,7 @@ function chat({ rid, messages, tools, think, response_format } = {}) {
   (async () => {
     try {
       const c = await config();
+      if (cli.isCli(c.a.provider)) throw new Error('Claude Code and Codex run whole turns through assistant.cliRun.');
       const withTools = Array.isArray(tools) && tools.length > 0;
       if (c.google) {
         const effort = EFFORT[c.a.thinking] ?? 'medium';
@@ -134,7 +151,7 @@ function chat({ rid, messages, tools, think, response_format } = {}) {
           stream: true,
           stream_options: { include_usage: true },
           reasoning_effort: think ? effort : 'low', // Auto: low, the fastest Gemini 3.8 Flash allows (a simple command is 2 round trips)
-          max_tokens: 8192,
+          max_tokens: advanced(c.a).maxTokens, // Settings > Assistant > Advanced (8192 by default)
         };
         const n = googleWindow(c);
         await streamChat(fetch, c.url, c.key, body, (e) => (e.type === 'done' ? n.then((ctx) => emit({ ...e, n_ctx: ctx })) : emit(e)), ac.signal);
@@ -150,7 +167,7 @@ function chat({ rid, messages, tools, think, response_format } = {}) {
           ...(response_format && { response_format }),
           stream: true,
           stream_options: { include_usage: true },
-          max_tokens: 8192,
+          max_tokens: advanced(c.a).maxTokens, // Settings > Assistant > Advanced (8192 by default)
           ...thinkingFields(c.provider, think, c.a.thinking),
         };
         await streamChat(fetch, c.url, c.key, body, (e) => emit(e.type === 'done' ? { ...e, n_ctx: c.ctx } : e), ac.signal);
@@ -180,10 +197,86 @@ function chat({ rid, messages, tools, think, response_format } = {}) {
   return true;
 }
 
-/** Aborts chat `rid`: the socket closes, no more events for it. */
+/** Aborts chat `rid`: the socket closes (a CLI run: its process tree is killed), no more events for it. */
 function cancelChat(rid) {
   chats.get(rid)?.abort();
   chats.delete(rid);
+  runs.get(rid)?.kill();
+  runs.delete(rid);
+}
+
+/** Kills every CLI run: on quit, before an update installs and when the main window's page reloads or its renderer dies (no
+ * chat panel is left to stop them, and a portable update cannot replace an exe the bridge still runs). */
+const killRuns = () => [...runs.keys()].forEach(cancelChat);
+
+/** One turn on the CLI of settings.assistant.provider + `over` (cli.js) → {kill}: `prompt` on stdin, `system` (the system prompt)
+ * through a file (Claude) or -c (Codex), `session` (the previous turn's done.session) resumed. Runs in userData/assistant-cli, an
+ * empty folder, so the CLI sees none of the user's files. Every event → `emit`. */
+async function startRun({ prompt, system, session }, emit, over = {}) {
+  const a = { ...(await getSettings()).assistant, ...over };
+  const id = a.provider;
+  if (!cli.isCli(id)) throw new Error('The assistant does not run on Claude Code or Codex');
+  const p = await cli.probe(id, a);
+  if (p.state !== 'ready') {
+    emit({ type: 'error', code: p.state, message: p.hint });
+    return { kill() {} };
+  }
+  const c = cli.CLIS[id];
+  const cwd = path.join(app.getPath('userData'), 'assistant-cli');
+  fs.mkdirSync(cwd, { recursive: true });
+  agentServer.startPipe(); // Settings' Test can run before the provider that opens it is saved
+  const link = agentServer.assistantLink();
+  const opts = { link, model: String(a[c.modelField] ?? '').trim(), effort: String(a[c.effortField] ?? '').trim(), resume: session || '' };
+  let args;
+  if (id === 'claude') {
+    const systemFile = system ? path.join(cwd, 'system-prompt.txt') : '';
+    if (system) fs.writeFileSync(systemFile, system);
+    args = cli.claudeArgs({ ...opts, systemFile });
+  } else args = cli.codexArgs({ ...opts, system });
+  return cli.run({ id, file: p.path, args, cwd, prompt, key: link.key, emit });
+}
+
+/** Streams one CLI turn as `assistant.event {rid, type: delta | reasoning | tool_start | tool_end | done | error}` (SPEC §7i Coding
+ * CLIs); resolves at once. Stop: assistant.cancelChat(rid). */
+function cliRun({ rid, prompt, system, session } = {}) {
+  if (typeof rid !== 'string' || !rid || typeof prompt !== 'string') throw new Error('cliRun takes {rid, prompt}');
+  cancelChat(rid);
+  const live = { kill() {} };
+  runs.set(rid, live);
+  const emit = (e) => {
+    if (runs.get(rid) !== live) return;
+    if (e.type === 'done' || e.type === 'error') runs.delete(rid);
+    send({ rid, ...e });
+  };
+  startRun({ prompt, system, session }, emit).then((r) => {
+    if (runs.get(rid) === live) live.kill = r.kill;
+    else r.kill(); // stopped while it started
+  }, (e) => emit({ type: 'error', message: e.message }));
+  return true;
+}
+
+const TEST_PROMPT = 'Call the ui_state tool once. Then reply with the single word ready.';
+
+/** Settings' Test: one tiny turn on the CLI of settings.assistant + `over` (the dialog's unsaved fields) → {ok, tools (EasyWriter's
+ * ui_state answered), reply, code, message}. */
+function cliTest(over = {}) {
+  return new Promise((resolve) => {
+    let reply = '';
+    let tools = false;
+    let run = null;
+    const end = (res) => {
+      clearTimeout(timer);
+      run?.kill();
+      resolve({ ok: false, tools, reply: reply.trim(), ...res });
+    };
+    const timer = setTimeout(() => end({ message: 'No answer within 2 minutes.' }), 120000);
+    startRun({ prompt: TEST_PROMPT, system: 'You check that a tool works. Be brief.' }, (e) => {
+      if (e.type === 'delta') reply += e.text;
+      if (e.type === 'tool_end' && e.name === 'ui_state' && e.ok) tools = true;
+      if (e.type === 'done') end({ ok: true });
+      if (e.type === 'error') end({ code: e.code, message: e.message });
+    }, over).then((r) => { run = r; }, (e) => end({ message: e.message }));
+  });
 }
 
 /** Registers the assistant.* channels through main.js's handle(). The local runtime's channels answer that it is off (install,
@@ -194,14 +287,17 @@ function register(handle, settings, win) {
   handle('assistant.status', status);
   handle('assistant.chat', chat);
   handle('assistant.cancelChat', cancelChat);
+  handle('assistant.cliRun', cliRun);
+  handle('assistant.cliTest', cliTest);
   for (const ch of ['assistant.install', 'assistant.delete', 'assistant.deleteLeftover']) handle(ch, async () => { throw new Error(OFF); });
   for (const ch of ['assistant.cancel', 'assistant.warm', 'assistant.stop']) handle(ch, async () => true);
+  app.on('will-quit', killRuns);
 }
 
 /** App start (main.js): nothing to warm with Google AI. */
 const autoWarm = async () => {};
 
-module.exports = { register, autoWarm };
+module.exports = { register, autoWarm, killRuns };
 
 
 // -----------------------------------------------------------------------------------------------------------------------------

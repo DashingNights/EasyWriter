@@ -48,7 +48,7 @@ export const PLAYBOOKS = [
       'Before: if board_items_remove is not in your tools, add it with commands_describe {"names":["board_items_remove"]}.',
       `1. Take the ids from ${ITEM_LINES}. Selected items are listed there. If they are not, call board_find {"path":[4],"q":"gearbox"}.`,
       '2. Call board_items_remove {"path":[4],"ids":["k3j9x0a"]} once, with every id in that one call.',
-      '3. The user confirms on a card in the app. Do not ask in text. Never call canvas_edit for this.',
+      '3. Do not ask for confirmation in text. Never call canvas_edit for this.',
       'Check: the result and the picture after your change no longer have those items. If one is still there, say which.',
     ].join('\n'),
   },

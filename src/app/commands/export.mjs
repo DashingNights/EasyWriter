@@ -44,7 +44,7 @@ export const defs = [
     risk: 'approval',
     undo: 'none',
     slow: true,
-    needs: ['draft.hasThread', 'draft.unpushed'], // on the addressed draft (draftId), else the open one
+    needs: ['app.forum', 'draft.hasThread', 'draft.unpushed'], // on the addressed draft (draftId), else the open one
     args: { type: 'object', additionalProperties: false, properties: { draftId: ref('ID') } },
     result: { type: 'object', required: ['ok', 'attachments', 'submitted'] },
     examples: [{ args: {} }, { args: { draftId: '0b2c8f0e-1c4e-4f8a-9d6a-2b7f3c9e1a55' } }],
@@ -78,6 +78,7 @@ export const defs = [
   }),
   define({
     id: 'forum.status',
+    needs: ['app.forum'],
     title: 'Whether the forum window is logged in',
     group: 'forum',
     risk: 'read',
@@ -89,6 +90,7 @@ export const defs = [
   }),
   define({
     id: 'forum.login',
+    needs: ['app.forum'],
     title: 'Open the forum login window: the user signs in there (never automatic)',
     group: 'forum',
     risk: 'approval',

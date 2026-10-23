@@ -27,7 +27,7 @@ import { DRAFT_ID, ITEM, ITEM_ID, ref } from './schema-defs.mjs';
 const GROUP = 'flow';
 const FLOW_ID = ref('ID', 'From flow_library_list');
 const EX = '5f0c2a9e-7b1d-4c3e-9a8f-1d2e3f4a5b6c';
-const THREAD = 'https://daf.staffs.ac.uk/topic/88136-level-design/';
+const THREAD = 'project:3a7c9e1b-5d2f-4b8a-9c6e-1f0d2b4a6c8e'; // a project key (threads.list); forum mode: a topic URL
 const IDS = { type: 'array', items: ITEM_ID, minItems: 1, maxItems: 500 };
 const TITLE = { type: 'string', minLength: 1, maxLength: 120 };
 const SYNCED = 'Synced canvases update too.';
@@ -214,7 +214,7 @@ export const defs = [
     group: GROUP,
     risk: 'read',
     undo: 'none',
-    args: { type: 'object', additionalProperties: false, properties: { threadUrl: ref('URL', 'Forum thread URL. Omit it for all.') } },
+    args: { type: 'object', additionalProperties: false, properties: { threadUrl: ref('URL', 'Project or thread URL. Omit it for all.') } },
     result: { type: 'array' },
     examples: [{ args: {} }, { args: { threadUrl: THREAD } }],
     run: (ctx, a) => ctx.flows.flowList().filter((s) => !a.threadUrl || s.threadUrl === a.threadUrl)
@@ -545,7 +545,7 @@ export const defs = [
       type: 'object', required: ['title'], additionalProperties: false,
       properties: {
         title: { ...TITLE, description: 'Its title' },
-        threadUrl: { anyOf: [ref('URL'), { type: 'null' }], description: 'Forum thread URL, or null for none. Omit it for the draft\'s thread' },
+        threadUrl: { anyOf: [ref('URL'), { type: 'null' }], description: 'Project or thread URL, or null for none. Omit it for the draft\'s thread' },
         board: {
           type: 'object', additionalProperties: false, description: 'Artboard and first items',
           properties: {

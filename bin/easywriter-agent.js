@@ -5,11 +5,11 @@ const net = require('net');
 const os = require('os');
 const path = require('path');
 
-// daf-agent: the stdio side of EasyWriter's MCP server (SPEC §8 Agents), for MCP clients that start their server themselves.
+// easywriter-agent: the stdio side of EasyWriter's MCP server (SPEC §8 Agents), for MCP clients that start their server themselves.
 // It relays stdin to the app's pipe and the pipe to stdout, line by line (both speak newline-delimited JSON-RPC 2.0); the app
 // (src/agent-server.js) answers everything. Stdlib only, so the app's own executable can run it with ELECTRON_RUN_AS_NODE=1
 // (the config Settings > Local AI agents shows). The pipe: --pipe=<path>, else the one userData/agent.json names
-// (DAF_WRITER_USERDATA overrides the folder). While the app does not listen, every request is answered with an error saying so.
+// (EASYWRITER_USERDATA, or the older DAF_WRITER_USERDATA, overrides the folder); EASYWRITER_ASSISTANT: the in-app assistant's key (src/assistant/cli.js). While the app does not listen, every request is answered with an error saying so.
 
 const OFF = 'EasyWriter is not running, or its agents are off. Start the app and turn on Settings > Local AI agents.';
 const APP_DATA = process.platform === 'win32' ? process.env.APPDATA
@@ -19,7 +19,7 @@ const APP_DATA = process.platform === 'win32' ? process.env.APPDATA
 function pipePath() {
   const arg = process.argv.find((a) => a.startsWith('--pipe='));
   if (arg) return arg.slice(7);
-  const dir = process.env.DAF_WRITER_USERDATA || path.join(APP_DATA, 'EasyWriter');
+  const dir = process.env.EASYWRITER_USERDATA || process.env.DAF_WRITER_USERDATA || path.join(APP_DATA, 'EasyWriter');
   return JSON.parse(fs.readFileSync(path.join(dir, 'agent.json'), 'utf8')).pipe;
 }
 
@@ -67,6 +67,9 @@ function toApp(line) {
   const s = net.connect(pipe);
   socket = s;
   s.on('connect', () => {
+    // The in-app assistant's run (Claude Code or Codex): its key first, so the app runs this connection's calls as the assistant's.
+    const key = process.env.EASYWRITER_ASSISTANT;
+    if (key) s.write(`${JSON.stringify({ jsonrpc: '2.0', method: 'easywriter/assistant', params: { key } })}\n`);
     for (const l of queue) s.write(`${l}\n`);
     queue = null;
   });

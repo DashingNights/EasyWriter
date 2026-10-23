@@ -9,8 +9,8 @@ import { GATES } from '../gates.mjs';
 // "Before: …", "Args: …", "Errors: …", "Playbook: …" each).
 // Pure: catalogue modules stay importable by node --test.
 
-// ids are `<namespace>.<name>[.<name>…]`; `batch` is the one top-level id.
-export const ID_RE = /^([a-z]+(\.[a-zA-Z]+)+|batch)$/;
+// ids are `<namespace>.<name>[.<name>…]`; `batch` and `calls` are the top-level ids.
+export const ID_RE = /^([a-z]+(\.[a-zA-Z]+)+|batch|calls)$/;
 export const RISKS = ['read', 'write', 'destructive', 'approval'];
 export const UNDOS = ['doc', 'own', 'none'];
 // guide key → its line's label, in this order; `playbook` (wave 2b) names the playbook (playbooks.mjs id) to follow for the tool

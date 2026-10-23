@@ -17,10 +17,12 @@ import { confirmDialog, DEFAULT_WIDTH } from '../actions.js';
 // LOCAL LLM (commented out 2026-10-07): BACKENDS, deleteAssistant, deleteLeftover, openInstall as openAssistantInstall, size, wake.
 import { ASSISTANT_DEFAULTS, saveAssistant } from '../assistant/assistant.js';
 import QWEN_MODELS from '../../assistant/qwen-models.json';
+import { ADVANCED, NUMBERS } from '../../assistant/advanced.js';
 import { DICTATION_DEFAULTS, LANGUAGES } from '../dictation/core.mjs';
 import { mb, ModelFiles } from '../dictation/Dictation.jsx';
 import { openInstall } from '../dictation/dictation.js';
 import { draftsWithTag, pruneMap, tagList } from '../drafts-meta.js';
+import { forumOrigin } from '../../thread-url.mjs';
 import { columnsFollowing } from '../plans.js';
 import { getState } from '../store.js';
 import { DEFS, effective, overridesOf } from '../keys.mjs';
@@ -163,14 +165,83 @@ function DictationSection({ value: d, onChange }) {
 // settings.assistant.permission (the executor's policy for the assistant, SPEC §8 Policy) and its line under the select.
 const PERMISSIONS = [['standard', 'Standard'], ['ask', 'Ask first'], ['readonly', 'Read only'], ['all', 'Allow all']];
 // settings.assistant.provider (2026-10-08); 'none' turns the assistant off (no chat button, no shortcut).
-const PROVIDERS = [['none', 'None'], ['qwen', 'Qwen Cloud'], ['google', 'Google AI (Gemini)'], ['deepseek', 'DeepSeek']];
+const PROVIDERS = [['none', 'None'], ['qwen', 'Qwen Cloud'], ['google', 'Google AI (Gemini)'], ['deepseek', 'DeepSeek'], ['claude', 'Claude Code'], ['codex', 'Codex']];
+// Claude Code and Codex (SPEC §7i Coding CLIs): the user's installed CLI with its own sign-in; its path, model and effort fields.
+const CLI = {
+  claude: { path: 'claudePath', model: 'claudeModel', effort: 'claudeEffort', label: 'Claude Code' },
+  codex: { path: 'codexPath', model: 'codexModel', effort: 'codexEffort', label: 'Codex' },
+};
+const OTHER = 'other'; // the model menu's "Another model" entry
+const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
+
+/** The setup of Claude Code or Codex: where it is and its version, its sign-in, Test (one short turn that calls ui_state), the model
+ * (Default, the CLI's models, or an id) and the effort. `status` is assistant.status for the dialog's fields. */
+function CliSetup({ value: a, edit, status, recheck }) {
+  const f = CLI[a.provider];
+  const c = status?.cli;
+  const models = c?.models ?? [];
+  const [other, setOther] = useState(false); // "Another model" picked: the id field shows
+  const own = a[f.model].trim() && !models.some(([id]) => id === a[f.model].trim()) ? [[a[f.model], a[f.model]]] : []; // an id typed before
+  const [test, setTest] = useState(null);
+  useEffect(() => {
+    setTest(null);
+    setOther(false);
+  }, [a.provider]);
+  const model = other ? OTHER : a[f.model];
+  const runTest = () => {
+    setTest({ running: true });
+    window.api.assistant.cliTest({ provider: a.provider, [f.path]: pathValue(a[f.path]), [f.model]: a[f.model].trim(), [f.effort]: a[f.effort] })
+      .then(setTest, (e) => setTest({ ok: false, message: e.message }));
+  };
+  const testLine = !test ? '' : test.running ? 'Testing...'
+    : test.ok && test.tools ? `Works. EasyWriter's tools answered and ${f.label} replied "${test.reply}".`
+      : test.ok ? `${f.label} replied but did not reach EasyWriter's tools.` : test.message || 'The test failed.';
+  return (
+    <div className="grid gap-1.5" data-assistant-cli>
+      <div className="flex items-center gap-2">
+        <Label htmlFor="set-asst-cli-path" className="w-16 text-muted-foreground">Program</Label>
+        <Input id="set-asst-cli-path" className="h-8 w-[28rem]" spellCheck={false} placeholder={c?.path ?? `Found on PATH`}
+          value={a[f.path]} onChange={(e) => edit({ [f.path]: e.target.value })} />
+      </div>
+      <span className="max-w-[36rem] text-xs text-muted-foreground" data-cli-found>
+        {!c ? 'Looking for it...' : c.state === 'not_found' ? c.hint : `${c.version} at ${c.path}`}
+      </span>
+      {c && c.state !== 'not_found' && (
+        <div className="flex items-center gap-2" data-cli-signin>
+          <span className="text-sm">{c.signedIn ? `Signed in${c.account ? ` (${c.account})` : ''}` : `Not signed in. ${c.hint}`}</span>
+          <Button type="button" size="sm" variant="outline" onClick={recheck}>Check again</Button>
+        </div>
+      )}
+      <div className="flex items-center gap-2">
+        <Label className="w-16 text-muted-foreground">Model</Label>
+        <Pick label={`${f.label} model`} value={model} className="w-48"
+          onChange={(v) => { setOther(v === OTHER); if (v !== OTHER) edit({ [f.model]: v }); }}
+          options={[['', 'Default'], ...models, ...own, [OTHER, 'Another model']]} />
+        {other && <Input aria-label="Model id" className="h-8 w-60" spellCheck={false} placeholder="Model id" value={a[f.model]} onChange={(e) => edit({ [f.model]: e.target.value })} />}
+      </div>
+      <div className="flex items-center gap-2">
+        <Label className="w-16 text-muted-foreground">Effort</Label>
+        <Pick label={`${f.label} effort`} value={a[f.effort]} className="w-48" onChange={(v) => edit({ [f.effort]: v })}
+          options={[['', 'Default'], ...(c?.efforts ?? []).map((e) => [e, cap(e)])]} />
+      </div>
+      <div className="flex items-center gap-2" data-cli-test>
+        <Button type="button" size="sm" variant="outline" disabled={c?.state !== 'ready' || test?.running} onClick={runTest}>Test</Button>
+        <span className="text-xs text-muted-foreground">{testLine || 'Runs one short turn on your plan.'}</span>
+      </div>
+      <span className="max-w-[36rem] text-xs text-muted-foreground">
+        {f.label} runs on your computer with its own sign-in. It gets EasyWriter's tools and none of its own, and your messages
+        and drafts go to its provider.
+      </span>
+    </div>
+  );
+}
 // Each provider's key and model fields, where its key comes from, its name. Qwen Cloud's model is picked in the chat panel.
 const PROVIDER = {
   qwen: { key: 'qwenKey', model: 'qwenModel', from: 'From home.qwencloud.com', label: 'Qwen Cloud' },
   google: { key: 'googleKey', model: 'googleModel', from: 'From aistudio.google.com', model0: 'gemini-3.8-flash', label: 'Google AI' },
   deepseek: { key: 'deepseekKey', model: 'deepseekModel', from: 'From platform.deepseek.com', model0: 'deepseek-flash', label: 'DeepSeek' },
 };
-const providerOf = (a) => (a.provider === 'none' || Object.hasOwn(PROVIDER, a.provider) ? a.provider : 'qwen');
+const providerOf = (a) => (a.provider === 'none' || Object.hasOwn(PROVIDER, a.provider) || Object.hasOwn(CLI, a.provider) ? a.provider : 'qwen');
 
 /** Qwen Cloud's models for the chat panel's model menu (settings.assistant.qwenModels): the known ones, then any added by id. */
 function QwenModels({ value: a, edit }) {
@@ -202,6 +273,57 @@ function QwenModels({ value: a, edit }) {
     </div>
   );
 }
+// The Advanced numbers (src/assistant/advanced.js): label and unit.
+const ADVANCED_FIELDS = [
+  ['maxResult', 'Tool answer size', 'characters'], ['shots', 'Screenshots kept', 'with their picture'],
+  ['cloudKeep', 'Results kept', 'tool answers sent in full'], ['cloudLive', 'Pictures kept', 'per request'], ['maxTokens', 'Reply length', 'tokens at most'],
+];
+
+/** Settings > Assistant > Advanced: the tool loop's limits (settings.assistant.advanced, only the changed keys; an empty field is
+ * the default, shown as its placeholder). */
+function AdvancedFields({ value: a, edit }) {
+  const own = a.advanced ?? {};
+  const set = (k, v) => {
+    const { [k]: _old, ...rest } = own;
+    edit({ advanced: v === '' || v === undefined ? rest : { ...rest, [k]: v } });
+  };
+  const num = (k, cls = 'w-28') => (
+    <Input type="number" aria-label={k} className={`h-8 ${cls}`} min={NUMBERS[k][1]} max={NUMBERS[k][2]} placeholder={String(ADVANCED[k])}
+      value={own[k] ?? ''} onChange={(e) => set(k, e.target.value === '' ? '' : Number(e.target.value))} />
+  );
+  const limit = own.limitCalls ?? ADVANCED.limitCalls;
+  return (
+    <details className="col-span-2" data-assistant-advanced>
+      <summary className="cursor-pointer text-muted-foreground">Advanced</summary>
+      <div className={`mt-2 ${FIELDS}`}>
+        <Label htmlFor="set-asst-limit" className="text-muted-foreground">Tool calls</Label>
+        <div className="flex items-center gap-2">
+          <Checkbox id="set-asst-limit" checked={limit} onCheckedChange={(v) => set('limitCalls', v === true ? undefined : false)} />
+          <Label htmlFor="set-asst-limit">At most</Label>
+          {num('maxCalls', 'w-20')}
+          <span className="text-sm text-muted-foreground">per request. A batch of calls counts as one.</span>
+        </div>
+        {ADVANCED_FIELDS.map(([k, label, unit]) => [
+          <Label key={`${k}-l`} className="text-muted-foreground">{label}</Label>,
+          <div key={k} className="flex items-center gap-2">{num(k)}<span className="text-sm text-muted-foreground">{unit}</span></div>,
+        ])}
+        <span />
+        <div className="flex items-center gap-2">
+          <Checkbox id="set-asst-repeat" checked={own.repeatStop ?? ADVANCED.repeatStop} onCheckedChange={(v) => set('repeatStop', v === true ? undefined : false)} />
+          <Label htmlFor="set-asst-repeat">Stop a turn when the same call repeats or fails twice</Label>
+        </div>
+        <span />
+        <div><Button type="button" variant="outline" size="sm" disabled={!Object.keys(own).length} onClick={() => edit({ advanced: {} })}>Reset to defaults</Button></div>
+        <span />
+        <span className="max-w-[36rem] text-xs text-muted-foreground">
+          {CLI[a.provider] ? `${CLI[a.provider].label} uses only the tool call limit. It handles the rest itself.`
+            : 'Higher numbers send more to the model on each request and use more tokens.'}
+        </span>
+      </div>
+    </details>
+  );
+}
+
 const PERMISSION_HINT = {
   standard: 'Standard. Makes changes you can undo. Asks before deleting, pushing or logging in.',
   ask: 'Ask first. Asks before every change.',
@@ -226,14 +348,17 @@ function AssistantSection({ value: a, onChange }) {
   const [status, setStatus] = useState(null);
   const provider = providerOf(a);
   const p = PROVIDER[provider] ?? {};
-  const [keyField, modelField] = [p.key, p.model];
+  const f = CLI[provider];
+  const [keyField, modelField] = f ? [f.path, f.model] : [p.key, p.model];
+  const [fresh, setFresh] = useState(0); // Check again: the CLI is asked again
   useEffect(() => {
-    if (!p.key) return undefined; // None: nothing to check
+    if (!keyField) return undefined; // None: nothing to check
     let live = true;
-    window.api.assistant.status({ provider, [keyField]: a[keyField].trim(), [modelField]: a[modelField].trim() })
+    setStatus(null);
+    window.api.assistant.status({ provider, [keyField]: f ? pathValue(a[keyField]) : a[keyField].trim(), [modelField]: a[modelField].trim(), fresh: fresh > 0 })
       .then((st) => live && setStatus(st), () => live && setStatus(null));
     return () => { live = false; };
-  }, [a.provider, a[keyField], a[modelField]]);
+  }, [a.provider, a[keyField], a[modelField], fresh]);
   const resetPanel = () => {
     edit({ panel: null });
     saveAssistant({ panel: null });
@@ -244,7 +369,7 @@ function AssistantSection({ value: a, onChange }) {
     saveAssistant(patch);
   };
   // data-agent-deny: the assistant never changes its own settings (assistant-coverage §5).
-  if (!p.key) return (
+  if (!keyField) return (
     <div className={FIELDS} data-agent-deny>
       <Label className="self-start pt-2 text-muted-foreground">Provider</Label>
       <div className="grid gap-1.5" data-assistant-provider>
@@ -258,6 +383,7 @@ function AssistantSection({ value: a, onChange }) {
       <Label className="self-start pt-2 text-muted-foreground">Provider</Label>
       <div className="grid gap-1.5" data-assistant-provider>
         <Pick label="Assistant provider" value={provider} onChange={(v) => edit({ provider: v })} options={PROVIDERS} className="w-48" />
+        {f ? <CliSetup value={a} edit={edit} status={status} recheck={() => setFresh((n) => n + 1)} /> : <>
         <div className="flex items-center gap-2">
           <Label htmlFor="set-asst-key" className="w-16 text-muted-foreground">API key</Label>
           <Input id="set-asst-key" type="password" className="h-8 w-80" autoComplete="off" spellCheck={false} placeholder={p.from}
@@ -280,10 +406,12 @@ function AssistantSection({ value: a, onChange }) {
             Calls then stop when a model's free quota runs out instead of being billed. Each model has its own quota, valid for 90 days.
           </span>
         )}
+        </>}
       </div>
       <Label className="text-muted-foreground">Status</Label>
       <div className="flex items-center gap-2" data-assistant-status>
-        {!status ? 'Checking...' : status.ready ? `Using ${status.providerLabel} (${status.model?.label})` : `Add your ${p.label} API key above`}
+        {!status ? 'Checking...' : status.ready ? `Using ${status.providerLabel} (${status.model?.label})`
+          : f ? (status.state === 'not_found' ? `${f.label} is not installed` : `${f.label} is not signed in`) : `Add your ${p.label} API key above`}
       </div>
       <Label className="self-start pt-2 text-muted-foreground">Permissions</Label>
       <div className="grid gap-1.5" data-assistant-permission>
@@ -306,6 +434,7 @@ function AssistantSection({ value: a, onChange }) {
       </div>
       <Label className="text-muted-foreground">Chat panel</Label>
       <div><Button type="button" variant="outline" size="sm" disabled={!a.panel} onClick={resetPanel}>Reset chat panel position</Button></div>
+      <AdvancedFields value={a} edit={edit} />
     </div>
   );
 }
@@ -526,7 +655,7 @@ const AGENT_PORT = 47823; // settings.agent.port when unset (main's src/agent-se
 const copy = (text) => navigator.clipboard.writeText(text).then(() => toast('Copied'), () => toast.error('Could not copy'));
 
 /** Settings > Local AI agents (SPEC §8 Agents): the switch, the port, and how to connect an MCP client, by URL or by the stdio
- * config main reports (agent.status: the app's own executable runs bin/daf-agent.js as Node), shown while the switch is on. The
+ * config main reports (agent.status: the app's own executable runs bin/easywriter-agent.js as Node), shown while the switch is on. The
  * URL follows the port field; the status is the saved settings' own. */
 function AgentsSection({ enabled, setEnabled, port, setPort }) {
   const [st, setSt] = useState(null);
@@ -737,6 +866,8 @@ const selectText = (el) => el?.select(); // stable ref callback: the first field
 
 /** Settings + presets manager, scrolled to `section` (a SECTIONS id) when given. Closes with the settings patch, or null. */
 export function SettingsDialog({ settings: s, section, onClose }) {
+  const [mode, setMode] = useState(s.mode === 'forum' ? 'forum' : 'projects');
+  const [forumUrl, setForumUrl] = useState(s.forumUrl ?? '');
   const [width, setWidth] = useState(String(s.forumWidth));
   const [theme, setTheme] = useState(s.theme !== 'light' ? 'dark' : 'light');
   const [baseFont, setBaseFont] = useState(fontValue(s.baseFont));
@@ -749,6 +880,7 @@ export function SettingsDialog({ settings: s, section, onClose }) {
   const [idleOpacity, setIdleOpacity] = useState(s.browserIdleOpacity ?? 70);
   const [autoTab, setAutoTab] = useState(!!s.browserAutoTab);
   const [notchFloor, setNotchFloor] = useState(s.browserNotchFloor !== false);
+  const [autoUpdate, setAutoUpdate] = useState(!!s.autoUpdate);
   const [keybinds, setKeybinds] = useState(() => effective(DEFS, s.keybinds));
   const [github, setGithub] = useState(() => {
     const g = { enabled: false, repo: '', intervalSec: 300, onClose: 'ask', ...s.github };
@@ -805,6 +937,7 @@ export function SettingsDialog({ settings: s, section, onClose }) {
   // the click's own submit (dispatched synchronously); one the browser blocks (a number field out of range) must not leave it set.
   const tour = useRef(false);
   const validate = () => {
+    if (mode === 'forum' && !forumOrigin(forumUrl)) return 'Enter the forum site address, like https://forum.example.com.';
     const w = Number(width);
     if (!(Number.isInteger(w) && w >= 320 && w <= 4000)) return 'Forum width must be a whole number between 320 and 4000.';
     if (dictation.serverUrl.trim() && !URL_RE.test(dictation.serverUrl.trim())) return 'The dictation server URL must start with http:// or https://.';
@@ -817,6 +950,8 @@ export function SettingsDialog({ settings: s, section, onClose }) {
     return /^\d+$/.test(historyLimit) && Number(historyLimit) <= 500 ? '' : 'Undo history must be a whole number between 0 and 500.';
   };
   const result = () => ({
+    mode,
+    forumUrl: mode === 'forum' ? forumOrigin(forumUrl) : s.forumUrl ?? '', // projects mode keeps the site for a switch back
     forumWidth: Number(width),
     theme,
     baseFont,
@@ -830,6 +965,8 @@ export function SettingsDialog({ settings: s, section, onClose }) {
       ...assistant, provider: providerOf(assistant), ...qwenFields(assistant),
       googleKey: assistant.googleKey.trim(), googleModel: assistant.googleModel.trim() || 'gemini-3.8-flash',
       deepseekKey: assistant.deepseekKey.trim(), deepseekModel: assistant.deepseekModel.trim() || 'deepseek-flash',
+      claudePath: pathValue(assistant.claudePath), claudeModel: assistant.claudeModel.trim(),
+      codexPath: pathValue(assistant.codexPath), codexModel: assistant.codexModel.trim(),
       // LOCAL LLM (commented out 2026-10-07): serverPath: pathValue(assistant.serverPath), modelPath: pathValue(assistant.modelPath),
       // mmprojPath: pathValue(assistant.mmprojPath), serverUrl: assistant.serverUrl.trim(), apiKey: assistant.apiKey.trim(),
       // idleUnloadMinutes: Number(assistant.idleUnloadMinutes),
@@ -838,6 +975,7 @@ export function SettingsDialog({ settings: s, section, onClose }) {
     browserIdleOpacity: idleOpacity,
     browserAutoTab: autoTab,
     browserNotchFloor: notchFloor,
+    autoUpdate,
     keybinds: overridesOf(DEFS, keybinds), // §7k: only the changed bindings
     github: { enabled: github.enabled, repo: github.repo, onClose: github.onClose, intervalSec: Math.round(Number(github.minutes) * 60) },
   });
@@ -860,6 +998,16 @@ export function SettingsDialog({ settings: s, section, onClose }) {
         <div ref={paneRef} onScroll={spy} className="relative -ml-1 min-h-0 overflow-y-auto pr-3 pl-1" data-settings-pane>
           <Section id="general" title="General">
             <div className={FIELDS}>
+              <Label className="text-muted-foreground">Drafts belong to</Label>
+              <Pick label="Drafts belong to" value={mode} onChange={setMode} options={[['projects', 'Projects'], ['forum', 'Forum threads']]} className="w-44" />
+              {mode === 'forum' && <>
+                <Label htmlFor="set-forum" className="text-muted-foreground">Forum site</Label>
+                <div className="flex items-center gap-2">
+                  <Input id="set-forum" type="url" className="h-8 w-72" spellCheck={false} placeholder="https://forum.example.com" value={forumUrl}
+                    onChange={(e) => setForumUrl(e.target.value)} />
+                  <span className="text-xs text-muted-foreground">An Invision Community site</span>
+                </div>
+              </>}
               <Label htmlFor="set-width" className="text-muted-foreground">Forum width</Label>
               <div className="flex items-center gap-2">
                 <Input id="set-width" type="number" min={320} max={4000} step={1} className="h-8 w-28" value={width} autoFocus ref={selectText}
@@ -882,6 +1030,13 @@ export function SettingsDialog({ settings: s, section, onClose }) {
               <Label className="text-muted-foreground">Tour</Label>
               <div>
                 <Button type="button" variant="outline" size="sm" onClick={(e) => { tour.current = true; e.currentTarget.form.requestSubmit(); tour.current = false; }}>Show the tour</Button>
+              </div>
+            </div>
+            <div className="flex items-start gap-2">
+              <Switch id="set-auto-update" className="mt-0.5" checked={autoUpdate} onCheckedChange={setAutoUpdate} />
+              <div className="grid gap-0.5">
+                <Label htmlFor="set-auto-update">Download and install updates automatically</Label>
+                <span className="text-xs text-muted-foreground">An update downloads in the background and installs when you quit. When this is off, the app asks first.</span>
               </div>
             </div>
           </Section>

@@ -1,13 +1,14 @@
 import { DASHES, HEADS, JUMPS, MAX_POINTS, ROUTES } from '../../flow/model.mjs';
 import { KINDS } from '../../flow/shapes.mjs';
 import { FILLS } from '../../whiteboard.js';
+import { THREAD_KEY } from '../../thread-url.mjs';
 
 // Shared argument schemas of the command catalogue (SPEC §8; agent-automation plan §3.5): referenced as `{$ref: '#/$defs/X'}`
 // and listed in `$defs` (catalogue.mjs). Plain JSON; ITEM takes its enums from the board model (whiteboard.js, flow/*.mjs).
 
 export const ID = { type: 'string', pattern: '^[a-f0-9-]{36}$' };
 export const PATH = { type: 'array', items: { type: 'integer', minimum: 0 }, minItems: 1, maxItems: 16 };
-export const URL = { type: 'string', pattern: '^https://daf\\.staffs\\.ac\\.uk/topic/\\d+' };
+export const URL = { type: 'string', pattern: THREAD_KEY }; // a forum topic URL or a project key
 export const TAG_ID = { type: 'string', minLength: 1, maxLength: 64 };
 
 // `description`: kept beside the $ref; the model form (tools-schema.mjs rewrite) and invalid_args messages show it.

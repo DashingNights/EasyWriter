@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { Button } from '@/components/ui/button';
-import { discoverThreads, login, openSettings } from '../actions.js';
+import { discoverThreads, isForum, login, openSettings } from '../actions.js';
 import { refreshStatus, usable, useAssistant } from '../assistant/assistant.js';
 import { openInstall } from '../dictation/dictation.js';
 import { keyLabel, withKey } from '../keybinds.js';
@@ -37,10 +37,14 @@ function AssistantActions({ next }) {
   );
 }
 
+const useForum = () => useStore((s) => isForum(s.settings));
+
 function ThreadActions() {
+  const forum = useForum();
   const status = useStore((s) => s.status);
   const loggingIn = useStore((s) => s.loggingIn);
   const discovering = useStore((s) => s.discovering);
+  if (!forum) return null;
   return (
     <>
       {status.loggedIn
@@ -58,7 +62,7 @@ export const STEPS = [
   {
     id: 'welcome',
     title: 'Welcome to EasyWriter',
-    body: () => <p>Write your development thread posts here, then push each one into the forum's reply box. This tour shows where things are, and its card stays open while you try them.</p>,
+    body: () => <p>{useForum() ? "Write your development thread posts here, then push each one into the forum's reply box." : 'Write your drafts here and keep them in projects.'} This tour shows where things are, and its card stays open while you try them.</p>,
     target: null, view: null, Actions: null,
   },
   {
@@ -88,7 +92,7 @@ export const STEPS = [
   {
     id: 'plans',
     title: 'Plans',
-    body: () => <p>Each forum thread can have a plan, {withKey('opened from the Plans tab', 'app.plans')}. Backlog lists every ticket in the plan. Board shows the same tickets as cards you drag between status columns, and Gantt shows them as bars you drag to set dates.</p>,
+    body: () => <p>Each {useForum() ? 'forum thread' : 'project'} can have a plan, {withKey('opened from the Plans tab', 'app.plans')}. Backlog lists every ticket in the plan. Board shows the same tickets as cards you drag between status columns, and Gantt shows them as bars you drag to set dates.</p>,
     target: tab(1), view: 'plan', Actions: null,
   },
   {
@@ -117,9 +121,11 @@ export const STEPS = [
   },
   {
     id: 'threads',
-    title: 'Your threads',
-    body: () => <p>Log in to the forum, then Find my threads lists your development threads in the sidebar. Add thread URL, under the list, adds one thread by its link.</p>,
-    target: '[data-agent-area="sidebar"] [aria-label="Find my threads"]', view: null, Actions: ThreadActions,
+    title: 'Projects and threads',
+    body: () => <p>{useForum()
+      ? 'Log in to the forum, then Find my threads lists your development threads in the sidebar. Add thread URL, under the list, adds one thread by its link.'
+      : "New project, under the project list, adds a project. Pick a draft's project in the box beside Save, and click a project to see only its drafts."}</p>,
+    target: '[data-agent-area="sidebar"] [aria-label="Find my threads"], [data-agent-area="sidebar"] [data-add-thread]', view: null, Actions: ThreadActions,
   },
   {
     id: 'done',

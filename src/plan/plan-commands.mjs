@@ -12,6 +12,7 @@ import {
   updatePlan, updateTicket, updateUnit, updateUrl, updateView, viewRef,
 } from './plan-model.mjs';
 import { autoScheduled, schedule } from './schedule.mjs';
+import { isThreadKey, THREAD_KEY } from '../thread-url.mjs';
 
 export { columnRef, labelRef, PLAN_GATES, ticketRef, unitRef, viewRef };
 
@@ -91,16 +92,16 @@ export const PLAN_COMMANDS = [
       ...(a.include?.includes('tree') && { tree: tree(ctx.plan) }),
     }),
   }),
-  cmd('plan.create', "Create the plan of a thread", 'write', {}, [], (ctx, a) => {
+  cmd('plan.create', "Create the plan of a thread or project", 'write', {}, [], (ctx, a) => {
     const url = String(a.threadUrl).replace(/[?#].*$/, '');
-    if (!/^https:\/\/daf\.staffs\.ac\.uk\/topic\/\d+\S*$/.test(url)) return { error: { code: 'invalid_args', message: 'threadUrl is a forum topic url' } };
+    if (!isThreadKey(url)) return { error: { code: 'invalid_args', message: 'threadUrl is a forum topic url or a project key' } };
     if (ctx.plans?.some((p) => p.threadUrl === url)) return { error: { code: 'already_exists', message: 'The thread already has a plan (one plan per thread)' } };
     const plan = newPlan(url, a.title ?? '', ctx.tags);
     return { plan, result: { planId: plan.id } };
   }, {
     undo: 'none',
-    args: obj({ threadUrl: { type: 'string', pattern: '^https://daf\\.staffs\\.ac\\.uk/topic/\\d+\\S*$' }, title: { type: 'string', maxLength: 120 } }, ['threadUrl']),
-    examples: [{ args: { threadUrl: 'https://daf.staffs.ac.uk/topic/90001-portfolio-dev-thread/', title: 'Portfolio dev thread' } }],
+    args: obj({ threadUrl: { type: 'string', pattern: THREAD_KEY }, title: { type: 'string', maxLength: 120 } }, ['threadUrl']),
+    examples: [{ args: { threadUrl: 'project:7c1e5a3b-2d4f-4a6b-8c9d-0e1f2a3b4c5d', title: 'Portfolio' } }],
   }),
   cmd('plan.update', 'Change plan settings', 'write', {
     patch: obj({ title: { type: 'string', maxLength: 120 }, calendar: obj({ workdays: { type: 'array', items: { type: 'integer', minimum: 0, maximum: 6 }, minItems: 1 }, weekOne: DATE_OR_NULL }),

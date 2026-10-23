@@ -10,7 +10,7 @@ const ticket = (n, title, status, more = {}) => ({
 });
 
 const plan = {
-  version: 1, id: id(0), threadUrl: 'https://daf.staffs.ac.uk/topic/88136-level-design-dev-thread/', title: 'Level design dev thread', seq: 4,
+  version: 1, id: id(0), threadUrl: 'project:00000000-0000-4000-8000-c00000000001', title: 'Level design', seq: 4,
   calendar: { workdays: [1, 2, 3, 4, 5], holidays: [], weekOne: null },
   columns: [
     { id: 'todo', name: 'To do', color: '#e5e5e5', tagId: 'todo', wip: null },

@@ -27,7 +27,7 @@ const MODELS = [
 const VAD = { repo: 'ggml-org/whisper-vad', file: 'ggml-silero-v5.1.2.bin', bytes: 885098 };
 const BIN = { asset: 'whisper-bin-x64.zip', bytes: 9 * MB, exe: 'whisper-server.exe' }; // the size is an estimate until download
 const RELEASES = 'https://api.github.com/repos/ggml-org/whisper.cpp/releases?per_page=30';
-const UA = { 'User-Agent': 'daf-writer' };
+const UA = { 'User-Agent': 'EasyWriter' };
 
 let getSettings = null;
 let getWin = null;

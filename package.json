@@ -3,15 +3,15 @@
   "productName": "EasyWriter",
   "version": "1.0.0",
   "private": true,
-  "description": "Desktop editor for Digital Academy Forum development threads",
+  "description": "Desktop editor for projects and forum threads, with canvases, flowcharts and plans",
   "author": "DashingNights",
   "repository": "github:DashingNights/EasyWriter",
   "main": "main.js",
   "bin": {
-    "daf-agent": "bin/daf-agent.js"
+    "easywriter-agent": "bin/easywriter-agent.js"
   },
   "scripts": {
-    "agent": "node bin/daf-agent.js",
+    "agent": "node bin/easywriter-agent.js",
     "build": "esbuild src/main.jsx --bundle --outfile=dist/renderer.js --format=iife --jsx=automatic --minify --sourcemap --define:process.env.NODE_ENV=\\\"production\\\" && tailwindcss -i src/app.css -o dist/app.css --minify",
     "start": "npm run build && electron .",
     "smoke": "npm run build && electron . --smoke",

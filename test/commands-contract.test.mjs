@@ -74,7 +74,9 @@ test('removals are destructive (links excepted), destructive titles name the obj
 test('$defs hold the shared schemas', () => {
   assert.deepEqual(Object.keys($defs).sort(), ['ID', 'ITEM', 'PATH', 'TAG_ID', 'URL']);
   assert.deepEqual(validate($defs.PATH, [0, 2]), []);
-  assert.equal(validate($defs.URL, 'https://example.com/topic/1').length, 1);
+  assert.deepEqual(validate($defs.URL, 'https://example.com/topic/1'), []); // a topic of any forum
+  assert.deepEqual(validate($defs.URL, 'project:0b2c8f0e-1c4e-4f8a-9d6a-2b7f3c9e1a55'), []); // a project key
+  assert.equal(validate($defs.URL, 'https://example.com/forum/1').length, 1);
 });
 
 test('every command the palette runs is in the catalogue', () => {

@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Slider } from '@/components/ui/slider';
-import { openSettings, refocusEditor, setZoom } from '../actions.js';
+import { isForum, openSettings, refocusEditor, setZoom } from '../actions.js';
 import { on } from '../commands.js';
 import { useStore } from '../store.js';
 import { InlineInput } from './InlineInput.jsx';
@@ -65,6 +65,7 @@ export function StatusBar() {
   const saveError = useStore((s) => s.saveError);
   const words = useStore((s) => s.words);
   const status = useStore((s) => s.status);
+  const forum = useStore((s) => isForum(s.settings));
   const zoom = useStore((s) => s.zoom);
   const zoomPct = useStore((s) => s.zoomPct);
   const [editing, setEditing] = useState(false);
@@ -72,7 +73,7 @@ export function StatusBar() {
     <footer className="col-span-2 flex h-8 items-center gap-4 border-t px-2 text-xs text-muted-foreground">
       <span className={cn(saveError && 'text-destructive')}>{saveLabel}</span>
       <span>{`${words} ${words === 1 ? 'word' : 'words'}`}</span>
-      <span>{status.loggedIn ? `Forum: logged in as ${status.name || status.memberId}` : 'Forum: not logged in'}</span>
+      {forum && <span>{status.loggedIn ? `Forum: logged in as ${status.name || status.memberId}` : 'Forum: not logged in'}</span>}
       <Model />
       <Agents />
       <div className="ml-auto flex items-center gap-2">

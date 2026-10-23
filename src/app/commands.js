@@ -98,7 +98,7 @@ async function executeInner(req) {
   if (errs.length) return error('invalid_args', argsMessage(def, errs[0], $defs), errs[0]);
   const args = withDefaults(def.args, raw, $defs);
   const opts = { source, dryRun: !!dryRun, ifRev, timeoutMs, signal: req.signal };
-  return def.batch ? runBatch(args, opts) : runOne(def, args, opts);
+  return def.batch ? runBatch(args, opts) : def.calls ? runCalls(args, opts) : runOne(def, args, opts);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -291,6 +291,7 @@ function subjectOf(kind, args = {}, sess = null) {
     }
     case 'board': return liveBoard()?.getSnapshot() ?? null;
     case 'window': return { visible: document.visibilityState === 'visible' };
+    case 'settings': return state.settings;
     default: return null; // flow: the flowchart commands bring their subject (second workflow)
   }
 }
@@ -384,7 +385,7 @@ async function runBatch(args, opts) {
   for (const [i, s] of args.steps.entries()) {
     const def = byId(s.id) ?? byId(commandIdOf(s.id)); // a command id or a tool name
     if (!def) return error('unknown_command', `steps[${i}]: no command has the id ${JSON.stringify(s.id)}`, { step: i });
-    if (def.batch) return error('invalid_args', `steps[${i}]: a batch cannot hold a batch`, { path: `/steps/${i}/id`, message: 'is a batch', expected: {} });
+    if (def.batch || def.calls) return error('invalid_args', `steps[${i}]: a batch cannot hold ${def.id}`, { path: `/steps/${i}/id`, message: 'is a batch', expected: {} });
     if (def.id === 'ui.invoke') return error('invalid_args', `steps[${i}]: ui.invoke runs alone, not in a batch`, { path: `/steps/${i}/id`, message: 'runs alone', expected: {} });
     const stepArgs = wrapStrings(def.args, s.args ?? {});
     const errs = validate(def.args, stepArgs, $defs);
@@ -462,6 +463,28 @@ async function runBatch(args, opts) {
   const job = run();
   if (sess) sess.pending = job.catch(() => {}); // a handover waits for the whole batch
   return job;
+}
+
+// ---------------------------------------------------------------------------------------------
+// calls
+
+/** Several tool calls in one (SPEC §8 Calls): the steps run in order in the same queue turn, each as if called alone (its args,
+ * gates, ask, undo step and draft session); a failing step does not stop the rest. A step on the open draft reads its PATHs at
+ * `ifRev`; a step on another draft at that draft's current rev (ifRev is the open draft's). */
+async function runCalls(args, opts) {
+  const results = [];
+  for (const [i, s] of args.steps.entries()) {
+    const def = byId(s.id) ?? byId(commandIdOf(s.id));
+    const other = typeof s.args?.draftId === 'string' && s.args.draftId !== state.draft?.id;
+    const req = { ...opts, id: def?.id ?? s.id, args: s.args ?? {}, ...(other && { ifRev: undefined }) };
+    const t0 = performance.now();
+    let res = def?.calls ? error('invalid_args', `steps[${i}]: calls cannot hold calls`) : await executeInner(req).catch(errorOf);
+    if (res.ok) res = { ...res, draftId: res.draftId ?? state.draft?.id ?? null, rev: res.rev ?? state.rev };
+    audit(req, res, Math.round(performance.now() - t0));
+    results.push(res);
+    if (res.error?.code === 'cancelled') break;
+  }
+  return { ok: true, result: { results }, undoSteps: 0 };
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -854,8 +877,9 @@ function listenGateway() {
     if (ev.type === 'call') {
       const ctrl = new AbortController();
       calls.set(ev.rid, ctrl);
-      // Main names the source; only an outside agent's comes this way (the in-app assistant's policy is never borrowed).
-      const ok = typeof ev.req?.source === 'string' && SOURCE_RE.test(ev.req.source) && isAgent(ev.req.source) && ev.req.source !== ASSISTANT;
+      // Main names the source; an outside agent's comes this way, and the in-app assistant's only from a Claude Code or Codex run
+      // whose bridge sent this start's key (ev.assistant, agent-server.js), so no outside client borrows its policy.
+      const ok = typeof ev.req?.source === 'string' && SOURCE_RE.test(ev.req.source) && isAgent(ev.req.source) && (ev.req.source !== ASSISTANT || ev.assistant === true);
       const run = ok ? invoke({ ...ev.req, signal: ctrl.signal }) : Promise.resolve(error('denied', 'Not an agent source', { reason: 'policy' }));
       run.then((res) => {
         calls.delete(ev.rid);

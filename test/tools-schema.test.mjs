@@ -182,7 +182,7 @@ test('Not-for lines: the tools a small model misuses say what they are not for, 
   assert.match(desc('canvas.edit'), /draw by hand\. .*Not for: changing items\. Use board_items_update\.\nPlaybook: canvas-mode\.$/); // wave 2b: shorter, with its playbook
   assert.match(desc('drafts.open'), /Not for: a title\. Get the draftId from drafts_list first\. e\.g\. /);
   assert.match(desc('drafts.list'), /Not for: opening\.$/m);
-  assert.equal(model(['drafts.list'])[0].function.parameters.properties.threadUrl.description, 'Full forum thread URL. Omit it for all drafts.');
+  assert.equal(model(['drafts.list'])[0].function.parameters.properties.threadUrl.description, 'Its project or thread URL (threads.list). Omit it for all drafts.');
   assert.match(desc('commands.index'), /Not for: finding items or blocks\.$/);
   assert.match(desc('doc.get'), /Not for: boards\. Use board_get\. e\.g\. /);
   for (const id of ['canvas.close', 'ui.select', 'board.get', 'board.find', 'board.items.remove']) assert.match(desc(id), /Not for: [^.]+\./, id);

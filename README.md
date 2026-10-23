@@ -1,6 +1,6 @@
 # EasyWriter
 
-EasyWriter is a Windows desktop editor for writing Digital Academy Forum development-thread posts, with canvases, flowcharts and plans built in.
+EasyWriter is a Windows desktop editor for project writing, with canvases, flowcharts and plans built in. Drafts belong to projects, or in forum mode to the threads of an Invision Community forum.
 
 ![The EasyWriter editor with the welcome draft open](docs/img/editor.png)
 
@@ -10,8 +10,8 @@ EasyWriter is a Windows desktop editor for writing Digital Academy Forum develop
 - Canvases inside a post for pictures, text and shapes. The forum gets each canvas as one picture.
 - Annotate screenshots. Drop a screenshot into a post, then double-click the canvas it makes to draw and write over it.
 - Flowcharts whose connectors stay attached to their shapes. Keep them in the flowchart library to reuse them in other drafts.
-- A plan for each thread, with a Kanban board, a backlog and a Gantt chart. A chart of the plan can go into a post.
-- Push to the forum. EasyWriter opens your thread with the post in the reply box, and you press Submit yourself.
+- A plan for each project or thread, with a Kanban board, a backlog and a Gantt chart. A chart of the plan can go into a post.
+- Forum mode: Push to forum. EasyWriter opens your thread with the post in the reply box, and you press Submit yourself.
 - A browser with tabs inside the app, so the forum and your references stay next to the draft.
 - Dictation with Whisper, which runs on your own computer.
 - A chat assistant that can read and edit your drafts. It uses your own key for Qwen Cloud, Google Gemini or DeepSeek.

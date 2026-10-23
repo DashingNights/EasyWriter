@@ -110,7 +110,7 @@ export function situation(parts = [], viewKey = '') {
   const list = sortDrafts(st.drafts, settings.draftOrder).filter((d) => scope === 'all' || d.threadUrl === draft.threadUrl);
   const pos = canvasEditor.get()?.target.owner?.getPos?.();
   const { permission } = assistantMode(settings.assistant);
-  const google = ['google', 'deepseek', 'qwen'].includes(settings.assistant?.provider); // the cloud models' note
+  const google = ['google', 'deepseek', 'qwen', 'claude', 'codex'].includes(settings.assistant?.provider); // the cloud models' and the CLIs' note
   return situationNote({
     page: view.type,
     plan: view.type === 'plan' ? planSource.context(view.planId)?.plan.title ?? '' : '',
@@ -128,6 +128,7 @@ export function situation(parts = [], viewKey = '') {
     ...(google && { draftId: draft?.id ?? '', outline: st.editor && draft ? outlineLines(st.editor.state.doc) : [] }),
     total: list.length,
     scope,
+    projects: settings.mode !== 'forum',
     permission,
     playbooks: google ? [] : pickPlaybooks({ parts, view: viewKey, permission }),
   });

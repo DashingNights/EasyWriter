@@ -7,18 +7,24 @@ const os = require('os');
 const path = require('path');
 const { pathToFileURL } = require('url');
 const { app, ipcMain } = require('electron');
+const { advanced } = require('./assistant/advanced.js');
 
 // The MCP server for local AI agents (SPEC §8 Agents; agent-automation plan §4.4-§4.6 without the token, the user's decision
 // 2026-10-08). On while settings.agent.enabled, with two transports:
 // - Streamable HTTP at http://127.0.0.1:<settings.agent.port>/mcp (POST JSON-RPC, JSON answers, Mcp-Session-Id sessions), for
 //   clients that take a URL;
-// - a named pipe (a Unix socket elsewhere) speaking MCP's stdio framing (newline-delimited JSON-RPC 2.0), which bin/daf-agent.js
+// - a named pipe (a Unix socket elsewhere) speaking MCP's stdio framing (newline-delimited JSON-RPC 2.0), which bin/easywriter-agent.js
 //   relays to stdin/stdout for clients that start their server themselves. userData/agent.json {version, pipe, pid, started}.
 // Methods: initialize, ping, tools/list, tools/call, notifications/cancelled. The tools are every headless command in the model
 // form the in-app assistant gets (SPEC §8 Tool schemas); a call runs in the main window's executor (commands.js) as source
-// agent:<client name>, so the agent policy applies: writes run, destructive and approval commands ask the user every time.
+// agent:<client name>, so the agent policy applies: writes run, destructive and approval commands ask the user every time
+// (the in-app assistant's session: its permission mode, below).
 // To the renderer, one channel `agent.event`: {type: call, rid, req} | {type: cancel, rid} | {type: connected | disconnected,
 // id, name, since}. From it: agent.ready (its executor listens), agent.reply (rid, result), agent.disconnect (id), agent.status.
+// The in-app assistant on Claude Code or Codex (src/assistant/cli.js) reaches the pipe through the bridge too: the bridge sends the
+// per-start KEY from its env (EASYWRITER_ASSISTANT) first, and that session's calls run as source agent:assistant (its permission
+// mode, its tool list less what the mode refuses), unlisted in the status bar. The pipe stays open while such a provider is set;
+// with Local AI agents off it serves that session only and agent.json is not written (the run's bridge gets --pipe).
 
 const PORT = 47823; // settings.agent.port when unset
 const MCP_VERSIONS = ['2025-11-25', '2025-06-18', '2025-03-26', '2024-11-05']; // newest first
@@ -28,8 +34,10 @@ const RPC = '2.0';
 const INSTRUCTIONS = 'EasyWriter is a desktop editor for forum post drafts with canvases, plans and flowcharts. '
   + 'Start with ui_state or drafts_list; commands_index and commands_describe explain the commands. Blocks are addressed by path '
   + '(indices from doc_get or doc_find). Writes run at once and the user can undo them; deletes and pushes ask the user in the app.';
+// The in-app assistant's session: its permission mode decides (Allow all asks nothing; the situation note names the mode).
+const ASSISTANT_INSTRUCTIONS = INSTRUCTIONS.replace('deletes and pushes ask the user in the app.', 'the app asks the user before a delete when the permission mode needs it, so never ask in text.');
 // The stdio relay, outside the asar archive in a packaged app (package.json build.asarUnpack).
-const BRIDGE = path.join(__dirname, '..', 'bin', 'daf-agent.js').replace(`app.asar${path.sep}`, `app.asar.unpacked${path.sep}`);
+const BRIDGE = path.join(__dirname, '..', 'bin', 'easywriter-agent.js').replace(`app.asar${path.sep}`, `app.asar.unpacked${path.sep}`);
 
 let getWin = () => null;
 let ready = false; // the renderer's executor is listening
@@ -44,6 +52,11 @@ const sessions = new Set(); // initialized sessions: the status bar's connection
 const httpSessions = new Map(); // Mcp-Session-Id → session
 const waiting = []; // [rid, req] sent before the renderer was ready
 const pending = new Map(); // rid → {session, id (the JSON-RPC request), resolve}
+const KEY = crypto.randomBytes(24).toString('hex'); // the assistant's key for this app start (assistantLink)
+const NEVER = ['history.undo', 'history.redo', 'tool.run']; // never the assistant's tools (loop.js NEVER)
+let getSettings = async () => ({});
+let agentsOn = false; // settings.agent.enabled: outside clients may use the pipe (the assistant's session always may)
+let context = null; // Promise of context.mjs (takePictures)
 
 const infoFile = () => path.join(app.getPath('userData'), 'agent.json');
 const isObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
@@ -53,7 +66,7 @@ const rpcError = (code, message, id = null) => ({ jsonrpc: RPC, id, error: { cod
 /** The pipe for this profile: one per userData folder, so a smoke run's own profile never meets the real one. */
 function pipePath() {
   const hash = crypto.createHash('sha256').update(app.getPath('userData')).digest('hex').slice(0, 12);
-  return process.platform === 'win32' ? `\\\\.\\pipe\\daf-writer-${hash}` : path.join(os.tmpdir(), `daf-writer-${hash}.sock`);
+  return process.platform === 'win32' ? `\\\\.\\pipe\\easywriter-${hash}` : path.join(os.tmpdir(), `easywriter-${hash}.sock`);
 }
 
 /** The executor's source name: lower case, [a-z0-9_-], at most 32 characters. 'assistant' is the in-app assistant's own
@@ -78,15 +91,15 @@ function newSession(close) {
 }
 
 function join(session, name) {
-  session.name = nameOf(name);
+  session.name = session.assistant ? 'assistant' : nameOf(name);
   sessions.add(session);
-  toRenderer(connected(session));
+  if (!session.assistant) toRenderer(connected(session));
 }
 
 function drop(session) {
   if (session.key) httpSessions.delete(session.key);
   for (const [rid, p] of pending) if (p.session === session) cancelRid(rid);
-  if (sessions.delete(session)) toRenderer({ type: 'disconnected', id: session.id, name: session.name });
+  if (sessions.delete(session) && !session.assistant) toRenderer({ type: 'disconnected', id: session.id, name: session.name });
 }
 
 /** Answers call `rid` with `result` (the command result). */
@@ -100,7 +113,7 @@ function answer(rid, result) {
 function dispatch(rid, req) {
   const win = getWin();
   if (!win || win.isDestroyed()) return answer(rid, { ok: false, error: { code: 'failed', message: 'The app window is closed' } });
-  win.webContents.send('agent.event', { type: 'call', rid, req });
+  win.webContents.send('agent.event', { type: 'call', rid, req, assistant: req.source === 'agent:assistant' });
 }
 
 function cancelRid(rid) {
@@ -127,17 +140,22 @@ function run(session, id, req) {
 // ---------------------------------------------------------------------------------------------
 // MCP
 
-let catalogue = null; // Promise of {tools, idOf(name)}
+let catalogue = null; // Promise of {tools, idOf(name), assistant(settings)}
 
 function tools() {
   catalogue ??= (async () => {
     const mod = (f) => import(pathToFileURL(path.join(__dirname, 'app', 'commands', f)).href);
-    const [{ CATALOGUE, MODEL_DEFS }, { toolsFor, commandIdOf }] = await Promise.all([mod('catalogue.mjs'), mod('tools-schema.mjs')]);
-    const caps = CATALOGUE.filter((d) => d.headless).map((d) => ({ id: d.id, title: d.title, args: d.args }));
-    const ids = caps.map((c) => c.id);
+    const [{ CATALOGUE, MODEL_DEFS }, { toolsFor, commandIdOf }, { assistantMode, refusal }] = await Promise.all([mod('catalogue.mjs'), mod('tools-schema.mjs'), mod('tool-sets.mjs')]);
+    const mcpTools = (defs) => toolsFor(defs.map((d) => ({ id: d.id, title: d.title, args: d.args })), { $defs: MODEL_DEFS, form: 'model' })
+      .map(({ function: f }, i) => ({ name: f.name, description: f.description, inputSchema: f.parameters, def: defs[i] }));
+    const strip = ({ def: _def, ...t }) => t;
+    const headless = mcpTools(CATALOGUE.filter((d) => d.headless));
+    const all = mcpTools(CATALOGUE.filter((d) => !NEVER.includes(d.id)));
     return {
-      tools: toolsFor(caps, { $defs: MODEL_DEFS, form: 'model' }).map(({ function: f }) => ({ name: f.name, description: f.description, inputSchema: f.parameters })),
-      idOf: (name) => commandIdOf(name, ids),
+      tools: headless.map(strip),
+      idOf: (name) => commandIdOf(name, headless.map((t) => t.def.id)),
+      // The assistant's: every command but NEVER, less those its permission mode refuses (the executor refuses them again).
+      assistant: (s) => all.filter((t) => !refusal(t.def, assistantMode(s?.assistant))),
     };
   })();
   return catalogue;
@@ -145,17 +163,23 @@ function tools() {
 
 const text = (t, isError = false) => ({ content: [{ type: 'text', text: t }], ...(isError && { isError: true }) });
 
-/** A command result as MCP tool content: its JSON (without ok and ms), a `png` field (board.render) as an image. */
-function toolResult(res) {
+/** A command result as MCP tool content: its JSON (without ok and ms), its pictures as images before it: a `png` field
+ * (board.render) and the data URLs beside `picture: 'next message'` (view.render, computer.act, also as batch or calls steps). */
+async function toolResult(res) {
   if (!res?.ok) return text(JSON.stringify(res?.error ?? res), true);
-  const { ok: _ok, ms: _ms, ...rest } = res;
-  const png = typeof rest.result?.png === 'string' ? rest.result.png : null;
-  if (!png) return text(JSON.stringify(rest));
-  const { png: _png, ...result } = rest.result;
-  return { content: [{ type: 'image', data: png, mimeType: 'image/png' }, { type: 'text', text: JSON.stringify({ ...rest, result }) }] };
+  context ??= import(pathToFileURL(path.join(__dirname, 'app', 'assistant', 'context.mjs')).href);
+  const { res: { ok: _ok, ms: _ms, ...rest }, pictures } = (await context).takePictures(res);
+  const images = pictures.map((p) => /^data:(image\/[\w.+-]+);base64,(.*)$/s.exec(p.url)).filter(Boolean).map(([, mimeType, data]) => ({ type: 'image', data, mimeType }));
+  if (typeof rest.result?.png === 'string') {
+    const { png, ...result } = rest.result;
+    images.unshift({ type: 'image', data: png, mimeType: 'image/png' });
+    rest.result = result;
+  }
+  return images.length ? { content: [...images, { type: 'text', text: JSON.stringify(rest) }] } : text(JSON.stringify(rest));
 }
 
 async function method(session, id, name, params) {
+  if (!agentsOn && !session.assistant) throw Object.assign(new Error('Local AI agents are off. Turn them on in EasyWriter, Settings > Local AI agents.'), { code: -32000 });
   switch (name) {
     case 'initialize':
       if (!session.name) join(session, params.clientInfo?.name);
@@ -163,17 +187,30 @@ async function method(session, id, name, params) {
         protocolVersion: MCP_VERSIONS.includes(params.protocolVersion) ? params.protocolVersion : MCP_VERSIONS[0],
         capabilities: { tools: {} },
         serverInfo: { name: 'easywriter', version: app.getVersion() },
-        instructions: INSTRUCTIONS,
+        instructions: session.assistant ? ASSISTANT_INSTRUCTIONS : INSTRUCTIONS,
       };
     case 'ping':
       return {};
     case 'tools/list':
-      return { tools: (await tools()).tools };
+      return { tools: session.assistant ? (await tools()).assistant(await getSettings()).map(({ def: _def, ...t }) => t) : (await tools()).tools };
     case 'tools/call': {
       if (!session.name) join(session, 'mcp'); // a stdio client whose initialize reached an earlier connection
-      const cmd = (await tools()).idOf(params.name);
+      const mine = session.assistant ? (await tools()).assistant(await getSettings()) : null;
+      const cmd = mine ? mine.find((t) => t.name === params.name)?.def.id : (await tools()).idOf(params.name);
       if (!cmd) return text(`Unknown tool ${params.name}`, true);
-      return toolResult(await run(session, id, { id: cmd, args: params.arguments ?? {}, source: `agent:${session.name}` }));
+      // A batch or calls step must be one of the assistant's tools too (loop.js runCall).
+      const off = mine && ['batch', 'calls'].includes(cmd) && [params.arguments?.steps].flat().find((s) => !mine.some((t) => t.name === s?.id || t.def.id === s?.id));
+      if (off) return text(`${off.id} is not one of your tools`, true);
+      // The assistant's call limit (Settings > Assistant > Advanced): a CLI run is one bridge process, so one session is one turn.
+      // A batch or calls call counts once, as in the in-app loop.
+      if (session.assistant) {
+        const adv = advanced((await getSettings()).assistant);
+        session.calls = (session.calls ?? 0) + 1;
+        if (adv.limitCalls && session.calls > adv.maxCalls) {
+          return text(`Refused: the limit of ${adv.maxCalls} tool calls for one request is reached. Make no more tool calls. Tell the user what is done and what is left.`, true);
+        }
+      }
+      return await toolResult(await run(session, id, { id: cmd, args: params.arguments ?? {}, source: session.assistant ? 'agent:assistant' : `agent:${session.name}` }));
     }
     default:
       throw Object.assign(new Error(`Method not found: ${name}`), { code: -32601 });
@@ -187,6 +224,8 @@ async function mcp(session, msg) {
   session.seen = Date.now();
   if (msg.id === undefined) {
     if (msg.method === 'notifications/cancelled') cancel(session, params.requestId);
+    if (msg.method === 'easywriter/assistant' && !session.name && session.key === null && typeof params.key === 'string'
+      && Buffer.byteLength(params.key) === KEY.length && crypto.timingSafeEqual(Buffer.from(params.key), Buffer.from(KEY))) session.assistant = true; // the pipe only, before initialize
     return null;
   }
   try {
@@ -217,7 +256,7 @@ function onSocket(socket) {
         msg = undefined;
       }
       const reply = msg === undefined ? Promise.resolve(rpcError(-32700, 'Parse error')) : mcp(session, msg);
-      reply.then((res) => res && !socket.destroyed && socket.write(`${JSON.stringify(res)}\n`));
+      reply.then((res) => res && !socket.destroyed && socket.write(`${JSON.stringify(res)}\n`)).catch((e) => console.error('agent pipe:', e));
     }
     if (buf.length > MAX_BODY) socket.destroy();
   });
@@ -304,7 +343,11 @@ function stopHttp() {
   for (const s of [...httpSessions.values()]) drop(s);
 }
 
-function start(settings) {
+/** agent.json, for bridges started without --pipe (outside clients): only while Local AI agents are on. */
+const writeInfo = () => agentsOn && pipeServer?.listening && fs.writeFileSync(infoFile(), JSON.stringify({ version: 1, pipe: pipePath(), pid: process.pid, started: Date.now() }));
+
+/** Opens the pipe if it is closed (also for a CLI run of Settings' Test before the provider is saved). */
+function startPipe() {
   if (!pipeServer) {
     const pipe = pipePath();
     if (process.platform !== 'win32') fs.rmSync(pipe, { force: true }); // a socket file left by a crash
@@ -312,9 +355,14 @@ function start(settings) {
     pipeServer.on('error', (e) => console.error('agent pipe:', e.message));
     pipeServer.listen(pipe, () => {
       if (process.platform !== 'win32') fs.chmodSync(pipe, 0o600);
-      fs.writeFileSync(infoFile(), JSON.stringify({ version: 1, pipe, pid: process.pid, started: Date.now() }));
+      writeInfo();
     });
   }
+}
+
+function start(settings) {
+  startPipe();
+  writeInfo();
   const want = portOf(settings);
   if (httpServer && port === want) return;
   stopHttp();
@@ -347,17 +395,27 @@ function stop() {
   fs.rmSync(infoFile(), { force: true });
 }
 
-/** Starts, restarts (a new port) or stops the server to match settings.agent. */
+/** Starts, restarts (a new port) or stops the server to match settings.agent; the pipe alone while the assistant runs on a CLI. */
 function sync(settings) {
-  if (settings?.agent?.enabled) start(settings);
-  else stop();
+  agentsOn = !!settings?.agent?.enabled;
+  if (agentsOn) return start(settings);
+  if (!['claude', 'codex'].includes(settings?.assistant?.provider)) return stop();
+  stopHttp();
+  port = null;
+  httpError = null;
+  for (const s of [...sessions]) if (!s.assistant) s.close(); // outside clients go, and method() refuses any that come
+  fs.rmSync(infoFile(), { force: true });
+  return startPipe();
 }
+
+/** How a CLI run reaches the pipe as the in-app assistant (src/assistant/cli.js): the bridge command and the key for its env. */
+const assistantLink = () => ({ command: process.execPath, args: [BRIDGE, `--pipe=${pipePath()}`], key: KEY });
 
 /** Settings > Local AI agents: whether it is on, the URL while the port listens or the reason it does not, and the stdio
  * command (the app's own executable run as Node, so no Node install is needed). */
 function status() {
   return {
-    on: !!pipeServer,
+    on: port !== null, // settings.agent.enabled (the pipe alone may be open for the assistant on a CLI)
     port,
     url: httpServer?.listening ? `http://127.0.0.1:${port}/mcp` : null,
     error: httpError,
@@ -366,13 +424,14 @@ function status() {
 }
 
 /** The IPC of the server; `handle` is main.js's sender-checked ipcMain.handle, `win()` the main window. */
-function register(handle, win) {
+function register(handle, win, settings) {
   getWin = win;
+  getSettings = settings;
   const fromMain = (e) => e.sender === getWin()?.webContents;
   ipcMain.on('agent.ready', (e) => {
     if (!fromMain(e)) return;
     ready = true;
-    for (const s of sessions) toRenderer(connected(s));
+    for (const s of sessions) if (!s.assistant) toRenderer(connected(s));
     for (const [rid, req] of waiting.splice(0)) dispatch(rid, req);
   });
   ipcMain.on('agent.reply', (e, rid, result) => fromMain(e) && answer(rid, result));
@@ -381,4 +440,4 @@ function register(handle, win) {
   app.on('will-quit', stop);
 }
 
-module.exports = { register, sync, PORT };
+module.exports = { register, sync, startPipe, assistantLink, PORT };

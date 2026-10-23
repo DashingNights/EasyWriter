@@ -266,7 +266,7 @@ export const defs = [
   define({
     id: 'doc.delete',
     title: 'Delete blocks of the open draft',
-    brief: 'Use it to remove blocks by their paths. The user confirms on a card. draftId: another draft to work on without opening it (drafts_list gives it); leave it out for the open draft.',
+    brief: 'Use it to remove blocks by their paths. Do not ask for confirmation in text. draftId: another draft to work on without opening it (drafts_list gives it); leave it out for the open draft.',
     guide: { before: 'Read the paths with doc_get format outline', args: 'Every path in one call', errors: 'denied means the user said no. Do not try again' },
     group: 'doc',
     risk: 'destructive',

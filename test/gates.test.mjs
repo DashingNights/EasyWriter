@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { can, GATES } from '../src/app/gates.mjs';
 
-const SUBJECTS = ['ui', 'board', 'doc', 'history', 'draft', 'node', 'flow', 'window'];
+const SUBJECTS = ['ui', 'board', 'doc', 'history', 'draft', 'node', 'flow', 'window', 'settings'];
 
 test('every gate has a known subject, a test, a message and a fix', () => {
   for (const [id, g] of Object.entries(GATES)) {

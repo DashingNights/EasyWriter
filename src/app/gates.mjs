@@ -3,8 +3,8 @@
 //
 // A gate reads one subject: `ui` {view, editor} (the store's state fits), `board` (Board.getSnapshot(), null without a
 // board), `doc` {inTable}, `history` {canUndo, canRedo} (a board snapshot fits), `draft` {id, threadUrl, pushedAt}, `node`
-// (a TipTap JSON block), `flow` (a library record; null when not loaded or missing) or `window` {visible}
-// (document.visibilityState is 'visible': shown and not minimized).
+// (a TipTap JSON block), `flow` (a library record; null when not loaded or missing), `window` {visible}
+// (document.visibilityState is 'visible': shown and not minimized) or `settings` (settings.json as loaded).
 
 const gate = (subject, test, message, fix) => ({ subject, test, message, fix });
 
@@ -36,6 +36,8 @@ export const GATES = {
   'draft.hasThread': gate('draft', (d) => !!d?.threadUrl, 'The draft has no thread', 'Choose its thread in the Post card'),
   'draft.unpushed': gate('draft', (d) => !!d && d.pushedAt == null, 'The draft is already marked as pushed', 'Unpush it first'),
   'draft.pushed': gate('draft', (d) => d?.pushedAt != null, 'The draft is not marked as pushed', 'Nothing to unpush; push it instead'),
+  // Forum mode (settings.mode): sign-in, push, discovery and the forum window; projects mode has no forum.
+  'app.forum': gate('settings', (s) => s?.mode === 'forum', 'There is no forum in projects mode', 'Switch to forum mode in Settings, General'),
   'flow.open': gate('flow', (f) => !!f, 'No library flowchart is open', 'Open one in the flowchart library'),
   'flow.synced': gate('node', (n) => n?.type === 'canvas' && !!n.attrs?.flow, 'The canvas is not linked to the flowchart library',
     'Save it to the library first'),

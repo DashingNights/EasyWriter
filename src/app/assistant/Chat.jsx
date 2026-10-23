@@ -178,9 +178,9 @@ function Message({ m, dim }) {
 
 /** The header's model menu (2026-10-08): the model of the next request among modelChoices (Settings > Assistant enables Qwen
  * Cloud's), saved at once. With one choice it is the model's name only. */
-function ModelMenu({ edRef, name }) {
+function ModelMenu({ edRef, name, cli }) {
   const a = { ...ASSISTANT_DEFAULTS, ...useStore((s) => s.settings?.assistant) }; // a settings file may predate the Qwen fields
-  const choices = modelChoices(a);
+  const choices = modelChoices(a, cli);
   const current = `${a.provider}|${a[MODEL_FIELD[a.provider]]}`;
   const label = choices.find(([p, id]) => `${p}|${id}` === current)?.[2] ?? name;
   if (choices.length < 2) return name ? <span data-model-name className="min-w-0 truncate text-xs text-muted-foreground" title={name}>{name}</span> : null;
@@ -197,7 +197,7 @@ function ModelMenu({ edRef, name }) {
         onKeyDown={(e) => e.key === 'Escape' && e.stopPropagation()}>
         {choices.map(([p, id, text]) => (
           <DropdownMenuCheckboxItem key={`${p}|${id}`} checked={`${p}|${id}` === current} onCheckedChange={() => pickModel(p, id)}>
-            <span className="grid"><span>{text}</span>{text !== id && <span className="text-xs text-muted-foreground">{id}</span>}</span>
+            <span className="grid"><span>{text}</span>{id && text !== id && <span className="text-xs text-muted-foreground">{id}</span>}</span>
           </DropdownMenuCheckboxItem>
         ))}
       </DropdownMenuContent>
@@ -207,9 +207,16 @@ function ModelMenu({ edRef, name }) {
 
 /** The header's Thinking menu (settings.assistant.thinking, saved at once, kept across chats and restarts): the brain looks pressed
  * at Low, Medium or High. Closing it puts the focus back in the text box; Esc in it closes the menu only, not the panel. */
-function ThinkingMenu({ edRef }) {
-  const effort = thinkingEffort(useStore((s) => s.settings?.assistant?.thinking));
-  const provider = useStore((s) => s.settings?.assistant?.provider); // EFFORTS' fourth to sixth fields: Gemini, DeepSeek, Qwen Cloud
+function ThinkingMenu({ edRef, cli }) {
+  const conf = useStore((s) => s.settings?.assistant);
+  // Claude Code or Codex: Default (the CLI's own) and its efforts, saved in claudeEffort or codexEffort (main passes them on).
+  const field = cli && `${cli.id}Effort`;
+  const effort = cli ? conf?.[field] || '' : thinkingEffort(conf?.thinking);
+  const provider = conf?.provider; // EFFORTS' fourth to sixth fields: Gemini, DeepSeek, Qwen Cloud
+  const items = cli ? [['', 'Default', `${cli.label} decides`], ...cli.efforts.map((id) => [id, id[0].toUpperCase() + id.slice(1), ''])]
+    : EFFORTS.map(([id, label, line, gemini, deepseek, qwen]) => [id, label, { deepseek, google: gemini, qwen }[provider] ?? line]);
+  const pick = (id) => (cli ? saveAssistant({ [field]: id }) : setThinking(id));
+  const auto = cli ? '' : 'auto';
   const refocus = (e) => {
     if (!edRef.current) return;
     e.preventDefault();
@@ -220,16 +227,16 @@ function ThinkingMenu({ edRef }) {
       <Tip title="Thinking" side="top">
         <DropdownMenuTrigger asChild>
           <Button variant="ghost" size="icon-sm" aria-label="Thinking" data-thinking={effort} onMouseDown={keep}
-            className={cn('size-7', effort !== 'auto' && 'bg-accent text-accent-foreground')}>
+            className={cn('size-7', effort !== auto && 'bg-accent text-accent-foreground')}>
             <Brain />
           </Button>
         </DropdownMenuTrigger>
       </Tip>
       <DropdownMenuContent align="end" className="w-72" data-thinking-menu onCloseAutoFocus={refocus}
         onKeyDown={(e) => e.key === 'Escape' && e.stopPropagation()}>
-        {EFFORTS.map(([id, label, line, gemini, deepseek, qwen]) => (
-          <DropdownMenuCheckboxItem key={id} checked={id === effort} onCheckedChange={() => setThinking(id)}>
-            <span className="grid"><span>{label}</span><span className="text-xs text-muted-foreground">{{ deepseek, google: gemini, qwen }[provider] ?? line}</span></span>
+        {items.map(([id, label, line]) => (
+          <DropdownMenuCheckboxItem key={id} checked={id === effort} onCheckedChange={() => pick(id)}>
+            <span className="grid"><span>{label}</span>{line && <span className="text-xs text-muted-foreground">{line}</span>}</span>
           </DropdownMenuCheckboxItem>
         ))}
       </DropdownMenuContent>
@@ -460,7 +467,7 @@ function ChatPanel({ islandRef }) {
       <div data-grip className="flex shrink-0 items-center gap-1.5 py-0.5 pr-0.5 pl-2 select-none">
         <span className="font-medium">Assistant</span>
         <StatusDot server={ready ? srv : null} />
-        {ready && <ModelMenu edRef={edRef} name={modelName(s)} />}
+        {ready && <ModelMenu edRef={edRef} name={modelName(s)} cli={s.cli} />}
         {badge && (
           <Tip title="Permissions. Change them in Settings." side="top">
             <Badge asChild variant="outline">
@@ -475,7 +482,7 @@ function ChatPanel({ islandRef }) {
             <Button variant="ghost" size="icon-sm" aria-label="New chat" className="size-7" onMouseDown={keep} onClick={startNewChat}><MessageSquarePlus /></Button>
           </Tip>
         )}
-        <ThinkingMenu edRef={edRef} />
+        <ThinkingMenu edRef={edRef} cli={s?.cli} />
         <Tip title="Close (Esc)" side="top">
           <Button variant="ghost" size="icon-sm" aria-label="Close" className="size-7" onMouseDown={keep} onClick={closeChat}><X /></Button>
         </Tip>
@@ -490,7 +497,8 @@ function ChatPanel({ islandRef }) {
           {/* LOCAL LLM (commented out 2026-10-07): the install offer, "It is not installed yet. After one download it works offline."
               or "It is turned off." with Install... (N GB) / Turn on... (openInstall). */}
           <p>{privacy(s?.providerLabel)}</p>
-          <p className="text-muted-foreground">Add your {s?.providerLabel ?? 'Google AI'} API key in Settings.</p>
+          <p className="text-muted-foreground">{s?.cli ? `${s.providerLabel} ${s.state === 'signed_out' ? 'is not signed in' : 'is not installed'}. ${s.cli.hint}`
+            : `Add your ${s?.providerLabel ?? 'Google AI'} API key in Settings.`}</p>
           <Button size="sm" onMouseDown={keep} onClick={() => openSettings('assistant')}>Open Settings</Button>
           <span className="flex-1" />
           <AgentAsk inline />
@@ -553,7 +561,7 @@ function ChatPanel({ islandRef }) {
               <div ref={boxRef} />
               {blank && <span aria-hidden className="pointer-events-none absolute top-1.5 left-[calc(0.5rem+1px)] text-sm text-muted-foreground">Message the assistant</span>}
             </div>
-            <ContextRing usage={a.usage} window={s?.ctx} />
+            {!s?.cli && <ContextRing usage={a.usage} window={s?.ctx} />}
             {a.turn ? (
               <Tip title="Stop" side="top">
                 <Button type="button" variant="secondary" size="icon-sm" aria-label="Stop" onMouseDown={keep} onClick={stop}><Square className="fill-current" /></Button>

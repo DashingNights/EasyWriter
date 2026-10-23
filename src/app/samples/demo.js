@@ -52,9 +52,8 @@ export const demoDoc = () => ({
   type: 'doc',
   content: [
     { type: 'heading', attrs: { level: 1, textAlign: 'center' }, content: [text('Welcome to EasyWriter')] },
-    para(text('EasyWriter is a desktop editor for Digital Academy Forum development threads. You write each post here, with '
-      + 'canvases, flowcharts and plans built in, and push it to your thread when it is ready. This draft shows what a post '
-      + 'can hold.')),
+    para(text('EasyWriter is a desktop editor for project writing, with canvases, flowcharts and plans built in. You keep each '
+      + 'draft in a project, or write posts for the threads of a forum. This draft shows what a draft can hold.')),
     h2('Text and presets'),
     para(text('Presets apply a saved text style in one click. Select some text and pick one from the toolbar. The app comes '
       + 'with four of them.')),
@@ -154,12 +153,12 @@ export const demoDoc = () => ({
       + 'to reuse them in other drafts.')),
     demoFlow(),
     h2('Boards in a post'),
-    para(text('Each thread can have a plan with a Kanban board and a Gantt chart. Put either one in a post with Insert into draft '
+    para(text('Each project can have a plan with a Kanban board and a Gantt chart. Put either one in a post with Insert into draft '
       + 'in the plan\'s menu. The chart follows the plan as it changes until you freeze it. The two below are frozen.')),
     ...planSample(),
-    h2('Pushing a post'),
-    para(text('Choose the draft\'s thread in the sidebar, then press Push to forum. EasyWriter opens the thread with your post in '
-      + 'the reply box, and you press Submit on the forum when it looks right.')),
+    h2('Posting to a forum'),
+    para(text('Settings, General can switch the projects to the threads of an Invision Community forum. Then Push to forum opens '
+      + 'the draft\'s thread with your post in the reply box, and you press Submit on the forum when it looks right.')),
     para(text('This draft is only an example. Delete it from the sidebar when you no longer need it.', CAPTION)),
   ],
 });

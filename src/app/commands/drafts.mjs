@@ -9,7 +9,7 @@ import { CONTENT, ID, ref, TAG_ID } from './schema-defs.mjs';
 
 const DRAFT = { type: 'object', required: ['draftId'], additionalProperties: false, properties: { draftId: ref('ID', 'The draft id from drafts_list') } };
 const EXAMPLE_ID = '0b2c8f0e-1c4e-4f8a-9d6a-2b7f3c9e1a55';
-const THREAD = 'https://daf.staffs.ac.uk/topic/88136-level-design/';
+const THREAD = 'project:3a7c9e1b-5d2f-4b8a-9c6e-1f0d2b4a6c8e'; // a project key (threads.list); forum mode: a topic URL
 
 /** The draft `id` (the open one carries the live fields), or null. */
 const draftOf = (ctx, id) => (ctx.state.draft?.id === id ? ctx.state.draft : ctx.state.drafts.find((d) => d.id === id) ?? null);
@@ -38,7 +38,7 @@ export const defs = [
     group: 'drafts',
     risk: 'read',
     undo: 'none',
-    args: { type: 'object', additionalProperties: false, properties: { threadUrl: ref('URL', 'Full forum thread URL. Omit it for all drafts.') } },
+    args: { type: 'object', additionalProperties: false, properties: { threadUrl: ref('URL', 'Its project or thread URL (threads.list). Omit it for all drafts.') } },
     result: { type: 'array' },
     examples: [{ args: {} }, { args: { threadUrl: THREAD } }],
     run: (ctx, a) => sortDrafts(ctx.state.drafts, ctx.state.settings.draftOrder)
@@ -78,7 +78,7 @@ export const defs = [
     args: {
       type: 'object', additionalProperties: false,
       properties: {
-        threadUrl: { anyOf: [ref('URL'), { type: 'null' }], description: 'The forum thread URL, or null for none' },
+        threadUrl: { anyOf: [ref('URL'), { type: 'null' }], description: 'The project or thread URL, or null for none' },
         folderId: { type: 'string', minLength: 1, description: 'A folder id from folders_list' },
         tagId: { ...TAG_ID, description: 'A tag id from tags_list' },
         content: { ...CONTENT, description: 'The first text, as markdown, html or json' },
@@ -116,7 +116,7 @@ export const defs = [
   define({
     id: 'drafts.delete',
     title: 'Delete a draft (moved to the trash)',
-    brief: 'Use it when the user asks to delete a draft. The user confirms on a card.',
+    brief: 'Use it when the user asks to delete a draft. Do not ask for confirmation in text.',
     group: 'drafts',
     risk: 'destructive',
     undo: 'none',

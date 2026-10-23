@@ -3,7 +3,7 @@ import { refocusEditor, saveSettings } from '../actions.js';
 import { getState, setState, useStore } from '../store.js';
 import { modelContent, partsText } from './attach.mjs';
 import { buildHistory, COMPACT_ASK, COMPACT_SYSTEM, repeats, shouldCompact } from './context.mjs';
-import { runTurn } from './loop.js';
+import { runCliTurn, runTurn } from './loop.js';
 import QWEN_MODELS from '../../assistant/qwen-models.json';
 
 // The local assistant's chat (SPEC §7i; automation plan §13.4): the panel's state and the client of api.assistant (main runs
@@ -23,6 +23,7 @@ export const ASSISTANT_DEFAULTS = {
   provider: 'qwen', googleKey: '', googleModel: 'gemini-3.8-flash', // a cloud provider since 2026-10-07 (local models commented out)
   qwenKey: '', qwenModel: 'qwen3.7-plus', qwenModels: ['qwen3.7-plus', 'qwen3.7-flash', 'qwen3.8-flash', 'qwen3.8-max'], // Qwen Cloud (2026-10-08)
   deepseekKey: '', deepseekModel: 'deepseek-flash', // provider 'deepseek' (2026-10-08)
+  claudePath: '', claudeModel: '', claudeEffort: '', codexPath: '', codexModel: '', codexEffort: '', // providers 'claude', 'codex' ('': found, the CLI's default)
   warmAtStart: true, sleepMinutes: 10, idleUnloadMinutes: 30, step: 0, panel: null, thinking: 'auto', permission: 'standard', uiControl: true,
   pictureAfterWrite: true,
 };
@@ -55,8 +56,10 @@ export async function saveAssistant(patch) {
   return saveSettings({ assistant: { ...ASSISTANT_DEFAULTS, ...fresh, ...patch } });
 }
 
-/** Whether the chat can run: installed (or a server URL) and nothing missing. */
-export const usable = (status) => !!status?.ready && (!!status.url || assistantSettings().installed);
+/** Whether the chat can run: installed (or a server URL, or a Claude Code or Codex that is ready) and nothing missing. */
+export const usable = (status) => !!status?.ready && (!!status.url || !!status.cli || assistantSettings().installed);
+/** Whether `provider` runs its turns on the user's Claude Code or Codex (SPEC §7i Coding CLIs). */
+export const isCli = (provider = assistantSettings().provider) => provider === 'claude' || provider === 'codex';
 
 export function refreshStatus() {
   return api.assistant.status().then((status) => {
@@ -85,14 +88,18 @@ export function closeChat() {
 export const thinkingEffort = (t = assistantSettings().thinking) => (EFFORTS.some(([id]) => id === t) ? t : 'auto');
 
 // The chat panel's model menu (2026-10-08): the enabled Qwen Cloud models, then Gemini and DeepSeek, each provider only with its key.
-export const MODEL_FIELD = { qwen: 'qwenModel', google: 'googleModel', deepseek: 'deepseekModel' };
+// On Claude Code or Codex: the CLI's default (named after it), its models (status().cli) and a model id typed in Settings.
+export const MODEL_FIELD = { qwen: 'qwenModel', google: 'googleModel', deepseek: 'deepseekModel', claude: 'claudeModel', codex: 'codexModel' };
 const QWEN_LABEL = Object.fromEntries(QWEN_MODELS.map((m) => [m.id, m.label]));
-/** [[provider, model id, label], ...] that settings.assistant `a` can run. */
-export const modelChoices = (a) => [
+/** [[provider, model id, label], ...] that settings.assistant `a` can run; `cli`: status().cli while the provider is a CLI. */
+export const modelChoices = (a, cli) => (cli ? [
+  [cli.id, '', cli.label], ...cli.models.map(([id, label]) => [cli.id, id, label]),
+  ...(a[MODEL_FIELD[cli.id]] && !cli.models.some(([id]) => id === a[MODEL_FIELD[cli.id]]) ? [[cli.id, a[MODEL_FIELD[cli.id]], a[MODEL_FIELD[cli.id]]]] : []),
+] : [
   ...(a.qwenKey ? (a.qwenModels ?? []).map((id) => ['qwen', id, QWEN_LABEL[id] ?? id]) : []),
   ...(a.googleKey ? [['google', a.googleModel || 'gemini-3.8-flash', 'Gemini']] : []),
   ...(a.deepseekKey ? [['deepseek', a.deepseekModel || 'deepseek-flash', 'DeepSeek']] : []),
-];
+]);
 /** Picks the model of the next request (saved at once, kept across chats). */
 export const pickModel = (provider, id) => saveAssistant({ provider, [MODEL_FIELD[provider]]: id }).then(refreshStatus);
 
@@ -109,9 +116,10 @@ export function wantsThinking(text) {
 
 const turns = new Map(); // completion rid → {calls, resolve}
 // Kept across turns (loop.js): the rev of the assistant's last document read (revs: per background draft id), the tools
-// commands_describe added, the view key.
-const session = { lastRev: undefined, revs: {}, described: new Map(), viewKey: null };
+// commands_describe added, the view key; on Claude Code or Codex, the CLI's session ({provider, id}, loop.js runCliTurn).
+const session = { lastRev: undefined, revs: {}, described: new Map(), viewKey: null, cli: null };
 
+export const editMessages = (fn) => set({ messages: fn(get().messages) });
 export const patchMessage = (id, fn) => set({ messages: get().messages.map((m) => (m.id === id ? { ...m, ...fn(m) } : m)) });
 
 /** Appends message `m` (`id` made when missing); returns its id. */
@@ -158,6 +166,28 @@ function end(rid, { finish = null, error = '', usage, n_ctx: ctx }) {
   t.resolve({ id: rid, text: t.text, reasoning: t.reasoning, toolCalls: t.calls, finish, error });
 }
 
+const runs = new Map(); // CLI run rid → its event handler (cliRun)
+
+/** One Claude Code or Codex turn (SPEC §7i Coding CLIs) of `req` ({prompt, system, session}): each assistant.event → `onEvent`.
+ * Resolves with the done or error event, or {type: 'cancelled'} when `signal` aborts it (the run's processes are killed). */
+export function cliRun(req, signal, onEvent) {
+  const rid = crypto.randomUUID();
+  return new Promise((resolve) => {
+    const finish = (e) => runs.delete(rid) && resolve(e);
+    runs.set(rid, (e) => {
+      onEvent(e);
+      if (e.type === 'done' || e.type === 'error') finish(e);
+    });
+    const cancel = () => {
+      api.assistant.cancelChat(rid);
+      finish({ type: 'cancelled' });
+    };
+    if (signal.aborted) return cancel();
+    signal.addEventListener('abort', cancel, { once: true });
+    api.assistant.cliRun({ rid, ...req }).catch((err) => runs.get(rid)?.({ type: 'error', message: message(err) }));
+  });
+}
+
 let saidNoVision = false; // the server has no image projector: said once a session
 
 api.assistant.onEvent((e) => {
@@ -165,6 +195,7 @@ api.assistant.onEvent((e) => {
     if (get().status) set({ status: { ...get().status, server: e.server } });
     return;
   }
+  if (runs.has(e.rid)) return runs.get(e.rid)(e);
   const t = turns.get(e.rid);
   if (!t) return;
   if (e.type === 'delta' || e.type === 'reasoning') {
@@ -193,13 +224,14 @@ api.assistant.onEvent((e) => {
 export function send(parts, note = '') {
   const text = partsText(parts).trim();
   if (!text || get().turn) return false;
-  const divider = shouldCompact(get().usage) ? addMessage({ role: 'divider', text: 'Summarizing earlier messages...', pending: true }) : null;
+  const divider = !isCli() && shouldCompact(get().usage) ? addMessage({ role: 'divider', text: 'Summarizing earlier messages...', pending: true }) : null;
   const kept = parts.map((p) => (typeof p === 'string' || !p.picture ? p : withoutPicture(p))); // the message keeps no renderer
   const id = addMessage({ role: 'user', text, parts: kept, content: modelContent(parts, note) });
   const ctrl = new AbortController();
   set({ turn: { ctrl } });
   session.signal = ctrl.signal;
   (async () => {
+    if (isCli()) return runCliTurn(session, kept); // ponytail: no pictures for Claude Code or Codex yet, pass them as image files if wanted
     if (divider && !(await compact(divider, ctrl.signal))) return;
     const pics = await pictures(parts);
     if (pics.length) patchMessage(id, () => ({ content: modelContent(parts, note, pics) })); // the pictures before the request
@@ -253,7 +285,7 @@ async function compact(id, signal) {
  * ring; the session's last read rev and described tools go too. */
 export function newChat() {
   stop();
-  Object.assign(session, { lastRev: undefined, revs: {}, viewKey: null });
+  Object.assign(session, { lastRev: undefined, revs: {}, viewKey: null, cli: null }); // cli: the CLI session resumed next turn
   session.described.clear();
   set({ messages: [], turn: null, pending: null, usage: get().usage && { used: 0, ctx: get().usage.ctx } });
 }

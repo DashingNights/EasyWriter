@@ -1,13 +1,14 @@
 import { toast } from 'sonner';
+import { advanced } from '../../assistant/advanced.js';
 import { invoke } from '../commands.js';
 import { byId, MODEL_DEFS } from '../commands/catalogue.mjs';
 import { assistantMode, COMPUTER, CORE, DESCRIBED_CHARS, refusal, VIEW_SETS, viewOf } from '../commands/tool-sets.mjs';
-import { commandIdOf, toolsFor } from '../commands/tools-schema.mjs';
+import { commandIdOf, toolName, toolsFor } from '../commands/tools-schema.mjs';
 import { getState, setState } from '../store.js';
-import { addMessage, assistantSettings, complete, history, patchMessage, stop, wantsThinking } from './assistant.js';
+import { addMessage, assistantSettings, cliRun, complete, editMessages, history, patchMessage, stop, wantsThinking } from './assistant.js';
 import { situation } from './capture.js';
 import {
-  briefArgs, callKey, callsLeft, CLAIM_ASK, claims, clipResult, doneReply, fullResults, guardWrite, loopKind, loopNote, pictureMessage, PROMISE_ASK,
+  briefArgs, callKey, callsLeft, CLAIM_ASK, claims, cliMessages, cliResult, clipResult, doneReply, fullResults, guardWrite, loopKind, loopNote, pictureMessage, PROMISE_ASK,
   markIds, promises, readsAfterWrite, REPEAT_NOTE, resultLine, takePictures, turnMessages, withMarkIds, withNote,
 } from './context.mjs';
 import { familyOf, systemPrompt } from './prompts.mjs';
@@ -23,11 +24,11 @@ import { endTurn } from './sessions.js';
 // history.redo (the model must not undo the user's own typing; each step line has its own Undo), and tool.run, whose palette
 // Undo / Redo entries would do the same.
 const NEVER = ['history.undo', 'history.redo', 'tool.run'];
-const MAX_CALLS = 20; // user decision 2026-10-07: 8 halted promising multi-step work; in-turn trimming (wave 2b) keeps the context in bounds
-const MAX_RESULT = 8000; // characters of one tool answer sent back (about 2.3 K tokens of the 16 K); ponytail: a char cap, count tokens if it overflows
-const SHOTS = 3; // computer use: only the turn's last 3 screenshots keep their image (each request resends every picture it keeps)
-const CLOUD_KEEP = 4; // the cloud models: tool results kept in full per request (the older ones go as their step line)
-const CLOUD_LIVE = 3; // the cloud models: pictures kept with their image per request
+const MAX_CALLS = 20; // the small models, unless Advanced sets one (user decision 2026-10-07: 8 halted promising multi-step work)
+// The other limits are Settings > Assistant > Advanced (src/assistant/advanced.js, read at each turn): the characters of one tool
+// answer sent back (8,000, about 2.3 K tokens of the 16 K; ponytail: a char cap, count tokens if it overflows), the turn's last
+// screenshots that keep their image (3; each request resends every picture it keeps), and the cloud models' tool results kept in
+// full (4, the older ones go as their step line) and pictures kept with their image (3) per request.
 const TOOL_TEXT = /<tool_call>|<function=/; // a tool call the model wrote into its text (§13.2: re-asked once)
 // The system prompt (the procedure the model follows) is the model family's (prompts.mjs, wave 1c).
 const REPEAT_STOP = 'Stopped a repeated call.';
@@ -69,12 +70,14 @@ export async function runTurn(session, userText, parts = []) {
     const family = familyOf(assistantSettings().model, assistantSettings().provider); // prompts.mjs: the system prompt and the model form of the tools
     // The cloud models (2026-10-07): 40 calls, no re-asks, they may read after a write to check their work. Each request resends
     // the turn so far, so what it keeps in full is capped (2026-10-08: one annotation case cost 755,556 tokens with everything kept,
-    // and a Qwen Cloud model's free quota is 1M): the last CLOUD_KEEP results in full, the last CLOUD_LIVE pictures with their image
+    // and a Qwen Cloud model's free quota is 1M): the last cloudKeep results in full, the last cloudLive pictures with their image (Advanced)
     // (the rest keep their caption), the situation note carrying the draft ids the small models' trimming used to lose.
     const gemini = family === 'gemini';
     const qwen = assistantSettings().provider === 'qwen';
-    const maxCalls = gemini ? 40 : MAX_CALLS;
-    const keep = gemini ? CLOUD_KEEP : undefined;
+    const adv = advanced(assistantSettings());
+    const maxCalls = !adv.limitCalls ? Infinity : gemini || assistantSettings().advanced?.maxCalls != null ? adv.maxCalls : MAX_CALLS;
+    const left = (n) => (Number.isFinite(n) ? callsLeft(n) : ''); // no limit: no count
+    const keep = gemini ? adv.cloudKeep : undefined;
     const tools = await toolList(session, parts, family); // also when thinking: Think must never take the tools away (it used to, and the model then faked actions)
     const render = tools.some((t) => t.function.name === 'view_render'); // the prompt's view_render line
     // Qwen Cloud boxes come in thousandths of the picture (2026-10-08, prompts.mjs THOUSANDTHS_RULE).
@@ -108,10 +111,10 @@ export async function runTurn(session, userText, parts = []) {
     };
     let restyled = false; // the reply was asked once to follow the writing rules
     const restyledCalls = new Set(); // tool names whose text was sent back once for the writing rules
-    // The request's messages: turnMessages, and every screenshot but the last SHOTS without its image (its caption stays).
+    // The request's messages: turnMessages, and every screenshot but the last adv.shots without its image (its caption stays).
     const request = () => {
-      const old = new Set(shots.slice(0, -SHOTS));
-      return turnMessages(messages, asked + 1, lines, keep, gemini ? CLOUD_LIVE : 1).map((m) => (old.has(m) ? { ...m, content: m.content.filter((p) => p?.type !== 'image_url') } : m));
+      const old = new Set(shots.slice(0, -adv.shots));
+      return turnMessages(messages, asked + 1, lines, keep, gemini ? adv.cloudLive : 1).map((m) => (old.has(m) ? { ...m, content: m.content.filter((p) => p?.type !== 'image_url') } : m));
     };
     while (!signal.aborted) {
       // Rebuilt for every request, so a navigation in this turn shows; the server's prompt cache holds while it stays the same.
@@ -168,18 +171,18 @@ export async function runTurn(session, userText, parts = []) {
         // A repeated read never ends the turn (user, 2026-10-07: the stop kept halting promising work): while its full result is
         // still in the messages it is answered with the note, else it runs again. A repeated write is a mistake: the note once, then stop.
         const isRead = byId(commandIdOf(call.name))?.risk === 'read';
-        if (times > 2 && !isRead && !gemini) {
+        if (times > 2 && !isRead && !gemini && adv.repeatStop) {
           addMessage({ role: 'assistant', error: REPEAT_STOP });
           return;
         }
         if (!gemini && times >= 2 && fullResults(messages, lines, keep).has(ranAt.get(key))) { // not run: the model has the answer already
-          messages.push({ role: 'tool', tool_call_id: call.id, content: `${REPEAT_NOTE}${callsLeft(maxCalls - calls)}` });
+          messages.push({ role: 'tool', tool_call_id: call.id, content: `${REPEAT_NOTE}${left(maxCalls - calls)}` });
           continue;
         }
         if (times >= 2) seen.set(key, 1); // its result went down to its summary line (turnMessages): it runs again
         // Going round in circles (A B A B, or one tool with ever new arguments): the first time the call runs and its result says
         // so; a cycle after that stops the turn before the call runs, and so does the 8th set of arguments for one tool.
-        const circle = gemini ? null : loopKind(keys, sinceWrite); // Gemini: no circle stop (loosened guardrails)
+        const circle = gemini || !adv.repeatStop ? null : loopKind(keys, sinceWrite); // Gemini: no circle stop (loosened guardrails)
         if (circle === 'stop' || (circle === 'cycle' && circled)) {
           addMessage({ role: 'assistant', error: CIRCLE_STOP });
           return;
@@ -192,16 +195,15 @@ export async function runTurn(session, userText, parts = []) {
           const st = styleArgs(call.arguments, known());
           if (st.issues.length && !restyledCalls.has(call.name)) {
             restyledCalls.add(call.name);
-            messages.push({ role: 'tool', tool_call_id: call.id, content: `${styleAsk(st.issues, 'the text of this call')}${callsLeft(maxCalls - calls)}` });
+            messages.push({ role: 'tool', tool_call_id: call.id, content: `${styleAsk(st.issues, 'the text of this call')}${left(maxCalls - calls)}` });
             continue;
           }
           run = { ...call, arguments: st.arguments };
         }
         const { res, pictures, line } = await runCall(session, run, tools);
-        const answer = clipResult(call.name, call.arguments, res, MAX_RESULT);
+        const answer = clipResult(call.name, call.arguments, res, adv.maxResult);
         const names = [...new Set(keys.slice(circle === 'cycle' ? -4 : -1).map((k) => k.slice(0, k.indexOf(' '))))];
-        const left = callsLeft(maxCalls - calls - 1);
-        const toolMessage = { role: 'tool', tool_call_id: call.id, content: `${circle && !circled ? `${answer}\n\n${loopNote(names)}` : answer}${left}` };
+                const toolMessage = { role: 'tool', tool_call_id: call.id, content: `${circle && !circled ? `${answer}\n\n${loopNote(names)}` : answer}${left(maxCalls - calls - 1)}` };
         messages.push(toolMessage);
         if (line) lines.set(toolMessage, line);
         ranAt.set(key, toolMessage);
@@ -227,7 +229,7 @@ export async function runTurn(session, userText, parts = []) {
         // The same call failing the same way twice in a row stops the turn (2026-10-07: a second try with other arguments, as a
         // corrected id, goes on).
         const fail = res.ok ? null : `${call.name}\n${res.error?.message}`;
-        const end = fail && lastFail === fail ? `Stopped: ${call.name} failed twice (${res.error.message})`
+        const end = fail && lastFail === fail && adv.repeatStop ? `Stopped: ${call.name} failed twice (${res.error.message})`
           : ++calls >= maxCalls ? `Stopped after ${maxCalls} commands.` : '';
         if (end) {
           addMessage({ role: 'assistant', error: end });
@@ -246,6 +248,41 @@ export async function runTurn(session, userText, parts = []) {
   } finally {
     connections((c) => c.filter((x) => x !== conn));
     endTurn(); // the sidebar badges of background drafts go (sessions.js)
+  }
+}
+
+/** One user turn on Claude Code or Codex (SPEC §7i Coding CLIs): the CLI runs its own tool loop and calls EasyWriter's tools through
+ * the bridge as agent:assistant, so the executor, the permission mode and the ask cards apply as above. The prompt is the message
+ * being answered with the situation note (the CLI keeps the conversation: session.cli, resumed while the provider stays); the chat
+ * shows its text, its thinking and a step line per tool call (context.mjs cliMessages, cliResult), with Undo as above. */
+export async function runCliTurn(session, parts) {
+  const conn = { name: 'assistant', since: Date.now(), disconnect: stop };
+  const connections = (fn) => setState({ agent: { ...getState().agent, connections: fn(getState().agent.connections) } });
+  connections((c) => [...c, conn]);
+  try {
+    const { provider } = assistantSettings();
+    const content = getState().assistant.messages.findLast((m) => m.role === 'user')?.content ?? '';
+    const args = new Map(); // tool_start id → its arguments
+    const show = (e) => editMessages((ms) => cliMessages(ms, e, crypto.randomUUID()));
+    addMessage({ role: 'assistant', streaming: true });
+    const end = await cliRun({
+      prompt: withNote(situation(parts), content),
+      system: systemPrompt('gemini', { uiControl: modeNow().uiControl, render: true }), // the cloud models' rules
+      session: session.cli?.provider === provider ? session.cli.id : '',
+    }, session.signal, (e) => {
+      if (e.type === 'tool_start') args.set(e.id, e.args);
+      if (e.type !== 'tool_end') return show(e);
+      show(e);
+      const def = byId(commandIdOf(e.name));
+      const res = cliResult(e);
+      steps(def ?? {}, e.name, res, args.get(e.id), { id: e.id, name: e.name, args: briefArgs(JSON.stringify(args.get(e.id) ?? {})) }, resultLine(def?.risk, res));
+      addMessage({ role: 'assistant', streaming: true }); // the text after the call
+    });
+    if (end.type === 'done' && end.session) session.cli = { provider, id: end.session };
+    if (end.type === 'cancelled') show({ type: 'done' });
+  } finally {
+    connections((c) => c.filter((x) => x !== conn));
+    endTurn();
   }
 }
 
@@ -287,7 +324,7 @@ async function toolList(session, parts, family) {
   // commands_describe with the caret in text); the small models get the view's set. The cloud models also get computer use
   // (computer_act and the background window, §7i) in every view.
   const ids = family === 'gemini' && (key === 'editor' || key === 'board') ? [...VIEW_SETS.editor, ...VIEW_SETS.board, ...VIEW_SETS.none] : VIEW_SETS[key];
-  const tools = toolsFor(res.result, { ids: [...new Set([...CORE, ...ids, ...(family === 'gemini' ? COMPUTER : [])])], $defs: MODEL_DEFS, form: 'model', family }).filter(allowed);
+  const tools = toolsFor(res.result, { ids: [...new Set([...CORE, ...ids, ...(family === 'gemini' ? [...COMPUTER, 'calls'] : [])])], $defs: MODEL_DEFS, form: 'model', family }).filter(allowed);
   return [...tools, ...[...session.described.values()].filter((d) => allowed(d) && !tools.some((t) => t.function.name === d.function.name))];
 }
 
@@ -334,7 +371,7 @@ async function runCall(session, call, tools) {
   let swaps = [];
   if (!(args instanceof Error)) [args, swaps] = withMarkIds(args, markIds(session.legendTexts ?? []));
   const stepId = (s) => (byId(s) ? s : commandIdOf(s));
-  const other = !offered.includes(id) ? call.name : id === 'batch' && [args?.steps].flat().find((s) => !offered.includes(stepId(s?.id)))?.id;
+  const other = !offered.includes(id) ? call.name : ['batch', 'calls'].includes(id) && [args?.steps].flat().find((s) => !offered.includes(stepId(s?.id)))?.id;
   const hint = NEVER.includes(stepId(other)) ? '' : ' (commands_describe adds it)';
   const why = def && !offered.includes(id) && refusal(def, modeNow()); // not offered in this mode: its step line says so
   // Revisions are per draft: a call with another draft's draftId (a background session) sends the rev of that draft's last read.
@@ -345,9 +382,12 @@ async function runCall(session, call, tools) {
     : why ? { ok: false, error: { code: 'denied', message: why, data: { reason: 'policy' } } }
     : other ? { ok: false, error: { code: 'unknown_command', message: `${other} is not one of your tools${hint}` } }
     : await invoke({ id: id ?? call.name, args, source: 'agent:assistant', ifRev: bg ? session.revs?.[bg] : session.lastRev, signal: session.signal });
-  if (ran.ok && def.risk === 'read' && (def.group === 'doc' || ran.result?.rev !== undefined)) {
-    if (ran.draftId && ran.draftId !== open) (session.revs ??= {})[ran.draftId] = ran.rev;
-    else session.lastRev = ran.rev;
+  // A read's rev is what later paths refer to; a calls call's reads count as reads.
+  const reads = id === 'calls' && ran.ok ? ran.result.results.map((r, i) => [r, byId(stepId(String(args.steps[i]?.id)))]) : [[ran, def]];
+  for (const [r, d] of reads) {
+    if (!r.ok || d?.risk !== 'read' || (d.group !== 'doc' && r.result?.rev === undefined)) continue;
+    if (r.draftId && r.draftId !== open) (session.revs ??= {})[r.draftId] = r.rev;
+    else session.lastRev = r.rev;
   }
   const { res, pictures: pics } = takePictures(ran.ok && id === 'commands.describe' ? describe(session, ran.result, tools) : ran);
   const of = id === 'view.render' ? ` of ${args?.path ? `the board at block [${args.path}]` : 'the view'}` : '';
@@ -359,7 +399,7 @@ async function runCall(session, call, tools) {
   const label = id === 'ui.invoke' && res.ok ? uiStep(args, res.result) : id === 'view.render' ? `Rendered the ${args?.path ? 'board' : 'view'}`
     : id === 'computer.act' && res.ok ? computerStep(args) : null;
   const line = resultLine(def?.risk, res, title) + (swaps.length ? ` (mark ${swaps.map(([n, v]) => `${n} = ${v}`).join(', ')})` : '');
-  step(def, call.name, res, { id: call.id, name: call.name, args: briefArgs(call.arguments) }, line, label);
+  steps(def, call.name, res, args, { id: call.id, name: call.name, args: briefArgs(call.arguments) }, line, label);
   return { res, pictures, line };
 }
 
@@ -386,6 +426,16 @@ const STEP_LABELS = { 'ui.state': 'Checked the screen', 'ui.snapshot': 'Read the
   'board.list': 'Listed the boards', 'board.get': 'Read the board', 'board.find': 'Searched the board',
   'canvas.edit': 'Opened the canvas', 'canvas.close': 'Closed the canvas', 'background.open': 'Opened a draft in the background window',
   'background.close': 'Closed the background window' };
+
+/** The transcript lines of a call with arguments `args`: a calls call that ran gets one per step, as if each was called alone. */
+function steps(def, name, res, args, call, line, label = null) {
+  if (def?.id !== 'calls' || !res.ok) return step(def, name, res, call, line, label);
+  res.result.results.forEach((r, i) => {
+    const s = args?.steps?.[i] ?? {};
+    const d = byId(s.id) ?? byId(commandIdOf(s.id));
+    step(d ?? {}, s.id, r, { id: `${call.id}-${i}`, name: d ? toolName(d.id) : String(s.id), args: briefArgs(JSON.stringify(s.args ?? {})) }, resultLine(d?.risk, r));
+  });
+}
 
 /** The transcript line of one command: title, result or error, and Undo for a document change; `call` and `line`, its summary
  * for the model's later turns. */

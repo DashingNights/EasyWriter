@@ -1,5 +1,5 @@
 'use strict';
-// JS source strings executed inside live daf.staffs.ac.uk pages (Invision Community 5).
+// JS source strings executed inside live pages of the forum site (settings.forumUrl, an Invision Community 5 site).
 // See SPEC.md §1 (forum facts) and §4.
 
 // Expression → {loggedIn, memberId, name, profileUrl}. Safe on pages without `ips` (e.g. the SSO provider).

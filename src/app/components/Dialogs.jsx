@@ -23,11 +23,14 @@ function LinkDialog({ href, onClose }) {
   );
 }
 
-function AddThreadDialog({ validate, onClose }) {
+/** Add thread URL (forum mode, a topic of `site`), or New project (`project`: a name only). */
+function AddThreadDialog({ project, site, validate, onClose }) {
   const [value, setValue] = useState('');
   return (
-    <FormDialog title="Add thread URL" okText="Add" validate={() => validate(value)} result={() => value} onClose={onClose}>
-      <Input type="url" className="h-8" value={value} placeholder="https://daf.staffs.ac.uk/topic/12345-.../" onChange={(e) => setValue(e.target.value)} />
+    <FormDialog title={project ? 'New project' : 'Add thread URL'} okText={project ? 'Create' : 'Add'} validate={() => validate(value)} result={() => value} onClose={onClose}>
+      {project
+        ? <Input aria-label="Project name" className="h-8" maxLength={200} value={value} placeholder="Project name" onChange={(e) => setValue(e.target.value)} />
+        : <Input type="url" className="h-8" value={value} placeholder={`${site || 'https://forum.example.com'}/topic/12345-.../`} onChange={(e) => setValue(e.target.value)} />}
     </FormDialog>
   );
 }
