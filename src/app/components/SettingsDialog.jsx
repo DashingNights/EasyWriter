@@ -12,8 +12,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Slider } from '@/components/ui/slider';
 import { Switch } from '@/components/ui/switch';
 import { FONT_SIZES, TEXT_COLORS, HIGHLIGHTS, FONTS } from '../../extensions.js';
-import { withKey } from '../keybinds.js';
-import { confirmDialog, DEFAULT_WIDTH } from '../actions.js';
+import { keyLabel, withKey } from '../keybinds.js';
+import { confirmDialog, DEFAULT_WIDTH, saveSettings } from '../actions.js';
 // LOCAL LLM (commented out 2026-10-07): BACKENDS, deleteAssistant, deleteLeftover, openInstall as openAssistantInstall, size, wake.
 import { ASSISTANT_DEFAULTS, saveAssistant } from '../assistant/assistant.js';
 import QWEN_MODELS from '../../assistant/qwen-models.json';
@@ -24,7 +24,7 @@ import { openInstall } from '../dictation/dictation.js';
 import { draftsWithTag, pruneMap, tagList } from '../drafts-meta.js';
 import { forumOrigin } from '../../thread-url.mjs';
 import { columnsFollowing } from '../plans.js';
-import { getState } from '../store.js';
+import { getState, useStore } from '../store.js';
 import { DEFS, effective, overridesOf } from '../keys.mjs';
 import { FormDialog } from './FormDialog.jsx';
 import { KeybindsSection } from './KeybindsSection.jsx';
@@ -37,6 +37,21 @@ let rowKey = 0;
 // Like the old native selects: a stored value that is not an option falls back to the first option.
 const fontValue = (v) => (FONTS.some((f) => f.css === v) ? v : '');
 const sizeValue = (v) => String(FONT_SIZES.includes(Number(v)) ? Number(v) : FONT_SIZES[0]);
+
+// The window zoom levels (settings.uiScale, main.js zoomLevel): Chromium's, 1.2 ** level of 100 %, in steps of 0.5.
+const UI_SCALES = Array.from({ length: 17 }, (_, i) => -3 + i / 2).map((l) => [String(l), `${Math.round(1.2 ** l * 100)}%`]);
+
+/** UI scale: applied and saved at once, as Ctrl+= / Ctrl+- / Ctrl+0 do (main.js window.zoom), so it shows their changes too. */
+function UiScale() {
+  const value = useStore((s) => String(s.settings?.uiScale ?? 0));
+  return <>
+    <Label className="text-muted-foreground">UI scale</Label>
+    <div className="flex items-center gap-2">
+      <Pick label="UI scale" value={value} onChange={(v) => saveSettings({ uiScale: Number(v) })} options={UI_SCALES} className="w-24" />
+      <span className="text-xs text-muted-foreground">{keyLabel('app.zoomIn')} and {keyLabel('app.zoomOut')} change it too</span>
+    </div>
+  </>;
+}
 
 function Pick({ value, onChange, options, className = 'w-36', label }) {
   return (
@@ -1011,6 +1026,7 @@ export function SettingsDialog({ settings: s, section, onClose }) {
               </div>
               <Label className="text-muted-foreground">Page theme</Label>
               <Pick label="Page theme" value={theme} onChange={setTheme} options={[['dark', 'Dark'], ['light', 'Light']]} />
+              <UiScale />
               <Label className="text-muted-foreground">Base font</Label>
               <Pick label="Base font" value={baseFont} onChange={setBaseFont} options={fontOptions('Default')} className="w-44" />
               <Label className="text-muted-foreground">Base size</Label>

@@ -98,6 +98,7 @@ const DEFAULT_SETTINGS = {
   github: github.DEFAULTS, // the GitHub backup (SPEC §4b)
   demoSeeded: false, // the demo draft was created on the first start (actions.js init)
   autoUpdate: false, // updates download in the background and install on quit; off: the update toast offers them (checkForUpdates)
+  uiScale: 0, // the main window's zoom level (Settings > General UI scale, Ctrl+= / Ctrl+- / Ctrl+0): applyUiScale
 };
 
 // SSO providers block embedded browsers: drop the Electron and app tokens from the UA.
@@ -132,8 +133,10 @@ function setSettings(partial) {
   return serialized(async () => {
     const { forumOrigin } = await threadUrl;
     if ('forumUrl' in partial && partial.forumUrl !== '' && forumOrigin(partial.forumUrl) !== partial.forumUrl) throw new Error('forumUrl must be an https origin or empty');
+    if ('uiScale' in partial) partial = { ...partial, uiScale: zoomLevel(partial.uiScale) };
     const merged = { ...(await getSettings()), ...partial };
     await writeJsonAtomic(settingsFile(), merged);
+    if ('uiScale' in partial) applyUiScale(mainWin, merged.uiScale);
     if ('keybinds' in partial) refreshKeys(merged);
     // Settings > MCP turns the gateway on or off live; the assistant on Claude Code or Codex keeps its pipe open
     if (('agent' in partial || 'assistant' in partial) && !SMOKE) agentServer.sync(merged);
@@ -467,13 +470,17 @@ handle('forum.login', forumLogin);
 handle('forum.describe', forumDescribe);
 handle('forum.push', forumPush);
 handle('forum.open', forumOpen);
-// Window zoom by Electron's old View menu step: dir 1 in, -1 out, 0 reset. The renderer sends it for Ctrl+= / Ctrl+- / Ctrl+0
-// (the main window has no menu). The window controls scale with the title strip.
-handle('window.zoom', (dir) => {
-  const wc = mainWin.webContents;
-  wc.setZoomLevel(dir ? Math.max(-3, Math.min(5, wc.getZoomLevel() + 0.5 * Math.sign(dir))) : 0);
-  mainWin.setTitleBarOverlay({ height: Math.round(TITLE_BAR.height * wc.getZoomFactor()) });
-});
+// Window zoom (settings.uiScale): a Chromium zoom level in Electron's old View menu steps of 0.5, -3…5 (0 = 100 %). The window
+// controls scale with the title strip.
+const zoomLevel = (v) => Math.max(-3, Math.min(5, Math.round(Number(v) * 2) / 2 || 0));
+function applyUiScale(win, level) {
+  if (!win || win.isDestroyed()) return;
+  win.webContents.setZoomLevel(zoomLevel(level));
+  win.setTitleBarOverlay({ height: Math.round(TITLE_BAR.height * win.webContents.getZoomFactor()) });
+}
+// dir 1 in, -1 out, 0 reset: the renderer sends it for Ctrl+= / Ctrl+- / Ctrl+0 (the main window has no menu). Saved as
+// settings.uiScale, so Settings shows it and the next start opens at it. → the new settings.
+handle('window.zoom', (dir) => setSettings({ uiScale: dir ? mainWin.webContents.getZoomLevel() + 0.5 * Math.sign(dir) : 0 }));
 // The title strip's colours (#rrggbb, §7): the window controls' background and symbols follow them.
 const HEX = /^#[0-9a-f]{6}$/i;
 handle('window.titleBar', ({ color, symbolColor } = {}) => {
@@ -649,6 +656,7 @@ function createMainWindow() {
   });
 
   wc.on('context-menu', (_event, params) => popupEditMenu(wc, params, win));
+  wc.on('did-finish-load', () => getSettings().then((s) => applyUiScale(win, s.uiScale)));
   // A reload (GitHub sync) or a crash leaves no chat panel to stop the assistant's CLI runs.
   wc.on('did-navigate', assistant.killRuns);
   wc.on('render-process-gone', assistant.killRuns);

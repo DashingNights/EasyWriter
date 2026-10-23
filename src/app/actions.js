@@ -880,6 +880,12 @@ const go = (e, fn) => {
 
 // The app's own shortcuts (§7k keybinds: keyIs / keyAmong match the user's chords).
 function onKeyDown(e) {
+  // Window zoom, over dialogs too (Settings > General UI scale shows it): the main window has no menu, so no accelerators. In the
+  // browser's pane or page the browser's own zoom keys zoom its tab instead (§7j browserKey).
+  const zoom = keyAmong(Object.keys(WINDOW_ZOOM), e);
+  if (zoom && !e.target.closest?.('[data-browser-pane], [data-browser-page]')) {
+    return go(e, () => api.window.zoom(WINDOW_ZOOM[zoom]).then((settings) => setState({ settings }))); // saved as uiScale
+  }
   if (state.dialog || state.confirm) return;
   if (keyIs('app.save', e)) {
     go(e, () => {
@@ -896,10 +902,6 @@ function onKeyDown(e) {
     // keys does not toggle it again and releasing them does nothing.
     e.stopPropagation();
     go(e, () => e.repeat || toggleQuickTools());
-  } else if (keyAmong(Object.keys(WINDOW_ZOOM), e) && !e.target.closest?.('[data-browser-pane], [data-browser-page]')) {
-    // Window zoom: the main window has no menu, so no accelerators. In the browser's pane or page the browser's own zoom
-    // keys zoom its tab instead (§7j browserKey).
-    go(e, () => api.window.zoom(WINDOW_ZOOM[keyAmong(Object.keys(WINDOW_ZOOM), e)]));
   } else if (keyIs('app.plans', e)) {
     go(e, () => e.repeat || showPage('plan')); // the plan workspace from anywhere (§7g); in it, nothing (no toggle)
   } else if (keyIs('app.browser', e)) {
