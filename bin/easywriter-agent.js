@@ -8,10 +8,10 @@ const path = require('path');
 // easywriter-agent: the stdio side of EasyWriter's MCP server (SPEC §8 Agents), for MCP clients that start their server themselves.
 // It relays stdin to the app's pipe and the pipe to stdout, line by line (both speak newline-delimited JSON-RPC 2.0); the app
 // (src/agent-server.js) answers everything. Stdlib only, so the app's own executable can run it with ELECTRON_RUN_AS_NODE=1
-// (the config Settings > Local AI agents shows). The pipe: --pipe=<path>, else the one userData/agent.json names
+// (the config Settings > MCP shows). The pipe: --pipe=<path>, else the one userData/agent.json names
 // (EASYWRITER_USERDATA, or the older DAF_WRITER_USERDATA, overrides the folder); EASYWRITER_ASSISTANT: the in-app assistant's key (src/assistant/cli.js). While the app does not listen, every request is answered with an error saying so.
 
-const OFF = 'EasyWriter is not running, or its agents are off. Start the app and turn on Settings > Local AI agents.';
+const OFF = 'EasyWriter is not running, or MCP is off. Start the app and turn on Settings > MCP.';
 const APP_DATA = process.platform === 'win32' ? process.env.APPDATA
   : process.platform === 'darwin' ? path.join(os.homedir(), 'Library', 'Application Support')
     : process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config');

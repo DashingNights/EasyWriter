@@ -654,7 +654,7 @@ const SWATCH = 'size-8 shrink-0 cursor-pointer rounded-md border border-input bg
 const AGENT_PORT = 47823; // settings.agent.port when unset (main's src/agent-server.js PORT)
 const copy = (text) => navigator.clipboard.writeText(text).then(() => toast('Copied'), () => toast.error('Could not copy'));
 
-/** Settings > Local AI agents (SPEC §8 Agents): the switch, the port, and how to connect an MCP client, by URL or by the stdio
+/** Settings > MCP (SPEC §8 Agents): the switch, the port, and how to connect an MCP client, by URL or by the stdio
  * config main reports (agent.status: the app's own executable runs bin/easywriter-agent.js as Node), shown while the switch is on. The
  * URL follows the port field; the status is the saved settings' own. */
 function AgentsSection({ enabled, setEnabled, port, setPort }) {
@@ -669,7 +669,7 @@ function AgentsSection({ enabled, setEnabled, port, setPort }) {
       <div className="flex items-start gap-2">
         <Switch id="set-agents" className="mt-0.5" checked={enabled} onCheckedChange={setEnabled} />
         <div className="grid gap-0.5">
-          <Label htmlFor="set-agents">Allow local AI agents (MCP)</Label>
+          <Label htmlFor="set-agents">Allow MCP clients</Label>
           <span className="max-w-[36rem] text-xs text-muted-foreground">
             Lets MCP clients work in this app. Any program on this computer can connect while this is on. Deleting and pushing
             ask you every time, and the forum is never submitted.
@@ -706,7 +706,7 @@ function AgentsSection({ enabled, setEnabled, port, setPort }) {
 }
 
 const SECTIONS = [['general', 'General', SlidersHorizontal], ['presets', 'Presets', Type], ['tags', 'Tags', Tags], ['dictation', 'Dictation', Mic],
-  ['assistant', 'Assistant', MessageSquare], ['browser', 'Browser', Globe], ['keybinds', 'Keybinds', Keyboard], ['agents', 'AI agents', Bot],
+  ['assistant', 'Assistant', MessageSquare], ['agents', 'MCP', Bot], ['browser', 'Browser', Globe], ['keybinds', 'Keybinds', Keyboard],
   ['github', 'GitHub backup', CloudUpload]];
 
 // An IPC rejection's own message, without Electron's "Error invoking remote method ..." prefix.
@@ -1102,6 +1102,10 @@ export function SettingsDialog({ settings: s, section, onClose }) {
             <AssistantSection value={assistant} onChange={setAssistant} />
           </Section>
 
+          <Section id="agents" title="MCP">
+            <AgentsSection enabled={agents} setEnabled={setAgents} port={agentPort} setPort={setAgentPort} />
+          </Section>
+
           <Section id="browser" title="Browser" hint="The Browser page, and the pane a tab opens in over the editor, plans and flowcharts">
             <div className={FIELDS}>
               <Label className="text-muted-foreground">Unfocused opacity</Label>
@@ -1128,10 +1132,6 @@ export function SettingsDialog({ settings: s, section, onClose }) {
 
           <Section id="keybinds" title="Keybinds" hint="Click a key to change it, + to add one. Warnings never stop a keybind from saving.">
             <KeybindsSection value={keybinds} onChange={setKeybinds} />
-          </Section>
-
-          <Section id="agents" title="Local AI agents">
-            <AgentsSection enabled={agents} setEnabled={setAgents} port={agentPort} setPort={setAgentPort} />
           </Section>
 
           <Section id="github" title="GitHub backup">

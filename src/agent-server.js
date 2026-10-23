@@ -24,7 +24,7 @@ const { advanced } = require('./assistant/advanced.js');
 // The in-app assistant on Claude Code or Codex (src/assistant/cli.js) reaches the pipe through the bridge too: the bridge sends the
 // per-start KEY from its env (EASYWRITER_ASSISTANT) first, and that session's calls run as source agent:assistant (its permission
 // mode, its tool list less what the mode refuses), unlisted in the status bar. The pipe stays open while such a provider is set;
-// with Local AI agents off it serves that session only and agent.json is not written (the run's bridge gets --pipe).
+// with MCP off (Settings > MCP) it serves that session only and agent.json is not written (the run's bridge gets --pipe).
 
 const PORT = 47823; // settings.agent.port when unset
 const MCP_VERSIONS = ['2025-11-25', '2025-06-18', '2025-03-26', '2024-11-05']; // newest first
@@ -179,7 +179,7 @@ async function toolResult(res) {
 }
 
 async function method(session, id, name, params) {
-  if (!agentsOn && !session.assistant) throw Object.assign(new Error('Local AI agents are off. Turn them on in EasyWriter, Settings > Local AI agents.'), { code: -32000 });
+  if (!agentsOn && !session.assistant) throw Object.assign(new Error('MCP is off. Turn it on in EasyWriter, Settings > MCP.'), { code: -32000 });
   switch (name) {
     case 'initialize':
       if (!session.name) join(session, params.clientInfo?.name);
@@ -343,7 +343,7 @@ function stopHttp() {
   for (const s of [...httpSessions.values()]) drop(s);
 }
 
-/** agent.json, for bridges started without --pipe (outside clients): only while Local AI agents are on. */
+/** agent.json, for bridges started without --pipe (outside clients): only while MCP is on (Settings > MCP). */
 const writeInfo = () => agentsOn && pipeServer?.listening && fs.writeFileSync(infoFile(), JSON.stringify({ version: 1, pipe: pipePath(), pid: process.pid, started: Date.now() }));
 
 /** Opens the pipe if it is closed (also for a CLI run of Settings' Test before the provider is saved). */
@@ -411,7 +411,7 @@ function sync(settings) {
 /** How a CLI run reaches the pipe as the in-app assistant (src/assistant/cli.js): the bridge command and the key for its env. */
 const assistantLink = () => ({ command: process.execPath, args: [BRIDGE, `--pipe=${pipePath()}`], key: KEY });
 
-/** Settings > Local AI agents: whether it is on, the URL while the port listens or the reason it does not, and the stdio
+/** Settings > MCP: whether it is on, the URL while the port listens or the reason it does not, and the stdio
  * command (the app's own executable run as Node, so no Node install is needed). */
 function status() {
   return {

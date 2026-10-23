@@ -137,7 +137,7 @@ function setSettings(partial) {
     const merged = { ...(await getSettings()), ...partial };
     await writeJsonAtomic(settingsFile(), merged);
     if ('keybinds' in partial) refreshKeys(merged);
-    // Settings > Local AI agents turns the gateway on or off live; the assistant on Claude Code or Codex keeps its pipe open
+    // Settings > MCP turns the gateway on or off live; the assistant on Claude Code or Codex keeps its pipe open
     if (('agent' in partial || 'assistant' in partial) && !SMOKE) agentServer.sync(merged);
     if ('github' in partial && !SMOKE) github.configure(merged);
     if ('autoUpdate' in partial) applyAutoUpdate(merged.autoUpdate);
