@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { cn } from 'cn';
 import { ArrowDown, ArrowUp, Ban, ChevronDown, ChevronRight, Columns3, FileText, GripVertical, Milestone, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Dot } from '@/components/ui/dot';
 import {
   DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuLabel, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
@@ -97,8 +98,6 @@ function SelectCell({ value, label, items, onChange }) {
     </Select>
   );
 }
-
-const Dot = ({ color }) => <span className={cn('size-2 shrink-0 rounded-full', color ? 'ring-1 ring-foreground/25 ring-inset' : 'border border-muted-foreground/60')} style={color ? { background: color } : undefined} />;
 
 /** The Backlog tab: rows = the tree (children indented, collapsible), the drag handle, #, title, status, priority, labels,
  * estimate, start, end, progress, deps, draft, checklist (each but the title can be hidden). A header click sorts (again:

@@ -3,6 +3,7 @@ import { cn } from 'cn';
 import { Diamond, Eye, Milestone, Plus } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
+import { Dot } from '@/components/ui/dot';
 import {
   DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuRadioGroup,
   DropdownMenuRadioItem, DropdownMenuSeparator, DropdownMenuSub, DropdownMenuSubContent, DropdownMenuSubTrigger, DropdownMenuTrigger,
@@ -96,7 +97,6 @@ function GanttMenu({ menu, ctx, sched, onClose }) {
   const { ids } = menu;
   const update = (patch) => dispatch('plan.tickets.update', { planId, ticketIds: ids, patch });
   const n = sched.byId[t.id];
-  const Dot = ({ color }) => <span className={cn('size-2 shrink-0 rounded-full', color ? 'ring-1 ring-foreground/25 ring-inset' : 'border border-muted-foreground/60')} style={color ? { background: color } : undefined} />;
   return (
     <DropdownMenu open modal={false} onOpenChange={(open) => !open && onClose()}>
       <DropdownMenuTrigger asChild><span className="pointer-events-none fixed size-0" style={{ left: menu.x, top: menu.y }} /></DropdownMenuTrigger>

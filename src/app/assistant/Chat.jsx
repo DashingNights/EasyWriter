@@ -4,6 +4,7 @@ import { ArrowUp, Ban, Bot, Brain, Check, ChevronDown, CircleAlert, ImagePlus, M
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 // import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'; // LOCAL LLM (commented out 2026-10-07): the install dialog
+import { Dot } from '@/components/ui/dot';
 import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Spinner } from '@/components/ui/spinner';
 import { canvasEditor } from '../../canvas.js';
@@ -98,12 +99,12 @@ function useFrame(islandRef) {
 const modelName = (st) => (st?.model?.label === 'Custom model' ? st.model.file : st?.model?.label ?? (st?.url ? new URL(st.url).host : ''));
 
 function StatusDot({ server }) {
-  const [title, color] = !server ? ['Not installed', 'bg-muted-foreground/50']
-    : server.state === 'error' ? ['Error', 'bg-destructive']
-      : server.state === 'starting' ? ['Loading the model', 'bg-warning']
-        : server.state !== 'ready' ? ['Not running', 'bg-muted-foreground/50']
-          : server.sleeping ? ['Asleep', 'bg-warning'] : ['Ready', 'bg-success'];
-  return <span role="img" aria-label={title} title={title} data-status={server?.state ?? 'none'} className={cn('size-2 shrink-0 rounded-full', color)} />;
+  const [title, color] = !server ? ['Not installed', null]
+    : server.state === 'error' ? ['Error', 'var(--destructive)']
+      : server.state === 'starting' ? ['Loading the model', 'var(--warning)']
+        : server.state !== 'ready' ? ['Not running', null]
+          : server.sleeping ? ['Asleep', 'var(--warning)'] : ['Ready', 'var(--success)'];
+  return <Dot role="img" aria-label={title} title={title} data-status={server?.state ?? 'none'} color={color} />;
 }
 
 /** How full the model's context is: the last request's prompt + completion tokens over the model's context window (`window`,

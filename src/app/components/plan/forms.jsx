@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { ArrowDown, ArrowUp, CircleCheck, Plus, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dot } from '@/components/ui/dot';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Toggle } from '@/components/ui/toggle';
@@ -93,7 +94,7 @@ function ColumnsDialog({ planId, onClose }) {
                 <SelectTrigger size="sm" aria-label="Status tag it follows" className="w-36"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value={NONE}>No status tag</SelectItem>
-                  {free.map((t) => <SelectItem key={t.id} value={t.id}><span className="size-2 rounded-full ring-1 ring-foreground/25 ring-inset" style={{ background: t.color }} />{t.name}</SelectItem>)}
+                  {free.map((t) => <SelectItem key={t.id} value={t.id}><Dot color={t.color} />{t.name}</SelectItem>)}
                 </SelectContent>
               </Select>
               <CommitInput aria-label="WIP limit" title="WIP limit (empty: none)" placeholder="WIP" type="number" min={1} step={1} className="h-8 w-20"

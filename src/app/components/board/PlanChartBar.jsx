@@ -5,6 +5,7 @@ import {
   MoveHorizontal, Percent, RefreshCw, Signal, SlidersHorizontal, Snowflake, SquareKanban, Tag, Trash2, Workflow, X,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Dot } from '@/components/ui/dot';
 import { Input } from '@/components/ui/input';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -49,7 +50,6 @@ function useFollow(ref, key, place) {
   }, [key]);
 }
 
-const Dot = ({ color }) => <span className="size-2 shrink-0 rounded-full border border-muted-foreground/40" style={color ? { background: color } : undefined} />;
 const CHIP = "h-6 min-w-6 gap-1 px-1.5 text-xs font-normal text-muted-foreground data-[state=on]:text-foreground [&_svg:not([class*='size-'])]:size-3.5";
 
 /** A small toggle of the Options panel (as the board tool options); `tip`: its tooltip (and name, for an `icon` chip). */

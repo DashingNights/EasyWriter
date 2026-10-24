@@ -4,6 +4,7 @@ import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dot } from '@/components/ui/dot';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -213,7 +214,7 @@ export function TicketDialog({ planId, ticketId, init = {}, onClose }) {
               <Field label="Status">
                 <Pick label="Status" value={status ?? NONE} disabled={!isNew && !!t.draftId}
                   onChange={(v) => (isNew ? set({ status: v === NONE ? null : v }) : moveCards(planId, ticketIds, v === NONE ? null : v))}>
-                  {plan.columns.map((c) => <SelectItem key={c.id} value={c.id}><span className="size-2 rounded-full ring-1 ring-foreground/25 ring-inset" style={{ background: c.color }} />{c.name}</SelectItem>)}
+                  {plan.columns.map((c) => <SelectItem key={c.id} value={c.id}><Dot color={c.color} />{c.name}</SelectItem>)}
                   <SelectItem value={NONE}>No status</SelectItem>
                 </Pick>
               </Field>
@@ -231,7 +232,7 @@ export function TicketDialog({ planId, ticketId, init = {}, onClose }) {
                 {plan.labels.map((l) => (
                   <label key={l.id} className="flex items-center gap-1.5 text-xs">
                     <Checkbox checked={t.labels.includes(l.id)} onCheckedChange={(v) => toggleLabel(l.id, v === true)} />
-                    <span className="size-2 rounded-full ring-1 ring-foreground/25 ring-inset" style={{ background: l.color }} />{l.name}
+                    <Dot color={l.color} />{l.name}
                   </label>
                 ))}
                 {adding === 'label'

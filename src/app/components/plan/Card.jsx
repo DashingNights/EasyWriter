@@ -3,6 +3,7 @@ import { cn } from 'cn';
 import { Ban, ChevronDown, ChevronsUp, ChevronUp, CircleCheck, Ellipsis, FileText, Flame, Milestone } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Dot } from '@/components/ui/dot';
 import {
   DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuItem, DropdownMenuRadioGroup, DropdownMenuRadioItem,
   DropdownMenuSeparator, DropdownMenuSub, DropdownMenuSubContent, DropdownMenuSubTrigger, DropdownMenuTrigger,
@@ -25,10 +26,6 @@ export async function openDraftFromPlan(id) {
   await closeWorkspace();
   await openDraft(id);
 }
-
-const Dot = ({ color, className }) => (
-  <span className={cn('size-2 shrink-0 rounded-full', color ? 'ring-1 ring-foreground/25 ring-inset' : 'border border-muted-foreground/60', className)} style={color ? { background: color } : undefined} />
-);
 
 /** The card's menu (… button and right-click): status, priority, labels, milestone, draft, delete. Draft cards: status,
  * Open draft, Convert to ticket. */
@@ -160,7 +157,7 @@ export function Card({ card, ctx, fields, ids, selected, focused, dragging, line
         {card.pushedAt != null && has('pushed') && <Tip title="Pushed to the forum"><CircleCheck className="size-3.5 text-success" aria-label="Pushed" /></Tip>}
         {tag && (
           <Tip title={`Its draft's tag "${tag.name}" is followed by no column`}>
-            <Badge variant="outline" className="h-4 gap-1 px-1 text-[10px] text-muted-foreground"><Dot color={tag.color} className="size-1.5" />{tag.name}</Badge>
+            <Badge variant="outline" className="h-4 gap-1 px-1 text-[10px] text-muted-foreground"><Dot color={tag.color} />{tag.name}</Badge>
           </Tip>
         )}
       </div>

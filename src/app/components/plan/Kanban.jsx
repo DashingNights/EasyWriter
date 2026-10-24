@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { cn } from 'cn';
 import { CircleCheck, Ellipsis, Plus, Tag } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Dot } from '@/components/ui/dot';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
@@ -216,7 +217,7 @@ export function Kanban({ ctx, options }) {
           <section key={col.id ?? ''} data-column={col.id ?? ''} aria-label={col.name}
             className={cn('relative flex w-80 shrink-0 flex-col rounded-lg border border-transparent', over ? 'border-ring/60 bg-accent' : 'bg-muted dark:bg-black/20')}>
             <header className="flex h-8 shrink-0 items-center gap-1.5 px-2 text-xs">
-              <span className={cn('size-2.5 shrink-0 rounded-full', col.id === null ? 'border border-muted-foreground/60' : 'ring-1 ring-foreground/25 ring-inset')} style={col.color ? { background: col.color } : undefined} />
+              <Dot color={col.id === null ? undefined : col.color} />
               {renaming === col.id && col.id !== null ? (
                 <InlineInput value={col.name} maxLength={40} aria-label="Column name" className="h-6 flex-1 text-xs md:text-xs"
                   onKeyDownCapture={(e) => e.key === 'Escape' && e.preventDefault()} // cancels the edit only, not the workspace

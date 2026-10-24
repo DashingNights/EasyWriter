@@ -1,5 +1,6 @@
 import { Bookmark, ChartGantt, Ellipsis, EyeOff, ListFilter, ListTodo, Plus, Redo2, Signal, SquareKanban, Tags, Undo2, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Dot } from '@/components/ui/dot';
 import {
   DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator,
   DropdownMenuSub, DropdownMenuSubContent, DropdownMenuSubTrigger, DropdownMenuTrigger,
@@ -110,7 +111,7 @@ export function PlanHeader({ plan, tab }) {
         {!plan.labels.length && <DropdownMenuItem disabled>No labels yet (Labels... in More plan actions)</DropdownMenuItem>}
         {plan.labels.map((l) => (
           <DropdownMenuCheckboxItem key={l.id} checked={!!options.labels?.includes(l.id)} onSelect={(e) => e.preventDefault()} onCheckedChange={() => toggleIn(options, 'labels', l.id)}>
-            <span className="size-2 rounded-full ring-1 ring-foreground/25 ring-inset" style={{ background: l.color }} />{l.name}
+            <Dot color={l.color} />{l.name}
           </DropdownMenuCheckboxItem>
         ))}
       </Menu>

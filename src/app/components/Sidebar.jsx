@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardAction, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dot } from '@/components/ui/dot';
 import {
   DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
@@ -175,11 +176,6 @@ function dragRow(e, id, folder, setDrag) {
 const line = (after, indent) => after !== undefined && cn('relative before:absolute before:right-1 before:h-0.5 before:rounded-full before:bg-primary',
   indent ? 'before:left-6' : 'before:left-1', after ? 'before:-bottom-px' : 'before:-top-px');
 
-/** A tag's colour dot; an empty, dimmed ring for no tag. */
-const Dot = ({ tag }) => (
-  <span className={cn('size-2.5 shrink-0 rounded-full', !tag && 'border border-muted-foreground/60')} style={tag && { background: tag.color }} />
-);
-
 /** The draft's tag dot, in a fixed slot at the left of the row so titles line up; it opens the tag menu. Clicks stop at the
  * dot and the menu: they bubble (through the portal) to the row. */
 function TagMenu({ id, tag, tags, open, setOpen }) {
@@ -190,13 +186,13 @@ function TagMenu({ id, tag, tags, open, setOpen }) {
         <DropdownMenuTrigger asChild>
           <button type="button" aria-label={`Tag: ${tag?.name ?? 'none'}`} onClick={stop}
             className="flex size-4 shrink-0 items-center justify-center rounded-full outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring/50">
-            <Dot tag={tag} />
+            <Dot color={tag?.color} />
           </button>
         </DropdownMenuTrigger>
       </Tip>
       <DropdownMenuContent align="start" onCloseAutoFocus={refocusEditor} onClick={stop} onPointerDown={stop}>
         {tags.map((t) => (
-          <DropdownMenuCheckboxItem key={t.id} checked={tag?.id === t.id} onSelect={() => setDraftTag(id, t.id)}><Dot tag={t} />{t.name}</DropdownMenuCheckboxItem>
+          <DropdownMenuCheckboxItem key={t.id} checked={tag?.id === t.id} onSelect={() => setDraftTag(id, t.id)}><Dot color={t.color} />{t.name}</DropdownMenuCheckboxItem>
         ))}
         {tags.length > 0 && <DropdownMenuSeparator />}
         <DropdownMenuCheckboxItem checked={!tag} onSelect={() => setDraftTag(id, null)}><Dot />No tag</DropdownMenuCheckboxItem>
