@@ -315,7 +315,7 @@ function Drafts() {
           <Row active={editorShown} onClick={() => showPage('editor')}>
             <span className="size-4 shrink-0" />{/* the tag dot's slot: a draft can be tagged once it is saved */}
             <span className="min-w-0 flex-1 truncate">Untitled draft</span>
-            <Badge variant="outline" className="border-warning/40 text-warning">not saved yet</Badge>
+            <Badge variant="warning">not saved yet</Badge>
           </Row>
         )}
         {loose.map((d) => row(d, null))}
