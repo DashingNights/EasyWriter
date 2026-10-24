@@ -11,6 +11,7 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '
 import { refocusEditor } from '../actions.js';
 import { Tip } from '../components/Tip.jsx';
 import { keyIs, withKey } from '../keybinds.js';
+import { motion } from '../motion.js';
 import { getState, useStore } from '../store.js';
 import { viewportRect } from '../viewport.js';
 import { LANGUAGES } from './core.mjs';
@@ -99,7 +100,8 @@ export function DictationButton({ size, icon, side }) {
 
 const BARS = 28;
 
-/** Live level bars from the microphone (newest on the right), drawn without re-rendering. */
+/** Live level bars from the microphone (newest on the right), drawn without re-rendering; still when mic levels do not play
+ * (motion.js). */
 function Waveform() {
   const ref = useRef(null);
   useEffect(() => {
@@ -107,7 +109,7 @@ function Waveform() {
     let last = 0;
     let frame;
     const draw = (now) => {
-      if (now - last > 45) {
+      if (now - last > 45 && motion('levels')) {
         last = now;
         levels.shift();
         levels.push(Math.min(1, Math.sqrt(level()) * 2.2));
@@ -213,7 +215,7 @@ function Pane({ geo }) {
       </div>
       {/* The pane's box is wider than the pod: only the pod and a shown card take the pointer, the rest clicks through. */}
       <div ref={cardRef} data-dictation-card className={cn('w-full overflow-hidden rounded-island bg-island shadow-xl',
-        text ? 'mt-1 border' : 'border-0', text && 'transition-[height] duration-300 ease-out', text && !moving && 'pointer-events-auto')}
+        text ? 'mt-1 border' : 'border-0', text && 'transition-[height] duration-(--motion-pane) ease-out', text && !moving && 'pointer-events-auto')}
         style={{ height, opacity: text ? 1 : 0 }}>
         <div ref={scrollRef} className="h-full overflow-y-auto px-4 pt-2 pb-3">
           <div ref={textRef} data-transcript className="cursor-text text-center text-sm break-words whitespace-pre-wrap select-text">
@@ -317,7 +319,7 @@ function InstallForm({ open }) {
               {progress?.total ? `: ${mb(progress.received)} of ${mb(progress.total)}` : ''}
             </span>
             <div className="h-1.5 overflow-hidden rounded-full bg-muted">
-              <div className="h-full bg-primary transition-[width]" style={{ width: `${pct}%` }} />
+              <div className="h-full bg-primary transition-[width] duration-(--motion-status)" style={{ width: `${pct}%` }} />
             </div>
           </div>
         )}

@@ -18,6 +18,7 @@ const PATCH = {
   forumWidth: { type: 'integer', minimum: 320, maximum: 4000 },
   theme: { enum: ['dark', 'light'] },
   uiTheme: { enum: ['dark', 'light', 'system'] },
+  reduceMotion: { enum: ['off', 'system', 'on', 'custom'] },
   baseFont: { enum: ['', ...FONTS.map((f) => f.css)] },
   baseSize: { enum: FONT_SIZES },
   historyLimit: { type: 'integer', minimum: 0, maximum: 500 },

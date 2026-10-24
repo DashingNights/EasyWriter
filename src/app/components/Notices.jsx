@@ -37,10 +37,12 @@ export function Notices() {
       {notices.map((n, i) => (
         // Behind: its text and icons hidden (only its edge peeks out; the front card is translucent).
         <div key={n.id} style={i < notices.length - 1 ? { transform: 'translateY(3px) scale(var(--s, 1))' } : undefined}
-          className={cn('relative col-start-1 row-start-1 origin-bottom transition-transform duration-180 ease-out motion-reduce:transition-none',
+          // 180 ms, or none when notices do not play (--motion-notices is then 0, motion.js)
+          className={cn('relative col-start-1 row-start-1 origin-bottom transition-transform duration-[min(var(--motion-notices),180ms)] ease-out',
             i < notices.length - 1 && 'text-transparent [&_svg]:text-transparent')}>
+          {/* Shown 3 s in all, its last second (--motion-notices) fading out; with no fade it goes at once at 3 s. */}
           <div data-notice onAnimationEnd={() => setState({ notices: getState().notices.filter((x) => x !== n) })}
-            className={cn('flex items-center border bg-island shadow-xl transition-none animate-out fade-out fill-mode-forwards delay-2000 duration-1000 ease-in',
+            className={cn('flex items-center border bg-island shadow-xl transition-none animate-out fade-out fill-mode-forwards delay-[calc(3000ms-var(--motion-notices))] duration-(--motion-notices) ease-in',
               n.mode
                 ? 'gap-2 rounded-full px-4 py-1.5 text-base font-medium [&_svg]:size-5'
                 : 'gap-1.5 rounded-full px-3 py-1 text-sm [&_svg]:size-4')}>

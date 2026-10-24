@@ -139,7 +139,7 @@ function applySettings() {
   setKeybinds(s.keybinds); // §7k
   applyUiTheme();
   if (!WORKER) applyPalette(s.palette);
-  applyMotion(s.motion);
+  applyMotion(s);
   const root = document.documentElement;
   root.dataset.theme = s.theme === 'light' ? 'light' : 'dark';
   root.style.setProperty('--forum-width', `${s.forumWidth}px`);

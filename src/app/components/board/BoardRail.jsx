@@ -369,7 +369,7 @@ export function BoardRail({ className }) {
     <RailLayout.Provider value={VERTICAL}>
       <div {...CHROME} role="toolbar" aria-label={board ? 'Board tools' : 'Text tools'} aria-orientation="vertical"
         onMouseDown={keepFocus} style={style}
-        className={cn('absolute left-2 z-30 max-h-[calc(100%-1rem)] overflow-y-auto rounded-island border bg-island shadow-xl transition-[height] duration-150 ease-out [scrollbar-width:none]', className)}>
+        className={cn('absolute left-2 z-30 max-h-[calc(100%-1rem)] overflow-y-auto rounded-island border bg-island shadow-xl transition-[height] duration-(--motion-islands) ease-out [scrollbar-width:none]', className)}>
         <div ref={inner} className="flex flex-col items-center gap-0.5 p-1">
           {board ? <BoardTools board={board} /> : <TextRail />}
         </div>

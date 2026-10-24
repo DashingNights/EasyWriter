@@ -3,6 +3,7 @@ import { cn } from 'cn';
 import { Bot } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { motion } from '../motion.js';
 import { useStore } from '../store.js';
 
 // The agent request card (SPEC §8 Agent requests): a destructive or approval command from an agent waits here for a click.
@@ -15,12 +16,14 @@ const keepFocus = (e) => e.preventDefault();
 const R = 9;
 const C = 2 * Math.PI * R;
 
-/** The time left until `expires` (ms epoch) as a ring that empties. */
+/** The time left until `expires` (ms epoch) as a ring that empties: smoothly, or a step a second when status animations do
+ * not play (motion.js). */
 function Countdown({ expires }) {
   const ref = useRef(null);
   useEffect(() => {
     const left = Math.max(0, expires - Date.now());
-    const a = ref.current.animate([{ strokeDashoffset: C * (1 - left / 60000) }, { strokeDashoffset: C }], { duration: left, fill: 'forwards' });
+    const easing = motion('status') ? 'linear' : `steps(${Math.max(1, Math.ceil(left / 1000))})`;
+    const a = ref.current.animate([{ strokeDashoffset: C * (1 - left / 60000) }, { strokeDashoffset: C }], { duration: left, fill: 'forwards', easing });
     return () => a.cancel();
   }, [expires]);
   return (

@@ -77,12 +77,25 @@
   }
 }
 
+/* The animations with no length to set, stopped by name when they do not play (motion.js sets data-still): the loops, the
+   editor's gap cursor, and sonner's toasts (as sonner's own rule for the OS's reduced motion; its loading bar is not used,
+   sonner.jsx gives its own icon). */
+:root[data-still~="status"] :is(.animate-spin, .animate-pulse),
+:root[data-still~="status"] .ProseMirror-gapcursor::after {
+  animation: none;
+}
+:root[data-still~="notices"] :is([data-sonner-toast], [data-sonner-toast] > *, .sonner-loader) {
+  transition: none !important;
+  animation: none !important;
+}
+
 @theme inline {
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
   --radius-island: calc(var(--radius) + 4px); /* every floating bar / island (toolbar, rails, menus, ribbons): one corner size */
+  --default-transition-duration: var(--motion-controls); /* a transition-* with no duration-*: hover, focus, on / off (motion.js) */
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);

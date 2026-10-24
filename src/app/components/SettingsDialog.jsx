@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ArrowDown, ArrowUp, Bot, Check, ChevronsUpDown, CloudUpload, Globe, RefreshCw, Keyboard, MessageSquare, MessagesSquare, Mic, Monitor, Moon, Plus, SlidersHorizontal, Sun, Tags, Type, X } from 'lucide-react';
+import { ArrowDown, ArrowUp, Bot, Check, ChevronsUpDown, CloudUpload, Globe, RefreshCw, Keyboard, MessageSquare, MessagesSquare, Mic, Monitor, Moon, Plus, SlidersHorizontal, Sparkles, Sun, Tags, Type, X } from 'lucide-react';
 import { toast } from 'sonner';
 // import { Badge } from '@/components/ui/badge'; // LOCAL LLM (commented out 2026-10-07): the model file row's state
 import { Button } from '@/components/ui/button';
@@ -14,6 +14,7 @@ import { Switch } from '@/components/ui/switch';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { FONT_SIZES, TEXT_COLORS, HIGHLIGHTS, FONTS } from '../../extensions.js';
 import { keyLabel, withKey } from '../keybinds.js';
+import { motion, MOTION } from '../motion.js';
 import { applyPalette, changeSettings, confirmDialog, DEFAULT_WIDTH, PALETTE, saveSettings } from '../actions.js';
 // LOCAL LLM (commented out 2026-10-07): BACKENDS, deleteAssistant, deleteLeftover, openInstall as openAssistantInstall, size, wake.
 import { ASSISTANT_DEFAULTS, saveAssistant } from '../assistant/assistant.js';
@@ -118,6 +119,41 @@ function UiPalette() {
       ))}
       <Button type="button" variant="outline" size="sm" disabled={!changed} onClick={reset}>Reset</Button>
     </div>
+  </>;
+}
+
+// Settings > Motion (settings.reduceMotion and settings.motion, motion.js), applied at once like the theme. Custom lists every
+// animation, each one playing until its switch is turned off.
+const REDUCE_MOTION = [['off', 'Off', 'Every animation plays'], ['system', 'Auto', 'Follows the system'], ['on', 'On', 'No animation plays'],
+  ['custom', 'Custom', 'Choose which ones play']];
+
+function MotionSection() {
+  const mode = useStore((s) => s.settings?.reduceMotion ?? 'system');
+  const off = useStore((s) => s.settings?.motion ?? {});
+  const latest = useRef(null); // the last map asked for: the store has it only once its save is back
+  const play = (name, on) => {
+    const { [name]: _, ...rest } = latest.current ?? off;
+    latest.current = on ? rest : { ...rest, [name]: false };
+    changeSettings({ motion: latest.current });
+  };
+  return <>
+    <div className={FIELDS}>
+      <Label className="text-muted-foreground">Reduce motion</Label>
+      <ToggleGroup type="single" variant="outline" size="sm" aria-label="Reduce motion" value={mode} onValueChange={(v) => v && changeSettings({ reduceMotion: v })}>
+        {REDUCE_MOTION.map(([v, label, title]) => <ToggleGroupItem key={v} value={v} title={title}>{label}</ToggleGroupItem>)}
+      </ToggleGroup>
+    </div>
+    {mode === 'custom' && <div className="grid gap-3" data-motion-list>
+      {MOTION.map(([name, , label, hint]) => (
+        <div key={name} className="flex items-start gap-2">
+          <Switch id={`set-motion-${name}`} className="mt-0.5" checked={off[name] !== false} onCheckedChange={(on) => play(name, on)} />
+          <div className="grid gap-0.5">
+            <Label htmlFor={`set-motion-${name}`}>{label}</Label>
+            <span className="text-xs text-muted-foreground">{hint}</span>
+          </div>
+        </div>
+      ))}
+    </div>}
   </>;
 }
 
@@ -788,7 +824,7 @@ function AgentsSection({ enabled, setEnabled, port, setPort }) {
   );
 }
 
-const SECTIONS = [['general', 'General', SlidersHorizontal], ['presets', 'Presets', Type], ['tags', 'Tags', Tags], ['dictation', 'Dictation', Mic],
+const SECTIONS = [['general', 'General', SlidersHorizontal], ['motion', 'Motion', Sparkles], ['presets', 'Presets', Type], ['tags', 'Tags', Tags], ['dictation', 'Dictation', Mic],
   ['assistant', 'Assistant', MessageSquare], ['agents', 'MCP', Bot], ['browser', 'Browser', Globe], ['keybinds', 'Keybinds', Keyboard],
   ['github', 'GitHub backup', CloudUpload], ['forum', 'Forum', MessagesSquare]];
 
@@ -1004,7 +1040,7 @@ export function SettingsDialog({ settings: s, section, onClose }) {
   const jump = (id, instant = false) => {
     const sec = pane.current.querySelector(`:scope > [data-section="${id}"]`);
     // Just below the section's top border: its heading lands 1.5rem (its padding) below the column's top.
-    pane.current.scrollTo({ top: sec.offsetTop + sec.clientTop, behavior: instant || matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+    pane.current.scrollTo({ top: sec.offsetTop + sec.clientTop, behavior: instant || !motion('scroll') ? 'auto' : 'smooth' });
   };
   // Opened at a section: the column scrolls there as it mounts (the dialog's portal mounts after this component's first commit).
   // The column takes the focus as it mounts, so the dialog opens with no field focused and the keys scroll it.
@@ -1104,6 +1140,10 @@ export function SettingsDialog({ settings: s, section, onClose }) {
                 <span className="text-xs text-muted-foreground">An update downloads in the background and installs when you quit. When this is off, the app asks first.</span>
               </div>
             </div>
+          </Section>
+
+          <Section id="motion" title="Motion" hint="Auto follows Animation effects in the Windows settings">
+            <MotionSection />
           </Section>
 
           <Section id="presets" title="Presets" hint="Their keys apply them in order (Keybinds, Font preset 1 to 9)">

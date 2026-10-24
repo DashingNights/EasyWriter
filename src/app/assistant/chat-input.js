@@ -2,6 +2,7 @@ import { Editor, Extension, Node } from '@tiptap/core';
 import { TextSelection } from '@tiptap/pm/state';
 import StarterKit from '@tiptap/starter-kit';
 import { level } from '../dictation/dictation.js';
+import { motion } from '../motion.js';
 import { ATTACH_CHARS } from './attach.mjs';
 
 // The chat panel's text box (SPEC §7i): a small TipTap editor with paragraphs, line breaks and two inline atoms. Enter sends,
@@ -56,7 +57,7 @@ function waveView(node) {
   let last = 0;
   let frame = 0;
   const draw = (now) => {
-    if (now - last > 45) {
+    if (now - last > 45 && motion('levels')) { // still when mic levels do not play (motion.js)
       last = now;
       levels.shift();
       levels.push(working ? 0 : Math.min(1, Math.sqrt(level()) * 2.2));
