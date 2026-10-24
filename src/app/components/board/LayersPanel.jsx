@@ -12,7 +12,7 @@ import { CHROME, keepFocus, ShapeIcon } from './controls.jsx';
 /** Shows or hides the layers panel's rows, kept in settings (`layersPanel`): its title, the rail's Layers button, tool search.
  * Hidden, the panel is its title bar. */
 export function toggleLayers() {
-  saveSettings({ layersPanel: !(getState().settings?.layersPanel ?? true) });
+  return saveSettings({ layersPanel: !(getState().settings?.layersPanel ?? true) });
 }
 
 const text = (html) => htmlToText(html).replace(/\s+/g, ' ').trim().slice(0, 80);

@@ -3,7 +3,7 @@ import { NodeSelection } from '@tiptap/pm/state';
 import {
   ALargeSmall, AppWindow, BringToFront, CaseSensitive, Copy, Crop, Eraser, Eye, EyeOff, FilePlus, FolderInput, Group, Heading1,
   Heading2, Heading3, Globe, Heading4, Heading5, Heading6, ImagePlus, Layers, Lock, LockOpen, Magnet, MessagesSquare, MousePointer2, MoveHorizontal, PaintBucket, Palette, Pen, Pilcrow, Pin, Redo2, Save,
-  Scaling, MessageSquare, Send, SendToBack, Settings, Shapes, SlidersHorizontal, SquarePen, TableColumnsSplit, TableRowsSplit, Tag, Trash2,
+  Scaling, MessageSquare, Send, SendToBack, Settings, Shapes, SlidersHorizontal, SpellCheck, SquarePen, TableColumnsSplit, TableRowsSplit, Tag, Trash2,
   Type, Undo2, Ungroup, Workflow, X,
 } from 'lucide-react';
 import { SelectItem } from '@/components/ui/select';
@@ -22,6 +22,7 @@ import { toggleLayers } from './components/board/LayersPanel.jsx';
 import { ShapeControls, ShapeIcon, StrokeControls } from './components/board/controls.jsx';
 import { ItemControls } from './components/board/ItemRibbon.jsx';
 import { notify } from './components/Notices.jsx';
+import { toggleSpellCheck } from './components/StatusBar.jsx';
 import { BlockSelect, FontSelect, NONE, SizeSelect, Swatches, textTools, ToolButton, ToolSelect } from './components/Toolbar.jsx';
 import { draftTag, tagList } from './drafts-meta.js';
 import { openFlows } from './flows.js';
@@ -322,6 +323,8 @@ const APP = [
     keywords: ['settings', 'preferences', 'options', 'config', 'configure', 'theme', 'dark mode', 'light mode', 'forum width', 'tags'] },
   { id: 'assistant', label: 'Assistant', group: 'App', icon: h(MessageSquare), key: 'app.assistant', run: () => toggleChat(), headless: false,
     keywords: ['assistant', 'chat', 'ai', 'ask', 'help', 'bot', 'model', 'llm', 'local ai', 'agent', 'copilot', 'assistent', 'asistant'] },
+  { id: 'spell-check', label: 'Spell check', group: 'App', icon: h(SpellCheck), toggle: true, active: () => getState().settings?.spellCheck ?? true,
+    run: toggleSpellCheck, keywords: ['spell check', 'spellcheck', 'spelling', 'spell', 'red underline', 'squiggles', 'typos', 'dictionary', 'proofing', 'spellchecker'] },
   { id: 'select-thread', label: 'Select project...', group: 'App', icon: h(MessagesSquare), options: () => h(ThreadPick),
     keywords: ['project', 'select project', 'thread', 'select thread', 'filter', 'topic', 'show thread', 'switch thread', 'all drafts', 'subject'] },
   { id: 'tag-draft', label: 'Tag draft...', group: 'App', icon: h(Tag), also: saved, options: () => h(TagPick),

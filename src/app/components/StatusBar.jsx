@@ -8,13 +8,19 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Slider } from '@/components/ui/slider';
 import { hasForum, login, openSettings, refocusEditor, saveSettings, setZoom } from '../actions.js';
 import { on } from '../commands.js';
-import { useStore } from '../store.js';
+import { getState, useStore } from '../store.js';
 import { InlineInput } from './InlineInput.jsx';
 import { Tip } from './Tip.jsx';
 
 const ZOOMS = ['fit', 50, 67, 75, 90, 100, 125, 150];
 
 const clock = (t) => new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+/** Turns the main window's spell checker on or off (settings.spellCheck; main.js setSpellCheckerEnabled): the status bar's
+ * button, tool search. */
+export function toggleSpellCheck() {
+  return saveSettings({ spellCheck: !(getState().settings?.spellCheck ?? true) });
+}
 
 /** The agents slot (SPEC §8): empty while nothing is connected; "Agent: <name>" (two or more: "Agents: N") with a popover
  * listing each connection {name, since} and its Disconnect. Connects and disconnects show a toast. */
@@ -76,7 +82,7 @@ export function StatusBar() {
       {/* The main window's spell checker (settings.spellCheck, main.js setSpellCheckerEnabled): off clears the underlines. */}
       <Tip title={spell ? 'Turn spell check off' : 'Turn spell check on'} side="top">
         <Button variant="ghost" size="xs" aria-pressed={spell} className="-mx-1 font-normal text-muted-foreground"
-          onClick={() => { saveSettings({ spellCheck: !spell }); refocusEditor(); }}>
+          onClick={() => { toggleSpellCheck(); refocusEditor(); }}>
           <SpellCheck className={cn(!spell && 'opacity-50')} />{spell ? 'Spell check on' : 'Spell check off'}
         </Button>
       </Tip>
