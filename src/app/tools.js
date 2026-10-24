@@ -3,7 +3,7 @@ import { NodeSelection } from '@tiptap/pm/state';
 import {
   ALargeSmall, AppWindow, BringToFront, CaseSensitive, Copy, Crop, Eraser, Eye, EyeOff, FilePlus, FolderInput, Group, Heading1,
   Heading2, Heading3, Globe, Heading4, Heading5, Heading6, ImagePlus, Layers, Lock, LockOpen, Magnet, MessagesSquare, MousePointer2, MoveHorizontal, PaintBucket, Palette, Pen, Pilcrow, Pin, Redo2, Save,
-  Scaling, Search, MessageSquare, Send, SendToBack, Settings, Shapes, SlidersHorizontal, SpellCheck, SquarePen, TableColumnsSplit, TableRowsSplit, Tag, Trash2,
+  Replace, Scaling, Search, MessageSquare, Send, SendToBack, Settings, Shapes, SlidersHorizontal, SpellCheck, SquarePen, TableColumnsSplit, TableRowsSplit, Tag, Trash2,
   Type, Undo2, Ungroup, Workflow, X,
 } from 'lucide-react';
 import { SelectItem } from '@/components/ui/select';
@@ -22,7 +22,7 @@ import { toggleLayers } from './components/board/LayersPanel.jsx';
 import { ShapeControls, ShapeIcon, StrokeControls } from './components/board/controls.jsx';
 import { ItemControls } from './components/board/ItemRibbon.jsx';
 import { notify } from './components/Notices.jsx';
-import { openFind } from './components/FindBar.jsx';
+import { openFind, openReplace } from './components/FindBar.jsx';
 import { toggleSpellCheck } from './components/StatusBar.jsx';
 import { BlockSelect, FontSelect, NONE, SizeSelect, Swatches, textTools, ToolButton, ToolSelect } from './components/Toolbar.jsx';
 import { draftTag, tagList } from './drafts-meta.js';
@@ -276,6 +276,8 @@ const CORE = [
     needs: ['history.canRedo'], also: (c) => !!c.snap || inText(c), run: (c) => (c.board ? c.board.redo() : c.T.redo.onClick()) },
   { id: 'find', label: 'Find in draft', group: 'Edit', icon: h(Search), key: 'app.find', needs: TEXT, also: noBoard, run: openFind, headless: false,
     keywords: ['find', 'search', 'search text', 'look for', 'locate', 'find text', 'ctrl f', 'where is', 'occurrences', 'serch', 'fnd'] },
+  { id: 'replace', label: 'Find and replace', group: 'Edit', icon: h(Replace), key: 'app.replace', needs: TEXT, also: noBoard, run: openReplace, headless: false,
+    keywords: ['replace', 'replace all', 'find and replace', 'substitute', 'swap', 'change all', 'rename', 'ctrl h', 'replce', 'repalce'] },
   text('clear', 'Clear formatting', 'Edit', ['remove formatting', 'clear format', 'plain text', 'unformat', 'reset format', 'strip', 'clean', 'normal']),
   { id: 'presets', label: 'Manage presets', group: 'Edit', icon: h(Palette), needs: FORMAT, also: noBoard, run: openSettings, headless: false,
     keywords: ['presets', 'font presets', 'edit presets', 'settings', 'preferences', 'options'] },

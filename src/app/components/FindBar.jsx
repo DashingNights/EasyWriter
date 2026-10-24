@@ -1,33 +1,49 @@
 import { useEffect, useRef, useState } from 'react';
-import { ChevronDown, ChevronUp, X } from 'lucide-react';
+import { ChevronDown, ChevronRight, ChevronUp, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { findEnd, findState, findStep, findText } from '../../find.js';
+import { findEnd, findReplace, findReplaceAll, findState, findStep, findText } from '../../find.js';
 import { getState, setState, useEditor, useStore } from '../store.js';
 import { useViewportBox } from '../viewport.js';
+import { notify } from './Notices.jsx';
 import { Tip } from './Tip.jsx';
 
-/** Opens the find bar (Ctrl+F, tool search), or focuses it again; a one-line text selection becomes its query. */
-export function openFind() {
+// Opens the find bar, or focuses it again; a one-line text selection becomes its query. `replace`: with its replace row
+// (null: as it was).
+function open(replace) {
   const { state } = getState().editor;
   const text = state.selection.empty ? '' : state.doc.textBetween(state.selection.from, state.selection.to, '\n');
-  setState({ find: { n: (getState().find?.n ?? 0) + 1, seed: text && !text.includes('\n') && text.length <= 200 ? text : null } });
+  const find = getState().find;
+  setState({ find: {
+    n: (find?.n ?? 0) + 1,
+    seed: text && !text.includes('\n') && text.length <= 200 ? text : null,
+    replace: replace ?? find?.replace ?? false,
+  } });
 }
 
-/** Find in the draft (find.js): at the top right of the page's viewport. Enter finds the next match, Shift+Enter the previous
- * one; Escape or the close button ends it with the current match selected in the draft. The query stays while the bar is open,
+/** Find in the draft (Ctrl+F, tool search). */
+export const openFind = () => open(null);
+/** Find and replace (Ctrl+H, tool search). */
+export const openReplace = () => open(true);
+
+/** Find and replace in the draft (find.js): at the top right of the page's viewport. Enter in the find box finds the next match,
+ * Shift+Enter the previous one; Enter in the replace box replaces the current match. Replace and Replace all are one undo step
+ * each. Escape or the close button ends it with the current match selected in the draft. The texts stay while the bar is open,
  * also across drafts. */
 export function FindBar() {
   const find = useStore((s) => s.find);
   const editor = useEditor(); // re-renders on every transaction, so the count follows edits
   const box = useViewportBox(!!find);
   const [query, setQuery] = useState('');
-  const input = useRef(null);
+  const [replacement, setReplacement] = useState('');
+  const findBox = useRef(null);
+  const replaceBox = useRef(null);
   useEffect(() => {
     if (!find) return;
     if (find.seed) setQuery(find.seed);
-    requestAnimationFrame(() => input.current?.select());
-  }, [find]);
+    // Ctrl+H with a query goes to the replace box; otherwise the find box.
+    requestAnimationFrame(() => ((find.replace && (find.seed || findBox.current?.value) ? replaceBox : findBox).current?.select()));
+  }, [find?.n]);
   useEffect(() => {
     if (find && editor && findState(editor).query !== query) findText(editor, query);
   }, [find, editor, query]);
@@ -39,28 +55,49 @@ export function FindBar() {
     findEnd(editor);
     editor.commands.focus(null, { scrollIntoView: false });
   };
-  const button = (title, Icon, onClick) => (
+  const replacing = () => replaceBox.current?.value ?? replacement; // the box itself: an Enter can come before its state updates
+  const replaceOne = () => findReplace(editor, replacing());
+  const replaceAll = () => {
+    const n = findReplaceAll(editor, replacing());
+    notify({ text: `Replaced ${n} ${n === 1 ? 'match' : 'matches'}` });
+  };
+  const keys = (map) => (e) => {
+    const fn = map[`${e.shiftKey ? 'Shift+' : ''}${e.key}`] ?? (e.key === 'Escape' && close);
+    if (!fn) return;
+    e.preventDefault();
+    fn();
+  };
+  const icon = (title, Icon, onClick, enabled = matches.length > 0) => (
     <Tip title={title} side="bottom">
-      <Button variant="ghost" size="icon-xs" aria-label={title} disabled={!matches.length && Icon !== X} onClick={onClick}><Icon /></Button>
+      <Button variant="ghost" size="icon-xs" aria-label={title} disabled={!enabled} onClick={onClick}><Icon /></Button>
     </Tip>
   );
+  const field = 'h-7 w-56 text-xs md:text-xs';
   return (
-    <div role="search" className="absolute z-[26] flex -translate-x-full items-center gap-1 rounded-island border bg-island p-1 text-xs shadow-xl"
+    <div role="search" className="absolute z-[26] flex -translate-x-full flex-col gap-1 rounded-island border bg-island p-1 text-xs shadow-xl"
       style={{ left: box.left + box.width - 8, top: box.top + 8 }}>
-      <Input ref={input} aria-label="Find in draft" placeholder="Find in draft" spellCheck={false} className="h-7 w-56 text-xs md:text-xs"
-        value={query} onChange={(e) => setQuery(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') findStep(editor, e.shiftKey ? -1 : 1);
-          else if (e.key === 'Escape') close();
-          else return;
-          e.preventDefault();
-        }} />
-      <span className="w-16 text-center text-muted-foreground tabular-nums">
-        {matches.length ? `${index + 1} of ${matches.length}` : query && 'No results'}
-      </span>
-      {button('Previous match (Shift+Enter)', ChevronUp, () => findStep(editor, -1))}
-      {button('Next match (Enter)', ChevronDown, () => findStep(editor, 1))}
-      {button('Close (Esc)', X, close)}
+      <div className="flex items-center gap-1">
+        {icon(find.replace ? 'Hide replace' : 'Replace (Ctrl+H)', find.replace ? ChevronDown : ChevronRight,
+          () => setState({ find: { ...find, replace: !find.replace } }), true)}
+        <Input ref={findBox} aria-label="Find in draft" placeholder="Find in draft" spellCheck={false} className={field}
+          value={query} onChange={(e) => setQuery(e.target.value)}
+          onKeyDown={keys({ Enter: () => findStep(editor, 1), 'Shift+Enter': () => findStep(editor, -1) })} />
+        <span className="w-16 text-center text-muted-foreground tabular-nums">
+          {matches.length ? `${index + 1} of ${matches.length}` : query && 'No results'}
+        </span>
+        {icon('Previous match (Shift+Enter)', ChevronUp, () => findStep(editor, -1))}
+        {icon('Next match (Enter)', ChevronDown, () => findStep(editor, 1))}
+        {icon('Close (Esc)', X, close, true)}
+      </div>
+      {find.replace && (
+        <div className="flex items-center gap-1 pl-7">
+          <Input ref={replaceBox} aria-label="Replace with" placeholder="Replace with" spellCheck={false} className={field}
+            value={replacement} onChange={(e) => setReplacement(e.target.value)}
+            onKeyDown={keys({ Enter: replaceOne })} />
+          <Button variant="ghost" size="xs" disabled={!matches.length} onClick={replaceOne}>Replace</Button>
+          <Button variant="ghost" size="xs" disabled={!matches.length} onClick={replaceAll}>Replace all</Button>
+        </div>
+      )}
     </div>
   );
 }

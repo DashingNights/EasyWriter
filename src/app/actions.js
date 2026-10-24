@@ -11,7 +11,7 @@ import { activeBoard, finishBoardEdits, migrateBoards } from '../whiteboard.js';
 import { captureSelection } from './assistant/capture.js';
 import { backgroundDraft, dropSession, flushSessions, handOver } from './assistant/sessions.js';
 import { installAgent } from './commands.js';
-import { openFind } from './components/FindBar.jsx';
+import { openFind, openReplace } from './components/FindBar.jsx';
 import { notify, PasteNotice } from './components/Notices.jsx';
 import { dropDraft, moveBeside, sortDrafts } from './draft-order.mjs';
 import { defaultTag, pruneMap, tagDraft } from './drafts-meta.js';
@@ -966,6 +966,8 @@ function onKeyDown(e) {
     go(e, toggleSidebar);
   } else if (keyIs('app.find', e)) {
     go(e, openFind);
+  } else if (keyIs('app.replace', e)) {
+    go(e, openReplace);
   } else if (keyIs('insert.canvas', e)) {
     go(e, insertCanvas);
   } else if (keyAmong(PRESETS, e) && !e.target.closest?.('.wb')) {

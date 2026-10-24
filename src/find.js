@@ -1,9 +1,11 @@
 import { Extension } from '@tiptap/core';
+import { closeHistory } from '@tiptap/pm/history';
 import { Plugin, PluginKey, TextSelection } from '@tiptap/pm/state';
 import { Decoration, DecorationSet } from '@tiptap/pm/view';
 
-// Find in the draft (Ctrl+F, the find bar FindBar.jsx): every match of the query highlighted (.find-match), the current one
-// marked (.find-current). Plain text, case-insensitive, within one paragraph or heading at a time. The matches follow edits.
+// Find and replace in the draft (Ctrl+F / Ctrl+H, the find bar FindBar.jsx): every match of the query highlighted
+// (.find-match), the current one marked (.find-current). Plain text, case-insensitive, within one paragraph or heading at a
+// time. The matches follow edits.
 
 const key = new PluginKey('find');
 
@@ -80,6 +82,28 @@ export function findStep(editor, dir) {
   if (!matches.length) return;
   editor.view.dispatch(editor.state.tr.setMeta(key, { index: (index + dir + matches.length) % matches.length }));
   reveal(editor);
+}
+
+/** Replaces the current match with `text` (keeping the marks across it), one undo step; the next match after it becomes the
+ * current one, so a replacement that contains the query is not found again first. */
+export function findReplace(editor, text) {
+  const { query, matches, index } = findState(editor);
+  const m = matches[index];
+  if (!m) return;
+  const tr = closeHistory(editor.state.tr.insertText(text, m.from, m.to));
+  const next = findMatches(tr.doc, query).findIndex((n) => n.from >= m.from + text.length);
+  editor.view.dispatch(tr.setMeta(key, { index: Math.max(0, next) }));
+  reveal(editor);
+}
+
+/** Replaces every match with `text`, one undo step. → the number replaced. */
+export function findReplaceAll(editor, text) {
+  const { matches } = findState(editor);
+  if (!matches.length) return 0;
+  const tr = editor.state.tr;
+  for (const m of [...matches].reverse()) tr.insertText(text, m.from, m.to); // last first: the earlier positions stay valid
+  editor.view.dispatch(closeHistory(tr).setMeta(key, { index: 0 }));
+  return matches.length;
 }
 
 /** Ends the find: no highlights; the current match, if any, becomes the selection. */
