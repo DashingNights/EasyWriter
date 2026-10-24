@@ -23,7 +23,7 @@ import { ADVANCED, NUMBERS } from '../../assistant/advanced.js';
 import { DICTATION_DEFAULTS, LANGUAGES } from '../dictation/core.mjs';
 import { mb, ModelFiles } from '../dictation/Dictation.jsx';
 import { openInstall } from '../dictation/dictation.js';
-import { draftsWithTag, pruneMap, tagList } from '../drafts-meta.js';
+import { defaultTag, draftsWithTag, pruneMap, tagList } from '../drafts-meta.js';
 import { forumOrigin } from '../../thread-url.mjs';
 import { columnsFollowing } from '../plans.js';
 import { getState, useStore } from '../store.js';
@@ -1006,6 +1006,7 @@ export function SettingsDialog({ settings: s, section, onClose }) {
   const [rows, setRows] = useState(() => s.presets.map(presetRow));
   const edit = (key, patch) => setRows((list) => list.map((r) => (r.key === key ? { ...r, ...patch } : r)));
   const [tagRows, setTagRows] = useState(() => tagList(s).map(tagRow));
+  const [newTag, setNewTag] = useState(() => defaultTag(s)?.id ?? ''); // settings.defaultTag
   const editTag = (key, patch) => setTagRows((list) => list.map((r) => (r.key === key ? { ...r, ...patch } : r)));
   const moveTag = (i, by) => setTagRows((list) => {
     const out = [...list];
@@ -1076,6 +1077,7 @@ export function SettingsDialog({ settings: s, section, onClose }) {
     historyLimit: Number(historyLimit),
     presets: rows.map(readRow),
     tags: tagRows.map(readTag),
+    defaultTag: tagRows.some((r) => r.id === newTag) ? newTag : '', // a deleted tag: none
     draftTags: pruneMap(s.draftTags, getState().drafts, tagRows),
     dictation: { ...dictation, serverPath: pathValue(dictation.serverPath), modelPath: pathValue(dictation.modelPath), serverUrl: dictation.serverUrl.trim() },
     assistant: {
@@ -1196,6 +1198,11 @@ export function SettingsDialog({ settings: s, section, onClose }) {
               <Button type="button" variant="outline" size="sm" onClick={() => setTagRows((list) => [...list, tagRow({ id: crypto.randomUUID(), name: '', color: '#a3a3a3' })])}>
                 <Plus />Add tag
               </Button>
+            </div>
+            <div className={FIELDS}>
+              <Label className="text-muted-foreground">New drafts get</Label>
+              <Pick label="New drafts get" value={tagRows.some((r) => r.id === newTag) ? newTag : ''} onChange={setNewTag} className="w-44"
+                options={[['', 'No tag'], ...tagRows.map((r, i) => [r.id, r.name.trim() || `Tag ${i + 1}`])]} />
             </div>
           </Section>
 

@@ -13,7 +13,7 @@ import { backgroundDraft, dropSession, flushSessions, handOver } from './assista
 import { installAgent } from './commands.js';
 import { notify, PasteNotice } from './components/Notices.jsx';
 import { dropDraft, moveBeside, sortDrafts } from './draft-order.mjs';
-import { pruneMap, tagDraft } from './drafts-meta.js';
+import { defaultTag, pruneMap, tagDraft } from './drafts-meta.js';
 import { initBrowser } from './browser.js';
 import { keyAmong, keyIs, setKeybinds } from './keybinds.js';
 import { flushFlows, initFlows, insertFlowchartDialog } from './flows.js';
@@ -431,6 +431,7 @@ async function doSave() {
     state.lastSaved = updated;
     upsertDraftEntry(draft);
     if (isNew && state.draft === draft) await saveSettings({ lastDraftId: id });
+    if (isNew && defaultTag(state.settings)) await setDraftTag(id, defaultTag(state.settings).id); // Settings > Tags, New drafts get
     if (isNew) await saveDraftOrder();
     await api.drafts.saveHistory(id, historyFile);
     renderSaveStatus();

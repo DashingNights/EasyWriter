@@ -17,6 +17,9 @@ export function draftTag(settings, draftId) {
   return tagList(settings).find((t) => t.id === id) ?? null;
 }
 
+/** The tag a new draft gets (settings.defaultTag), or null (none, or that tag is gone). */
+export const defaultTag = (settings) => tagList(settings).find((t) => t.id === settings.defaultTag) ?? null;
+
 /** The drafts that carry the tag `tagId` (null: the untagged ones), in their given order. */
 export const draftsWithTag = (settings, drafts, tagId) => drafts.filter((d) => (draftTag(settings, d.id)?.id ?? null) === tagId);
 

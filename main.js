@@ -74,6 +74,7 @@ const DEFAULT_SETTINGS = {
   palette: {}, // {dark, light}: the user's colours over each theme's (Settings > General Palette, actions.js PALETTE)
   reduceMotion: 'system', // Settings > Motion: off | system | on | custom (src/app/motion.js)
   motion: {}, // {name: false} turns one animation off when reduceMotion is custom (src/app/motion.js MOTION)
+  defaultTag: 'todo', // the tag a new draft gets on its first save ('' none; Settings > Tags, drafts-meta.js defaultTag)
   hideBackupWarning: false, // the sidebar's red warning of a GitHub backup that is not set up is turned off (Sidebar.jsx BackupWarning)
   baseFont: '',
   baseSize: 100,
