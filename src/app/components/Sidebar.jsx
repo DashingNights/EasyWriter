@@ -131,7 +131,8 @@ function Threads() {
   if (!settings) return null;
   const { threads, selectedThread } = settings;
 
-  // Projects whose forum thread names a year and subject group under them; the rest come first, with no headings.
+  // Projects whose forum thread names a year and subject group under them, indented: a year's subjects along a guide line,
+  // a subject's projects under it. The rest come first, with no headings.
   const years = new Map();
   for (const t of threads) {
     const year = t.year || '';
@@ -155,6 +156,7 @@ function Threads() {
         {yearOrder.map((year) => (
           <div key={year}>
             {year && <div className="mt-1.5 px-1.5 text-xs text-muted-foreground">{year}</div>}
+            <div className={cn(year && 'ml-2.5 border-l pl-1')}>
             {[...years.get(year).keys()].sort(byName).map((subject) => (
               <div key={subject}>
                 {subject && <div className="mt-1 truncate px-1.5 font-semibold" title={subject}>{subject}</div>}
@@ -162,7 +164,7 @@ function Threads() {
                   const topic = topicOf(threads, t.url);
                   return (
                   <Row key={t.url} active={t.url === selectedThread} title={t.forum ? `${t.forum}\n${topic}` : topic || t.title}
-                    onClick={() => selectThread(t.url)}>
+                    className={cn(subject && 'pl-4')} onClick={() => selectThread(t.url)}>
                     <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground group-hover:text-foreground">{t.title || t.url}</span>
                     {planFor(t.url) && (
                       <Tip title="Open tickets in its plan"><span className="shrink-0 text-xs text-muted-foreground tabular-nums">{openCount(planFor(t.url).id)}</span></Tip>
@@ -176,6 +178,7 @@ function Threads() {
                 })}
               </div>
             ))}
+            </div>
           </div>
         ))}
         <Button variant="ghost" size="xs" className="mt-0.5 h-7.5 w-full justify-start text-muted-foreground" data-add-thread onClick={addThreadUrl}>
