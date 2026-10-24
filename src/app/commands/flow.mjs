@@ -68,7 +68,7 @@ function briefItem(i, byId) {
   return {
     id: i.id, type: i.type, shape: i.shape, label: short(i), x: int(i.x), y: int(i.y), w: int(i.w), h: int(i.h),
     ...(i.hidden && { hidden: true }), ...(i.locked && { locked: true }), ...(i.groups && { groups: i.groups }),
-    ...(i.type === 'connector' && { from: end(i.from), to: end(i.to), route: i.route, head: i.heads?.end, bends: i.points?.length ?? 0 }),
+    ...(i.type === 'connector' && { from: end(i.from), to: end(i.to), route: i.route, heads: i.heads, bends: i.points?.length ?? 0 }),
   };
 }
 
@@ -520,11 +520,12 @@ export const defs = [
   define({
     id: 'flow.open',
     title: 'Open a library flowchart in the flowchart library editor',
-    brief: 'Use it to show the flowchart to the user.',
+    brief: 'Use it to show the flowchart to the user. To look at it yourself, view_render with flowId works with the window hidden.',
     group: GROUP,
     risk: 'write',
     undo: 'none',
     headless: false,
+    hidden: 'Call view_render with flowId to see the flowchart without the window',
     args: { type: 'object', required: ['flowId'], additionalProperties: false, properties: { flowId: FLOW_ID } },
     result: { type: 'object', required: ['flowId'] },
     examples: [{ args: { flowId: EX } }],

@@ -60,7 +60,7 @@ function briefItem(i, byId) {
   return {
     id: i.id, type: i.type, shape: i.shape, label, x: int(i.x), y: int(i.y), w: int(i.w), h: int(i.h),
     ...(i.hidden && { hidden: true }), ...(i.locked && { locked: true }), ...(i.groups && { groups: i.groups }),
-    ...(i.type === 'connector' && { from: end(i.from), to: end(i.to), route: i.route, head: i.heads?.end, bends: i.points?.length ?? 0 }),
+    ...(i.type === 'connector' && { from: end(i.from), to: end(i.to), route: i.route, heads: i.heads, bends: i.points?.length ?? 0 }),
   };
 }
 

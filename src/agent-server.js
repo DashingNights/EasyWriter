@@ -15,10 +15,11 @@ const { advanced } = require('./assistant/advanced.js');
 //   clients that take a URL;
 // - a named pipe (a Unix socket elsewhere) speaking MCP's stdio framing (newline-delimited JSON-RPC 2.0), which bin/easywriter-agent.js
 //   relays to stdin/stdout for clients that start their server themselves. userData/agent.json {version, pipe, pid, started}.
-// Methods: initialize, ping, tools/list, tools/call, notifications/cancelled. The tools are every headless command in the model
-// form the in-app assistant gets (SPEC §8 Tool schemas); a call runs in the main window's executor (commands.js) as source
-// agent:<client name>, so the agent policy applies: writes run, destructive and approval commands ask the user every time
-// (the in-app assistant's session: its permission mode, below).
+// Methods: initialize, ping, tools/list, tools/call, notifications/cancelled. The tools are every command in the model form the
+// in-app assistant gets (SPEC §8 Tool schemas), as clients such as Claude Code read the list once; a call runs in the main
+// window's executor (commands.js) as source agent:<client name>, so the agent policy applies: writes run, destructive and
+// approval commands ask the user every time, a headless: false command needs the window shown (the in-app assistant's
+// session: its permission mode, below).
 // To the renderer, one channel `agent.event`: {type: call, rid, req} | {type: cancel, rid} | {type: connected | disconnected,
 // id, name, since}. From it: agent.ready (its executor listens), agent.reply (rid, result), agent.disconnect (id), agent.status.
 // The in-app assistant on Claude Code or Codex (src/assistant/cli.js) reaches the pipe through the bridge too: the bridge sends the
@@ -149,11 +150,11 @@ function tools() {
     const mcpTools = (defs) => toolsFor(defs.map((d) => ({ id: d.id, title: d.title, args: d.args })), { $defs: MODEL_DEFS, form: 'model' })
       .map(({ function: f }, i) => ({ name: f.name, description: f.description, inputSchema: f.parameters, def: defs[i] }));
     const strip = ({ def: _def, ...t }) => t;
-    const headless = mcpTools(CATALOGUE.filter((d) => d.headless));
-    const all = mcpTools(CATALOGUE.filter((d) => !NEVER.includes(d.id)));
+    const every = mcpTools(CATALOGUE);
+    const all = every.filter((t) => !NEVER.includes(t.def.id));
     return {
-      tools: headless.map(strip),
-      idOf: (name) => commandIdOf(name, headless.map((t) => t.def.id)),
+      tools: every.map(strip),
+      idOf: (name) => commandIdOf(name),
       // The assistant's: every command but NEVER, less those its permission mode refuses (the executor refuses them again).
       assistant: (s) => all.filter((t) => !refusal(t.def, assistantMode(s?.assistant))),
     };

@@ -63,7 +63,7 @@ test('flow.library.list, flow.library.get and flow.find on a stub store', async 
   assert.deepEqual(byId('flow.library.list').run(ctx, { threadUrl: T }), [{ flowId: id, title: 'Door', items: 3, updated: 5 }]);
   const got = await byId('flow.library.get').run(ctx, { flowId: id, format: 'brief' });
   assert.deepEqual(got.board.items[2], { id: 'c', type: 'connector', shape: undefined, label: 'yes', x: undefined, y: undefined, w: undefined, h: undefined,
-    from: { item: 'a', label: 'Open?', side: 'nearest side' }, to: { item: 'b', label: 'End', side: 'nearest side' }, route: undefined, head: undefined, bends: 0 });
+    from: { item: 'a', label: 'Open?', side: 'nearest side' }, to: { item: 'b', label: 'End', side: 'nearest side' }, route: undefined, heads: undefined, bends: 0 });
   const found = await byId('flow.find').run(ctx, { flowId: id, q: 'the yes arrow' });
   assert.deepEqual([found.hits, found.items[0].id], [1, 'c']);
   assert.equal((await byId('flow.find').run(ctx, { flowId: id, q: 'decision' })).hits, 2); // the kind's name

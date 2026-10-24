@@ -2,7 +2,8 @@ import { checkSchema, deref } from '../schema.mjs';
 import { GATES } from '../gates.mjs';
 
 // define(def) checks a command definition when its module loads (SPEC §8 Command definition) and fills its defaults:
-// headless true, slow false, needs []. `brief` (optional): one sentence on when to use the command, `notFor` (optional): what
+// headless true, slow false, needs []. `hidden` (optional, a headless: false command): the fix an agent gets while the window
+// is hidden, in place of the window.visible gate's own. `brief` (optional): one sentence on when to use the command, `notFor` (optional): what
 // a model wrongly reaches for it to do and what to use instead, and `guide` (optional, wave 1c, after OpenCode's one text per
 // tool): {before?, args?, errors?, playbook?}, short sentences on what to do before calling, the argument rules and what its errors
 // mean, and the id of its playbook (wave 2b); all for the model form of the tools (tools-schema.mjs: "Not for: <notFor>", a line
@@ -37,6 +38,7 @@ export function define(def) {
   if (typeof def.title !== 'string' || !def.title) bad('title');
   if (def.brief !== undefined && (typeof def.brief !== 'string' || !def.brief)) bad('brief must be a sentence');
   if (def.notFor !== undefined && (typeof def.notFor !== 'string' || !def.notFor)) bad('notFor must be a sentence');
+  if (def.hidden !== undefined && (typeof def.hidden !== 'string' || !def.hidden || def.headless !== false)) bad('hidden is a sentence for a headless: false command');
   if (def.guide !== undefined && (!def.guide || typeof def.guide !== 'object' || !Object.keys(def.guide).length
     || Object.entries(def.guide).some(([k, v]) => !Object.hasOwn(GUIDE, k) || typeof v !== 'string' || !v))) bad(`guide takes sentences for ${Object.keys(GUIDE)}`);
   if (typeof def.group !== 'string' || !def.group) bad('group');

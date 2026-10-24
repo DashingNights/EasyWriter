@@ -3315,6 +3315,10 @@ export async function rasterizeWhiteboard(attrs, { width, theme, scale = 2 }) {
   board.append(...routed(attrs.items).filter((i) => !i.hidden).map(itemElement)); // routed first: a hidden item still binds ends
   host.append(board);
   document.body.append(host);
+  // html-to-image waits an animation frame for its picture, and a hidden or minimized window draws none (an agent's render
+  // hung there, 2026-10-24): a timer stands in while it is hidden.
+  const raf = window.requestAnimationFrame;
+  if (document.hidden) window.requestAnimationFrame = (f) => setTimeout(() => f(performance.now()), 0);
   try {
     await Promise.all([...board.querySelectorAll('img')].map((img) => img.decode().catch(() => {})));
     const blob = await toBlob(board, {
@@ -3328,6 +3332,7 @@ export async function rasterizeWhiteboard(attrs, { width, theme, scale = 2 }) {
     if (!blob) throw new Error('Board rasterization produced no image');
     return { blob, width, height };
   } finally {
+    window.requestAnimationFrame = raf;
     host.remove();
   }
 }

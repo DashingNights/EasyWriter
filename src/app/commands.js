@@ -40,10 +40,7 @@ const TIMEOUT = { normal: 60000, slow: 300000, max: 600000 };
 
 const error = (code, message, data) => ({ ok: false, error: { code, message, ...(data !== undefined && { data }) } });
 const isAgent = (source) => source.startsWith('agent:');
-// The in-app assistant runs in this window: a headless: false command needs the window.visible gate, not the user's absence
-// (other agents are denied those commands).
 const ASSISTANT = 'agent:assistant';
-const headlessDenied = (def, source) => isAgent(source) && !def.headless && source !== ASSISTANT;
 const isObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 
 // ---------------------------------------------------------------------------------------------
@@ -293,21 +290,22 @@ function subjectOf(kind, args = {}, sess = null) {
     case 'board': return liveBoard()?.getSnapshot() ?? null;
     case 'window': return { visible: document.visibilityState === 'visible' };
     case 'settings': return state.settings;
-    default: return null; // flow: the flowchart commands bring their subject (second workflow)
+    case 'flow': return state.view.type === 'flows' && state.view.flowId ? flows.getFlow(state.view.flowId) : null; // the library editor's record
+    default: return null;
   }
 }
 
 const needOf = (n) => (typeof n === 'string' ? { gate: n } : n);
 
-/** [{gate, message, fix}] of every applicable gate of `def.needs` (plus window.visible for a headless: false command from the
- * in-app assistant) that does not hold; `sess`: the background session the command works in. */
+/** [{gate, message, fix}] of every applicable gate of `def.needs` (plus window.visible for a headless: false command from an
+ * agent, with `def.hidden` as its fix when set) that does not hold; `sess`: the background session the command works in. */
 function failedGates(def, args, source, sess = null) {
   const failed = [];
-  for (const n of !def.headless && source === ASSISTANT ? [...def.needs, 'window.visible'] : def.needs) {
-    const { gate, if: when, with: param } = needOf(n);
+  for (const n of !def.headless && isAgent(source) ? [...def.needs, { gate: 'window.visible', fix: def.hidden }] : def.needs) {
+    const { gate, if: when, with: param, fix } = needOf(n);
     if (when && !when(args)) continue;
     const g = GATES[gate];
-    if (!can(gate, subjectOf(g.subject, args, sess), args, param)) failed.push({ gate, message: g.message, fix: g.fix });
+    if (!can(gate, subjectOf(g.subject, args, sess), args, param)) failed.push({ gate, message: g.message, fix: fix ?? g.fix });
   }
   return failed;
 }
@@ -335,7 +333,6 @@ function askText(def, ctx, args) {
 
 /** Step 6: null when the call may run, else the `denied` answer. `risk` and the ask text may come from a batch. */
 async function policy(def, args, opts, ctx, risk = def.risk, text = null) {
-  if (headlessDenied(def, opts.source)) return error('denied', `${def.id} needs the user at the window`, { reason: 'headless' });
   const why = opts.source === ASSISTANT && refusal({ id: def.id, risk }, modeOf()); // Read only, or on-screen controls off
   if (why) return error('denied', why, { reason: 'policy' });
   const rule = policyOf(opts.source)[risk];
@@ -419,7 +416,6 @@ async function runBatch(args, opts) {
     if (typeof a.draftId === 'string' && !draftById(a.draftId)) return error('not_found', `steps[${i}]: no draft has the id ${a.draftId}`, { step: i });
     const failed = failedGates(def, a, opts.source, routes(def) ? sess : null);
     if (failed.length) return error('precondition_failed', `steps[${i}] (${def.id}): ${failed.map((f) => f.message).join('; ')}`, { failed, step: i });
-    if (headlessDenied(def, opts.source)) return error('denied', `steps[${i}]: ${def.id} needs the user at the window`, { reason: 'headless', step: i });
     steps[i].text = askText(def, ctx, a);
   }
   const RANK = ['read', 'write', 'destructive', 'approval'];

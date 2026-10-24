@@ -47,7 +47,7 @@ export const GATES = {
   'flow.unsynced': gate('node', (n) => n?.type === 'canvas' && !n.attrs?.flow, 'The canvas is already linked to the flowchart library',
     'Unlink it first'),
   'flow.present': gate('flow', (f) => !!f, 'The linked flowchart is missing from the library', 'Unlink the canvas to keep its picture'),
-  // Every headless: false command needs it for the in-app assistant (SPEC §8 Policy; other agents are denied those commands).
+  // Every headless: false command needs it when an agent calls it (SPEC §8 Policy).
   'window.visible': gate('window', (w) => !!w?.visible, 'The window is not visible', 'Bring EasyWriter to the front'),
 };
 

@@ -390,13 +390,13 @@ async function runCall(session, call, tools) {
     else session.lastRev = r.rev;
   }
   const { res, pictures: pics } = takePictures(ran.ok && id === 'commands.describe' ? describe(session, ran.result, tools) : ran);
-  const of = id === 'view.render' ? ` of ${args?.path ? `the board at block [${args.path}]` : 'the view'}` : '';
+  const of = id === 'view.render' ? ` of ${args?.path ? `the board at block [${args.path}]` : args?.flowId ? 'the library flowchart' : 'the view'}` : '';
   // A screenshot (computer_act, background_open: "1344 x 840 screenshot of the main window") has no marks.
   const pictures = pics.map(({ url, size }) => ({ url, shot: /screenshot/.test(size), text: `Picture from ${call.name}${of}${size ? `, ${size}` : ''}.${/screenshot/.test(size) ? '' : " The numbers on it are the legend's."}` }));
   if (res.error?.code === 'cancelled') return { res, pictures };
   const draftId = args?.draftId ?? res.result?.draftId;
   const title = typeof draftId === 'string' ? getState().drafts.find((d) => d.id === draftId)?.title ?? '' : '';
-  const label = id === 'ui.invoke' && res.ok ? uiStep(args, res.result) : id === 'view.render' ? `Rendered the ${args?.path ? 'board' : 'view'}`
+  const label = id === 'ui.invoke' && res.ok ? uiStep(args, res.result) : id === 'view.render' ? `Rendered the ${args?.path ? 'board' : args?.flowId ? 'flowchart' : 'view'}`
     : id === 'computer.act' && res.ok ? computerStep(args) : null;
   const line = resultLine(def?.risk, res, title) + (swaps.length ? ` (mark ${swaps.map(([n, v]) => `${n} = ${v}`).join(', ')})` : '');
   steps(def, call.name, res, args, { id: call.id, name: call.name, args: briefArgs(call.arguments) }, line, label);
