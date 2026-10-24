@@ -104,10 +104,40 @@ function applyUiTheme() {
   if (dark !== state.uiDark) setState({ uiDark: dark });
 }
 
+// The user's palette (settings.palette {dark, light}: key → #rrggbb, Settings > General Palette) over the theme's tokens
+// (app.css), as the style element main.jsx adds after app.css. Its CSS is kept in localStorage, so the first frame has it and
+// the background window (§7i), whose settings are a copy from its start, takes it from there and follows a change (storage
+// event). [key, label, what it colours, tokens]
+export const PALETTE = [
+  ['background', 'Panels', 'Sidebar, status bar and dialogs', ['background']],
+  ['card', 'Bars', 'Title bar, toolbar, islands, menus and cards', ['card', 'popover']],
+  ['muted', 'Fills', 'Chips, tracks and secondary buttons', ['muted', 'secondary']],
+  ['foreground', 'Text', 'Text and icons', ['foreground', 'card-foreground', 'popover-foreground', 'secondary-foreground', 'accent-foreground']],
+  ['muted-foreground', 'Soft text', 'Labels, hints and shortcuts', ['muted-foreground']],
+  ['primary', 'Buttons', 'Main buttons and ticked boxes', ['primary']],
+];
+export const PALETTE_KEY = 'daf-writer.palette';
+const lightFill = (hex) => { // a fill that takes dark text
+  const n = parseInt(hex.slice(1), 16);
+  return 0.299 * (n >> 16) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255) > 150;
+};
+
+export function applyPalette(palette = {}) {
+  const css = Object.entries({ ':root.dark': palette.dark, ':root:not(.dark)': palette.light }).map(([sel, p]) => {
+    const vars = PALETTE.flatMap(([key, , , tokens]) => (p?.[key] ? tokens.map((t) => `--${t}:${p[key]}`) : []));
+    if (p?.primary) vars.push(`--primary-foreground:${lightFill(p.primary) ? '#1f1f1f' : '#fafafa'}`);
+    return vars.length ? `${sel}{${vars.join(';')}}` : '';
+  }).join('');
+  document.getElementById('palette').textContent = css;
+  try { localStorage.setItem(PALETTE_KEY, css); } catch {} // the main window's only (applySettings)
+}
+addEventListener('storage', (e) => e.key === PALETTE_KEY && (document.getElementById('palette').textContent = e.newValue ?? ''));
+
 function applySettings() {
   const s = state.settings;
   setKeybinds(s.keybinds); // §7k
   applyUiTheme();
+  if (!WORKER) applyPalette(s.palette);
   const root = document.documentElement;
   root.dataset.theme = s.theme === 'light' ? 'light' : 'dark';
   root.style.setProperty('--forum-width', `${s.forumWidth}px`);

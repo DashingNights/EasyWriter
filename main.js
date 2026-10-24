@@ -71,6 +71,7 @@ const DEFAULT_SETTINGS = {
   forumWidth: 1454,
   theme: 'light', // the page preview's forum colours (Settings > Forum Page theme)
   uiTheme: 'dark', // the app's own colours (Settings > General Theme): dark | light | system (actions.js applyUiTheme)
+  palette: {}, // {dark, light}: the user's colours over each theme's (Settings > General Palette, actions.js PALETTE)
   baseFont: '',
   baseSize: 100,
   presets: [

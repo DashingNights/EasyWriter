@@ -14,7 +14,7 @@ import { Switch } from '@/components/ui/switch';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { FONT_SIZES, TEXT_COLORS, HIGHLIGHTS, FONTS } from '../../extensions.js';
 import { keyLabel, withKey } from '../keybinds.js';
-import { changeSettings, confirmDialog, DEFAULT_WIDTH, saveSettings } from '../actions.js';
+import { applyPalette, changeSettings, confirmDialog, DEFAULT_WIDTH, PALETTE, saveSettings } from '../actions.js';
 // LOCAL LLM (commented out 2026-10-07): BACKENDS, deleteAssistant, deleteLeftover, openInstall as openAssistantInstall, size, wake.
 import { ASSISTANT_DEFAULTS, saveAssistant } from '../assistant/assistant.js';
 import QWEN_MODELS from '../../assistant/qwen-models.json';
@@ -64,6 +64,60 @@ function UiTheme() {
     <ToggleGroup type="single" variant="outline" size="sm" aria-label="Theme" value={value} onValueChange={(v) => v && changeSettings({ uiTheme: v })}>
       {UI_THEMES.map(([v, label, Icon, title]) => <ToggleGroupItem key={v} value={v} title={title}><Icon />{label}</ToggleGroupItem>)}
     </ToggleGroup>
+  </>;
+}
+
+// The palette of the theme in effect (settings.palette, actions.js PALETTE): a colour shows at once and is saved a moment after
+// the last change (at the latest when Settings closes); only the colours changed are kept, so the others follow the theme.
+// Reset drops the theme's.
+const readPalette = () => {
+  const css = getComputedStyle(document.documentElement);
+  return Object.fromEntries(PALETTE.map(([key]) => [key, css.getPropertyValue(`--${key}`).trim()]));
+};
+
+function UiPalette() {
+  const theme = useStore((s) => (s.uiDark ? 'dark' : 'light'));
+  const changed = useStore((s) => !!s.settings?.palette?.[theme]);
+  const [values, setValues] = useState(readPalette);
+  const timer = useRef(0);
+  const pending = useRef(null); // shown, not saved yet
+  const latest = useRef(null); // the last one shown: the store has it only once its save is back
+  const settings = useStore((s) => s.settings);
+  const save = () => {
+    if (pending.current) saveSettings({ palette: pending.current }); // already shown: applying the save could show an older pick
+    pending.current = null;
+  };
+  useEffect(() => setValues(readPalette()), [theme]);
+  useEffect(() => () => { clearTimeout(timer.current); save(); }, []);
+  // Another settings change before the save re-applies the saved palette (applySettings): show the pick again.
+  useEffect(() => { if (pending.current) applyPalette(pending.current); }, [settings]);
+  const current = () => latest.current ?? getState().settings.palette ?? {};
+  const write = (palette, wait) => {
+    applyPalette(palette);
+    pending.current = latest.current = palette;
+    clearTimeout(timer.current);
+    timer.current = setTimeout(save, wait);
+  };
+  const edit = (key, value) => {
+    const all = current();
+    setValues((v) => ({ ...v, [key]: value }));
+    write({ ...all, [theme]: { ...all[theme], [key]: value } }, 250);
+  };
+  const reset = () => {
+    const { [theme]: _, ...rest } = current();
+    write(rest, 0);
+    setValues(readPalette());
+  };
+  return <>
+    <Label className="text-muted-foreground">{theme === 'dark' ? 'Dark palette' : 'Light palette'}</Label>
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+      {PALETTE.map(([key, label, title]) => (
+        <label key={key} title={title} className="flex cursor-pointer items-center gap-1.5 text-xs">
+          <input type="color" className={SWATCH} value={values[key]} onChange={(e) => edit(key, e.target.value)} />{label}
+        </label>
+      ))}
+      <Button type="button" variant="outline" size="sm" disabled={!changed} onClick={reset}>Reset</Button>
+    </div>
   </>;
 }
 
@@ -1026,6 +1080,7 @@ export function SettingsDialog({ settings: s, section, onClose }) {
           <Section id="general" title="General">
             <div className={FIELDS}>
               <UiTheme />
+              <UiPalette />
               <UiScale />
               <Label className="text-muted-foreground">Base font</Label>
               <Pick label="Base font" value={baseFont} onChange={setBaseFont} options={fontOptions('Default')} className="w-44" />

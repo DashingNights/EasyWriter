@@ -80,12 +80,13 @@ function hex(css) {
  * are drawn over its right end in its background and text colours, sent to main at start and on every theme change. */
 function TitleBar() {
   const dark = useStore((s) => s.uiDark);
+  const palette = useStore((s) => s.settings?.palette);
   const ref = useRef(null);
   useEffect(() => {
     if (WORKER) return; // the background window (§7i) has no window controls of its own
     const cs = getComputedStyle(ref.current);
     window.api.window.titleBar({ color: hex(cs.backgroundColor), symbolColor: hex(cs.color) });
-  }, [dark]);
+  }, [dark, palette]);
   return (
     <div ref={ref} data-titlebar className="titlebar col-span-2 flex items-center gap-[8px] border-b bg-card pl-[10px] text-card-foreground select-none">
       <img src="build/icon.svg" alt="" draggable={false} className="size-[16px]" />
