@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useSyncExternalStore } from 'react';
 import { cn } from 'cn';
 import {
   AlignCenter, AlignJustify, AlignLeft, AlignRight, Ban, Baseline, BetweenHorizontalEnd, BetweenVerticalEnd, Bold, ChevronDown, Code, Frame,
@@ -14,6 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Separator } from '@/components/ui/separator';
 import { Toggle } from '@/components/ui/toggle';
 import { FONT_SIZES, TEXT_COLORS, HIGHLIGHTS, FONTS } from '../../extensions.js';
+import { canvasEditor } from '../../canvas.js';
 import { addImageFilesToEditor } from '../../whiteboard.js';
 import {
   afterNodeSel, applyPresetAt, cssFamily, insertCanvas, openLinkDialog, openSettings, refocusEditor, run,
@@ -22,6 +23,8 @@ import { insertFlowchartDialog } from '../flows.js';
 import { can } from '../gates.mjs';
 import { insertPlanChartDialog } from '../plans.js';
 import { keyLabel, withKey } from '../keybinds.js';
+import { BAR, BoardTools, RailLayout } from './board/BoardRail.jsx';
+import { CHROME, keepFocus as keepBoardFocus, useBoard, useSnapshot } from './board/controls.jsx';
 import { getState, useEditor, useStore } from '../store.js';
 import { Tip } from './Tip.jsx';
 
@@ -133,7 +136,7 @@ export function ToolSelect({ title, value, onChange, placeholder, className, dis
 
 // The block style, font and size selects over textTools(ed) `T`.
 export const BlockSelect = ({ T }) => (
-  <ToolSelect title="Block style" placeholder="Style" className="w-26" value={T.block.value} onChange={T.block.set}>
+  <ToolSelect title="Block style" placeholder="Style" className="w-26" value={T.block.value} onChange={T.block.set} disabled={T.block.disabled}>
     <SelectItem value="p">Paragraph</SelectItem>
     {/* Each heading shown at a size like its own (list only; the trigger keeps the toolbar's size). */}
     {[1, 2, 3, 4, 5, 6].map((l) => (
@@ -145,14 +148,14 @@ export const BlockSelect = ({ T }) => (
 );
 
 export const FontSelect = ({ T }) => (
-  <ToolSelect title="Font" className="w-38" value={T.font.value} onChange={T.font.set}>
+  <ToolSelect title="Font" className="w-38" value={T.font.value} onChange={T.font.set} disabled={T.font.disabled}>
     <SelectItem value={NONE}>Default font</SelectItem>
     {FONTS.map((f) => <SelectItem key={f.css} value={f.css} style={{ fontFamily: cssFamily(f.css) }}>{f.label}</SelectItem>)}
   </ToolSelect>
 );
 
 export const SizeSelect = ({ T }) => (
-  <ToolSelect title="Font size" className="w-18" value={T.size.value} onChange={T.size.set}>
+  <ToolSelect title="Font size" className="w-18" value={T.size.value} onChange={T.size.set} disabled={T.size.disabled}>
     {FONT_SIZES.map((n) => <SelectItem key={n} value={String(n)}>{`${n}%`}</SelectItem>)}
   </ToolSelect>
 );
@@ -182,14 +185,14 @@ export function Swatches({ swatches, onPick }) {
 
 /** Colour dropdown: a palette of swatches; the bar under the icon shows the current colour. In the board rail (`side`
  * 'right') the palette opens to the right; in the quick tools island beside the whole island (`anchor`, a ref to it). */
-export function SwatchMenu({ title, icon, bar, swatches, side, anchor }) {
+export function SwatchMenu({ title, icon, bar, swatches, side, anchor, disabled }) {
   const [open, setOpen] = useState(false);
   return (
     <Popover open={open} onOpenChange={setOpen}>
       {anchor && <PopoverAnchor virtualRef={anchor} />}
       <Tip title={title} side={side}>
         <PopoverTrigger asChild>
-          <Button variant="ghost" size="icon-sm" aria-label={title} onMouseDown={keepFocus} className={cn('flex-col gap-0.5', !side && 'w-7.5')}>
+          <Button variant="ghost" size="icon-sm" aria-label={title} disabled={disabled} onMouseDown={keepFocus} className={cn('flex-col gap-0.5', !side && 'w-7.5')}>
             {icon}
             <span className="h-[3px] w-4 rounded-sm ring-1 ring-foreground/25" style={{ background: bar }} />
           </Button>
@@ -219,34 +222,32 @@ export const GroupRows = ({ children }) => (
   </div>
 );
 
-/** Table insert, plus the row / column / table operations while the caret is in a table. */
-export const TableTools = ({ T, ed }) => (
-  <>
-    <ToolButton {...T.table} />
-    {can('doc.inTable', { inTable: ed?.isActive('table') }) && (
-      <>
-        <ToolButton {...T.addRow} />
-        <ToolButton {...T.addColumn} />
-        <ToolButton {...T.deleteRow} />
-        <ToolButton {...T.deleteColumn} />
-        <ToolButton {...T.deleteTable} />
-      </>
-    )}
-  </>
-);
+/** Table insert, plus the row / column / table operations while the caret is in a table; with `all` (the toolbar) they
+ * always show, greyed out outside a table. */
+export const TableTools = ({ T, ed, all }) => {
+  const inTable = can('doc.inTable', { inTable: ed?.isActive('table') });
+  return (
+    <>
+      <ToolButton {...T.table} />
+      {(inTable || all) && [T.addRow, T.addColumn, T.deleteRow, T.deleteColumn, T.deleteTable].map((t) => (
+        <ToolButton key={t.title} {...t} disabled={t.disabled || !inTable} />
+      ))}
+    </>
+  );
+};
 
 /** The presets menu's tooltip: their keys when they are Alt+1 to Alt+9 (the defaults), else where to see them. */
 const presetsTitle = () => ([1, 2, 3, 4, 5, 6, 7, 8, 9].every((n) => keyLabel(`text.preset${n}`) === `Alt+${n}`)
   ? 'Apply a font preset (Alt+1 to Alt+9)' : 'Apply a font preset (keys in Settings > Keybinds)');
 
 /** Font presets dropdown: apply one (by its key, §7k), last entry "Manage presets…". */
-export function PresetsMenu() {
+export function PresetsMenu({ disabled }) {
   const presets = useStore((s) => s.settings?.presets) ?? [];
   return (
     <DropdownMenu>
       <Tip title={presetsTitle()}>
-        <DropdownMenuTrigger asChild>
-          <Button variant="ghost" size="sm" aria-label="Font presets" onMouseDown={keepFocus}><Palette /><ChevronDown /></Button>
+        <DropdownMenuTrigger asChild disabled={disabled}>
+          <Button variant="ghost" size="sm" aria-label="Font presets" disabled={disabled} onMouseDown={keepFocus}><Palette /><ChevronDown /></Button>
         </DropdownMenuTrigger>
       </Tip>
       <DropdownMenuContent align="start" onCloseAutoFocus={refocusEditor}>
@@ -263,19 +264,32 @@ export function PresetsMenu() {
   );
 }
 
+// Every text tool greyed out (while a canvas is being edited).
+const greyed = (T) => Object.fromEntries(Object.entries(T).map(([key, t]) => [key, { ...t, disabled: true }]));
+
+/** The bottom island holds every tool (the left rail only those for what is being worked on): the text tools, greyed out
+ * while a canvas is being edited, and the board tools, greyed out with none open. Undo and Redo serve whichever it is. */
 export function Toolbar() {
   const ed = useEditor();
-
-  const T = textTools(ed);
+  const session = useSyncExternalStore(canvasEditor.subscribe, canvasEditor.get);
+  const active = useBoard();
+  const board = session?.board ?? active; // a canvas in edit mode, also while the focus is elsewhere (the sidebar, the chat)
+  const snap = useSnapshot(board);
+  const text = textTools(ed);
+  const T = board ? greyed(text) : text;
+  const [undo, redo] = board
+    ? [{ ...text.undo, disabled: !snap?.canUndo, onClick: () => { board.undo(); board.focus(); } },
+      { ...text.redo, disabled: !snap?.canRedo, onClick: () => { board.redo(); board.focus(); } }]
+    : [text.undo, text.redo];
 
   // An island floating over the editor area at the bottom centre, next to where new lines are typed. The draft actions are
-  // in the sidebar's Post card.
+  // in the sidebar's Post card. Board chrome (§6c): a click in it keeps a canvas in edit mode, and the board its focus.
   return (
-    <div data-agent-area="toolbar" className="absolute bottom-3 left-1/2 z-30 w-max max-w-[calc(100%-7rem)] -translate-x-1/2 rounded-island border bg-island px-1.5 py-1 text-sm shadow-xl">
+    <div data-agent-area="toolbar" {...CHROME} onMouseDown={keepBoardFocus} className="absolute bottom-3 left-1/2 z-30 w-max max-w-[calc(100%-7rem)] -translate-x-1/2 rounded-island border bg-island px-1.5 py-1 text-sm shadow-xl">
       <GroupRows>
         <Group>
-          <ToolButton {...T.undo} />
-          <ToolButton {...T.redo} />
+          <ToolButton {...undo} />
+          <ToolButton {...redo} />
         </Group>
         <Group>
           <BlockSelect T={T} />
@@ -309,7 +323,7 @@ export function Toolbar() {
           <ToolButton {...T.rule} />
         </Group>
         <Group>
-          <TableTools T={T} ed={ed} />
+          <TableTools T={T} ed={ed} all />
           <ToolButton {...T.box} />
           <ToolButton {...T.link} />
           <ToolButton {...T.canvas} />
@@ -318,9 +332,12 @@ export function Toolbar() {
           <ToolButton {...T.image} />
         </Group>
         <Group>
-          <PresetsMenu />
+          <PresetsMenu disabled={!!board} />
           <ToolButton {...T.clear} />
         </Group>
+        <RailLayout.Provider value={BAR}>
+          <BoardTools board={board} />
+        </RailLayout.Provider>
       </GroupRows>
     </div>
   );

@@ -3,14 +3,14 @@ import { saveSettings } from '../actions.js';
 import { getState, setState, useStore } from '../store.js';
 import { cleanText, commitPoint, DICTATION_DEFAULTS, encodeWav, hasSpeech, joinText, RATE } from './core.mjs';
 
-// Push-to-talk dictation (SPEC §7h): microphone capture, the transcription loop and the transcript pane's state.
+// Push-to-talk dictation (SPEC §7h): microphone capture, the transcription loop and the transcript pane's state. The right
+// island's mic button opens the pane (dictation mode), whose pod has the Hold to dictate button; Minimize puts it away.
 // `state.dictation` holds the pane in memory: it survives draft and thread switches and the workspaces, not a restart.
 // `state.dictationInstall` is the open install dialog ({id, model, language, resolve}).
 
 const api = window.api;
 const IDLE = { shown: false, minimized: false, recording: false, closing: false, opening: false, committed: '', partial: '', error: '' };
 const TICK_MS = 700; // re-transcribe the open tail this often while held
-export const DISMISS_MS = 3000;
 // The close sequence (Dictation.jsx plays it): the card narrows to the pod's width, its height falls (its bottom fixed, the pod
 // coming down with its top), the pod narrows to a circle, then fades out while shrinking. Without text the card is hidden: the pod's two steps alone. Restoring a minimized
 // pane plays it in reverse (`opening`).
@@ -21,6 +21,8 @@ const get = () => getState().dictation ?? IDLE;
 const set = (patch) => setState({ dictation: { ...get(), ...patch } });
 export const useDictation = () => useStore((s) => s.dictation ?? IDLE);
 export const dictationSettings = () => ({ ...DICTATION_DEFAULTS, ...getState().settings?.dictation });
+/** Whether settings.dictation can run (main's status ready, from the settings): installed, or the user's own server or files. */
+export const dictationReady = (d) => !!d && (!!d.installed || !!d.serverUrl?.trim() || (!!d.serverPath && !!d.modelPath));
 const message = (e) => String(e?.message || e).replace(/^Error invoking remote method '[^']+': (Error: )?/, '');
 
 let seqTimer = 0; // the playing sequence's end (close or reverse open)
@@ -30,7 +32,7 @@ const seqMs = (d) => (d.committed || d.partial || d.error ? CLOSE_MS : CLOSE_STE
 
 /** Plays the close sequence (`closing`), then applies `end`; at once when reduced motion is preferred or the pane is
  * minimized (nothing shows). A new press meanwhile clears `closing`, and the end is skipped. A request while it plays keeps
- * its timing; a Dismiss's end wins over a Minimize's. It cuts a reverse open short (from the full pane). */
+ * its timing; closing the pane wins over minimizing it. It cuts a reverse open short (from the full pane). */
 function close(end) {
   const d = get();
   if (d.closing) {
@@ -45,7 +47,7 @@ function close(end) {
 }
 
 /** Restores a minimized pane: the close sequence in reverse (`opening`, same length); at once with reduced motion. A new
- * press, Minimize or Dismiss meanwhile clears `opening`. */
+ * press or Minimize meanwhile clears `opening`. */
 function open() {
   const d = get();
   if (!d.minimized) return;
@@ -56,15 +58,16 @@ function open() {
 }
 
 const hasText = (d) => !!(d.committed || d.partial || d.error);
-/** Minimize with nothing to show (no transcript, not recording) closes the pane instead: no restore button that opens to
- * an empty pane. */
+/** Minimize with nothing to show (no transcript, not recording) closes the pane instead: the mic button opens a fresh one. */
 export const minimize = (minimized) => (!minimized ? open() : hasText(get()) || get().recording ? close({ minimized }) : close(IDLE));
 
-export function dismiss() {
-  const r = rec;
-  rec = null; // a session still running stops writing
-  if (r) finish(r);
-  close(IDLE);
+/** The mic button: opens the pane (restoring a minimized one with its transcript), or puts the open one away as Minimize
+ * does. A click while it is closing keeps it open. */
+export function toggleDictation() {
+  const d = get();
+  if (d.closing) return set({ closing: false });
+  if (!d.shown) return set({ ...IDLE, shown: true });
+  minimize(!d.minimized);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -241,7 +244,7 @@ export async function install(model, language) {
   const result = { installed: true, model, language };
   await saveSettings({ dictation: { ...dictationSettings(), ...result } });
   closeInstall(result);
-  toast('Dictation is ready: hold the mic button and speak.');
+  toast('Dictation is ready. The mic button at the bottom right opens it.');
 }
 
 export const cancelInstall = () => api.dictation.cancel();

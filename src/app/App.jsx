@@ -130,10 +130,9 @@ export function App() {
             <BrowserTabs ui={ui} />
             {editor && <Toolbar />}
             {editor && <SidebarToggle />}
-            {/* §7h: the push-to-talk island above the sidebar button (every view) and the bottom column over the toolbar: the
-                transcript pane with the §7c notice stack resting on it */}
+            {/* §7h: the bottom column over the toolbar: the transcript pane with the §7c notice stack resting on it */}
             <Dictation><Notices /></Dictation>
-            {/* §7i: the chat button at the bottom-right (above the push-to-talk island in a workspace) and the panel over the page */}
+            {/* §7i: the right island at the bottom-right (the dictation mic and chat buttons) and the panel over the page */}
             <Assistant />
             {/* the tour card and its ring, above the islands (Onboarding.jsx) */}
             <Onboarding />

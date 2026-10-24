@@ -1,4 +1,4 @@
-import { createContext, useContext, useLayoutEffect, useRef, useState } from 'react';
+import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { cn } from 'cn';
 import {
   AlignCenterHorizontal, AlignCenterVertical, AlignEndHorizontal, AlignEndVertical, AlignHorizontalDistributeCenter, AlignStartHorizontal,
@@ -35,10 +35,13 @@ const ACTIVE = 'size-8 data-[state=on]:bg-(--ui-accent) data-[state=on]:text-whi
 const SNAP_RULES = [['items', 'Other items'], ['board', 'Board edges and centre'], ['grid', '10 px grid', 'board.grid']]; // the third: its keybind (§7k)
 const CHECKER = 'repeating-conic-gradient(#8a8ca0 0 25%, #d0d0da 0 50%) 0 0 / 8px 8px';
 
-/** How the rail's controls are laid out: `dir` 'col' (the vertical rail) or 'wrap' (the quick tools island, §7d: groups
- * wrap in rows); tooltips and popups open on `side` of their button, except that in the island the popovers open beside
- * the whole island (`anchor`, a ref to it) and the tool options at the pointer's x along it (`toolAnchor`). */
+/** How the rail's controls are laid out: `dir` 'col' (the vertical rail) or 'wrap' (the quick tools island, §7d, and the
+ * toolbar: groups wrap in rows); tooltips and popups open on `side` of their button, except that in the island the popovers
+ * open beside the whole island (`anchor`, a ref to it) and the tool options at the pointer's x along it (`toolAnchor`). In
+ * the toolbar (`bar`) the board tools leave Undo and Redo to it and their options to the rail. `off`: every slot greyed out
+ * (the toolbar's board tools with no canvas open). */
 const VERTICAL = { dir: 'col', side: 'right', anchor: null, toolAnchor: null };
+export const BAR = { dir: 'wrap', side: 'top', anchor: null, toolAnchor: null, bar: true };
 export const RailLayout = createContext(VERTICAL);
 
 /** Placement props of a rail popup. */
@@ -50,11 +53,11 @@ function usePopup() {
 /** One fixed rail slot: an icon button, or a toggle when `active` is given. `slot` (PopoverAnchor / PopoverTrigger /
  * DropdownMenuTrigger) wraps the button for its flyout. */
 function RailButton({ title, active, disabled, onClick, slot: Slot, children }) {
-  const { side, anchor, toolAnchor } = useContext(RailLayout);
-  const props = { 'aria-label': title, disabled };
+  const { side, anchor, toolAnchor, off } = useContext(RailLayout);
+  const props = { 'aria-label': title, disabled: disabled || off };
   let button = active === undefined
     ? <Button variant="ghost" size="icon-sm" onClick={onClick} {...props}>{children}</Button>
-    : <Toggle size="sm" className={ACTIVE} pressed={active} onPressedChange={() => onClick()} {...props}>{children}</Toggle>;
+    : <Toggle size="sm" className={ACTIVE} pressed={active && !off} onPressedChange={() => onClick()} {...props}>{children}</Toggle>;
   // In the island a popover is anchored to the whole island instead of the button.
   const island = anchor && (Slot === PopoverAnchor || Slot === PopoverTrigger);
   if (Slot && !(island && Slot === PopoverAnchor)) button = <Slot asChild>{button}</Slot>;
@@ -190,27 +193,38 @@ function TextRail() {
   );
 }
 
+// The snapshot the toolbar's board tools show with no canvas open (all greyed out).
+const IDLE_SNAP = { mode: null, count: 0, canUndo: false, canRedo: false, keepTool: false, bg: null, prefab: null, snap: {}, pen: {}, shape: {}, conn: {} };
+
 /** Board mode: the anchored slots acting on `board`, then its tools. In the quick tools island (§7d) the mode tools come
  * first (nearest the pointer), then the basic shapes; Undo, Redo, Add image and Snapping are left out (keys, paste / drop
- * cover them) and Select also closes the island, so the next board press selects. */
+ * cover them) and Select also closes the island, so the next board press selects. In the toolbar (BAR) every slot shows,
+ * greyed out while `board` is null. */
 export function BoardTools({ board }) {
-  const snap = useSnapshot(board);
+  const layout = useContext(RailLayout);
+  return <RailLayout.Provider value={{ ...layout, off: !board }}><BoardSlots board={board} /></RailLayout.Provider>;
+}
+
+function BoardSlots({ board }) {
+  const snap = useSnapshot(board) ?? IDLE_SNAP;
   const popup = usePopup();
   const [open, setOpen] = useState(null); // 'snap' | 'bg' | 'arrange' | null
+  useEffect(() => setOpen(null), [board]); // the toolbar's slots outlive a board: its flyout goes with it
   const { mode, count } = snap; // count: selected items; the item actions act on all of them
   const act = (fn) => () => {
     fn();
     board.focus(); // the 6c shortcuts keep working right after a click here
   };
   const tool = (m) => act(() => board.setMode(mode === m ? null : m));
-  const flyout = (key) => ({ open: open === key, onOpenChange: (o) => setOpen(o ? key : null) });
+  const flyout = (key) => ({ open: !!board && open === key, onOpenChange: (o) => setOpen(o ? key : null) });
   const strokes = <StrokeControls board={board} value={snap.pen} set={(p) => board.setPen(p)} live />;
   const theme = document.documentElement.dataset.theme;
   // A tool's options show once: under the quick tools island while it is open for this board, else beside the rail.
-  const inIsland = !!useContext(RailLayout).anchor;
+  const { anchor, bar } = useContext(RailLayout);
+  const inIsland = !!anchor;
   const quickHere = useStore((s) => s.quickTools?.board === board);
   const layers = useStore((s) => s.layers);
-  const showTool = (m) => mode === m && (inIsland || !quickHere);
+  const showTool = (m) => mode === m && !bar && (inIsland || !quickHere);
   const kindButton = (k) => (
     <RailButton key={k.kind} title={withKey(k.label, SHAPE_KEYS[k.kind])} active={mode === 'shape' && !snap.prefab && snap.shape.shape === k.kind}
       onClick={act(() => armTile(board, { kind: k.kind }))}><ShapeIcon shape={k.kind} /></RailButton>
@@ -237,8 +251,8 @@ export function BoardTools({ board }) {
     <>
       {!inIsland && (
         <Group first>
-          <RailButton title={withKey('Undo', 'edit.undo')} disabled={!snap.canUndo} onClick={act(() => board.undo())}><Undo2 /></RailButton>
-          <RailButton title={withKey('Redo', 'edit.redo')} disabled={!snap.canRedo} onClick={act(() => board.redo())}><Redo2 /></RailButton>
+          {!bar && <RailButton title={withKey('Undo', 'edit.undo')} disabled={!snap.canUndo} onClick={act(() => board.undo())}><Undo2 /></RailButton>}
+          {!bar && <RailButton title={withKey('Redo', 'edit.redo')} disabled={!snap.canRedo} onClick={act(() => board.redo())}><Redo2 /></RailButton>}
           <RailButton title={withKey('Add image', 'board.image')} active={mode === 'image'} onClick={act(() => (mode === 'image' ? board.setMode(null) : board.pickImages()))}><ImagePlus /></RailButton>
         </Group>
       )}

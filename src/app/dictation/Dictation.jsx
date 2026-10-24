@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { cn } from 'cn';
-import { MessageSquareText, Mic, MicOff, Minimize2 } from 'lucide-react';
+import { Mic, MicOff, Minimize2 } from 'lucide-react';
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter,
   AlertDialogHeader, AlertDialogTitle,
@@ -10,19 +10,18 @@ import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { refocusEditor } from '../actions.js';
 import { Tip } from '../components/Tip.jsx';
-import { can } from '../gates.mjs';
 import { keyIs, withKey } from '../keybinds.js';
 import { getState, useStore } from '../store.js';
 import { viewportRect } from '../viewport.js';
 import { LANGUAGES } from './core.mjs';
 import {
-  cancelInstall, CLOSE_STEPS, closeInstall, deleteModel, dismiss, DISMISS_MS, install, level, minimize, modelInUse, pttDown, pttUp,
-  useDictation, warm,
+  cancelInstall, CLOSE_STEPS, closeInstall, deleteModel, dictationReady, install, level, minimize, modelInUse, pttDown, pttUp,
+  toggleDictation, useDictation, warm,
 } from './dictation.js';
 
-// Push-to-talk dictation chrome (SPEC §7h), mounted in the main column's area (App.jsx): the PTT island above the sidebar
-// button (in a workspace at the bottom-right), the bottom column over the toolbar island (the transcript pane, a pod on top of
-// a card that grows upward, with the §7c notice stack resting on it) and the install dialog; Settings > Dictation shows ModelFiles.
+// Push-to-talk dictation chrome (SPEC §7h), mounted in the main column's area (App.jsx): the bottom column over the toolbar
+// island (the transcript pane, a pod above a card that grows upward, with the §7c notice stack resting on it) and the install
+// dialog; the mic button that opens the pane is in the right island (Chat.jsx), Settings > Dictation shows ModelFiles.
 
 const rem = () => parseFloat(getComputedStyle(document.documentElement).fontSize) || 13;
 const keep = (e) => e.preventDefault(); // buttons that never take the focus from the editor
@@ -49,15 +48,15 @@ export function hold(down, up) {
 let lastBottom = null; // the column's bottom offset over the toolbar island, kept for the views without one
 const GAP = 8; // between the toolbar island, the pane and the notice stack
 
-/** The bottom column's placement (in the main column's area `box`) in the page's viewport (viewport.js): centred, its bottom
- * 8 px over the toolbar island; the pane's width (at most 85 % of the island's width, 74 % of the viewport without it) and
- * greatest height (25 % of the viewport's). Measured again when the view, the viewport (e.g. the shape panel), the area or
- * the island changes size. */
-function useGeometry(islandRef) {
+/** The bottom column's placement (in the main column's area, the parent of `anchorRef`) in the page's viewport (viewport.js):
+ * centred, its bottom 8 px over the toolbar island; the pane's width (at most 85 % of the island's width, 74 % of the
+ * viewport without it) and greatest height (25 % of the viewport's). Measured again when the view, the viewport (e.g. the
+ * shape panel), the area or the island changes size. */
+function useGeometry(anchorRef) {
   const view = useStore((s) => s.view);
   const [geo, setGeo] = useState(null);
   useLayoutEffect(() => {
-    const box = islandRef.current.parentElement;
+    const box = anchorRef.current.parentElement;
     const bar = box.querySelector(':scope > .bottom-3.left-1\\/2'); // the toolbar island (editor view only)
     const measure = () => {
       const c = box.getBoundingClientRect();
@@ -80,64 +79,21 @@ function useGeometry(islandRef) {
   return geo;
 }
 
-const ISLAND_MS = 190; // the island growing out of the mic for the restore button, or shrinking back into it
-const ICON_MS = 100; // the restore icon fading in at the growth's end, or out at the shrink's start
-
-function PttIsland({ islandRef }) {
+/** The right island's mic button (shared with the chat button, Chat.jsx), once dictation can run: opens the pane
+ * (dictation mode) or puts it away, as Minimize does; pressed while the pane is open, red while recording. */
+export function DictationButton({ size, icon, side }) {
   const d = useDictation();
-  const restoreRef = useRef(null);
-  // A workspace has its sidebar button in its header and its content starts at the left (Board columns, Backlog rows and
-  // footer): the island sits at the bottom-right instead, compact (one row of small buttons) and translucent, clear of the
-  // 10 px scrollbars and of the Backlog's rows.
-  const view = useStore((s) => s.view);
-  const workspace = !can('view.editor', { view });
-  const size = workspace ? 'icon-xs' : 'icon-sm';
-  const icon = workspace ? 'size-3.5' : undefined;
-  const side = workspace ? 'top' : 'right';
-  // The restore button sits above the mic (left of it in a workspace), so the mic never moves. When Minimize's sequence ends
-  // the island's edge grows out from the mic to fit it and the icon fades in at the growth's end; while the pane opens again
-  // the icon fades out and the island shrinks back into the mic (held there until the button goes when the pane is open).
-  // A view change (the island's layout) meanwhile shows the step's end state at once, without motion.
-  // The restore button only for a minimized pane with something in it (a transcript still on its way grows it when it lands).
-  const phase = d.shown && (d.opening ? 'shrink' : d.minimized && !!(d.committed || d.partial || d.error) && 'grow');
-  const lastPhase = useRef(false);
-  useLayoutEffect(() => {
-    const relayout = phase === lastPhase.current;
-    lastPhase.current = phase;
-    if (!phase || (relayout && phase === 'grow') || matchMedia('(prefers-reduced-motion: reduce)').matches) return undefined;
-    const isl = islandRef.current, btn = restoreRef.current;
-    const dim = workspace ? 'width' : 'height';
-    const full = `${isl.getBoundingClientRect()[dim]}px`;
-    const small = `${isl.getBoundingClientRect()[dim] - btn.getBoundingClientRect()[dim] - parseFloat(getComputedStyle(isl).gap)}px`;
-    const anims = phase === 'shrink'
-      ? [isl.animate({ [dim]: [full, small], overflow: ['hidden', 'hidden'] }, { duration: ISLAND_MS, easing: 'ease-in', fill: 'forwards' }),
-        btn.animate({ opacity: [1, 0] }, { duration: ICON_MS, easing: 'ease-in', fill: 'forwards' })]
-      : [isl.animate({ [dim]: [small, full], overflow: ['hidden', 'hidden'] }, { duration: ISLAND_MS, easing: 'ease-out' }),
-        btn.animate({ opacity: [0, 1] }, { delay: ISLAND_MS - ICON_MS, duration: ICON_MS, easing: 'ease-out', fill: 'backwards' })];
-    if (relayout) anims.forEach((a) => a.finish());
-    return () => anims.forEach((a) => a.cancel());
-  }, [phase, workspace]);
-  const restore = !!phase;
+  const ready = useStore((s) => dictationReady(s.settings?.dictation));
+  if (!ready) return null;
+  const open = d.shown && !d.minimized && !d.closing;
   return (
-    <div ref={islandRef} data-dictation-island
-      className={cn('absolute z-30 flex gap-1 rounded-island border bg-island shadow-xl', workspace
-        ? 'right-4 bottom-3 flex-row-reverse' : 'bottom-[calc(3.75rem+2px)] left-2 flex-col-reverse p-1')}>
-      <Tip title={withKey('Hold to dictate', 'app.dictate')} side={side}>
-        <Button variant="ghost" size={size} aria-label="Hold to dictate" data-agent-deny aria-pressed={d.recording} onPointerEnter={warm}
-          className={cn(d.recording && 'bg-destructive/20 text-destructive hover:bg-destructive/25 hover:text-destructive')}
-          {...hold(pttDown, pttUp)}>
-          <Mic className={icon} />
-        </Button>
-      </Tip>
-      {restore && (
-        <Tip title="Show transcript" side={side}>
-          <Button ref={restoreRef} variant="ghost" size={size} aria-label="Show transcript" inert={d.opening || undefined} onMouseDown={keep}
-            onClick={() => minimize(false)}>
-            <MessageSquareText className={icon} />
-          </Button>
-        </Tip>
-      )}
-    </div>
+    <Tip title="Dictation" side={side}>
+      <Button variant="ghost" size={size} aria-label="Dictation" aria-pressed={open} data-dictation-button data-agent-deny onPointerEnter={warm}
+        onMouseDown={keep} onClick={toggleDictation}
+        className={cn(open && 'bg-accent', d.recording && 'bg-destructive/20 text-destructive hover:bg-destructive/25 hover:text-destructive')}>
+        <Mic className={icon} />
+      </Button>
+    </Tip>
   );
 }
 
@@ -169,32 +125,6 @@ function Waveform() {
   );
 }
 
-/** "Dismiss": closes the pane only after a 3 s hold, filling left to right meanwhile; an early release resets it. */
-function DismissButton() {
-  const [held, setHeld] = useState(false);
-  const timer = useRef(null);
-  const down = () => {
-    setHeld(true);
-    clearTimeout(timer.current);
-    timer.current = setTimeout(dismiss, DISMISS_MS);
-  };
-  const up = () => {
-    clearTimeout(timer.current);
-    setHeld(false);
-  };
-  useEffect(() => () => clearTimeout(timer.current), []);
-  return (
-    <Tip title="Hold 3 seconds to close" side="top">
-      <Button variant="outline" size="xs" aria-label="Dismiss (hold 3 seconds)" className="relative overflow-hidden rounded-full px-3"
-        {...hold(down, up)}>
-        <span aria-hidden data-dismiss-fill style={{ transitionDuration: held ? `${DISMISS_MS}ms` : '0ms' }}
-          className={cn('absolute inset-0 origin-left bg-destructive/45 transition-transform ease-linear', held ? 'scale-x-100' : 'scale-x-0')} />
-        <span className="relative">Dismiss</span>
-      </Button>
-    </Tip>
-  );
-}
-
 function Pane({ geo }) {
   const d = useDictation();
   const paneRef = useRef(null);
@@ -215,8 +145,8 @@ function Pane({ geo }) {
   }, [d.committed, d.partial, textH]);
   const text = !!(d.committed || d.partial || d.error);
   // The close sequence (dictation.js CLOSE_STEPS), played over the shown pane while `closing`: the card narrows to the pod's
-  // width (its text fading first), its height falls (its bottom stays on the column's bottom, so the pod comes down with its
-  // top), the pod narrows to a circle (its controls fading), then fades out while shrinking as the pane gives up its place in
+  // width (its text fading first), its height falls (its bottom stays on the column's bottom, so the pod above comes down with
+  // it), the pod narrows to a circle (its controls fading), then fades out while shrinking as the pane gives up its place in
   // the column (the notice stack comes down to the column's bottom). While `opening` (restore) it plays backwards, each step
   // mirrored in time (ease-in-out is symmetric). Cancelled with `closing` / `opening`: a new press shows the pane at once, and
   // the end hides it (or leaves it open) in the same frame.
@@ -228,7 +158,7 @@ function Pane({ geo }) {
     const px = (n) => `${n}px`;
     // Measured before any animation applies (a reversed one shows its end state at once), unrounded.
     const [paneR, scrollR, podR, cardR] = [pane, scroll, pod, card].map((el) => el.getBoundingClientRect());
-    const folded = podR.height / 2 + 2; // the card's least height: its top padding and borders, behind the pod's lower half
+    const folded = text ? 2 : 0; // the card's least height: its borders (none without text)
     const lead = text ? narrow + fold : 0; // without text the card is hidden already (and at its least height)
     const total = lead + round + fade;
     const play = (el, keyframes, delay, duration) => el.animate(keyframes, d.opening
@@ -253,29 +183,37 @@ function Pane({ geo }) {
     }
     return () => anims.forEach((a) => a.cancel());
   }, [d.closing, d.opening]);
-  // The card hides behind the pod's lower half until text arrives, then grows upward (its bottom stays put).
-  const height = text ? Math.min(geo.maxH, textH + 2.5 * rem() + 2) : 1.25 * rem();
+  // The card shows under the pod once text arrives and grows upward (its bottom stays put), lifting the pod.
+  const height = text ? Math.min(geo.maxH, textH + 1.25 * rem() + 2) : 0;
   if (!d.shown) return null;
   // In the bottom column's flow, under the notice stack, which follows its top. Minimized it leaves the flow (hidden, inert).
   return (
     <div ref={paneRef} data-dictation-pane role="region" aria-label="Dictation" aria-hidden={d.minimized || undefined} inert={d.minimized || undefined}
       className={cn('pointer-events-none z-30 flex w-full flex-col items-center', d.minimized ? 'invisible absolute inset-x-0 bottom-0' : 'relative')}>
-      {/* The controls keep their width while the pod narrows over them (centred, clipped). */}
-      <div ref={podRef} data-pod className={cn('relative z-10 flex h-10 w-[24rem] max-w-full shrink-0 justify-center overflow-hidden rounded-full border bg-card shadow-lg',
+      {/* The controls keep their width while the pod narrows over them (centred, clipped): Minimize, then the rest of the pod
+          is the Hold to dictate button, the mic at its left and, while it is held, the live level. */}
+      <div ref={podRef} data-pod className={cn('relative z-10 flex h-10 w-[24rem] max-w-full shrink-0 justify-center overflow-hidden rounded-full border bg-island shadow-xl',
         !moving && 'pointer-events-auto')}>
-        <div className="flex w-[calc(24rem-2px)] shrink-0 items-center justify-between gap-2 px-1.5">
+        <div className="flex w-[calc(24rem-2px)] shrink-0 items-center gap-1 px-1">
           <Tip title="Minimize" side="top">
             <Button variant="ghost" size="icon-sm" aria-label="Minimize" className="rounded-full" onMouseDown={keep} onClick={() => minimize(true)}>
               <Minimize2 />
             </Button>
           </Tip>
-          {d.recording ? <Waveform /> : <MicOff aria-label="Microphone off" className="size-4 text-muted-foreground" />}
-          <DismissButton />
+          <Tip title={withKey('Hold to dictate', 'app.dictate')} side="top" wrap="min-w-0 flex-1">
+            <Button variant="ghost" size="sm" aria-label="Hold to dictate" aria-pressed={d.recording} data-agent-deny onPointerEnter={warm}
+              className={cn('h-8 min-w-0 flex-1 justify-start rounded-full px-2.5 text-muted-foreground',
+                d.recording && 'bg-destructive/15 text-destructive hover:bg-destructive/20 hover:text-destructive')}
+              {...hold(pttDown, pttUp)}>
+              {d.recording ? <Mic /> : <MicOff />}
+              <span className="flex min-w-0 flex-1 justify-center pr-6">{d.recording ? <Waveform /> : 'Hold to dictate'}</span>
+            </Button>
+          </Tip>
         </div>
       </div>
       {/* The pane's box is wider than the pod: only the pod and a shown card take the pointer, the rest clicks through. */}
-      <div ref={cardRef} data-dictation-card className={cn('-mt-5 w-full overflow-hidden rounded-island border bg-island pt-5 shadow-xl',
-        text && 'transition-[height] duration-300 ease-out', text && !moving && 'pointer-events-auto')}
+      <div ref={cardRef} data-dictation-card className={cn('w-full overflow-hidden rounded-island bg-island shadow-xl',
+        text ? 'mt-1 border' : 'border-0', text && 'transition-[height] duration-300 ease-out', text && !moving && 'pointer-events-auto')}
         style={{ height, opacity: text ? 1 : 0 }}>
         <div ref={scrollRef} className="h-full overflow-y-auto px-4 pt-2 pb-3">
           <div ref={textRef} data-transcript className="cursor-text text-center text-sm break-words whitespace-pre-wrap select-text">
@@ -475,10 +413,10 @@ function InstallDialog() {
  * children are in normal flow, so the stack follows the pane's top in every frame. The column itself takes no pointer and
  * makes no stacking context (no z-index, no transform): the pane (z-30) and the stack (z-40) layer with the rest of the area. */
 export function Dictation({ children }) {
-  const islandRef = useRef(null);
-  const geo = useGeometry(islandRef);
+  const anchorRef = useRef(null);
+  const geo = useGeometry(anchorRef);
   // The Hold to dictate chord (default Ctrl+Shift+D, §7k) holds to talk from anywhere (window capture, not while a dialog is
-  // open): down starts a session as the mic button does, releasing its key or one of its modifiers ends it, as does the window
+  // open): down starts a session as the pod's Hold to dictate does, releasing its key or one of its modifiers ends it, as does the window
   // losing the focus (the key-up never arrives then).
   useEffect(() => {
     let held = null; // the held key event's {code, ctrl, shift, alt}
@@ -507,7 +445,7 @@ export function Dictation({ children }) {
   }, []);
   return (
     <>
-      <PttIsland islandRef={islandRef} />
+      <span ref={anchorRef} hidden />
       {geo && (
         <div data-bottom-column className="pointer-events-none absolute flex flex-col items-center"
           style={{ left: geo.left - geo.width / 2, bottom: geo.bottom, width: geo.width, gap: GAP }}>

@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { hasForum, login, openSettings } from '../actions.js';
 import { refreshStatus, usable, useAssistant } from '../assistant/assistant.js';
-import { openInstall } from '../dictation/dictation.js';
+import { dictationReady, openInstall } from '../dictation/dictation.js';
 import { keyLabel, withKey } from '../keybinds.js';
 import { useStore } from '../store.js';
 
@@ -15,7 +15,7 @@ const Kbd = ({ id }) => <kbd className="rounded-md border bg-muted/40 px-1.5 py-
 const Note = ({ children }) => <span className="text-xs text-muted-foreground">{children}</span>;
 
 function DictationActions({ next }) {
-  const installed = useStore((s) => !!s.settings?.dictation?.installed);
+  const installed = useStore((s) => dictationReady(s.settings?.dictation));
   if (installed) return <Note>Dictation is installed.</Note>;
   return (
     <>
@@ -103,14 +103,14 @@ export const STEPS = [
   {
     id: 'dictation',
     title: 'Dictation',
-    body: () => <p>{withKey('Hold the mic button', 'app.dictate')} and speak. The words appear in a pane at the bottom, where you can copy them. Dictation runs Whisper on this computer after a one-time download, so no audio leaves it.</p>,
-    target: '[data-dictation-island]', view: null, Actions: DictationActions,
+    body: () => <p>Once dictation is installed, the mic button at the bottom right opens its pane. Hold its Hold to dictate button and speak, or hold <Kbd id="app.dictate" /> anywhere. The words appear in the pane, where you can copy them. Dictation runs Whisper on this computer after a one-time download, so no audio leaves it.</p>,
+    target: '[data-dictation-button]', view: null, Actions: DictationActions,
   },
   {
     id: 'assistant',
     title: 'Assistant',
-    body: () => <p>{withKey('The chat button', 'app.assistant')} opens an assistant that can read and edit your drafts and plans. It needs an API key from a cloud provider, and Qwen Cloud has a free tier.</p>,
-    target: '[data-chat-island]', view: null, Actions: AssistantActions,
+    body: () => <p>Once an assistant is set up, {withKey('the chat button', 'app.assistant')} at the bottom right opens it. It can read and edit your drafts and plans. It needs an API key from a cloud provider, and Qwen Cloud has a free tier.</p>,
+    target: '[data-chat-button]', view: null, Actions: AssistantActions,
   },
   {
     id: 'threads',

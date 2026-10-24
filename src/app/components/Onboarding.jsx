@@ -21,7 +21,7 @@ import { STEPS } from './onboarding-steps.jsx';
 const PAD = 4; // px between a target and its ring
 const GAP = 12; // px between the ring and the card
 const EDGE = 8; // px the card keeps inside the window
-const STRIP = 64; // px along the main column's left edge where the board rail, the push-to-talk island and the sidebar button float
+const STRIP = 64; // px along the main column's left edge where the board rail and the sidebar button float
 const ARROW = { // the arrow on the card's edge that faces the target, `a` px along that edge (the card is `dir` of the target)
   right: (a) => ({ left: -1, top: a, translate: '-50% -50%' }),
   left: (a) => ({ right: -1, top: a, translate: '50% -50%' }),

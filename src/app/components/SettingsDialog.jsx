@@ -1159,7 +1159,7 @@ export function SettingsDialog({ settings: s, section, onClose }) {
             </div>
           </Section>
 
-          <Section id="dictation" title="Dictation" hint="Hold the mic button">
+          <Section id="dictation" title="Dictation" hint="The mic button at the bottom right opens it">
             <DictationSection value={dictation} onChange={setDictation} />
           </Section>
 

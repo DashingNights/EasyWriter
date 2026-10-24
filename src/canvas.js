@@ -632,7 +632,7 @@ class CanvasSession {
   // and tab strip (§7j) keep working.
   onPointerDown = (e) => {
     const t = e.target instanceof Element ? e.target : null;
-    if (e.button !== 0 || !t?.closest('main') || this.art.contains(t) || t.closest('[data-board-chrome], [data-assistant-panel], [data-chat-island], [data-browser-pane], [data-browser-tabs]')) return;
+    if (e.button !== 0 || !t?.closest('main') || this.art.contains(t) || t.closest('[data-board-chrome], [data-assistant-panel], [data-chat-island], [data-dictation-pane], [data-browser-pane], [data-browser-tabs]')) return;
     e.stopPropagation();
     swallowClick();
     this.close(true);

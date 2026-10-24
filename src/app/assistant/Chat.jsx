@@ -12,11 +12,11 @@ import { assistantMode } from '../commands/tool-sets.mjs';
 import { AgentAsk } from '../components/AgentAsk.jsx';
 import { Tip } from '../components/Tip.jsx';
 import { joinText } from '../dictation/core.mjs';
-import { hold } from '../dictation/Dictation.jsx';
-import { pttDown, pttUp, warm as warmDictation } from '../dictation/dictation.js';
+import { DictationButton, hold } from '../dictation/Dictation.jsx';
+import { dictationReady, pttDown, pttUp, warm as warmDictation } from '../dictation/dictation.js';
 import { can } from '../gates.mjs';
 import { keyIs, withKey } from '../keybinds.js';
-import { getState, setState, useStore } from '../store.js';
+import { getState, setState, useStore, WORKER } from '../store.js';
 import { viewportRect } from '../viewport.js';
 // LOCAL LLM (commented out 2026-10-07): BACKENDS, cancelInstall, closeInstall, install, openInstall, size.
 import {
@@ -30,9 +30,9 @@ import { Markdown } from './Markdown.jsx';
 import { anchorPanel, dragPanel, placePanel } from './panel.mjs';
 
 // The assistant's chat chrome (SPEC §7i; automation plan §13.4), mounted once in the main column's area (App.jsx) after the
-// dictation chrome: the chat button (the mirror of the push-to-talk island at the bottom-right; in a workspace directly above
-// that island), the panel (floating over the page in its viewport, movable and resizable from its corners, anchored to the
-// nearer viewport edges; never changes [data-viewport]) and the install dialog.
+// dictation chrome: the right island (the dictation mic button and the chat button, each once its feature is set up), the
+// panel (floating over the page in its viewport, movable and resizable from its corners, anchored to the nearer viewport
+// edges; never changes [data-viewport]) and the install dialog.
 
 const rem = () => parseFloat(getComputedStyle(document.documentElement).fontSize) || 13;
 const keep = (e) => e.preventDefault(); // buttons that never take the focus
@@ -41,39 +41,48 @@ const CORNER = 10; // px from a corner that resizes
 // const PRIVACY = 'Everything you send stays on this computer.'; // LOCAL LLM (commented out 2026-10-07)
 const privacy = (label = 'Google AI') => `What you send, attachments and pictures included, goes to ${label}.`; // status().providerLabel
 
-function ChatButton({ islandRef }) {
+/** The right island: the dictation mic button over the chat button at the editor's bottom-right corner (in a workspace one
+ * compact row there, clear of its scrollbars and the Backlog's rows). Each shows once its feature is set up (`chat`: an
+ * assistant that can run); with neither the island stays in place unseen, as the chat panel is placed from it. */
+function RightIsland({ islandRef, chat }) {
   const a = useAssistant();
   const workspace = !can('view.editor', { view: useStore((s) => s.view) });
+  const dictation = useStore((s) => dictationReady(s.settings?.dictation));
   const Icon = a.turn ? Bot : MessageSquare;
+  const size = workspace ? 'icon-xs' : 'icon-sm';
+  const icon = workspace ? 'size-3.5' : undefined;
   return (
-    <div ref={islandRef} data-chat-island
-      className={cn('absolute z-30 flex rounded-island border bg-island shadow-xl', workspace
-        ? 'right-4 bottom-[calc(2.75rem+2px)]' : 'right-2 bottom-[calc(3.75rem+2px)] p-1')}>
-      <Tip title={withKey('Assistant', 'app.assistant')} side="left">
-        <Button variant="ghost" size={workspace ? 'icon-xs' : 'icon-sm'} aria-label="Assistant" aria-expanded={a.open} aria-controls="assistant-panel"
-          onMouseDown={keep} onClick={() => toggleChat()}>
-          <Icon className={workspace ? 'size-3.5' : undefined} />
-        </Button>
-      </Tip>
+    <div ref={islandRef} data-chat-island data-right-island
+      className={cn('absolute z-30 flex gap-1 rounded-island border bg-island shadow-xl', workspace ? 'right-4 bottom-3' : 'right-2 bottom-3 flex-col p-1',
+        !chat && !dictation && 'invisible')}>
+      <DictationButton size={size} icon={icon} side={workspace ? 'top' : 'left'} />
+      {chat && (
+        <Tip title={withKey('Assistant', 'app.assistant')} side={workspace ? 'top' : 'left'}>
+          <Button variant="ghost" size={size} aria-label="Assistant" aria-expanded={a.open} aria-controls="assistant-panel" data-chat-button
+            onMouseDown={keep} onClick={() => toggleChat()}>
+            <Icon className={icon} />
+          </Button>
+        </Tip>
+      )}
     </div>
   );
 }
 
-/** The main column's area, the page's viewport and the chat button as client rects, measured again when the view, the window,
- * the area or the viewport changes size. */
+/** The main column's area, the page's viewport, the right island and the toolbar island (or null) as client rects, measured
+ * again when the view, the window, the area, the viewport or either island changes size. */
 function useFrame(islandRef) {
   const view = useStore((s) => s.view);
   const [frame, setFrame] = useState(null);
   useLayoutEffect(() => {
     const box = islandRef.current.parentElement;
+    const bar = box.querySelector('[data-agent-area="toolbar"]');
     const measure = () => {
       const v = viewportRect();
-      setFrame({ box: box.getBoundingClientRect(), vp: v, btn: islandRef.current.getBoundingClientRect() });
+      setFrame({ box: box.getBoundingClientRect(), vp: v, btn: islandRef.current.getBoundingClientRect(), bar: bar?.isConnected ? bar.getBoundingClientRect() : null });
     };
     measure();
     const ro = new ResizeObserver(measure);
-    ro.observe(box);
-    ro.observe(viewportRect().el);
+    for (const el of [box, viewportRect().el, islandRef.current, bar]) if (el) ro.observe(el);
     addEventListener('resize', measure);
     return () => {
       ro.disconnect();
@@ -351,9 +360,9 @@ function ChatPanel({ islandRef }) {
   const r0 = rem();
   const m = 0.5 * r0; // kept to every viewport edge: the chat button's inset, so the default place lines up with it
   const min = { w: 18 * r0, h: 20 * r0 };
-  const { box, vp, btn } = frame;
-  // Default place: right edges aligned with the chat button, the bottom 8 px above it, 26 × 36 rem.
-  const place = stored ?? { x: 'right', dx: vp.right - btn.right, y: 'bottom', dy: vp.bottom - btn.top + 8, w: 26 * r0, h: 36 * r0 };
+  const { box, vp, btn, bar } = frame;
+  // Default place: right edges aligned with the right island, the bottom 8 px above it and the toolbar island, 26 × 36 rem.
+  const place = stored ?? { x: 'right', dx: vp.right - btn.right, y: 'bottom', dy: vp.bottom - Math.min(btn.top, bar?.top ?? Infinity) + 8, w: 26 * r0, h: 36 * r0 };
   const r = live ?? placePanel(place, vp, min, m);
 
   const cornerAt = (e) => {
@@ -670,6 +679,15 @@ export function Assistant() {
   const open = useAssistant().open;
   const pane = useStore((s) => s.workerPane && !!s.worker); // the background window's live view (§7i Background window)
   const off = useStore((s) => s.settings?.assistant?.provider === 'none'); // Settings > Assistant > Provider > None
+  const ready = usable(useAssistant().status);
+  const conf = useStore((s) => s.settings?.assistant);
+  useEffect(() => { if (!WORKER) refreshStatus(); }, [conf]); // whether the chat button shows
+  useEffect(() => { // and again on coming back to the window (a Claude Code or Codex installed meanwhile)
+    if (WORKER) return undefined;
+    const f = () => refreshStatus();
+    addEventListener('focus', f);
+    return () => removeEventListener('focus', f);
+  }, []);
   useEffect(() => {
     const onKey = (e) => {
       if (!keyIs('app.assistant', e)) return; // §7k
@@ -684,7 +702,7 @@ export function Assistant() {
   }, []);
   return (
     <>
-      {!off && <ChatButton islandRef={islandRef} />}
+      <RightIsland islandRef={islandRef} chat={!off && ready} />
       {!off && open && <ChatPanel islandRef={islandRef} />}
       {pane && <BackgroundPane />}
       {/* <InstallDialog /> LOCAL LLM (commented out 2026-10-07) */}
