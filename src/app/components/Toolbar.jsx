@@ -136,7 +136,7 @@ export function ToolSelect({ title, value, onChange, placeholder, className, dis
 
 // The block style, font and size selects over textTools(ed) `T`.
 export const BlockSelect = ({ T }) => (
-  <ToolSelect title="Block style" placeholder="Style" className="w-26" value={T.block.value} onChange={T.block.set} disabled={T.block.disabled}>
+  <ToolSelect title="Block style" placeholder="Style" className="w-30" value={T.block.value} onChange={T.block.set} disabled={T.block.disabled}>
     <SelectItem value="p">Paragraph</SelectItem>
     {/* Each heading shown at a size like its own (list only; the trigger keeps the toolbar's size). */}
     {[1, 2, 3, 4, 5, 6].map((l) => (
@@ -213,6 +213,9 @@ export const Group = ({ children }) => (
     {children}
   </div>
 );
+
+/** Selects side by side, a little apart so their borders do not touch, and clear of the group's separator. */
+export const SelectRow = ({ children }) => <div className="flex items-center gap-1 px-0.5">{children}</div>;
 
 /** Groups in rows that wrap between groups (the toolbar, the quick tools island). The groups start one separator width
  * left of this overflow-hidden box: a row never begins with a separator. */
@@ -342,9 +345,11 @@ export function Toolbar() {
             <ToolButton {...redo} />
           </Group>
           <Group>
-            <BlockSelect T={T} />
-            <FontSelect T={T} />
-            <SizeSelect T={T} />
+            <SelectRow>
+              <BlockSelect T={T} />
+              <FontSelect T={T} />
+              <SizeSelect T={T} />
+            </SelectRow>
           </Group>
           <Group>
             <ToolButton {...T.bold} />
