@@ -165,7 +165,7 @@ const CORE = [
     options: (c) => h(BgSelect, { board: c.board, bg: c.snap.bg }),
     keywords: ['bg', 'board colour', 'board color', 'background colour', 'background color', 'backdrop', 'transparent',
       'white', 'black', 'post', 'backround', 'backgroud'] },
-  { id: 'layers', label: 'Layers', group: 'Board', icon: h(Layers), needs: BOARD, toggle: true, active: () => getState().layers, run: toggleLayers,
+  { id: 'layers', label: 'Layers', group: 'Board', icon: h(Layers), needs: BOARD, toggle: true, active: () => getState().settings?.layersPanel ?? true, run: toggleLayers,
     keywords: ['layers panel', 'layer list', 'layer', 'outline', 'tree', 'objects', 'item list', 'z order', 'order', 'reorder', 'stack',
       'hide', 'lock', 'show', 'unlock', 'groups', 'layres', 'layrs'] },
   { id: 'add-text', label: 'Add text', group: 'Insert', icon: h(Type), key: 'board.text', needs: BOARD, run: tool('text'), notice: 'Text: click to place',

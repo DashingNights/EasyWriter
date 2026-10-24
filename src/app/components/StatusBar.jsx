@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react';
 import { cn } from 'cn';
-import { ChevronUp } from 'lucide-react';
+import { ChevronUp, SpellCheck } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Slider } from '@/components/ui/slider';
-import { hasForum, login, openSettings, refocusEditor, setZoom } from '../actions.js';
+import { hasForum, login, openSettings, refocusEditor, saveSettings, setZoom } from '../actions.js';
 import { on } from '../commands.js';
 import { useStore } from '../store.js';
 import { InlineInput } from './InlineInput.jsx';
@@ -69,9 +69,17 @@ export function StatusBar() {
   const forum = useStore((s) => hasForum(s.settings));
   const zoom = useStore((s) => s.zoom);
   const zoomPct = useStore((s) => s.zoomPct);
+  const spell = useStore((s) => s.settings?.spellCheck ?? true);
   const [editing, setEditing] = useState(false);
   return (
     <footer className="col-span-2 flex h-8 items-center gap-4 border-t px-2 text-xs text-muted-foreground">
+      {/* The main window's spell checker (settings.spellCheck, main.js setSpellCheckerEnabled): off clears the underlines. */}
+      <Tip title={spell ? 'Turn spell check off' : 'Turn spell check on'} side="top">
+        <Button variant="ghost" size="xs" aria-pressed={spell} className="-mx-1 font-normal text-muted-foreground"
+          onClick={() => { saveSettings({ spellCheck: !spell }); refocusEditor(); }}>
+          <SpellCheck className={cn(!spell && 'opacity-50')} />{spell ? 'Spell check on' : 'Spell check off'}
+        </Button>
+      </Tip>
       <span className={cn(saveError && 'text-destructive')}>{saveLabel}</span>
       <span>{`${words} ${words === 1 ? 'word' : 'words'}`}</span>
       {/* The forum's sign-in (once a project has a forum thread): opens the forum window, to log in or to see the forum. */}

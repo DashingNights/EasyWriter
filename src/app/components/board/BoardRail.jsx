@@ -223,7 +223,7 @@ function BoardSlots({ board }) {
   const { anchor, bar } = useContext(RailLayout);
   const inIsland = !!anchor;
   const quickHere = useStore((s) => s.quickTools?.board === board);
-  const layers = useStore((s) => s.layers);
+  const layers = useStore((s) => s.settings?.layersPanel ?? true);
   const showTool = (m) => mode === m && !bar && (inIsland || !quickHere);
   const kindButton = (k) => (
     <RailButton key={k.kind} title={withKey(k.label, SHAPE_KEYS[k.kind])} active={mode === 'shape' && !snap.prefab && snap.shape.shape === k.kind}

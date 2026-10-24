@@ -5,13 +5,14 @@ import { Button } from '@/components/ui/button';
 import { htmlToText } from '../../../flow/graph.mjs';
 import { layerRows, selectable } from '../../../flow/model.mjs';
 import { kindOf } from '../../../flow/shapes.mjs';
-import { getState, setState, useStore } from '../../store.js';
+import { saveSettings } from '../../actions.js';
+import { getState, useStore } from '../../store.js';
 import { CHROME, keepFocus, ShapeIcon } from './controls.jsx';
 
-/** Hides or shows the layers panel for this session (the rail's Layers button, tool search); it is open whenever a board is
- * active (store.js `layers`). */
+/** Shows or hides the layers panel's rows, kept in settings (`layersPanel`): its title, the rail's Layers button, tool search.
+ * Hidden, the panel is its title bar. */
 export function toggleLayers() {
-  setState({ layers: !getState().layers });
+  saveSettings({ layersPanel: !(getState().settings?.layersPanel ?? true) });
 }
 
 const text = (html) => htmlToText(html).replace(/\s+/g, ' ').trim().slice(0, 80);
@@ -31,18 +32,24 @@ const line = (after) => cn('relative before:absolute before:inset-x-1 before:z-1
 
 /** §6c Layers panel: the active board's items as rows, topmost first (model.mjs layerRows), right of the rail and level with
  * its top (`style`: BoardRail places it). Persistent chrome: board presses keep working and the board keeps the focus. Each
- * board's expanded groups are kept while the rail is mounted. */
+ * board's expanded groups are kept while the rail is mounted. Its title shows or hides the rows (toggleLayers). */
 export function LayersPanel({ board, className, style }) {
-  const open = useStore((s) => s.layers);
+  const open = useStore((s) => s.settings?.layersPanel ?? true);
   const expanded = useRef(new WeakMap()); // board → its expanded group ids
-  if (!board || !open) return null;
+  if (!board) return null;
   if (!expanded.current.has(board)) expanded.current.set(board, new Set());
+  const Chevron = open ? ChevronDown : ChevronRight;
   return (
     <div {...CHROME} aria-label="Layers" onMouseDown={keepFocus} style={style}
       // left: past the rail (0.5rem + 2.5rem + its border) with a small gap
-      className={cn('absolute left-[3.5rem] z-30 flex w-60 flex-col overflow-y-auto rounded-island border bg-island p-1 text-sm shadow-xl [scrollbar-width:thin] [scrollbar-color:var(--border)_transparent]', className)}>
-      <div className="px-2 py-1 text-xs font-medium text-muted-foreground">Layers</div>
-      <Rows board={board} expanded={expanded.current.get(board)} />
+      className={cn('absolute left-[3.5rem] z-30 flex flex-col overflow-y-auto rounded-island border bg-island p-1 text-sm shadow-xl [scrollbar-width:thin] [scrollbar-color:var(--border)_transparent]', open ? 'w-60' : 'w-fit', className)}>
+      <button type="button" aria-expanded={open} aria-label={open ? 'Hide layers' : 'Show layers'}
+        onClick={() => { toggleLayers(); board.focus(); }}
+        className="flex items-center gap-1 rounded-md py-1 pr-2 text-xs font-medium text-muted-foreground hover:bg-accent/60 hover:text-foreground">
+        <span className="flex w-5 shrink-0 justify-center"><Chevron className="size-3.5" /></span>
+        Layers
+      </button>
+      {open && <Rows board={board} expanded={expanded.current.get(board)} />}
     </div>
   );
 }

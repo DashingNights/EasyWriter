@@ -76,6 +76,8 @@ const DEFAULT_SETTINGS = {
   motion: {}, // {name: false} turns one animation off when reduceMotion is custom (src/app/motion.js MOTION)
   defaultTag: 'todo', // the tag a new draft gets on its first save ('' none; Settings > Tags, drafts-meta.js defaultTag)
   hideBackupWarning: false, // the sidebar's red warning of a GitHub backup that is not set up is turned off (Sidebar.jsx BackupWarning)
+  layersPanel: true, // a board's layers panel shows its rows; off: only its title bar (LayersPanel.jsx toggleLayers)
+  spellCheck: true, // the main window's spell checker (the status bar's Spell check button; session.setSpellCheckerEnabled)
   baseFont: '',
   baseSize: 100,
   presets: [
@@ -143,6 +145,7 @@ function setSettings(partial) {
     const merged = { ...(await getSettings()), ...partial };
     await writeJsonAtomic(settingsFile(), merged);
     if ('uiScale' in partial) applyUiScale(mainWin, merged.uiScale);
+    if ('spellCheck' in partial && mainWin && !mainWin.isDestroyed()) mainWin.webContents.session.setSpellCheckerEnabled(merged.spellCheck !== false);
     if ('uiTheme' in partial) applyNativeTheme(merged.uiTheme);
     if ('keybinds' in partial) refreshKeys(merged);
     // Settings > MCP turns the gateway on or off live; the assistant on Claude Code or Codex keeps its pipe open
@@ -692,7 +695,10 @@ function createMainWindow() {
     const { misspelledWord, dictionarySuggestions: suggestions, linkURL, editFlags } = params;
     wc.send('editMenu.open', { misspelledWord, suggestions, linkURL, editFlags });
   });
-  wc.on('did-finish-load', () => getSettings().then((s) => applyUiScale(win, s.uiScale)));
+  wc.on('did-finish-load', () => getSettings().then((s) => {
+    applyUiScale(win, s.uiScale);
+    wc.session.setSpellCheckerEnabled(s.spellCheck !== false);
+  }));
   // A reload (GitHub sync) or a crash leaves no chat panel to stop the assistant's CLI runs.
   wc.on('did-navigate', assistant.killRuns);
   wc.on('render-process-gone', assistant.killRuns);

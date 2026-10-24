@@ -30,7 +30,6 @@ const state = {
   toolOptions: null, // { entry, ctx } — the open options panel of a tool search entry (ctx: as toolSearch)
   notices: [],       // [{ id, icon, text, mode? }] — the fading notices above the toolbar island (§7c; Notices.jsx notify)
   quickTools: null,  // { board, x, y } — the open quick tools island (§7d): the board it serves (null: the document), the pointer it opened at
-  layers: true,      // the layers panel shows while a board is active (§6c); the rail's Layers button hides it for the session
   tour: null,        // { step } — the open tour (Onboarding.jsx): the index of its shown step in STEPS
   view: { type: 'editor' }, // the main column (§7g): {type:'editor'} | {type:'plan', planId, tab} | {type:'flows', flowId} | {type:'browser'}
   browser: { tabs: [], active: null }, // the in-app browser's tabs (§7j; browser.js), mirrored into settings.browser
