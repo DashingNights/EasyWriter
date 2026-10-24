@@ -18,7 +18,7 @@ export function FormDialog({ title, okText = 'OK', className, validate, result, 
       <DialogContent className={cn('p-3 text-sm *:data-[slot=dialog-close]:top-3 *:data-[slot=dialog-close]:right-3', className)}
         aria-describedby={undefined} onCloseAutoFocus={refocusEditor} onInteractOutside={(e) => e.preventDefault()}>
         <form onSubmit={submit} className="grid min-h-0 gap-2">
-          <DialogHeader><DialogTitle className="text-base">{title}</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>{title}</DialogTitle></DialogHeader>
           {children}
           {error && <p className="text-destructive">{error}</p>}
           <DialogFooter>

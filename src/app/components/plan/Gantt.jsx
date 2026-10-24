@@ -578,7 +578,7 @@ export function Gantt({ ctx, options }) {
             <DropdownMenuSeparator />
             <DropdownMenuCheckboxItem checked={options.weekLabels === 'number'} disabled={!cal.weekOne} onSelect={(e) => e.preventDefault()}
               onCheckedChange={(v) => setOptions({ weekLabels: v ? 'number' : 'date' })}>Week numbers (week zoom)</DropdownMenuCheckboxItem>
-            {!cal.weekOne && <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">Set week 1 first in More plan actions {'>'} Calendar...</DropdownMenuLabel>}
+            {!cal.weekOne && <DropdownMenuLabel className="font-normal">Set week 1 first in More plan actions {'>'} Calendar...</DropdownMenuLabel>}
           </DropdownMenuContent>
         </DropdownMenu>
         {conflicts > 0 && (

@@ -277,7 +277,7 @@ function InstallForm({ open }) {
       <DialogContent aria-describedby={undefined} onInteractOutside={(e) => e.preventDefault()}
         onCloseAutoFocus={(e) => !getState().dialog && refocusEditor(e)}
         className="max-h-[88vh] gap-2 overflow-y-auto p-3 text-sm sm:max-w-[min(560px,92vw)] *:data-[slot=dialog-close]:top-3 *:data-[slot=dialog-close]:right-3">
-        <DialogHeader><DialogTitle className="text-base">Set up dictation</DialogTitle></DialogHeader>
+        <DialogHeader><DialogTitle>Set up dictation</DialogTitle></DialogHeader>
         <p className="text-muted-foreground">
           Dictation turns speech into text on this computer with whisper.cpp; no audio leaves it. Downloaded once into the app's data folder
           (all MIT licensed):
@@ -382,7 +382,7 @@ export function ModelFiles({ selected, version, onChange }) {
         <AlertDialog open onOpenChange={(o) => !o && setAsking(null)}>
           <AlertDialogContent className="gap-2 p-3">
             <AlertDialogHeader>
-              <AlertDialogTitle className="text-base">Delete the {m.label} model ({mb(m.bytes)})?</AlertDialogTitle>
+              <AlertDialogTitle>Delete the {m.label} model ({mb(m.bytes)})?</AlertDialogTitle>
               <AlertDialogDescription>
                 {!inUse ? `${m.file} is removed from this computer. It can be downloaded again later.`
                   : asking.others.length ? 'Dictation uses it. Switch dictation to:'

@@ -58,7 +58,7 @@ export function ListDialog({ title, onClose, className, children }) {
     <Dialog open onOpenChange={(open) => !open && onClose(null)}>
       <DialogContent className={`max-h-[88vh] overflow-y-auto p-3 text-sm *:data-[slot=dialog-close]:top-3 *:data-[slot=dialog-close]:right-3 ${className ?? ''}`}
         aria-describedby={undefined} onCloseAutoFocus={refocusEditor} onInteractOutside={(e) => e.preventDefault()}>
-        <DialogHeader><DialogTitle className="text-base">{title}</DialogTitle></DialogHeader>
+        <DialogHeader><DialogTitle>{title}</DialogTitle></DialogHeader>
         {children}
         <DialogFooter><Button type="button" size="sm" onClick={() => onClose(null)}>Close</Button></DialogFooter>
       </DialogContent>

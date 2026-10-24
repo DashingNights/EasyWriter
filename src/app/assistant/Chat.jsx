@@ -663,7 +663,7 @@ function ChatPanel({ islandRef, closing, onClosed }) {
 //       <DialogContent aria-describedby={undefined} onInteractOutside={(e) => e.preventDefault()}
 //         onCloseAutoFocus={(e) => !getState().dialog && refocusEditor(e)}
 //         className="max-h-[88vh] gap-2 overflow-y-auto p-3 text-sm sm:max-w-[min(560px,92vw)] *:data-[slot=dialog-close]:top-3 *:data-[slot=dialog-close]:right-3">
-//         <DialogHeader><DialogTitle className="text-base">Set up the assistant</DialogTitle></DialogHeader>
+//         <DialogHeader><DialogTitle>Set up the assistant</DialogTitle></DialogHeader>
 //         <p className="text-muted-foreground">
 //           {PRIVACY} It runs {status?.model.label ?? 'Qwen3.5-9B'} with llama.cpp. Downloaded once into the app's data folder, each file
 //           checked against its SHA-256 before it is kept:

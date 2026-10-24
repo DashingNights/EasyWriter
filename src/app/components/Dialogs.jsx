@@ -77,7 +77,7 @@ function ConfirmDialog() {
     <AlertDialog open onOpenChange={(open) => !open && close(false)}>
       <AlertDialogContent className="gap-2 p-3" {...(confirm.description ? {} : { 'aria-describedby': undefined })} onCloseAutoFocus={refocusEditor}>
         <AlertDialogHeader>
-          <AlertDialogTitle className="text-base">{confirm.title}</AlertDialogTitle>
+          <AlertDialogTitle>{confirm.title}</AlertDialogTitle>
           {confirm.description && <AlertDialogDescription>{confirm.description}</AlertDialogDescription>}
         </AlertDialogHeader>
         <AlertDialogFooter>

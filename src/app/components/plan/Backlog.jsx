@@ -278,7 +278,7 @@ export function Backlog({ ctx, options }) {
             </DropdownMenuTrigger>
           </Tip>
           <DropdownMenuContent align="end" onCloseAutoFocus={refocusEditor}>
-            <DropdownMenuLabel className="text-xs text-muted-foreground">Show columns</DropdownMenuLabel>
+            <DropdownMenuLabel>Show columns</DropdownMenuLabel>
             {BACKLOG_COLS.filter(([k]) => k !== 'title').map(([k, label]) => (
               <DropdownMenuCheckboxItem key={k} checked={!hidden.includes(k)} onSelect={(e) => e.preventDefault()}
                 onCheckedChange={(on) => keep({ backlogHidden: on ? hidden.filter((x) => x !== k) : [...hidden, k] })}>{k === 'num' ? '# (number)' : label}</DropdownMenuCheckboxItem>

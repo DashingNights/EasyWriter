@@ -136,7 +136,7 @@ function Palette({ board, at }) {
                     <span className="truncate">{x.label}</span>
                     <span className="ml-auto flex shrink-0 items-center gap-2">
                       {x.options && <span className="text-xs text-muted-foreground">Tab: options</span>}
-                      {shortcutOf(x) && <CommandShortcut className="ml-0 tracking-normal">{shortcutOf(x)}</CommandShortcut>}
+                      {shortcutOf(x) && <CommandShortcut className="ml-0">{shortcutOf(x)}</CommandShortcut>}
                     </span>
                   </CommandItem>
                 ))}

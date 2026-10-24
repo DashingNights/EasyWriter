@@ -106,7 +106,7 @@ export function PlanHeader({ plan, tab }) {
           root()?.focus();
         }} />
       <Menu title="Labels" icon={<Tags />} active={!!options.labels?.length}>
-        <DropdownMenuLabel className="text-xs text-muted-foreground">Show tickets with a label</DropdownMenuLabel>
+        <DropdownMenuLabel>Show tickets with a label</DropdownMenuLabel>
         {!plan.labels.length && <DropdownMenuItem disabled>No labels yet (Labels... in More plan actions)</DropdownMenuItem>}
         {plan.labels.map((l) => (
           <DropdownMenuCheckboxItem key={l.id} checked={!!options.labels?.includes(l.id)} onSelect={(e) => e.preventDefault()} onCheckedChange={() => toggleIn(options, 'labels', l.id)}>
@@ -115,7 +115,7 @@ export function PlanHeader({ plan, tab }) {
         ))}
       </Menu>
       <Menu title="Priority" icon={<Signal />} active={!!options.priority?.length}>
-        <DropdownMenuLabel className="text-xs text-muted-foreground">Show tickets with a priority</DropdownMenuLabel>
+        <DropdownMenuLabel>Show tickets with a priority</DropdownMenuLabel>
         {PRIORITIES.map(([v, name, Icon]) => (
           <DropdownMenuCheckboxItem key={v} checked={!!options.priority?.includes(v)} onSelect={(e) => e.preventDefault()} onCheckedChange={() => toggleIn(options, 'priority', v)}>
             {Icon ? <Icon /> : <span className="size-4" />}{name}

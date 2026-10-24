@@ -235,13 +235,13 @@ function DraftRow({ d, folderId, folders, threads, tag, tags, active, dragging, 
       </Row>
       {/* Outside the Row: React events bubble out of the portal, and a menu click must not open the draft. */}
       <DropdownMenuContent align="end" className="max-w-72" onCloseAutoFocus={refocusEditor}>
-        <DropdownMenuLabel className="text-xs text-muted-foreground">Folder</DropdownMenuLabel>
+        <DropdownMenuLabel>Folder</DropdownMenuLabel>
         {folders.map((f) => (
           <DropdownMenuCheckboxItem key={f.id} checked={folderId === f.id} onSelect={() => moveDraft(d.id, f.id)}>{f.name}</DropdownMenuCheckboxItem>
         ))}
         <DropdownMenuCheckboxItem checked={!folderId} onSelect={() => moveDraft(d.id, null)}>Top level</DropdownMenuCheckboxItem>
         <DropdownMenuSeparator />
-        <DropdownMenuLabel className="text-xs text-muted-foreground">Project</DropdownMenuLabel>
+        <DropdownMenuLabel>Project</DropdownMenuLabel>
         {threads.map((t) => (
           <DropdownMenuCheckboxItem key={t.url} checked={d.threadUrl === t.url} disabled={background} onSelect={() => setDraftThreadFor(d.id, t.url)}>
             <span className="truncate">{threadLabel(t)}</span>
@@ -345,7 +345,7 @@ function BackupWarning({ onClose }) {
       <DialogContent aria-describedby={undefined} onCloseAutoFocus={refocusEditor}
         className="gap-3 p-4 text-sm sm:max-w-md *:data-[slot=dialog-close]:top-4 *:data-[slot=dialog-close]:right-4">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2 text-base"><CircleAlert className="size-5 text-destructive" />Your work is not backed up</DialogTitle>
+          <DialogTitle className="flex items-center gap-2"><CircleAlert className="size-5 text-destructive" />Your work is not backed up</DialogTitle>
         </DialogHeader>
         <p className="text-muted-foreground">
           GitHub backup is not set up, so your drafts and plans are only on this computer. If it breaks or is lost, they are lost with it.
