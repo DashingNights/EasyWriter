@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { cn } from 'cn';
 import { ChevronDown, ChevronRight, ChevronUp, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -72,19 +73,23 @@ export function FindBar() {
       <Button variant="ghost" size="icon-xs" aria-label={title} disabled={!enabled} onClick={onClick}><Icon /></Button>
     </Tip>
   );
-  const field = 'h-7 w-56 text-xs md:text-xs';
+  const field = 'h-7 w-60 text-xs shadow-none md:text-xs focus-visible:ring-1';
+  // p-2 around the h-7 fields, so their corners sit evenly inside the island's rounder ones
   return (
-    <div role="search" className="absolute z-[26] flex -translate-x-full flex-col gap-1 rounded-island border bg-island p-1 text-xs shadow-xl"
+    <div role="search" className="absolute z-[26] flex -translate-x-full flex-col gap-2 rounded-island border bg-island p-2 text-xs shadow-xl"
       style={{ left: box.left + box.width - 8, top: box.top + 8 }}>
       <div className="flex items-center gap-1">
         {icon(find.replace ? 'Hide replace' : 'Replace (Ctrl+H)', find.replace ? ChevronDown : ChevronRight,
           () => setState({ find: { ...find, replace: !find.replace } }), true)}
-        <Input ref={findBox} aria-label="Find in draft" placeholder="Find in draft" spellCheck={false} className={field}
-          value={query} onChange={(e) => setQuery(e.target.value)}
-          onKeyDown={keys({ Enter: () => findStep(editor, 1), 'Shift+Enter': () => findStep(editor, -1) })} />
-        <span className="w-16 text-center text-muted-foreground tabular-nums">
-          {matches.length ? `${index + 1} of ${matches.length}` : query && 'No results'}
-        </span>
+        <div className="relative">
+          <Input ref={findBox} aria-label="Find in draft" placeholder="Find in draft" spellCheck={false} className={cn(field, 'pr-20')}
+            value={query} onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={keys({ Enter: () => findStep(editor, 1), 'Shift+Enter': () => findStep(editor, -1) })} />
+          {/* the count at the box's right end, as browsers' find bars show it */}
+          <span className="pointer-events-none absolute inset-y-0 right-2 flex items-center text-muted-foreground tabular-nums">
+            {matches.length ? `${index + 1} of ${matches.length}` : query && 'No results'}
+          </span>
+        </div>
         {icon('Previous match (Shift+Enter)', ChevronUp, () => findStep(editor, -1))}
         {icon('Next match (Enter)', ChevronDown, () => findStep(editor, 1))}
         {icon('Close (Esc)', X, close, true)}
