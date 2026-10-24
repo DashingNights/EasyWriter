@@ -3,8 +3,6 @@ import { cn } from "cn"
 import { XIcon } from "lucide-react"
 import { Dialog as DialogPrimitive } from "radix-ui"
 
-import { Button } from "@/components/ui/button"
-
 function Dialog({
   ...props
 }) {
@@ -88,22 +86,13 @@ function DialogHeader({
 
 function DialogFooter({
   className,
-  showCloseButton = false,
-  children,
   ...props
 }) {
   return (
     <div
       data-slot="dialog-footer"
       className={cn("flex flex-col-reverse gap-2 sm:flex-row sm:justify-end", className)}
-      {...props}>
-      {children}
-      {showCloseButton && (
-        <DialogPrimitive.Close asChild>
-          <Button variant="outline">Close</Button>
-        </DialogPrimitive.Close>
-      )}
-    </div>
+      {...props} />
   );
 }
 
