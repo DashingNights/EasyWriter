@@ -489,7 +489,7 @@ handle('window.titleBar', ({ color, symbolColor } = {}) => {
 });
 // The page as the user sees it (§8 view.render): the whole window's content as PNG bytes; the renderer crops its viewport.
 handle('window.capture', () => mainWin.webContents.capturePage().then((img) => img.toPNG()));
-// The draft menu's entries on the last right-click (editMenuAct): native | learn (Add to dictionary) | an edit command.
+// The draft menu's entries on the last right-click (editMenuAct): native | learn (Add to dictionary) | copyLink | an edit command.
 handle('editMenu.act', (act) => menuParams && editMenuAct(act));
 // Push-to-talk dictation (§7h): dictation.status|install|cancel|warm|transcribe, the local whisper server, mic permission.
 dictation.register(handle, getSettings, () => mainWin);
@@ -583,6 +583,7 @@ function editMenuAct(act) {
   const wc = mainWin.webContents;
   if (act === 'native') popupEditMenu(wc, menuParams, mainWin);
   else if (act === 'learn' && menuParams.misspelledWord) wc.session.addWordToSpellCheckerDictionary(menuParams.misspelledWord);
+  else if (act === 'copyLink' && menuParams.linkURL) clipboard.writeText(menuParams.linkURL);
   else if (EDIT_ACTS.includes(act)) wc[act]();
 }
 
@@ -670,8 +671,8 @@ function createMainWindow() {
 
   wc.on('context-menu', (_event, params) => {
     menuParams = params;
-    const { misspelledWord, dictionarySuggestions: suggestions, editFlags } = params;
-    wc.send('editMenu.open', { misspelledWord, suggestions, editFlags });
+    const { misspelledWord, dictionarySuggestions: suggestions, linkURL, editFlags } = params;
+    wc.send('editMenu.open', { misspelledWord, suggestions, linkURL, editFlags });
   });
   wc.on('did-finish-load', () => getSettings().then((s) => applyUiScale(win, s.uiScale)));
   // A reload (GitHub sync) or a crash leaves no chat panel to stop the assistant's CLI runs.

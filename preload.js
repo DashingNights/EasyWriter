@@ -31,8 +31,8 @@ contextBridge.exposeInMainWorld('api', {
     titleBar: call('window.titleBar'),
     capture: call('window.capture'),
   },
-  // The main window's right-click: `editMenu.open` {misspelledWord, suggestions, editFlags} for each; act(action) with
-  // native | learn | cut | copy | paste | pasteAndMatchStyle | selectAll. onOpen returns the unsubscribe function.
+  // The main window's right-click: `editMenu.open` {misspelledWord, suggestions, linkURL, editFlags} for each; act(action) with
+  // native | learn | copyLink | cut | copy | paste | pasteAndMatchStyle | selectAll. onOpen returns the unsubscribe function.
   editMenu: {
     act: call('editMenu.act'),
     onOpen: (fn) => {
