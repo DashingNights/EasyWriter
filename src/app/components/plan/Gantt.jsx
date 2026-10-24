@@ -31,8 +31,8 @@ import { GanttDeps, GanttGrid, GanttRows, GanttTicks } from './ChartView.jsx';
 // View options (zoom, what is shown) live in planUi.options with the header's filters, so saved views and Insert into
 // draft take them; the task-list width is per viewer (localStorage `daf-writer.plan.<planId>`).
 
-// The chrome's colours (app.css tokens) for the neutral keys, so the chart follows the light and dark themes.
-const APP = { accent: '#3d99f5', critical: '#e05252', conflict: '#e09952', done: '#62d926', text: 'var(--foreground)', strong: 'var(--foreground)', muted: 'var(--muted-foreground)', border: 'var(--ring)' };
+// The chrome's colours (app.css tokens) for the accent and the neutral keys, so the chart follows the light and dark themes.
+const APP = { accent: 'var(--ui-accent)', critical: '#e05252', conflict: '#e09952', done: '#62d926', text: 'var(--foreground)', strong: 'var(--foreground)', muted: 'var(--muted-foreground)', border: 'var(--ring)' };
 const ZOOMS = [['day', 'Day'], ['week', 'Week'], ['month', 'Month'], ['quarter', 'Quarter'], ['fit', 'Fit']];
 const STEPS = ['day', 'week', 'month', 'quarter']; // Ctrl + wheel and + / − step through them
 const SHOW = [['showDeps', 'Dependencies'], ['showCritical', 'Critical path'], ['showBaseline', 'Baseline'], ['showToday', 'Today line'],

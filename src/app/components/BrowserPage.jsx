@@ -455,7 +455,7 @@ function TabFrame({ tab, mode, place, z }) {
     <div ref={ref} data-tab-frame={tab.id} data-browser-pane={floating ? '' : undefined} role={floating ? 'region' : undefined}
       aria-label={floating ? `Browser: ${label(tab)}` : undefined} inert={!shown} style={style} tabIndex={-1}
       className={cn('absolute', floating && 'text-xs',
-        resizing ? 'outline-2 outline-offset-1 outline-[#3d99f5]' : 'outline-none', shown && !idleNow ? 'pointer-events-auto' : 'pointer-events-none',
+        resizing ? 'outline-2 outline-offset-1 outline-(--ui-accent)' : 'outline-none', shown && !idleNow ? 'pointer-events-auto' : 'pointer-events-none',
         !shown && 'invisible')}
       onPointerDownCapture={onPointerDownCapture} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onLostPointerCapture={onPointerUp}
       onDoubleClick={() => floating && notchPress.current && closePane(tab.id)}
@@ -468,7 +468,7 @@ function TabFrame({ tab, mode, place, z }) {
         <div className={cn('relative min-h-0 flex-1 overflow-hidden', floating && 'rounded-md border', (live || resizing || idleNow) && 'pointer-events-none')}>
           <WebTab tab={tab} shown={shown} />
           {resizing && (
-            <div className="absolute inset-0 flex items-center justify-center bg-[#3d99f5]/15 text-sm font-medium select-none">
+            <div className="absolute inset-0 flex items-center justify-center bg-(--ui-accent)/15 text-sm font-medium select-none">
               <span className="rounded-island border bg-island px-3 py-1.5 shadow-xl">Drag the blue squares to resize. Press Enter or Esc when done.</span>
             </div>
           )}
@@ -515,7 +515,7 @@ function TabFrame({ tab, mode, place, z }) {
         </div>
       )}
       {floating && resizing && HANDLES.map(([id, at, cursor]) => (
-        <div key={id} data-handle={id} className={cn('absolute z-10 box-border rounded-[2px] border-2 border-white bg-[#3d99f5]', at, cursor,
+        <div key={id} data-handle={id} className={cn('absolute z-10 box-border rounded-[2px] border-2 border-white bg-(--ui-accent)', at, cursor,
           id.length === 2 ? 'size-[12px] -m-[6px]' : 'size-[10px] -m-[5px]')} />
       ))}
     </div>

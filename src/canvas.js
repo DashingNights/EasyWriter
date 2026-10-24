@@ -24,13 +24,13 @@ const CSS = `
 .sc-hint{display:none;position:absolute;inset:0;align-items:center;justify-content:center;padding:8px;text-align:center;color:#8a8ca0;font:14px/1.3 system-ui,sans-serif}
 .sc.sc-empty{outline:1px dashed #8a8ca0;outline-offset:-1px}
 .sc.sc-empty .sc-hint{display:flex}
-.sc.sc-selected{outline:calc(2px*var(--wb-inv,1)) solid #3d99f5;outline-offset:0}
+.sc.sc-selected{outline:calc(2px*var(--wb-inv,1)) solid var(--ui-accent);outline-offset:0}
 .sc-editing{position:relative}
 .sc-editing .ProseMirror{opacity:.45;pointer-events:none}
 .sce-art{position:absolute;transform-origin:0 0}
-.sce-art>.wb{outline:calc(1px*var(--wb-inv,1)) solid #3d99f5;box-shadow:0 4px 24px rgba(0,0,0,.55)}
+.sce-art>.wb{outline:calc(1px*var(--wb-inv,1)) solid var(--ui-accent);box-shadow:0 4px 24px rgba(0,0,0,.55)}
 .sce-rs{position:absolute}
-.sce-rs:hover{background:rgba(61,153,245,.45)}
+.sce-rs:hover{background:color-mix(in oklab,var(--ui-accent) 45%,transparent)}
 .sce-rs-e{left:100%;top:0;height:100%;width:calc(10px*var(--sce-inv,1));cursor:ew-resize}
 .sce-rs-s{top:100%;left:0;width:100%;height:calc(10px*var(--sce-inv,1));cursor:ns-resize}
 .sce-rs-se{left:100%;top:100%;width:calc(14px*var(--sce-inv,1));height:calc(14px*var(--sce-inv,1));cursor:nwse-resize}

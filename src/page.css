@@ -1,7 +1,5 @@
 /* Page preview: forum typography (SPEC §1 / §7) under .page .ProseMirror. Unlayered, so it wins over Tailwind's layers. */
 :root {
-  --ui-accent: #3d99f5;
-
   /* set from settings by applySettings() */
   --forum-width: 1454px;
   --base-font: system-ui, Helvetica, Arial, sans-serif;
@@ -136,15 +134,15 @@
   content: "";
   position: absolute;
   inset: 0;
-  background: rgba(61, 153, 245, .2);
+  background: color-mix(in oklab, var(--ui-accent) 20%, transparent);
   pointer-events: none;
 }
 .page .ProseMirror .ProseMirror-selectednode { outline: 2px solid var(--ui-accent); }
 .page .ProseMirror [data-media] { position: relative; margin: 1em 0; width: fit-content; max-width: 100%; }
 .page .ProseMirror [data-media] > :is(video, img) { display: block; max-width: 100%; }
-.page .ProseMirror [data-media].media-selected { outline: calc(2px * var(--wb-inv, 1)) solid #3d99f5; }
+.page .ProseMirror [data-media].media-selected { outline: calc(2px * var(--wb-inv, 1)) solid var(--ui-accent); }
 /* The text selection while the editor is not focused (extensions.js InactiveSelection) */
-.page .ProseMirror .inactive-sel { background: rgba(61, 153, 245, .3); }
+.page .ProseMirror .inactive-sel { background: color-mix(in oklab, var(--ui-accent) 30%, transparent); }
 
 /* Box (titled panel) */
 .page .ProseMirror .ipsRichTextBox {
