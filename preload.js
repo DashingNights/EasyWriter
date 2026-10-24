@@ -31,6 +31,16 @@ contextBridge.exposeInMainWorld('api', {
     titleBar: call('window.titleBar'),
     capture: call('window.capture'),
   },
+  // The main window's right-click: `editMenu.open` {misspelledWord, suggestions, editFlags} for each; act(action) with
+  // native | learn | cut | copy | paste | pasteAndMatchStyle | selectAll. onOpen returns the unsubscribe function.
+  editMenu: {
+    act: call('editMenu.act'),
+    onOpen: (fn) => {
+      const listener = (_e, p) => fn(p);
+      ipcRenderer.on('editMenu.open', listener);
+      return () => ipcRenderer.off('editMenu.open', listener);
+    },
+  },
   dictation: {
     status: call('dictation.status'),
     install: call('dictation.install'),

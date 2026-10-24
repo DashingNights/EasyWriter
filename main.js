@@ -489,6 +489,8 @@ handle('window.titleBar', ({ color, symbolColor } = {}) => {
 });
 // The page as the user sees it (§8 view.render): the whole window's content as PNG bytes; the renderer crops its viewport.
 handle('window.capture', () => mainWin.webContents.capturePage().then((img) => img.toPNG()));
+// The draft menu's entries on the last right-click (editMenuAct): native | learn (Add to dictionary) | an edit command.
+handle('editMenu.act', (act) => menuParams && editMenuAct(act));
 // Push-to-talk dictation (§7h): dictation.status|install|cancel|warm|transcribe, the local whisper server, mic permission.
 dictation.register(handle, getSettings, () => mainWin);
 // Local assistant (agent-automation plan §13.2): assistant.status|install|cancel|warm|stop|delete|chat|cancelChat, llama-server.
@@ -573,6 +575,17 @@ app.on('web-contents-created', (_e, wc) => {
   });
 });
 
+// The main window's right-click: main sends its spelling and edit state to the renderer (editMenu.open), which shows the draft
+// menu over the editor area (DraftMenu.jsx) and asks for the native menu anywhere else (editMenu.act 'native').
+let menuParams = null; // the main window's last right-click
+const EDIT_ACTS = ['cut', 'copy', 'paste', 'pasteAndMatchStyle', 'selectAll'];
+function editMenuAct(act) {
+  const wc = mainWin.webContents;
+  if (act === 'native') popupEditMenu(wc, menuParams, mainWin);
+  else if (act === 'learn' && menuParams.misspelledWord) wc.session.addWordToSpellCheckerDictionary(menuParams.misspelledWord);
+  else if (EDIT_ACTS.includes(act)) wc[act]();
+}
+
 // Native right-click menu (main window and browser pages): `extra` items, spelling suggestions, then Cut / Copy / Paste / Select
 // All on `wc` (explicit, so a page's menu acts on the page, not the focused window's own webContents).
 function popupEditMenu(wc, params, win, extra = []) {
@@ -655,7 +668,11 @@ function createMainWindow() {
     if (event.url.split('#')[0] !== INDEX_URL) event.preventDefault();
   });
 
-  wc.on('context-menu', (_event, params) => popupEditMenu(wc, params, win));
+  wc.on('context-menu', (_event, params) => {
+    menuParams = params;
+    const { misspelledWord, dictionarySuggestions: suggestions, editFlags } = params;
+    wc.send('editMenu.open', { misspelledWord, suggestions, editFlags });
+  });
   wc.on('did-finish-load', () => getSettings().then((s) => applyUiScale(win, s.uiScale)));
   // A reload (GitHub sync) or a crash leaves no chat panel to stop the assistant's CLI runs.
   wc.on('did-navigate', assistant.killRuns);

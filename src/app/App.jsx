@@ -12,6 +12,7 @@ import { useBoard } from './components/board/controls.jsx';
 import { ItemRibbon } from './components/board/ItemRibbon.jsx';
 import { PlanChartBar } from './components/board/PlanChartBar.jsx';
 import { DialogHost } from './components/Dialogs.jsx';
+import { DraftMenu } from './components/DraftMenu.jsx';
 import { EditorPage } from './components/EditorPage.jsx';
 import { FlowsPage } from './components/flows/FlowsPage.jsx';
 import { HoverHint } from './components/HoverHint.jsx';
@@ -145,6 +146,7 @@ export function App() {
       <HoverHint />
       <QuickTools />
       <BoardMenu />
+      <DraftMenu />
       <DialogHost />
       <ToolSearch />
       <AgentAsk />
