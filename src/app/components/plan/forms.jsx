@@ -56,7 +56,7 @@ export function ColorInput({ value, onCommit, ...props }) {
 export function ListDialog({ title, onClose, className, children }) {
   return (
     <Dialog open onOpenChange={(open) => !open && onClose(null)}>
-      <DialogContent className={`max-h-[88vh] overflow-y-auto p-3 text-sm *:data-[slot=dialog-close]:top-3 *:data-[slot=dialog-close]:right-3 ${className ?? ''}`}
+      <DialogContent className={`max-h-[88vh] overflow-y-auto p-3 text-sm *:data-[slot=dialog-close]:top-2 *:data-[slot=dialog-close]:right-2 ${className ?? ''}`}
         aria-describedby={undefined} onCloseAutoFocus={refocusEditor} onInteractOutside={(e) => e.preventDefault()}>
         <DialogHeader><DialogTitle>{title}</DialogTitle></DialogHeader>
         {children}

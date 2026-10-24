@@ -1113,7 +1113,7 @@ export function SettingsDialog({ settings: s, section, onClose }) {
     // Fixed height, centred in the room below the 34 px title strip (+17 px) with a 1rem margin; only the right column scrolls.
     <FormDialog title="Settings" okText="Save" validate={validate} onClose={onClose}
       result={() => { if (tour.current) startTour(); return result(); }}
-      className="top-[calc(50%_+_17px)] h-[min(60rem,calc(100vh_-_34px_-_2rem))] p-6 sm:max-w-[min(68rem,calc(100vw_-_2rem))] *:data-[slot=dialog-close]:top-6 *:data-[slot=dialog-close]:right-6 [&>form]:gap-4">
+      className="top-[calc(50%_+_17px)] h-[min(60rem,calc(100vh_-_34px_-_2rem))] p-6 sm:max-w-[min(68rem,calc(100vw_-_2rem))] *:data-[slot=dialog-close]:top-5 *:data-[slot=dialog-close]:right-5 [&>form]:gap-4">
       <div className="grid min-h-0 grid-cols-[11rem_minmax(0,1fr)] gap-6">
         <nav aria-label="Settings sections" className="flex flex-col gap-1">
           {SECTIONS.map(([id, label, Icon]) => (

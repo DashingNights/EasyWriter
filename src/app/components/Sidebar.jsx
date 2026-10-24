@@ -343,7 +343,7 @@ function BackupWarning({ onClose }) {
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent aria-describedby={undefined} onCloseAutoFocus={refocusEditor}
-        className="gap-3 p-4 text-sm sm:max-w-md *:data-[slot=dialog-close]:top-4 *:data-[slot=dialog-close]:right-4">
+        className="gap-3 p-4 text-sm sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2"><CircleAlert className="size-5 text-destructive" />Your work is not backed up</DialogTitle>
         </DialogHeader>

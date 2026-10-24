@@ -196,7 +196,7 @@ export function TicketDialog({ planId, ticketId, init = {}, onClose }) {
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose(null)}>
-      <DialogContent className="max-h-[90vh] overflow-y-auto p-3 text-sm sm:max-w-[min(860px,94vw)] *:data-[slot=dialog-close]:top-3 *:data-[slot=dialog-close]:right-3"
+      <DialogContent className="max-h-[90vh] overflow-y-auto p-3 text-sm sm:max-w-[min(860px,94vw)] *:data-[slot=dialog-close]:top-2 *:data-[slot=dialog-close]:right-2"
         aria-describedby={undefined} onCloseAutoFocus={refocusEditor} onInteractOutside={(e) => e.preventDefault()}>
         <DialogHeader><DialogTitle>{isNew ? 'New ticket' : `#${t.num}`}</DialogTitle></DialogHeader>
         <div className="grid gap-3 md:grid-cols-2">
