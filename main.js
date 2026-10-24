@@ -633,7 +633,7 @@ async function loadKeys() {
 // .titlebar) is the drag region; the Window Controls Overlay draws the native minimize / maximize / close buttons over its
 // right end, 33 px tall so the border runs on under them. Colours: the theme's --card / --card-foreground (app.css) until the
 // renderer sends the strip's own (window.titleBar).
-const TITLE_BAR = { color: '#383838', symbolColor: '#f5f5f5', height: 33 };
+const TITLE_BAR = { color: '#262626', symbolColor: '#e6e6e6', height: 33 };
 const TITLE_BAR_LIGHT = { color: '#ffffff', symbolColor: '#1f1f1f' };
 
 // The app's colours (settings.uiTheme: dark | light | system) for what Chromium and Windows draw: native menus and dialogs,

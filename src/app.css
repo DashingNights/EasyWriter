@@ -10,8 +10,8 @@
 /* App chrome: neutral greys, light on :root and dark (the default) under the class "dark" on <html> (settings.uiTheme,
    actions.js applyUiTheme), independent of the page theme (the page preview keeps the forum's colours, page.css). Surfaces step
    up from background (sidebar, status bar, dialogs) to card / popover (title strip, islands, menus); accent (hover, on) tints
-   whatever is under it. The
-   dark set is Figma's (#2c2c2c panels, #383838 bars and fields, #444444 hover and edges). */
+   whatever is under it. The dark set is the user's own palette of 2026-10-24 (#1a1a1a panels, #262626 bars and cards,
+   #5c5c5c fills, #e6e6e6 text). */
 :root {
   --radius: 0.625rem;
   color-scheme: light;
@@ -38,20 +38,20 @@
 }
 .dark {
   color-scheme: dark;
-  --background: #2c2c2c;
-  --foreground: #f5f5f5;
-  --card: #383838;
-  --card-foreground: #f5f5f5;
-  --popover: #383838;
-  --popover-foreground: #f5f5f5;
-  --primary: #ececec;
-  --primary-foreground: #2c2c2c;
-  --secondary: #444444;
-  --secondary-foreground: #f5f5f5;
-  --muted: #444444;
-  --muted-foreground: #b3b3b3;
+  --background: #1a1a1a;
+  --foreground: #e6e6e6;
+  --card: #262626;
+  --card-foreground: #e6e6e6;
+  --popover: #262626;
+  --popover-foreground: #e6e6e6;
+  --primary: #ededed;
+  --primary-foreground: #1f1f1f;
+  --secondary: #5c5c5c;
+  --secondary-foreground: #e6e6e6;
+  --muted: #5c5c5c;
+  --muted-foreground: #ababab;
   --accent: rgb(255 255 255 / 10%);
-  --accent-foreground: #f5f5f5;
+  --accent-foreground: #e6e6e6;
   --destructive: oklch(0.704 0.191 22.216);
   --warning: #e09952;
   --success: #22c55e;
