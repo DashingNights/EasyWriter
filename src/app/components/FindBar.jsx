@@ -90,9 +90,12 @@ export function FindBar() {
             {matches.length ? `${index + 1} of ${matches.length}` : query && 'No results'}
           </span>
         </div>
-        {icon('Previous match (Shift+Enter)', ChevronUp, () => findStep(editor, -1))}
-        {icon('Next match (Enter)', ChevronDown, () => findStep(editor, 1))}
-        {icon('Close (Esc)', X, close, true)}
+        {/* at the bar's right edge, also when the replace row is the wider one */}
+        <div className="ml-auto flex items-center gap-1">
+          {icon('Previous match (Shift+Enter)', ChevronUp, () => findStep(editor, -1))}
+          {icon('Next match (Enter)', ChevronDown, () => findStep(editor, 1))}
+          {icon('Close (Esc)', X, close, true)}
+        </div>
       </div>
       {find.replace && (
         <div className="flex items-center gap-1 pl-7">
