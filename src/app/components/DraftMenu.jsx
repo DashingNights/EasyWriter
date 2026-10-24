@@ -40,7 +40,7 @@ export function DraftMenu() {
     window.addEventListener('pointerdown', onDown, true);
     document.addEventListener('contextmenu', onMenu);
     const off = api.onOpen((p) => {
-      if (last?.draft) setMenu({ ...p, at: last.at, n: ++n });
+      if (last?.draft) setMenu({ ...p, at: { x: last.at.x + 12, y: last.at.y }, n: ++n }); // 12 px right of the pointer: clear of the caret
       else api.act('native');
       last = null;
     });
