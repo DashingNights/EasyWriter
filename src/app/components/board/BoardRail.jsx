@@ -75,9 +75,9 @@ function ToolFlyout({ board, children }) {
   return (
     <PopoverContent {...CHROME} data-tool-flyout="" {...(island ? { side: 'top', align: 'start', sideOffset: 4 } : popup)}
       className={island
-        ? 'flex w-max max-w-[25rem] flex-wrap items-center gap-1 rounded-(--radius-island) bg-island p-1 shadow-xl data-[side=top]:flex-wrap-reverse'
+        ? 'flex w-max max-w-[25rem] flex-wrap items-center gap-1 p-1 data-[side=top]:flex-wrap-reverse'
         // left edge at the pointer (toolAnchor), so the first control, the line colour, is right above / below it
-        : 'flex w-max min-w-40 flex-col gap-1 rounded-(--radius-island) bg-island p-1 shadow-xl [&_[data-slot=select-trigger]]:w-full [&_[data-slot=select-trigger]]:min-w-0 [&_span:has(>[data-slot=select-trigger])]:min-w-0 [&_span:has(>[data-slot=select-trigger])]:flex-1'}
+        : 'flex w-max min-w-40 flex-col gap-1 p-1 [&_[data-slot=select-trigger]]:w-full [&_[data-slot=select-trigger]]:min-w-0 [&_span:has(>[data-slot=select-trigger])]:min-w-0 [&_span:has(>[data-slot=select-trigger])]:flex-1'}
       onOpenAutoFocus={(e) => e.preventDefault()} onCloseAutoFocus={(e) => e.preventDefault()}
       onEscapeKeyDown={() => board.setMode(null)}>
       {children}

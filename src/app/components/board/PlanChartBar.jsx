@@ -254,7 +254,7 @@ export function PlanChartBar() {
         {/* mousedown stops here: React bubbles it out of the portal to the bar's keepFocus, which would block focusing its inputs */}
         {/* On open the panel itself takes the focus, not its first control (no focus ring, no tooltip): keys no longer reach the
             document (typing over the selected chart), Tab goes into the panel, Escape closes it */}
-        <PopoverContent align="end" className="w-[24rem] rounded-(--radius-island) bg-island p-1.5 text-xs shadow-xl"
+        <PopoverContent align="end" className="w-[24rem] p-1.5 text-xs"
           onOpenAutoFocus={(e) => { e.preventDefault(); e.target.focus(); }} onCloseAutoFocus={refocusEditor} onMouseDown={(e) => e.stopPropagation()}>
           <ChartOptions chart={chart} ctx={chart.frozen?.ctx ?? ctx} error={snap.error} set={set} />
         </PopoverContent>

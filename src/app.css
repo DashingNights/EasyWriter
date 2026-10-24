@@ -61,8 +61,8 @@
   --ring: #8a8a8a;
 }
 
-/* Every floating island and bar over the page or a board (toolbar, rail, quick tools, ribbons, canvas bars and their flyouts,
-   notices, the chat and push-to-talk buttons): the translucent card the page shows through, blurred. 85 %: text and icons keep
+/* Every floating surface (islands, bars, flyouts, menus, select lists, popovers, toasts, the tool search, notices, the chat
+   and push-to-talk buttons): the translucent card the page shows through, blurred. 85 %: text and icons keep
    their contrast over a page of the other theme (the page preview has its own). */
 @utility bg-island {
   background-color: color-mix(in oklab, var(--card) 85%, transparent);

@@ -938,7 +938,7 @@ function GitHubSection({ value: g, onChange, setProblem }) {
                   </Button>
                 </PopoverTrigger>
                 <PopoverContent align="start" className="w-96 p-0">
-                  <Command>
+                  <Command className="bg-transparent">
                     <CommandInput placeholder="Search your private repositories..." />
                     <CommandList className="max-h-48">
                       <CommandEmpty>{repos ? 'No private repository found.' : 'Loading...'}</CommandEmpty>

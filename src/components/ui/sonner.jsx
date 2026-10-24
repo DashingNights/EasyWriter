@@ -23,12 +23,13 @@ const Toaster = ({
       }}
       style={
         {
-          "--normal-bg": "var(--popover)",
+          "--normal-bg": "color-mix(in oklab, var(--card) 85%, transparent)", // bg-island (app.css): sonner's rule sets the fill
           "--normal-text": "var(--popover-foreground)",
           "--normal-border": "var(--border)",
-          "--border-radius": "var(--radius)"
+          "--border-radius": "var(--radius-island)"
         }
       }
+      toastOptions={{ className: "backdrop-blur-[2px] shadow-xl!" }} // sonner's unlayered box-shadow beats a plain utility
       {...props} />
   );
 }

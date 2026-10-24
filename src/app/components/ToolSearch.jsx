@@ -114,7 +114,7 @@ function Palette({ board, at }) {
   return (
     <Dialog open modal={false} onOpenChange={(open) => !open && closeToolSearch()}>
       <DialogContent {...CHROME} ref={(el) => place(el, at)} showCloseButton={false} onCloseAutoFocus={(e) => e.preventDefault()}
-        className="top-auto left-auto translate-x-0 translate-y-0 gap-0 overflow-hidden bg-island p-0 duration-(--motion-menus) sm:max-w-md data-flip:[&_[data-slot=command]]:flex-col-reverse data-flip:[&_[data-slot=command-input-wrapper]]:border-t data-flip:[&_[data-slot=command-input-wrapper]]:border-b-0">
+        className="top-auto left-auto translate-x-0 translate-y-0 gap-0 overflow-hidden rounded-(--radius-island) bg-island p-0 shadow-xl duration-(--motion-menus) sm:max-w-md data-flip:[&_[data-slot=command]]:flex-col-reverse data-flip:[&_[data-slot=command-input-wrapper]]:border-t data-flip:[&_[data-slot=command-input-wrapper]]:border-b-0">
         <DialogTitle className="sr-only">Tool search</DialogTitle>
         <DialogDescription className="sr-only">Type a tool name. Enter switches to it, Tab opens its options.</DialogDescription>
         <Command className="bg-transparent" filter={filter} value={value} onValueChange={setValue} onKeyDown={onKeyDown}>
@@ -173,7 +173,7 @@ function OptionsPanel({ entry, ctx }) {
   return (
     <Popover open onOpenChange={(open) => !open && closeOptions()}>
       <PopoverAnchor className="fixed" style={{ left: ctx.at.x, top: ctx.at.y }} />
-      <PopoverContent {...CHROME} data-tool-options="" side="bottom" align="start" sideOffset={GAP} collisionPadding={{ top: TOP, right: PAD, bottom: PAD, left: PAD }} className="flex w-auto flex-col gap-1.5 rounded-(--radius-island) bg-island p-2 shadow-xl"
+      <PopoverContent {...CHROME} data-tool-options="" side="bottom" align="start" sideOffset={GAP} collisionPadding={{ top: TOP, right: PAD, bottom: PAD, left: PAD }} className="flex w-auto flex-col gap-1.5 p-2"
         onOpenAutoFocus={(e) => e.preventDefault()} onCloseAutoFocus={(e) => e.preventDefault()}
         onFocusOutside={(e) => e.preventDefault()} onEscapeKeyDown={(e) => e.stopPropagation()}>
         <div className="flex items-center gap-1.5 px-0.5 text-xs font-medium text-muted-foreground [&_svg]:size-3.5">{entry.icon}{entry.label}</div>
