@@ -1,10 +1,11 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { cn } from 'cn';
-import { ArrowUp, Ban, Bot, Brain, Check, ChevronDown, CircleAlert, ImagePlus, LoaderCircle, MessageSquare, MessageSquarePlus, Mic, Square, X } from 'lucide-react';
+import { ArrowUp, Ban, Bot, Brain, Check, ChevronDown, CircleAlert, ImagePlus, MessageSquare, MessageSquarePlus, Mic, Square, X } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 // import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'; // LOCAL LLM (commented out 2026-10-07): the install dialog
 import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { Spinner } from '@/components/ui/spinner';
 import { canvasEditor } from '../../canvas.js';
 import { activeBoard } from '../../whiteboard.js';
 import { openSettings, refocusEditor } from '../actions.js';
@@ -133,7 +134,7 @@ function Message({ m, dim }) {
     return (
       <div data-role="divider" className={cn('flex items-center gap-2 text-xs text-muted-foreground', dim && 'opacity-50')}>
         <span className="h-px flex-1 bg-border" />
-        {m.pending && <LoaderCircle className="size-3.5 animate-spin" />}{m.text}
+        {m.pending && <Spinner className="size-3.5" />}{m.text}
         <span className="h-px flex-1 bg-border" />
       </div>
     );
@@ -561,7 +562,7 @@ function ChatPanel({ islandRef, closing, onClosed }) {
               model..." / "Waking...". */}
           {a.turn && working && (
             <div data-chat-status data-chat-working className="flex shrink-0 items-center gap-1.5 px-2 py-1 text-muted-foreground">
-              <LoaderCircle className="size-3.5 shrink-0 animate-spin" /><span className="min-w-0 truncate">Working on "{working}"</span>
+              <Spinner className="size-3.5" /><span className="min-w-0 truncate">Working on "{working}"</span>
             </div>
           )}
           {worker !== null && (

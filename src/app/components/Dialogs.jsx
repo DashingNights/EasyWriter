@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import { Loader2 } from 'lucide-react';
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter,
   AlertDialogHeader, AlertDialogTitle,
@@ -7,6 +6,7 @@ import {
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Spinner } from '@/components/ui/spinner';
 import { refocusEditor, threadLabel } from '../actions.js';
 import { setState, useStore } from '../store.js';
 import { FLOW_FORMS } from './flows/forms.jsx';
@@ -98,7 +98,7 @@ function PushOverlay() {
   return (
     <div className="fixed inset-0 z-100 flex items-center justify-center bg-black/60">
       <Card className="flex-row items-center gap-2 p-3 text-sm">
-        <Loader2 className="size-4 animate-spin" />
+        <Spinner />
         {text}
       </Card>
     </div>

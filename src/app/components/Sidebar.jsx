@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { cn } from 'cn';
 import {
   ChevronRight, CircleAlert, CircleCheck, Cloud, CloudAlert, CloudCheck, CloudOff, CloudUpload, ExternalLink, Folder, FolderInput, FolderOpen,
-  FolderPlus, Globe, Link2, LoaderCircle, PanelLeftClose, PanelLeftOpen, Plus, Send, Settings, SquareKanban, Undo2, Workflow, X,
+  FolderPlus, Globe, Link2, PanelLeftClose, PanelLeftOpen, Plus, Send, Settings, SquareKanban, Undo2, Workflow, X,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -13,6 +13,7 @@ import {
   DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Spinner } from '@/components/ui/spinner';
 import {
   addThreadUrl, deleteDraft, deleteFolder, draftGroups, editProjectThread, moveDraft, moveFolder, newFolder, openDraft, openInForum,
   openSettings, placeDraft, push, refocusEditor, removeThread, renameFolder, saveSettings, selectThread, setDraftTag, setDraftThreadFor,
@@ -222,7 +223,7 @@ function DraftRow({ d, folderId, folders, threads, tag, tags, active, dragging, 
         <TagMenu id={d.id} tag={tag} tags={tags} open={tagging} setOpen={setTagging} />
         <span className="min-w-0 flex-1 truncate">{d.title || 'Untitled draft'}</span>
         {(working || background) && (
-          <Badge variant="secondary" data-draft-assistant className="shrink-0 gap-1 px-1.5 py-0 text-[10px]">{working && <LoaderCircle className="size-3 animate-spin" />}Assistant</Badge>
+          <Badge variant="secondary" data-draft-assistant className="shrink-0 gap-1 px-1.5 py-0 text-[10px]">{working && <Spinner className="size-3" />}Assistant</Badge>
         )}
         {d.pushedAt && <Tip title="Pushed to the forum"><CircleCheck className="size-3.5 shrink-0 text-success" aria-label="Pushed" /></Tip>}
         <HoverActions>
