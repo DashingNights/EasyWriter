@@ -3,6 +3,7 @@ import { cn } from 'cn';
 import { Plus, RotateCcw, TriangleAlert, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Kbd } from '@/components/ui/kbd';
 import { chordOf, collisions, DEFS, effective, GROUPS, windowsUse } from '../keys.mjs';
 
 // Settings > Keybinds (SPEC §7k): every binding of the registry with its chords. A chord button records a new chord in its place,
@@ -33,12 +34,12 @@ function warningsOf(d, keys, clashes) {
 /** One chord: a button that records a replacement when clicked, and its remove button. */
 function Chord({ chord, recording, onRecord, onRemove }) {
   return (
-    <span className={cn('inline-flex items-center rounded-md border bg-muted/40 text-xs', recording && 'ring-2 ring-ring')}>
-      <button type="button" className="px-1.5 py-0.5 font-mono" aria-label={recording ? 'Press the new keys' : `Change ${chord}`} onClick={onRecord}>
+    <Kbd className={cn('inline-flex items-center p-0', recording && 'ring-2 ring-ring')}>
+      <button type="button" className="px-1.5 py-0.5" aria-label={recording ? 'Press the new keys' : `Change ${chord}`} onClick={onRecord}>
         {recording ? 'Press keys...' : chord}
       </button>
       <button type="button" className="px-1 text-muted-foreground hover:text-foreground" aria-label={`Remove ${chord}`} onClick={onRemove}><X className="size-3" /></button>
-    </span>
+    </Kbd>
   );
 }
 
@@ -106,7 +107,7 @@ export function KeybindsSection({ value, onChange }) {
                         onRemove={() => onChange({ ...value, [d.id]: keys.filter((x) => x !== c) })} />
                     ))}
                     {rec?.id === d.id && rec.index == null
-                      ? <span className="rounded-md px-1.5 py-0.5 text-xs ring-2 ring-ring">Press keys...</span>
+                      ? <Kbd className="ring-2 ring-ring">Press keys...</Kbd>
                       : <Button type="button" variant="ghost" size="icon-xs" aria-label={`Add a key to ${d.label}`} onClick={() => setRec({ id: d.id, index: null })}><Plus /></Button>}
                     {!keys.length && rec?.id !== d.id && <span className="text-xs text-muted-foreground">No key</span>}
                     {warnings.map((w) => (

@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { Button } from '@/components/ui/button';
+import { Kbd } from '@/components/ui/kbd';
 import { hasForum, login, openSettings } from '../actions.js';
 import { refreshStatus, usable, useAssistant } from '../assistant/assistant.js';
 import { dictationReady, openInstall } from '../dictation/dictation.js';
@@ -11,7 +12,6 @@ import { useStore } from '../store.js';
 // selector of the element the ring marks (null: none); `view`, the page "Show me" opens (views.js showPage); `Actions`, a
 // component ({ next }) for the footer's left side.
 
-const Kbd = ({ id }) => <kbd className="rounded-md border bg-muted/40 px-1.5 py-0.5 font-mono text-xs">{keyLabel(id)}</kbd>;
 const Note = ({ children }) => <span className="text-xs text-muted-foreground">{children}</span>;
 
 function DictationActions({ next }) {
@@ -93,7 +93,7 @@ export const STEPS = [
     title: 'Quick tools and tool search',
     body: () => (
       <p>
-        <Kbd id="app.quickTools" /> opens quick tools at the pointer. <Kbd id="app.toolSearch" /> opens tool search, where you type
+        <Kbd>{keyLabel('app.quickTools')}</Kbd> opens quick tools at the pointer. <Kbd>{keyLabel('app.toolSearch')}</Kbd> opens tool search, where you type
         what you want, such as "red" or "arrow". Both offer the tools for what you are working on, and in tool search a selected
         flowchart or plan chart lists its own actions first. Keys can be changed in Settings &gt; Keybinds.
       </p>
@@ -103,7 +103,7 @@ export const STEPS = [
   {
     id: 'dictation',
     title: 'Dictation',
-    body: () => <p>Once dictation is installed, the mic button at the bottom right opens its pane. Hold its Hold to dictate button and speak, or hold <Kbd id="app.dictate" /> anywhere. The words appear in the pane, where you can copy them. Dictation runs Whisper on this computer after a one-time download, so no audio leaves it.</p>,
+    body: () => <p>Once dictation is installed, the mic button at the bottom right opens its pane. Hold its Hold to dictate button and speak, or hold <Kbd>{keyLabel('app.dictate')}</Kbd> anywhere. The words appear in the pane, where you can copy them. Dictation runs Whisper on this computer after a one-time download, so no audio leaves it.</p>,
     target: '[data-dictation-button]', view: null, Actions: DictationActions,
   },
   {
