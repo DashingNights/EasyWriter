@@ -120,8 +120,8 @@ function PttIsland({ islandRef }) {
   const restore = !!phase;
   return (
     <div ref={islandRef} data-dictation-island
-      className={cn('absolute z-30 flex gap-1 rounded-island border shadow-lg', workspace
-        ? 'right-4 bottom-3 flex-row-reverse bg-card/70 backdrop-blur-[2px]' : 'bottom-[calc(3.75rem+2px)] left-2 flex-col-reverse bg-card p-1')}>
+      className={cn('absolute z-30 flex gap-1 rounded-island border bg-island shadow-xl', workspace
+        ? 'right-4 bottom-3 flex-row-reverse' : 'bottom-[calc(3.75rem+2px)] left-2 flex-col-reverse p-1')}>
       <Tip title={withKey('Hold to dictate', 'app.dictate')} side={side}>
         <Button variant="ghost" size={size} aria-label="Hold to dictate" data-agent-deny aria-pressed={d.recording} onPointerEnter={warm}
           className={cn(d.recording && 'bg-destructive/20 text-destructive hover:bg-destructive/25 hover:text-destructive')}
@@ -274,7 +274,7 @@ function Pane({ geo }) {
         </div>
       </div>
       {/* The pane's box is wider than the pod: only the pod and a shown card take the pointer, the rest clicks through. */}
-      <div ref={cardRef} data-dictation-card className={cn('-mt-5 w-full overflow-hidden rounded-xl border bg-card/85 pt-5 shadow-xl backdrop-blur-sm',
+      <div ref={cardRef} data-dictation-card className={cn('-mt-5 w-full overflow-hidden rounded-island border bg-island pt-5 shadow-xl',
         text && 'transition-[height] duration-300 ease-out', text && !moving && 'pointer-events-auto')}
         style={{ height, opacity: text ? 1 : 0 }}>
         <div ref={scrollRef} className="h-full overflow-y-auto px-4 pt-2 pb-3">

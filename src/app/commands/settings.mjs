@@ -17,6 +17,7 @@ const EXAMPLE_FOLDER = '3f6c2a1e-8b7d-4e5f-9a0b-1c2d3e4f5a6b';
 const PATCH = {
   forumWidth: { type: 'integer', minimum: 320, maximum: 4000 },
   theme: { enum: ['dark', 'light'] },
+  uiTheme: { enum: ['dark', 'light', 'system'] },
   baseFont: { enum: ['', ...FONTS.map((f) => f.css)] },
   baseSize: { enum: FONT_SIZES },
   historyLimit: { type: 'integer', minimum: 0, maximum: 500 },
@@ -56,7 +57,7 @@ export const defs = [
   }),
   define({
     id: 'settings.patch',
-    title: 'Change display settings such as forum width, theme, base font and undo history',
+    title: 'Change display settings such as app theme (uiTheme), forum width and undo history',
     group: 'settings',
     risk: 'write',
     undo: 'none',
@@ -65,7 +66,7 @@ export const defs = [
       properties: { patch: { type: 'object', additionalProperties: false, minProperties: 1, properties: PATCH } },
     },
     result: { type: 'object', required: ['keys', 'previous'] },
-    examples: [{ args: { patch: { forumWidth: 1200 } } }, { args: { patch: { theme: 'light', baseSize: 125 } } }],
+    examples: [{ args: { patch: { forumWidth: 1200 } } }, { args: { patch: { theme: 'light', baseSize: 125 } } }, { args: { patch: { uiTheme: 'system' } } }],
     run: async (ctx, a) => {
       const s = ctx.state.settings;
       const url = a.patch.selectedThread;

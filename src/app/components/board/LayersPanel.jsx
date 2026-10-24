@@ -40,7 +40,7 @@ export function LayersPanel({ board, className, style }) {
   return (
     <div {...CHROME} aria-label="Layers" onMouseDown={keepFocus} style={style}
       // left: past the rail (0.5rem + 2.5rem + its border) with a small gap
-      className={cn('absolute left-[3.5rem] z-30 flex w-60 flex-col overflow-y-auto rounded-island border bg-card p-1 text-sm shadow-lg [scrollbar-width:thin] [scrollbar-color:var(--border)_transparent]', className)}>
+      className={cn('absolute left-[3.5rem] z-30 flex w-60 flex-col overflow-y-auto rounded-island border bg-island p-1 text-sm shadow-xl [scrollbar-width:thin] [scrollbar-color:var(--border)_transparent]', className)}>
       <div className="px-2 py-1 text-xs font-medium text-muted-foreground">Layers</div>
       <Rows board={board} expanded={expanded.current.get(board)} />
     </div>

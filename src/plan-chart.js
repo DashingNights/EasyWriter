@@ -180,7 +180,7 @@ const CSS = `
 .pc-handle{position:absolute;top:0;right:0;bottom:0;width:calc(8px*var(--wb-inv,1));cursor:ew-resize}
 .pc-handle:hover{background:rgba(61,153,245,.45)}
 .pc-missing{display:flex;align-items:center;justify-content:center;min-height:80px;box-sizing:border-box;padding:12px;outline:1px dashed #8a8ca0;outline-offset:-1px;color:#8a8ca0;font:14px/1.3 system-ui,sans-serif;text-align:center}
-.pc-warn{position:absolute;left:6px;bottom:6px;max-width:calc(100% - 12px);box-sizing:border-box;padding:1px 7px;border-radius:999px;background:rgba(224,153,82,.16);color:#e09952;outline:1px dashed #e09952;outline-offset:-1px;font:11px/16px system-ui,sans-serif;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;pointer-events:none}
+.pc-warn{position:absolute;left:6px;bottom:6px;max-width:calc(100% - 12px);box-sizing:border-box;padding:1px 7px;border-radius:999px;background:color-mix(in oklab,var(--warning) 16%,var(--card));color:var(--warning);outline:1px dashed var(--warning);outline-offset:-1px;font:11px/16px system-ui,sans-serif;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;pointer-events:none}
 `;
 
 function injectChartStyle() {

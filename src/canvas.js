@@ -34,10 +34,10 @@ const CSS = `
 .sce-rs-e{left:100%;top:0;height:100%;width:calc(10px*var(--sce-inv,1));cursor:ew-resize}
 .sce-rs-s{top:100%;left:0;width:100%;height:calc(10px*var(--sce-inv,1));cursor:ns-resize}
 .sce-rs-se{left:100%;top:100%;width:calc(14px*var(--sce-inv,1));height:calc(14px*var(--sce-inv,1));cursor:nwse-resize}
-.sc-flow{position:absolute;left:6px;top:6px;display:flex;align-items:center;gap:4px;max-width:calc(100% - 12px);box-sizing:border-box;padding:1px 7px 1px 5px;border-radius:999px;background:rgba(20,21,28,.72);color:#a3a6b8;font:11px/16px system-ui,sans-serif;white-space:nowrap;pointer-events:none}
+.sc-flow{position:absolute;left:6px;top:6px;display:flex;align-items:center;gap:4px;max-width:calc(100% - 12px);box-sizing:border-box;padding:1px 7px 1px 5px;border-radius:999px;background:color-mix(in oklab,var(--card) 70%,transparent);backdrop-filter:blur(2px);box-shadow:0 0 0 1px var(--border);color:var(--muted-foreground);font:11px/16px system-ui,sans-serif;white-space:nowrap;pointer-events:none}
 .sc-flow svg{flex:none;width:12px;height:12px}
 .sc-flow span{overflow:hidden;text-overflow:ellipsis}
-.sc-flow-missing{background:rgba(224,153,82,.16);color:#e09952;outline:1px dashed #e09952;outline-offset:-1px}
+.sc-flow-missing{background:color-mix(in oklab,var(--warning) 16%,var(--card));color:var(--warning);outline:1px dashed var(--warning);outline-offset:-1px}
 `;
 
 function injectCanvasStyle() {

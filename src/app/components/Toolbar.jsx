@@ -25,9 +25,9 @@ import { keyLabel, withKey } from '../keybinds.js';
 import { getState, useEditor, useStore } from '../store.js';
 import { Tip } from './Tip.jsx';
 
-// Swatch colours for the app chrome (forum dark palette, SPEC §1).
+// Swatch colours: the forum's (SPEC §1), root, soft and hard in the page theme's (page.css).
 const HUE = {
-  root: '#c5c6d0', soft: '#a3a6b8', hard: '#ffffff', red: '#e05252', orange: '#e09952', yellow: '#e0c952',
+  root: 'var(--text)', soft: 'var(--c-soft)', hard: 'var(--c-hard)', red: '#e05252', orange: '#e09952', yellow: '#e0c952',
   green: '#62d926', blue: '#3d99f5', indigo: '#9c6ef7', violet: '#e052e0',
 };
 export const NONE = '-'; // Radix Select items need a non-empty value: stands for '' (no font, no thread)
@@ -169,7 +169,7 @@ export function Swatches({ swatches, onPick }) {
           aria-label={s.label}
           onMouseDown={keepFocus}
           onClick={() => { onPick?.(); s.pick(); }}
-          className={cn('size-6.5 rounded-sm border-2', s.active ? 'border-white' : 'border-transparent',
+          className={cn('size-6.5 rounded-sm', s.active ? 'ring-2 ring-foreground ring-offset-1 ring-offset-popover' : 'ring-1 ring-foreground/25 ring-inset',
             !s.color && 'border border-dashed border-muted-foreground text-muted-foreground')}
           style={s.color ? { background: s.color } : undefined}
         >
@@ -191,7 +191,7 @@ export function SwatchMenu({ title, icon, bar, swatches, side, anchor }) {
         <PopoverTrigger asChild>
           <Button variant="ghost" size="icon-sm" aria-label={title} onMouseDown={keepFocus} className={cn('flex-col gap-0.5', !side && 'w-7.5')}>
             {icon}
-            <span className="h-[3px] w-4 rounded-sm" style={{ background: bar }} />
+            <span className="h-[3px] w-4 rounded-sm ring-1 ring-foreground/25" style={{ background: bar }} />
           </Button>
         </PopoverTrigger>
       </Tip>
@@ -271,7 +271,7 @@ export function Toolbar() {
   // An island floating over the editor area at the bottom centre, next to where new lines are typed. The draft actions are
   // in the sidebar's Post card.
   return (
-    <div data-agent-area="toolbar" className="absolute bottom-3 left-1/2 z-30 w-max max-w-[calc(100%-7rem)] -translate-x-1/2 rounded-island border bg-card px-1.5 py-1 text-sm shadow-xl">
+    <div data-agent-area="toolbar" className="absolute bottom-3 left-1/2 z-30 w-max max-w-[calc(100%-7rem)] -translate-x-1/2 rounded-island border bg-island px-1.5 py-1 text-sm shadow-xl">
       <GroupRows>
         <Group>
           <ToolButton {...T.undo} />

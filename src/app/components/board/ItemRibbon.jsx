@@ -75,7 +75,7 @@ export function ItemRibbon() {
   if (!item) return null;
   return (
     <div ref={ref} {...CHROME} role="toolbar" aria-label="Item properties" onMouseDown={keepFocus}
-      className="fixed top-0 left-0 z-40 flex max-w-[24rem] flex-wrap items-center gap-1 rounded-island border bg-card/70 p-1 text-sm shadow-xl backdrop-blur-[2px]">
+      className="fixed top-0 left-0 z-40 flex max-w-[24rem] flex-wrap items-center gap-1 rounded-island border bg-island p-1 text-sm shadow-xl">
       <ItemControls board={board} item={item} group={group?.type} mixed={group?.mixed} />
     </div>
   );

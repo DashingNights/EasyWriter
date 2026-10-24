@@ -72,7 +72,7 @@ function DateCell({ value, muted, calendar, onCommit }) {
   };
   return (
     <DateField autoFocus defaultValue={value ?? ''} aria-label="Date" calendar={calendar}
-      className="h-6 w-full rounded border border-input bg-input/30 px-1 text-xs shadow-none md:text-xs [color-scheme:dark]"
+      className="h-6 w-full rounded border border-input bg-input/30 px-1 text-xs shadow-none md:text-xs"
       onPick={commit} onBlur={(e) => commit(e.target.value)}
       onKeyDown={(e) => {
         if (e.key === 'Enter') e.currentTarget.blur();
@@ -98,7 +98,7 @@ function SelectCell({ value, label, items, onChange }) {
   );
 }
 
-const Dot = ({ color }) => <span className={cn('size-2 shrink-0 rounded-full', !color && 'border border-muted-foreground/60')} style={color ? { background: color } : undefined} />;
+const Dot = ({ color }) => <span className={cn('size-2 shrink-0 rounded-full', color ? 'ring-1 ring-foreground/25 ring-inset' : 'border border-muted-foreground/60')} style={color ? { background: color } : undefined} />;
 
 /** The Backlog tab: rows = the tree (children indented, collapsible), the drag handle, #, title, status, priority, labels,
  * estimate, start, end, progress, deps, draft, checklist (each but the title can be hidden). A header click sorts (again:
@@ -219,7 +219,7 @@ export function Backlog({ ctx, options }) {
       case 'labels': return (
         <span className="flex min-w-0 flex-wrap gap-1">
           {t.labels.map((id) => plan.labels.find((l) => l.id === id)).filter(Boolean).map((l) => (
-            <span key={l.id} className="rounded px-1 text-[10px] leading-4" style={{ background: `${l.color}33`, color: l.color }}>{l.name}</span>
+            <span key={l.id} className="rounded px-1 text-[10px] leading-4" style={{ background: `${l.color}33`, color: `color-mix(in oklab, ${l.color} 65%, var(--foreground))` }}>{l.name}</span>
           ))}
         </span>
       );
@@ -234,7 +234,7 @@ export function Backlog({ ctx, options }) {
         const open = statusOf(t, ctx) !== done ? blockers(ctx, t.id) : [];
         return (
           <span className="flex min-w-0 items-center gap-1">
-            {open.length > 0 && <Tip title={`Blocked by ${open.map((b) => `#${b.num} ${b.title}`).join(', ')}`}><Ban className="size-3.5 text-orange-400" aria-label="Blocked" /></Tip>}
+            {open.length > 0 && <Tip title={`Blocked by ${open.map((b) => `#${b.num} ${b.title}`).join(', ')}`}><Ban className="size-3.5 text-warning" aria-label="Blocked" /></Tip>}
             <span className="truncate text-muted-foreground">{t.deps.map((d) => `#${ticketOf(d.on)?.num}`).join(', ')}</span>
           </span>
         );

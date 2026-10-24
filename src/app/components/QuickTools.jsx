@@ -146,7 +146,7 @@ function Island({ open }) {
         // Drawn at the pointer from the first frame (the layout effect only corrects it at the window edges) and only fades in:
         // no scale or slide, so it never seems to fly in.
         style={{ left: `calc(${open.x}px - 10rem)`, top: open.y + GAP }}
-        className="fixed z-50 w-[20rem] rounded-island border bg-card/70 backdrop-blur-[2px] px-1.5 py-1 text-sm shadow-xl animate-in fade-in-0 duration-100">
+        className="fixed z-50 w-[20rem] rounded-island border bg-island px-1.5 py-1 text-sm shadow-xl animate-in fade-in-0 duration-100">
         {open.board ? <BoardQuickTools board={open.board} /> : <TextTools anchor={ref} />}
       </div>
     </RailLayout.Provider>

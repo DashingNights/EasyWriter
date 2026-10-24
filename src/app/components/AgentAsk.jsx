@@ -42,7 +42,7 @@ export function AgentAsk({ inline = false }) {
   return (
     <div data-agent-ask data-board-chrome role="region" aria-label={`Agent request: ${name} wants to ${ask.title}`} onMouseDown={keepFocus}
       className={cn('rounded-island border bg-card p-3 text-sm', inline ? 'mx-1 max-h-[50%] shrink-0 self-stretch overflow-y-auto'
-        : 'fixed right-4 bottom-24 z-45 w-[22rem] max-w-[calc(100vw-2rem)] shadow-xl')}>
+        : 'fixed right-4 bottom-24 z-45 w-[22rem] max-w-[calc(100vw-2rem)] bg-island shadow-xl')}>
       <div className="flex items-center gap-2">
         <Badge variant="secondary"><Bot />{`Agent: ${name}`}</Badge>
         {queue.length > 1 && <span className="ml-auto text-xs text-muted-foreground">{`+${queue.length - 1} more`}</span>}

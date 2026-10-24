@@ -58,7 +58,7 @@ export function CanvasBar() {
   const node = { type: 'canvas', attrs: view.node.attrs };
   return (
     <div ref={ref} role="toolbar" aria-label="Canvas" onMouseDown={keepFocus}
-      className="fixed top-0 left-0 z-30 flex items-center gap-0.5 rounded-island border bg-card p-0.5 text-xs shadow-lg">
+      className="fixed top-0 left-0 z-30 flex items-center gap-0.5 rounded-island border bg-island p-0.5 text-xs shadow-xl">
       {tip('Edit the canvas (double-click, Enter)', <Button variant="ghost" size="xs" onClick={() => view.open()}><SquarePen />Edit</Button>)}
       <span className="px-1.5 text-muted-foreground tabular-nums">{`${dw} x ${Math.round((dw * h) / w)}`}</span>
       {tip('Artboard size (at most the page width)', <Button variant="ghost" size="xs" onClick={() => view.setDw(Math.min(w, view.maxWidth()))}>Actual size</Button>)}
@@ -120,7 +120,7 @@ function EditBar({ session }) {
   const tip = (title, button) => <Tip title={title} {...CHROME}>{button}</Tip>;
   return (
     <div ref={ref} {...CHROME} data-ribbon-avoid="" role="toolbar" aria-label="Canvas editing" onMouseDown={keepBoardFocus}
-      className="fixed top-0 left-0 z-30 flex items-center gap-1 rounded-island border bg-card p-0.5 text-xs shadow-lg">
+      className="fixed top-0 left-0 z-30 flex items-center gap-1 rounded-island border bg-island p-0.5 text-xs shadow-xl">
       {flow && (
         <span className="flex max-w-56 min-w-0 items-center gap-1 pl-1.5 text-muted-foreground" title="Edits change the library flowchart everywhere it is synced">
           <Workflow className="size-3.5 shrink-0" />

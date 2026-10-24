@@ -47,8 +47,8 @@ function ChatButton({ islandRef }) {
   const Icon = a.turn ? Bot : MessageSquare;
   return (
     <div ref={islandRef} data-chat-island
-      className={cn('absolute z-30 flex rounded-island border shadow-lg', workspace
-        ? 'right-4 bottom-[calc(2.75rem+2px)] bg-card/70 backdrop-blur-[2px]' : 'right-2 bottom-[calc(3.75rem+2px)] bg-card p-1')}>
+      className={cn('absolute z-30 flex rounded-island border bg-island shadow-xl', workspace
+        ? 'right-4 bottom-[calc(2.75rem+2px)]' : 'right-2 bottom-[calc(3.75rem+2px)] p-1')}>
       <Tip title={withKey('Assistant', 'app.assistant')} side="left">
         <Button variant="ghost" size={workspace ? 'icon-xs' : 'icon-sm'} aria-label="Assistant" aria-expanded={a.open} aria-controls="assistant-panel"
           onMouseDown={keep} onClick={() => toggleChat()}>
@@ -89,9 +89,9 @@ const modelName = (st) => (st?.model?.label === 'Custom model' ? st.model.file :
 function StatusDot({ server }) {
   const [title, color] = !server ? ['Not installed', 'bg-muted-foreground/50']
     : server.state === 'error' ? ['Error', 'bg-destructive']
-      : server.state === 'starting' ? ['Loading the model', 'bg-amber-400']
+      : server.state === 'starting' ? ['Loading the model', 'bg-warning']
         : server.state !== 'ready' ? ['Not running', 'bg-muted-foreground/50']
-          : server.sleeping ? ['Asleep', 'bg-amber-400'] : ['Ready', 'bg-green-500'];
+          : server.sleeping ? ['Asleep', 'bg-warning'] : ['Ready', 'bg-success'];
   return <span role="img" aria-label={title} title={title} data-status={server?.state ?? 'none'} className={cn('size-2 shrink-0 rounded-full', color)} />;
 }
 
@@ -108,7 +108,7 @@ function ContextRing({ usage, window }) {
   return (
     <Tip title={label} side="top">
       <span role="img" aria-label={label} data-context-ring={level}
-        className={cn('flex size-8 items-center justify-center', { ok: 'text-muted-foreground', warn: 'text-amber-500', high: 'text-destructive' }[level])}>
+        className={cn('flex size-8 items-center justify-center', { ok: 'text-muted-foreground', warn: 'text-warning', high: 'text-destructive' }[level])}>
         <svg viewBox="0 0 16 16" className="size-4 -rotate-90" aria-hidden>
           <circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" strokeOpacity="0.25" strokeWidth="2" />
           <circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" strokeWidth="2" strokeDasharray={C} strokeDashoffset={C * (1 - f)} />
@@ -453,7 +453,7 @@ function ChatPanel({ islandRef }) {
   const badge = MODE_BADGE[assistantMode(conf).permission];
   return (
     <div ref={panelRef} id="assistant-panel" data-assistant-panel role="region" aria-label="Assistant"
-      className="absolute z-[44] flex flex-col rounded-island border bg-card/70 p-1 text-sm shadow-xl backdrop-blur-[2px]"
+      className="absolute z-[44] flex flex-col rounded-island border bg-island p-1 text-sm shadow-xl"
       style={{ left: vp.left - box.left + r.left, top: vp.top - box.top + r.top, width: r.width, height: r.height }}
       onPointerDownCapture={onPointerDownCapture} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onLostPointerCapture={onPointerUp}
       onDragOver={(e) => { if (ready && [...e.dataTransfer.items].some((i) => i.type.startsWith('image/'))) e.preventDefault(); }}

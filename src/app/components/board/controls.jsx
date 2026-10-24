@@ -184,7 +184,7 @@ export function ColorSwatch({ board, title, value, live = false, onChange }) {
     }}>
       <Tip title={title} {...CHROME}>
         <PopoverTrigger asChild>
-          <button type="button" aria-label={title} className="size-8 shrink-0 cursor-pointer rounded-md border border-input bg-input/30 p-1">
+          <button type="button" aria-label={title} className="size-8 shrink-0 cursor-pointer rounded-md border border-input bg-transparent p-1 dark:bg-input/30">
             <span className="block size-full rounded-sm" style={{ background: `linear-gradient(${hex}, ${hex}), ${CHECKS}` }} />
           </button>
         </PopoverTrigger>
@@ -624,7 +624,7 @@ export function ShapeList({ board, current, withPrefabs, openAt, pick, close, pa
             onMouseDown={noFocus} onClick={() => toggleShapeFavourite(x.ref)}
             className={cn('absolute -top-1 -right-1 grid size-4 place-items-center rounded-full border bg-popover text-muted-foreground opacity-0',
               'group-focus-within:opacity-100 group-hover:opacity-100 hover:text-foreground')}>
-            <Star className={cn('size-2.5', starred && 'fill-amber-400 text-amber-400')} />
+            <Star className={cn('size-2.5', starred && 'fill-amber-500 text-amber-500 dark:fill-amber-400 dark:text-amber-400')} />
           </button>
         )}
         {drag?.target === x.ref && <span className={cn('pointer-events-none absolute inset-y-0 w-0.5 rounded bg-ring', drag.after ? '-right-px' : '-left-px')} />}

@@ -20,7 +20,7 @@ export function BackgroundPane() {
   }, []);
   return (
     <div data-background-pane role="region" aria-label="Background window"
-      className="absolute top-2 left-14 z-[44] flex h-80 min-h-40 w-[30rem] min-w-64 resize flex-col overflow-hidden rounded-island border bg-card/90 p-1 text-sm shadow-xl backdrop-blur-[2px]">
+      className="absolute top-2 left-14 z-[44] flex h-80 min-h-40 w-[30rem] min-w-64 resize flex-col overflow-hidden rounded-island border bg-island p-1 text-sm shadow-xl">
       <div className="flex shrink-0 items-center gap-1.5 py-0.5 pr-0.5 pl-2 select-none">
         <span className="shrink-0 font-medium">Background window</span>
         <span className="min-w-0 truncate text-xs text-muted-foreground" title={title}>{title}</span>

@@ -85,7 +85,7 @@ export function KeybindsSection({ value, onChange }) {
       <div className="flex flex-wrap items-center gap-2">
         <Input value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="Filter keybinds" aria-label="Filter keybinds" className="h-8 w-56" />
         <Button type="button" variant="outline" size="sm" disabled={!changed} onClick={() => onChange(DEFAULTS)}><RotateCcw />Reset all</Button>
-        {warned > 0 && <span className="flex items-center gap-1 text-xs text-amber-400"><TriangleAlert className="size-3.5" />{warned === 1 ? '1 keybind has a warning' : `${warned} keybinds have warnings`}</span>}
+        {warned > 0 && <span className="flex items-center gap-1 text-xs text-warning"><TriangleAlert className="size-3.5" />{warned === 1 ? '1 keybind has a warning' : `${warned} keybinds have warnings`}</span>}
       </div>
       {GROUPS.map((group) => {
         const defs = DEFS.filter((d) => d.group === group && shown(d));
@@ -110,7 +110,7 @@ export function KeybindsSection({ value, onChange }) {
                       : <Button type="button" variant="ghost" size="icon-xs" aria-label={`Add a key to ${d.label}`} onClick={() => setRec({ id: d.id, index: null })}><Plus /></Button>}
                     {!keys.length && rec?.id !== d.id && <span className="text-xs text-muted-foreground">No key</span>}
                     {warnings.map((w) => (
-                      <p key={w} className="flex w-full items-start gap-1 text-xs text-amber-400"><TriangleAlert className="mt-px size-3 shrink-0" />{w}</p>
+                      <p key={w} className="flex w-full items-start gap-1 text-xs text-warning"><TriangleAlert className="mt-px size-3 shrink-0" />{w}</p>
                     ))}
                   </div>
                   <Button type="button" variant="ghost" size="icon-xs" aria-label={`Reset ${d.label}`} className={cn(isDefault && 'invisible')}

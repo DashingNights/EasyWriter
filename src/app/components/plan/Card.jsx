@@ -27,7 +27,7 @@ export async function openDraftFromPlan(id) {
 }
 
 const Dot = ({ color, className }) => (
-  <span className={cn('size-2 shrink-0 rounded-full', !color && 'border border-muted-foreground/60', className)} style={color ? { background: color } : undefined} />
+  <span className={cn('size-2 shrink-0 rounded-full', color ? 'ring-1 ring-foreground/25 ring-inset' : 'border border-muted-foreground/60', className)} style={color ? { background: color } : undefined} />
 );
 
 /** The card's menu (… button and right-click): status, priority, labels, milestone, draft, delete. Draft cards: status,
@@ -137,10 +137,10 @@ export function Card({ card, ctx, fields, ids, selected, focused, dragging, line
         {!t && <><FileText className="size-3.5" /><Badge variant="outline" className="h-4 px-1 text-[10px] text-muted-foreground">draft</Badge></>}
         {PriorityIcon && <Tip title={`${priorityName} priority`}><PriorityIcon className={cn('size-3.5', t.priority === 1 && 'text-destructive')} aria-label={priorityName} /></Tip>}
         {t && has('labels') && t.labels.map((id) => plan.labels.find((l) => l.id === id)).filter(Boolean).map((l) => (
-          <span key={l.id} className="rounded px-1 text-[10px] leading-4" style={{ background: `${l.color}33`, color: l.color }}>{l.name}</span>
+          <span key={l.id} className="rounded px-1 text-[10px] leading-4" style={{ background: `${l.color}33`, color: `color-mix(in oklab, ${l.color} 65%, var(--foreground))` }}>{l.name}</span>
         ))}
         {t?.end && has('due') && (
-          <span className={cn('tabular-nums', !done && t.end < ctx.today && 'text-destructive', !done && t.end === ctx.today && 'text-amber-400')}>
+          <span className={cn('tabular-nums', !done && t.end < ctx.today && 'text-destructive', !done && t.end === ctx.today && 'text-warning')}>
             {fmt(toDay(t.end), 'd MMM')}
           </span>
         )}
@@ -149,7 +149,7 @@ export function Card({ card, ctx, fields, ids, selected, focused, dragging, line
           <Tip title={unit.id === 'd' ? 'Estimate in working days' : `= ${+(t.estimate * unit.daysPer).toFixed(2)} d`}><span className="tabular-nums">{t.estimate} {unit.name}</span></Tip>
         )}
         {blocked.length > 0 && (
-          <Tip title={`Blocked by ${blocked.map((b) => `#${b.num} ${b.title}`).join(', ')}`}><Ban className="size-3.5 text-orange-400" aria-label="Blocked" /></Tip>
+          <Tip title={`Blocked by ${blocked.map((b) => `#${b.num} ${b.title}`).join(', ')}`}><Ban className="size-3.5 text-warning" aria-label="Blocked" /></Tip>
         )}
         {t && draft && has('draft') && (
           <button type="button" className="flex min-w-0 items-center gap-0.5 hover:text-foreground" title={`Open the draft "${draft.title}"`}
@@ -157,7 +157,7 @@ export function Card({ card, ctx, fields, ids, selected, focused, dragging, line
             <FileText className="size-3.5 shrink-0" /><span className="max-w-32 truncate">{draft.title || 'Untitled draft'}</span>
           </button>
         )}
-        {card.pushedAt != null && has('pushed') && <Tip title="Pushed to the forum"><CircleCheck className="size-3.5 text-green-500" aria-label="Pushed" /></Tip>}
+        {card.pushedAt != null && has('pushed') && <Tip title="Pushed to the forum"><CircleCheck className="size-3.5 text-success" aria-label="Pushed" /></Tip>}
         {tag && (
           <Tip title={`Its draft's tag "${tag.name}" is followed by no column`}>
             <Badge variant="outline" className="h-4 gap-1 px-1 text-[10px] text-muted-foreground"><Dot color={tag.color} className="size-1.5" />{tag.name}</Badge>

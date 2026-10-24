@@ -40,10 +40,10 @@ export function Notices() {
           className={cn('relative col-start-1 row-start-1 origin-bottom transition-transform duration-180 ease-out motion-reduce:transition-none',
             i < notices.length - 1 && 'text-transparent [&_svg]:text-transparent')}>
           <div data-notice onAnimationEnd={() => setState({ notices: getState().notices.filter((x) => x !== n) })}
-            className={cn('flex items-center border backdrop-blur-[2px] transition-none animate-out fade-out fill-mode-forwards delay-2000 duration-1000 ease-in',
+            className={cn('flex items-center border bg-island shadow-xl transition-none animate-out fade-out fill-mode-forwards delay-2000 duration-1000 ease-in',
               n.mode
-                ? 'gap-2 rounded-full bg-card/40 px-4 py-1.5 text-base font-medium shadow-lg [&_svg]:size-5'
-                : 'gap-1.5 rounded-full bg-card/70 px-3 py-1 text-sm shadow-lg [&_svg]:size-4')}>
+                ? 'gap-2 rounded-full px-4 py-1.5 text-base font-medium [&_svg]:size-5'
+                : 'gap-1.5 rounded-full px-3 py-1 text-sm [&_svg]:size-4')}>
             {n.icon}
             {n.text}
           </div>

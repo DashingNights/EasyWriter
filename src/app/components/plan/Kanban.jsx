@@ -214,9 +214,9 @@ export function Kanban({ ctx, options }) {
         const noTag = over && unmapped(col.id, drag.ids);
         return (
           <section key={col.id ?? ''} data-column={col.id ?? ''} aria-label={col.name}
-            className={cn('relative flex w-80 shrink-0 flex-col rounded-lg border border-transparent bg-muted/40', over && 'border-ring/60 bg-muted/70')}>
+            className={cn('relative flex w-80 shrink-0 flex-col rounded-lg border border-transparent', over ? 'border-ring/60 bg-accent' : 'bg-muted dark:bg-black/20')}>
             <header className="flex h-8 shrink-0 items-center gap-1.5 px-2 text-xs">
-              <span className={cn('size-2.5 shrink-0 rounded-full', col.id === null && 'border border-muted-foreground/60')} style={col.color ? { background: col.color } : undefined} />
+              <span className={cn('size-2.5 shrink-0 rounded-full', col.id === null ? 'border border-muted-foreground/60' : 'ring-1 ring-foreground/25 ring-inset')} style={col.color ? { background: col.color } : undefined} />
               {renaming === col.id && col.id !== null ? (
                 <InlineInput value={col.name} maxLength={40} aria-label="Column name" className="h-6 flex-1 text-xs md:text-xs"
                   onKeyDownCapture={(e) => e.key === 'Escape' && e.preventDefault()} // cancels the edit only, not the workspace
@@ -225,7 +225,7 @@ export function Kanban({ ctx, options }) {
                 <span className="min-w-0 truncate font-medium" onDoubleClick={() => col.id !== null && setRenaming(col.id)}>{col.name}</span>
               )}
               {tag && <Tip title={`Draft cards follow the tag "${tag.name}"`}><Tag className="size-3 shrink-0 text-muted-foreground" aria-label={`Follows ${tag.name}`} /></Tip>}
-              {col.done && <Tip title="Done column"><CircleCheck className="size-3 shrink-0 text-green-500" aria-label="Done column" /></Tip>}
+              {col.done && <Tip title="Done column"><CircleCheck className="size-3 shrink-0 text-success" aria-label="Done column" /></Tip>}
               <span className={cn('text-muted-foreground tabular-nums', w.over && 'text-destructive')}>{w.limit ? `${w.count}/${w.limit}` : w.count}</span>
               <span className="flex-1" />
               <Tip title={withKey('Add a ticket here', 'plan.newTicket')}>

@@ -1,5 +1,5 @@
 'use strict';
-const { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, net, session, shell } = require('electron');
+const { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeTheme, net, session, shell } = require('electron');
 const path = require('path');
 const fs = require('fs/promises');
 const { pathToFileURL } = require('url');
@@ -69,7 +69,8 @@ const LOGGED_OUT = { loggedIn: false, memberId: 0, name: null, profileUrl: null 
 
 const DEFAULT_SETTINGS = {
   forumWidth: 1454,
-  theme: 'light',
+  theme: 'light', // the page preview's forum colours (Settings > Forum Page theme)
+  uiTheme: 'dark', // the app's own colours (Settings > General Theme): dark | light | system (actions.js applyUiTheme)
   baseFont: '',
   baseSize: 100,
   presets: [
@@ -137,6 +138,7 @@ function setSettings(partial) {
     const merged = { ...(await getSettings()), ...partial };
     await writeJsonAtomic(settingsFile(), merged);
     if ('uiScale' in partial) applyUiScale(mainWin, merged.uiScale);
+    if ('uiTheme' in partial) applyNativeTheme(merged.uiTheme);
     if ('keybinds' in partial) refreshKeys(merged);
     // Settings > MCP turns the gateway on or off live; the assistant on Claude Code or Codex keeps its pipe open
     if (('agent' in partial || 'assistant' in partial) && !SMOKE) agentServer.sync(merged);
@@ -486,6 +488,7 @@ const HEX = /^#[0-9a-f]{6}$/i;
 handle('window.titleBar', ({ color, symbolColor } = {}) => {
   if (!HEX.test(color) || !HEX.test(symbolColor)) throw new Error('title bar colours must be #rrggbb');
   mainWin.setTitleBarOverlay({ color, symbolColor });
+  mainWin.setBackgroundColor(color); // what shows in a resize or restore before the page repaints
 });
 // The page as the user sees it (§8 view.render): the whole window's content as PNG bytes; the renderer crops its viewport.
 handle('window.capture', () => mainWin.webContents.capturePage().then((img) => img.toPNG()));
@@ -627,11 +630,19 @@ async function loadKeys() {
 
 // Custom frame (§4): no native title bar and no menu. The renderer's title strip (34 px with its 1 px bottom border, app.css
 // .titlebar) is the drag region; the Window Controls Overlay draws the native minimize / maximize / close buttons over its
-// right end, 33 px tall so the border runs on under them. Colours: the always-dark chrome's --background / --foreground until
-// the renderer sends the strip's own (window.titleBar).
-const TITLE_BAR = { color: '#0a0a0a', symbolColor: '#f5f5f5', height: 33 };
+// right end, 33 px tall so the border runs on under them. Colours: the theme's --card / --card-foreground (app.css) until the
+// renderer sends the strip's own (window.titleBar).
+const TITLE_BAR = { color: '#383838', symbolColor: '#f5f5f5', height: 33 };
+const TITLE_BAR_LIGHT = { color: '#ffffff', symbolColor: '#1f1f1f' };
+
+// The app's colours (settings.uiTheme: dark | light | system) for what Chromium and Windows draw: native menus and dialogs,
+// and prefers-color-scheme in every page (the in-app browser's too, and the renderer's first frame, main.jsx).
+function applyNativeTheme(uiTheme) {
+  nativeTheme.themeSource = uiTheme === 'light' || uiTheme === 'system' ? uiTheme : 'dark';
+}
 
 function createMainWindow() {
+  const bar = { ...TITLE_BAR, ...(!nativeTheme.shouldUseDarkColors && TITLE_BAR_LIGHT) };
   const win = new BrowserWindow({
     width: 1600,
     height: 1000,
@@ -639,7 +650,8 @@ function createMainWindow() {
     title: 'EasyWriter',
     icon: ICON,
     titleBarStyle: 'hidden',
-    titleBarOverlay: TITLE_BAR,
+    titleBarOverlay: bar,
+    backgroundColor: bar.color,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -925,6 +937,7 @@ if (!SMOKE && !app.requestSingleInstanceLock()) {
       s.setPermissionRequestHandler((_wc, p, cb) => cb(allowed(p)));
       s.setPermissionCheckHandler((_wc, p) => allowed(p));
     }
+    applyNativeTheme((await getSettings()).uiTheme);
     mainWin = createMainWindow();
     if (SMOKE) {
       mainWin.showInactive();

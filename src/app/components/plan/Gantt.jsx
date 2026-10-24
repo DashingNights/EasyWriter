@@ -31,7 +31,8 @@ import { GanttDeps, GanttGrid, GanttRows, GanttTicks } from './ChartView.jsx';
 // View options (zoom, what is shown) live in planUi.options with the header's filters, so saved views and Insert into
 // draft take them; the task-list width is per viewer (localStorage `daf-writer.plan.<planId>`).
 
-const APP = { accent: '#3d99f5', critical: '#e05252', conflict: '#e09952', done: '#62d926', text: '#d4d4d4', strong: '#f5f5f5', muted: '#a1a1a1', border: '#525252' };
+// The chrome's colours (app.css tokens) for the neutral keys, so the chart follows the light and dark themes.
+const APP = { accent: '#3d99f5', critical: '#e05252', conflict: '#e09952', done: '#62d926', text: 'var(--foreground)', strong: 'var(--foreground)', muted: 'var(--muted-foreground)', border: 'var(--ring)' };
 const ZOOMS = [['day', 'Day'], ['week', 'Week'], ['month', 'Month'], ['quarter', 'Quarter'], ['fit', 'Fit']];
 const STEPS = ['day', 'week', 'month', 'quarter']; // Ctrl + wheel and + / − step through them
 const SHOW = [['showDeps', 'Dependencies'], ['showCritical', 'Critical path'], ['showBaseline', 'Baseline'], ['showToday', 'Today line'],
@@ -95,7 +96,7 @@ function GanttMenu({ menu, ctx, sched, onClose }) {
   const { ids } = menu;
   const update = (patch) => dispatch('plan.tickets.update', { planId, ticketIds: ids, patch });
   const n = sched.byId[t.id];
-  const Dot = ({ color }) => <span className={cn('size-2 shrink-0 rounded-full', !color && 'border border-muted-foreground/60')} style={color ? { background: color } : undefined} />;
+  const Dot = ({ color }) => <span className={cn('size-2 shrink-0 rounded-full', color ? 'ring-1 ring-foreground/25 ring-inset' : 'border border-muted-foreground/60')} style={color ? { background: color } : undefined} />;
   return (
     <DropdownMenu open modal={false} onOpenChange={(open) => !open && onClose()}>
       <DropdownMenuTrigger asChild><span className="pointer-events-none fixed size-0" style={{ left: menu.x, top: menu.y }} /></DropdownMenuTrigger>
@@ -582,7 +583,7 @@ export function Gantt({ ctx, options }) {
         </DropdownMenu>
         {conflicts > 0 && (
           <Tip title="Orange bars start before their predecessors allow. Auto-schedule in More plan actions moves them.">
-            <span className="px-1 text-orange-400">{conflicts} conflict{conflicts === 1 ? '' : 's'}</span>
+            <span className="px-1 text-warning">{conflicts} conflict{conflicts === 1 ? '' : 's'}</span>
           </Tip>
         )}
         <span className="min-w-0 flex-1 truncate text-right text-muted-foreground">

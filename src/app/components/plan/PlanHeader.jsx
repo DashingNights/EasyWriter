@@ -110,7 +110,7 @@ export function PlanHeader({ plan, tab }) {
         {!plan.labels.length && <DropdownMenuItem disabled>No labels yet (Labels... in More plan actions)</DropdownMenuItem>}
         {plan.labels.map((l) => (
           <DropdownMenuCheckboxItem key={l.id} checked={!!options.labels?.includes(l.id)} onSelect={(e) => e.preventDefault()} onCheckedChange={() => toggleIn(options, 'labels', l.id)}>
-            <span className="size-2 rounded-full" style={{ background: l.color }} />{l.name}
+            <span className="size-2 rounded-full ring-1 ring-foreground/25 ring-inset" style={{ background: l.color }} />{l.name}
           </DropdownMenuCheckboxItem>
         ))}
       </Menu>

@@ -93,7 +93,7 @@ function ColumnsDialog({ planId, onClose }) {
                 <SelectTrigger size="sm" aria-label="Status tag it follows" className="w-36"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value={NONE}>No status tag</SelectItem>
-                  {free.map((t) => <SelectItem key={t.id} value={t.id}><span className="size-2 rounded-full" style={{ background: t.color }} />{t.name}</SelectItem>)}
+                  {free.map((t) => <SelectItem key={t.id} value={t.id}><span className="size-2 rounded-full ring-1 ring-foreground/25 ring-inset" style={{ background: t.color }} />{t.name}</SelectItem>)}
                 </SelectContent>
               </Select>
               <CommitInput aria-label="WIP limit" title="WIP limit (empty: none)" placeholder="WIP" type="number" min={1} step={1} className="h-8 w-20"
@@ -278,7 +278,7 @@ const WEEKDAYS = [[1, 'Mon'], [2, 'Tue'], [3, 'Wed'], [4, 'Thu'], [5, 'Fri'], [6
 function DateInput({ value, onCommit, ...props }) {
   const commit = (v) => (v || null) !== (value || null) && onCommit(v || null);
   return (
-    <DateField defaultValue={value ?? ''} className="h-8 w-40 [color-scheme:dark]" {...props} onPick={commit} onBlur={(e) => commit(e.target.value)}
+    <DateField defaultValue={value ?? ''} className="h-8 w-40" {...props} onPick={commit} onBlur={(e) => commit(e.target.value)}
       onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()} />
   );
 }

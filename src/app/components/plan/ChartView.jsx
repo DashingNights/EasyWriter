@@ -238,7 +238,8 @@ export function GanttRows({ L, ctx, p, sched }) {
         const { x, w } = r.bar;
         const title = t.title || 'Untitled';
         const outline = r.conflict ? p.conflict : r.critical ? p.critical : null;
-        const stroke = outline ? { stroke: outline, strokeWidth: 2 } : {};
+        const color = barColor(ctx, t);
+        const stroke = outline ? { stroke: outline, strokeWidth: 2 } : ink(color) === '#111111' ? { stroke: p.border } : {}; // a pale bar's edge
         // The title after the bar (from x `a`, past a dependency's 12 px stub), or before it (up to x `b`) when it would run past
         // the grid's end and has more room there; cut to its side, so it is never drawn outside the grid.
         const label = (a, b, props = { fill: p.text }) => {
@@ -255,7 +256,6 @@ export function GanttRows({ L, ctx, p, sched }) {
             </g>
           );
         }
-        const color = barColor(ctx, t);
         if (r.kind === 'milestone') {
           return (
             <g key={r.id} data-bar={r.id} data-critical={r.critical || undefined}>

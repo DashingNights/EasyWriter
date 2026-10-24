@@ -46,7 +46,7 @@ function Row({ active, onClick, title, className, children, ...props }) {
  * hover and while one of their menus is open. */
 function HoverActions({ children }) {
   return (
-    <div className="invisible absolute top-1/2 right-1 flex -translate-y-1/2 items-center rounded-md bg-accent pl-1 group-hover:visible has-[[data-state=open]]:visible">
+    <div className="invisible absolute top-1/2 right-1 flex -translate-y-1/2 items-center rounded-md bg-background bg-[image:linear-gradient(var(--accent),var(--accent))] pl-1 group-hover:visible has-[[data-state=open]]:visible">
       {children}
     </div>
   );
@@ -275,7 +275,7 @@ function DraftRow({ d, folderId, folders, tag, tags, active, dragging, after, on
         {(working || background) && (
           <Badge variant="secondary" data-draft-assistant className="shrink-0 gap-1 px-1.5 py-0 text-[10px]">{working && <LoaderCircle className="size-3 animate-spin" />}Assistant</Badge>
         )}
-        {d.pushedAt && <Tip title="Pushed to the forum"><CircleCheck className="size-3.5 shrink-0 text-green-500" aria-label="Pushed" /></Tip>}
+        {d.pushedAt && <Tip title="Pushed to the forum"><CircleCheck className="size-3.5 shrink-0 text-success" aria-label="Pushed" /></Tip>}
         <HoverActions>
           <RowAction title="Tag" onClick={() => setTagging(true)}><Tag /></RowAction>
           <RowAction title="Move to..." slot={DropdownMenuTrigger}><FolderInput /></RowAction>
@@ -359,7 +359,7 @@ function Drafts() {
           <Row active={editorShown} onClick={() => showPage('editor')}>
             <span className="size-4 shrink-0" />{/* the tag dot's slot: a draft can be tagged once it is saved */}
             <span className="min-w-0 flex-1 truncate">Untitled draft</span>
-            <Badge variant="outline" className="border-amber-500/40 text-amber-300">not saved yet</Badge>
+            <Badge variant="outline" className="border-warning/40 text-warning">not saved yet</Badge>
           </Row>
         )}
         {loose.map((d) => row(d, null))}
@@ -423,7 +423,7 @@ export function SidebarButton({ side }) {
  * control while the sidebar is hidden. */
 export function SidebarToggle() {
   return (
-    <div className="absolute bottom-3 left-2 z-30 rounded-island border bg-card p-1 shadow-lg">
+    <div className="absolute bottom-3 left-2 z-30 rounded-island border bg-island p-1 shadow-xl">
       <SidebarButton side="right" />
     </div>
   );

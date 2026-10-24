@@ -61,7 +61,7 @@ function BrowserTabs({ ui }) {
   const box = useViewportBox(on);
   if (!on || !box) return null;
   return (
-    <div data-browser-tabs className="absolute z-[25] flex min-h-9 items-center rounded-br-md border-r border-b bg-background p-1 text-xs text-foreground"
+    <div data-browser-tabs className="absolute z-[25] flex min-h-9 items-center rounded-br-md border-r border-b bg-island p-1 text-xs text-card-foreground"
       style={{ left: box.left, top: box.top, maxWidth: box.width }}>
       <TabStrip />
     </div>
@@ -79,15 +79,15 @@ function hex(css) {
 /** The title strip (§7, app.css .titlebar): the window's drag region with the app icon and name. The native window controls
  * are drawn over its right end in its background and text colours, sent to main at start and on every theme change. */
 function TitleBar() {
-  const theme = useStore((s) => s.settings?.theme);
+  const dark = useStore((s) => s.uiDark);
   const ref = useRef(null);
   useEffect(() => {
     if (WORKER) return; // the background window (§7i) has no window controls of its own
     const cs = getComputedStyle(ref.current);
     window.api.window.titleBar({ color: hex(cs.backgroundColor), symbolColor: hex(cs.color) });
-  }, [theme]);
+  }, [dark]);
   return (
-    <div ref={ref} data-titlebar className="titlebar col-span-2 flex items-center gap-[8px] border-b bg-background pl-[10px] text-foreground select-none">
+    <div ref={ref} data-titlebar className="titlebar col-span-2 flex items-center gap-[8px] border-b bg-card pl-[10px] text-card-foreground select-none">
       <img src="build/icon.svg" alt="" draggable={false} className="size-[16px]" />
       <span className="text-[12px] text-muted-foreground">EasyWriter</span>
     </div>
@@ -109,6 +109,7 @@ export function App() {
   const ui = { view: useStore((s) => s.view) };
   const editor = can('view.editor', ui);
   const browser = can('view.browser', ui);
+  const dark = useStore((s) => s.uiDark);
   return (
     <TooltipProvider delayDuration={300}>
       <div className={cn('grid h-screen grid-rows-[auto_1fr_auto]', collapsed ? 'grid-cols-[0_1fr]' : 'grid-cols-[290px_1fr]')}>
@@ -150,7 +151,7 @@ export function App() {
       <DialogHost />
       <ToolSearch />
       <AgentAsk />
-      <Toaster position="top-right" offset={{ top: 58 }} duration={5000} />
+      <Toaster theme={dark ? 'dark' : 'light'} position="top-right" offset={{ top: 58 }} duration={5000} />
     </TooltipProvider>
   );
 }

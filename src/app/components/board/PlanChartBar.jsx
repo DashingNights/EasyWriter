@@ -92,7 +92,7 @@ function TextOption({ value, onCommit, className, ...props }) {
 function DateOption({ value, onCommit, ...props }) {
   const commit = (v) => (v || null) !== (value ?? null) && onCommit(v || null);
   return (
-    <DateField defaultValue={value ?? ''} className="h-6 w-[7.5rem] px-2 text-xs md:text-xs [color-scheme:dark]" {...props} onPick={commit} onBlur={(e) => commit(e.target.value)}
+    <DateField defaultValue={value ?? ''} className="h-6 w-[7.5rem] px-2 text-xs md:text-xs" {...props} onPick={commit} onBlur={(e) => commit(e.target.value)}
       onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()} />
   );
 }
@@ -119,7 +119,7 @@ function ChartOptions({ chart, ctx, error, set }) {
   const gantt = chart.view === 'gantt';
   return (
     <div className="grid grid-cols-[auto_minmax(0,1fr)] items-start gap-x-2 gap-y-1">
-      {error && <p className="col-span-2 rounded-md border border-dashed border-orange-400/70 px-1.5 py-1 text-xs text-orange-300">Push refuses this chart: {error}.</p>}
+      {error && <p className="col-span-2 rounded-md border border-dashed border-warning/70 px-1.5 py-1 text-xs text-warning">Push refuses this chart: {error}.</p>}
       <Row label="Title">
         <Chip tip="Title bar" icon pressed={o.title !== ''} onChange={(on) => put({ title: on ? null : '' })}><Heading /></Chip>
         <TextOption aria-label="Chart title" className="min-w-0 flex-1" disabled={o.title === ''} value={o.title ?? ''} placeholder={VIEW_TITLES[chart.view]}
@@ -241,7 +241,7 @@ export function PlanChartBar() {
   const tip = (title, button) => <Tip title={title}>{button}</Tip>;
   return (
     <div ref={ref} role="toolbar" aria-label="Plan chart" onMouseDown={keepFocus}
-      className="fixed top-0 left-0 z-30 flex flex-wrap items-center gap-0.5 rounded-island border bg-card p-0.5 text-xs shadow-lg">
+      className="fixed top-0 left-0 z-30 flex flex-wrap items-center gap-0.5 rounded-island border bg-island p-0.5 text-xs shadow-xl">
       <ToggleGroup type="single" size="sm" aria-label="Chart view" value={chart.view} onValueChange={(v) => v && set({ view: v })}>
         {VIEWS.map(([v, name, Icon]) => (
           <ToggleGroupItem key={v} value={v} aria-label={name} className="h-6 gap-1 px-1.5 text-xs" onMouseDown={keepFocus}><Icon />{name}</ToggleGroupItem>
@@ -254,7 +254,7 @@ export function PlanChartBar() {
         {/* mousedown stops here: React bubbles it out of the portal to the bar's keepFocus, which would block focusing its inputs */}
         {/* On open the panel itself takes the focus, not its first control (no focus ring, no tooltip): keys no longer reach the
             document (typing over the selected chart), Tab goes into the panel, Escape closes it */}
-        <PopoverContent align="end" className="w-[24rem] rounded-(--radius-island) bg-card/70 p-1.5 text-xs shadow-xl backdrop-blur-[2px]"
+        <PopoverContent align="end" className="w-[24rem] rounded-(--radius-island) bg-island p-1.5 text-xs shadow-xl"
           onOpenAutoFocus={(e) => { e.preventDefault(); e.target.focus(); }} onCloseAutoFocus={refocusEditor} onMouseDown={(e) => e.stopPropagation()}>
           <ChartOptions chart={chart} ctx={chart.frozen?.ctx ?? ctx} error={snap.error} set={set} />
         </PopoverContent>

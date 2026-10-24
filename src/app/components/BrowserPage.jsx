@@ -469,7 +469,7 @@ function TabFrame({ tab, mode, place, z }) {
           <WebTab tab={tab} shown={shown} />
           {resizing && (
             <div className="absolute inset-0 flex items-center justify-center bg-[#3d99f5]/15 text-sm font-medium select-none">
-              <span className="rounded-md bg-card px-3 py-1.5 shadow">Drag the blue squares to resize. Press Enter or Esc when done.</span>
+              <span className="rounded-island border bg-island px-3 py-1.5 shadow-xl">Drag the blue squares to resize. Press Enter or Esc when done.</span>
             </div>
           )}
         </div>

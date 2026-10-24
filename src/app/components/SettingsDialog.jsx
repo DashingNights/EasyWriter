@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ArrowDown, ArrowUp, Bot, Check, ChevronsUpDown, CloudUpload, Globe, RefreshCw, Keyboard, MessageSquare, Mic, Plus, SlidersHorizontal, Tags, Type, X } from 'lucide-react';
+import { ArrowDown, ArrowUp, Bot, Check, ChevronsUpDown, CloudUpload, Globe, RefreshCw, Keyboard, MessageSquare, MessagesSquare, Mic, Monitor, Moon, Plus, SlidersHorizontal, Sun, Tags, Type, X } from 'lucide-react';
 import { toast } from 'sonner';
 // import { Badge } from '@/components/ui/badge'; // LOCAL LLM (commented out 2026-10-07): the model file row's state
 import { Button } from '@/components/ui/button';
@@ -11,9 +11,10 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Slider } from '@/components/ui/slider';
 import { Switch } from '@/components/ui/switch';
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { FONT_SIZES, TEXT_COLORS, HIGHLIGHTS, FONTS } from '../../extensions.js';
 import { keyLabel, withKey } from '../keybinds.js';
-import { confirmDialog, DEFAULT_WIDTH, saveSettings } from '../actions.js';
+import { changeSettings, confirmDialog, DEFAULT_WIDTH, saveSettings } from '../actions.js';
 // LOCAL LLM (commented out 2026-10-07): BACKENDS, deleteAssistant, deleteLeftover, openInstall as openAssistantInstall, size, wake.
 import { ASSISTANT_DEFAULTS, saveAssistant } from '../assistant/assistant.js';
 import QWEN_MODELS from '../../assistant/qwen-models.json';
@@ -50,6 +51,19 @@ function UiScale() {
       <Pick label="UI scale" value={value} onChange={(v) => saveSettings({ uiScale: Number(v) })} options={UI_SCALES} className="w-24" />
       <span className="text-xs text-muted-foreground">{keyLabel('app.zoomIn')} and {keyLabel('app.zoomOut')} change it too</span>
     </div>
+  </>;
+}
+
+// The app's colours (settings.uiTheme), applied at once like the UI scale.
+const UI_THEMES = [['light', 'Light', Sun, 'Light'], ['system', 'Auto', Monitor, 'Follows the system'], ['dark', 'Dark', Moon, 'Dark']];
+
+function UiTheme() {
+  const value = useStore((s) => s.settings?.uiTheme ?? 'dark');
+  return <>
+    <Label className="text-muted-foreground">Theme</Label>
+    <ToggleGroup type="single" variant="outline" size="sm" aria-label="Theme" value={value} onValueChange={(v) => v && changeSettings({ uiTheme: v })}>
+      {UI_THEMES.map(([v, label, Icon, title]) => <ToggleGroupItem key={v} value={v} title={title}><Icon />{label}</ToggleGroupItem>)}
+    </ToggleGroup>
   </>;
 }
 
@@ -663,7 +677,7 @@ function AssistantSection({ value: a, onChange }) {
 //   );
 // }
 
-const SWATCH = 'size-8 shrink-0 cursor-pointer rounded-md border border-input bg-input/30 p-1 [&::-webkit-color-swatch]:rounded-sm [&::-webkit-color-swatch]:border-0 [&::-webkit-color-swatch-wrapper]:p-0';
+const SWATCH = 'size-8 shrink-0 cursor-pointer rounded-md border border-input bg-transparent p-1 dark:bg-input/30 [&::-webkit-color-swatch]:rounded-sm [&::-webkit-color-swatch]:border-0 [&::-webkit-color-swatch-wrapper]:p-0';
 
 // The section nav: one entry per <Section> in the dialog, in the same order ([id, nav label, icon]).
 const AGENT_PORT = 47823; // settings.agent.port when unset (main's src/agent-server.js PORT)
@@ -722,7 +736,7 @@ function AgentsSection({ enabled, setEnabled, port, setPort }) {
 
 const SECTIONS = [['general', 'General', SlidersHorizontal], ['presets', 'Presets', Type], ['tags', 'Tags', Tags], ['dictation', 'Dictation', Mic],
   ['assistant', 'Assistant', MessageSquare], ['agents', 'MCP', Bot], ['browser', 'Browser', Globe], ['keybinds', 'Keybinds', Keyboard],
-  ['github', 'GitHub backup', CloudUpload]];
+  ['github', 'GitHub backup', CloudUpload], ['forum', 'Forum', MessagesSquare]];
 
 // An IPC rejection's own message, without Electron's "Error invoking remote method ..." prefix.
 const ipcMessage = (e) => String(e?.message ?? e).replace(/^Error invoking remote method '[^']+': (?:Error: )?/, '');
@@ -877,8 +891,6 @@ function Section({ id, title, hint, children }) {
   );
 }
 
-const selectText = (el) => el?.select(); // stable ref callback: the first field opens selected, as the dialog's autofocus did
-
 /** Settings + presets manager, scrolled to `section` (a SECTIONS id) when given. Closes with the settings patch, or null. */
 export function SettingsDialog({ settings: s, section, onClose }) {
   const [forumUrl, setForumUrl] = useState(s.forumUrl ?? '');
@@ -941,8 +953,10 @@ export function SettingsDialog({ settings: s, section, onClose }) {
     pane.current.scrollTo({ top: sec.offsetTop + sec.clientTop, behavior: instant || matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
   };
   // Opened at a section: the column scrolls there as it mounts (the dialog's portal mounts after this component's first commit).
+  // The column takes the focus as it mounts, so the dialog opens with no field focused and the keys scroll it.
   const paneRef = useCallback((el) => {
     pane.current = el;
+    el?.focus({ preventScroll: true });
     if (el && section) jump(section, true);
   }, []);
 
@@ -1008,24 +1022,10 @@ export function SettingsDialog({ settings: s, section, onClose }) {
           ))}
         </nav>
         {/* -ml-1 pl-1: room for the 3 px focus ring of controls at the left edge, which the scroll box would clip */}
-        <div ref={paneRef} onScroll={spy} className="relative -ml-1 min-h-0 overflow-y-auto pr-3 pl-1" data-settings-pane>
+        <div ref={paneRef} tabIndex={-1} onScroll={spy} className="relative -ml-1 min-h-0 overflow-y-auto pr-3 pl-1 outline-none" data-settings-pane>
           <Section id="general" title="General">
             <div className={FIELDS}>
-              <Label htmlFor="set-forum" className="text-muted-foreground">Forum site</Label>
-              <div className="flex items-center gap-2">
-                <Input id="set-forum" type="url" className="h-8 w-72" spellCheck={false} placeholder="None yet" value={forumUrl}
-                  onChange={(e) => setForumUrl(e.target.value)} />
-                <span className="text-xs text-muted-foreground">The first forum thread you link to a project sets it</span>
-              </div>
-              <Label htmlFor="set-width" className="text-muted-foreground">Forum width</Label>
-              <div className="flex items-center gap-2">
-                <Input id="set-width" type="number" min={320} max={4000} step={1} className="h-8 w-28" value={width} autoFocus ref={selectText}
-                  onChange={(e) => setWidth(e.target.value)} />
-                px
-                <Button type="button" variant="outline" size="sm" onClick={() => setWidth(String(DEFAULT_WIDTH))}>Reset</Button>
-              </div>
-              <Label className="text-muted-foreground">Page theme</Label>
-              <Pick label="Page theme" value={theme} onChange={setTheme} options={[['dark', 'Dark'], ['light', 'Light']]} />
+              <UiTheme />
               <UiScale />
               <Label className="text-muted-foreground">Base font</Label>
               <Pick label="Base font" value={baseFont} onChange={setBaseFont} options={fontOptions('Default')} className="w-44" />
@@ -1146,6 +1146,26 @@ export function SettingsDialog({ settings: s, section, onClose }) {
 
           <Section id="github" title="GitHub backup">
             <GitHubSection value={github} onChange={setGithub} setProblem={setGithubProblem} />
+          </Section>
+
+          <Section id="forum" title="Forum" hint="The forum the drafts are pushed to, and how the page shows its posts">
+            <div className={FIELDS}>
+              <Label htmlFor="set-forum" className="text-muted-foreground">Forum site</Label>
+              <div className="flex items-center gap-2">
+                <Input id="set-forum" type="url" className="h-8 w-72" spellCheck={false} placeholder="None yet" value={forumUrl}
+                  onChange={(e) => setForumUrl(e.target.value)} />
+                <span className="text-xs text-muted-foreground">The first forum thread you link to a project sets it</span>
+              </div>
+              <Label htmlFor="set-width" className="text-muted-foreground">Forum width</Label>
+              <div className="flex items-center gap-2">
+                <Input id="set-width" type="number" min={320} max={4000} step={1} className="h-8 w-28" value={width}
+                  onChange={(e) => setWidth(e.target.value)} />
+                px
+                <Button type="button" variant="outline" size="sm" onClick={() => setWidth(String(DEFAULT_WIDTH))}>Reset</Button>
+              </div>
+              <Label className="text-muted-foreground">Page theme</Label>
+              <Pick label="Page theme" value={theme} onChange={setTheme} options={[['dark', 'Dark'], ['light', 'Light']]} />
+            </div>
           </Section>
         </div>
       </div>

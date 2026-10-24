@@ -91,9 +91,23 @@ const alertDialog = (title, description) => confirmDialog({ title, description, 
 // ---------------------------------------------------------------------------------------------
 // Settings, theme, zoom
 
+// The app's own colours (settings.uiTheme: dark | light | system) are the class "dark" on <html> (app.css); system follows the
+// system's light or dark mode, live. The page preview keeps the forum's (data-theme, settings.theme). The background window
+// (§7i) keeps the settings it started with, so it follows prefers-color-scheme, which main sets from uiTheme (applyNativeTheme).
+const systemDark = matchMedia('(prefers-color-scheme: dark)');
+systemDark.addEventListener('change', () => state.settings && applyUiTheme());
+
+function applyUiTheme() {
+  const t = state.settings.uiTheme;
+  const dark = WORKER || t === 'system' ? systemDark.matches : t !== 'light';
+  document.documentElement.classList.toggle('dark', dark);
+  if (dark !== state.uiDark) setState({ uiDark: dark });
+}
+
 function applySettings() {
   const s = state.settings;
   setKeybinds(s.keybinds); // §7k
+  applyUiTheme();
   const root = document.documentElement;
   root.dataset.theme = s.theme === 'light' ? 'light' : 'dark';
   root.style.setProperty('--forum-width', `${s.forumWidth}px`);

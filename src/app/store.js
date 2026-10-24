@@ -5,6 +5,7 @@ import { useEffect, useReducer, useSyncExternalStore } from 'react';
 // `draft` is mutated in place (its identity means "still the open draft"): select its fields, not the object.
 const state = {
   settings: null,
+  uiDark: true,      // the app's colours are dark: settings.uiTheme resolved (actions.js applyUiTheme)
   status: { loggedIn: false },
   drafts: [],        // [{id,title,threadUrl,updated,pushedAt}]
   draft: null,       // full draft being edited; no id until first save
