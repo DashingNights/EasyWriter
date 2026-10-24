@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Slider } from '@/components/ui/slider';
-import { hasForum, openSettings, refocusEditor, setZoom } from '../actions.js';
+import { hasForum, login, openSettings, refocusEditor, setZoom } from '../actions.js';
 import { on } from '../commands.js';
 import { useStore } from '../store.js';
 import { InlineInput } from './InlineInput.jsx';
@@ -65,6 +65,7 @@ export function StatusBar() {
   const saveError = useStore((s) => s.saveError);
   const words = useStore((s) => s.words);
   const status = useStore((s) => s.status);
+  const loggingIn = useStore((s) => s.loggingIn);
   const forum = useStore((s) => hasForum(s.settings));
   const zoom = useStore((s) => s.zoom);
   const zoomPct = useStore((s) => s.zoomPct);
@@ -73,7 +74,15 @@ export function StatusBar() {
     <footer className="col-span-2 flex h-8 items-center gap-4 border-t px-2 text-xs text-muted-foreground">
       <span className={cn(saveError && 'text-destructive')}>{saveLabel}</span>
       <span>{`${words} ${words === 1 ? 'word' : 'words'}`}</span>
-      {forum && <span>{status.loggedIn ? `Forum: logged in as ${status.name || status.memberId}` : 'Forum: not logged in'}</span>}
+      {/* The forum's sign-in (once a project has a forum thread): opens the forum window, to log in or to see the forum. */}
+      {forum && (
+        <Tip title={status.loggedIn ? 'Open the forum window' : 'Log in to the forum in the forum window'} side="top">
+          <Button variant="ghost" size="xs" aria-label={status.loggedIn ? 'Forum window' : 'Log in'} data-agent-risk="approval" disabled={loggingIn}
+            className="-mx-2 font-normal text-muted-foreground" onClick={login}>
+            {status.loggedIn ? `Forum: logged in as ${status.name || status.memberId}` : 'Forum: not logged in'}
+          </Button>
+        </Tip>
+      )}
       <Model />
       <Agents />
       <div className="ml-auto flex items-center gap-2">

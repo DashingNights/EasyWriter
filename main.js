@@ -72,6 +72,7 @@ const DEFAULT_SETTINGS = {
   theme: 'light', // the page preview's forum colours (Settings > Forum Page theme)
   uiTheme: 'dark', // the app's own colours (Settings > General Theme): dark | light | system (actions.js applyUiTheme)
   palette: {}, // {dark, light}: the user's colours over each theme's (Settings > General Palette, actions.js PALETTE)
+  hideBackupWarning: false, // the sidebar's red warning of a GitHub backup that is not set up is turned off (Sidebar.jsx BackupWarning)
   baseFont: '',
   baseSize: 100,
   presets: [
@@ -436,9 +437,10 @@ const SYNCED = /^(drafts|plans|flows|prefabs)\.(save|saveHistory|remove)$/;
 function handle(channel, fn) {
   if (SYNCED.test(channel)) {
     const write = fn;
-    fn = (...args) => {
-      github.touch();
-      return write(...args);
+    fn = async (...args) => {
+      const result = await write(...args);
+      github.touch(); // after the write, so a sync that counts it reads it
+      return result;
     };
   }
   ipcMain.handle(channel, (event, ...args) => {

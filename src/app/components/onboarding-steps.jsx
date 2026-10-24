@@ -61,7 +61,7 @@ export const STEPS = [
   {
     id: 'settings',
     title: 'Settings',
-    body: () => <p>The gear at the top of the sidebar opens Settings. Dictation and the assistant, both later in this tour, are set up there.</p>,
+    body: () => <p>Settings, at the bottom of the sidebar, opens Settings. Dictation and the assistant, both later in this tour, are set up there. The cloud next to it shows whether your work is backed up to GitHub.</p>,
     target: '[data-agent-area="sidebar"] [aria-label="Settings"]', view: null, Actions: null,
   },
   {
@@ -115,7 +115,7 @@ export const STEPS = [
   {
     id: 'threads',
     title: 'Projects',
-    body: () => <p>New project, under the project list, adds a project. Pick a draft's project in the box beside Save, and click a project to see only its drafts. A project can link a forum thread, and its drafts then push into that thread's reply box.</p>,
+    body: () => <p>New project, under the project list, adds a project. Move to... on a draft's row sets its project, and clicking a project shows only its drafts. A project can link a forum thread, and Push on its row then fills that thread's reply box with the open draft.</p>,
     target: '[data-agent-area="sidebar"] [data-add-thread]', view: null, Actions: ThreadActions,
   },
   {

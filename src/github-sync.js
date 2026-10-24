@@ -45,7 +45,8 @@ let timer = null;
 let active = false; // a synced file was written since the last sync
 let running = Promise.resolve();
 let loginRun = null;
-const status = { busy: false, lastSync: null, error: null };
+const status = { busy: false, lastSync: null, error: null, dirty: true }; // dirty: changes here the last push did not send (unknown until the first sync)
+let edits = 0; // synced files written (touch), so a sync knows whether more came meanwhile
 
 // ---------------------------------------------------------------------------------------------
 // Login
@@ -519,6 +520,7 @@ async function doSync({ closing = false, retry = true } = {}) {
   const repo = cfg.repo;
   let covered = false;
   setStatus({ busy: true });
+  let seen = edits; // taken again right before the files that are pushed are read
   try {
     let base = await readJson(stateFile()).catch(() => null);
     // Never synced with this repository: a fresh install's settings count as unchanged, so GitHub's threads and tags come in.
@@ -531,6 +533,7 @@ async function doSync({ closing = false, retry = true } = {}) {
       covered = true;
     }
     if (news && (await hooks.flush()) === false) throw new Error('The open draft could not be saved, so nothing was synced.');
+    seen = edits;
     let local = await readLocal(!news);
     if (news) {
       const theirs = Object.fromEntries(Object.entries(remote.files).filter(([p]) => p === SETTINGS_FILE || PATH_RE.test(p)));
@@ -557,13 +560,14 @@ async function doSync({ closing = false, retry = true } = {}) {
       if ((paths.length || fetched) && !closing) hooks.reload();
       // Merged: GitHub's head is the new base, so a failed or retried push does not merge (or ask) again.
       await serialized(() => writeJsonAtomic(stateFile(), { repo, head: remote.head, files: remote.files }));
+      seen = edits;
       local = await readLocal(); // the merged files, their base64 pictures moved out
     }
     const save = (next) => serialized(() => writeJsonAtomic(stateFile(), { repo, head: next.head, files: next.files, skipped: next.skipped }));
     const next = await push(repo, remote, local, save);
     await save(next);
     const n = Object.keys(next.skipped).length;
-    setStatus({ lastSync: Date.now(), error: n ? `Synced, but ${n === 1 ? '1 file is' : `${n} files are`} too large for GitHub and stayed on this computer.` : null });
+    setStatus({ lastSync: Date.now(), dirty: edits !== seen, error: n ? `Synced, but ${n === 1 ? '1 file is' : `${n} files are`} too large for GitHub and stayed on this computer.` : null });
   } catch (e) {
     if (e.status === 422 && retry) { // the branch moved during the push, or a blob sent before is gone (a repository made again)
       uploaded.clear();
@@ -603,8 +607,12 @@ function configure(settings) {
   if (changed && cfg.enabled && cfg.repo) sync().catch(() => {});
 }
 
-/** A synced file was written: the next tick pushes. */
-const touch = () => { active = true; };
+/** A synced file was written: the next tick pushes, and the sidebar shows changes not backed up yet. */
+const touch = () => {
+  active = true;
+  edits++;
+  if (!status.dirty) setStatus({ dirty: true });
+};
 
 /** Whether closing the window should wait for beforeClose (logged in, the backup on, closing does not skip it). */
 const closeCheck = () => !!(auth && cfg?.enabled && cfg.repo && cfg.onClose !== 'skip');

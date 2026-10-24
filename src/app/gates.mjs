@@ -36,7 +36,7 @@ export const GATES = {
   'history.canUndo': gate('history', (h) => !!h?.canUndo, 'There is nothing to undo', 'Make a change first'),
   'history.canRedo': gate('history', (h) => !!h?.canRedo, 'There is nothing to redo', 'Undo a change first'),
   'draft.hasThread': gate('draft', (d) => !!d?.topic, "The draft's project has no forum thread",
-    'Put the draft in a project with a forum thread (the Post card), or link one to its project (the link button on its row)'),
+    "Put the draft in a project with a forum thread (drafts.setThread, or Move to... on its sidebar row), or link one to its project (the link button on its row)"),
   'draft.unpushed': gate('draft', (d) => !!d && d.pushedAt == null, 'The draft is already marked as pushed', 'Unpush it first'),
   'draft.pushed': gate('draft', (d) => d?.pushedAt != null, 'The draft is not marked as pushed', 'Nothing to unpush; push it instead'),
   // A forum is in use (thread-url.mjs hasForum: a forum site and a project linking one of its threads): sign-in, push, the forum window.

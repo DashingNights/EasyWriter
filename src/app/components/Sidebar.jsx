@@ -1,20 +1,21 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { cn } from 'cn';
 import {
-  ChevronRight, CircleCheck, ExternalLink, Folder, FolderInput, FolderOpen, FolderPlus, Globe, Link2, LoaderCircle, LogIn, PanelLeftClose, PanelLeftOpen, Plus,
-  Save, Send, Settings, SquareKanban, Tag, Undo2, Workflow, X,
+  ChevronRight, CircleAlert, CircleCheck, Cloud, CloudAlert, CloudCheck, CloudOff, CloudUpload, ExternalLink, Folder, FolderInput, FolderOpen,
+  FolderPlus, Globe, Link2, LoaderCircle, PanelLeftClose, PanelLeftOpen, Plus, Send, Settings, SquareKanban, Tag, Undo2, Workflow, X,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardAction, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import {
-  DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuSeparator, DropdownMenuTrigger,
+  DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { SelectItem } from '@/components/ui/select';
 import {
-  addThreadUrl, deleteDraft, deleteFolder, draftGroups, editProjectThread, hasForum, login, moveDraft, moveFolder, newFolder, openDraft, openInForum,
-  openSettings, placeDraft, push, refocusEditor, removeThread, renameFolder, saveNow, selectThread, setDraftTag, setDraftThread,
+  addThreadUrl, deleteDraft, deleteFolder, draftGroups, editProjectThread, moveDraft, moveFolder, newFolder, openDraft, openInForum,
+  openSettings, placeDraft, push, refocusEditor, removeThread, renameFolder, saveSettings, selectThread, setDraftTag, setDraftThreadFor,
   startNewDraft, threadLabel, toggleFolder, toggleSidebar, unpushDraft,
 } from '../actions.js';
 import { isProject, topicOf } from '../../thread-url.mjs';
@@ -22,11 +23,11 @@ import { draftTag, tagList } from '../drafts-meta.js';
 import { keyLabel, withKey } from '../keybinds.js';
 import { can } from '../gates.mjs';
 import { openCount, openPlan, planFor, usePlans } from '../plans.js';
-import { getState, useStore } from '../store.js';
+import { getState, useStore, WORKER } from '../store.js';
 import { showPage } from '../views.js';
 import { InlineInput } from './InlineInput.jsx';
 import { Tip } from './Tip.jsx';
-import { keepFocus, NONE, ToolSelect } from './Toolbar.jsx';
+import { keepFocus } from './Toolbar.jsx';
 
 // Sidebar sections are flat (SPEC 7b): Card's layout without its box; the sidebar separates them with thin lines.
 const FLAT = 'rounded-none border-0 bg-transparent py-2.5 shadow-none';
@@ -65,68 +66,24 @@ function RowAction({ title, onClick, slot: Slot, risk, children }) {
   return <Tip title={title}>{button}</Tip>;
 }
 
-function Account() {
-  const status = useStore((s) => s.status);
-  const loggingIn = useStore((s) => s.loggingIn);
-  const forum = useStore((s) => hasForum(s.settings));
-  const label = !forum ? 'EasyWriter' : status.loggedIn ? `Logged in as ${status.name || `member ${status.memberId}`}` : 'Not logged in';
-  // One row: the label takes what is left (ellipsis), the icon buttons keep fixed slots, so nothing shifts. The forum's sign-in
-  // shows once a project has a forum thread (settings.forumUrl).
-  return (
-    <Card className={FLAT}>
-      <CardHeader className="flex items-center gap-1 px-2.5">
-        <CardTitle className="min-w-0 flex-1 truncate text-sm" title={label}>{label}</CardTitle>
-        {forum && <Tip title={status.loggedIn ? 'Open the forum window' : 'Log in to the forum in the forum window'}>
-          <Button variant="ghost" size="icon-sm" aria-label={status.loggedIn ? 'Forum window' : 'Log in'} data-agent-risk="approval" disabled={loggingIn} onClick={login}>
-            {status.loggedIn ? <ExternalLink /> : <LogIn />}
-          </Button>
-        </Tip>}
-        <Tip title="Settings">
-          <Button variant="ghost" size="icon-sm" aria-label="Settings" onClick={openSettings}><Settings /></Button>
-        </Tip>
-      </CardHeader>
-    </Card>
-  );
-}
-
-/** The open draft's post actions: project select, Save, and Push / Unpush in one slot of the same width (Push: its project has a
- * forum thread). */
-function Post() {
-  const threads = useStore((s) => s.settings?.threads) ?? [];
-  const hasDraft = useStore((s) => !!s.draft);
-  const draftThread = useStore((s) => s.draft?.threadUrl) || '';
+/** The open draft's Push to forum (its project has a forum thread) or Unpush (it was pushed), at the end of its project's row. */
+function PushButton() {
   const pushed = useStore((s) => can('draft.pushed', s.draft));
-  const forum = useStore((s) => !!topicOf(s.settings?.threads, s.draft?.threadUrl));
-  const unit = 'project';
   return (
-    <Card className={FLAT}>
-      {/* One line: thread select (ellipsis), then Save and Push / Unpush as same-size icon buttons, so nothing shifts. */}
-      <CardContent className="flex items-center gap-1 px-2.5">
-        {/* Tip wraps the trigger in a span: the wrapper makes that span (and the trigger) take the free width. */}
-        <div className="min-w-0 flex-1 *:w-full">
-        <ToolSelect title={`The ${unit} this draft is for`} className="w-full min-w-0" disabled={!hasDraft} value={draftThread || NONE}
-          onChange={(v) => setDraftThread(v === NONE ? '' : v)}>
-          <SelectItem value={NONE}>{`No ${unit}`}</SelectItem>
-          {/* truncate: the capped trigger shows a long label with an ellipsis */}
-          {threads.map((t) => <SelectItem key={t.url} value={t.url}><span className="truncate">{threadLabel(t)}</span></SelectItem>)}
-          {draftThread && !threads.some((t) => t.url === draftThread) && <SelectItem value={draftThread}><span className="truncate">{isProject(draftThread) ? 'Removed project' : draftThread}</span></SelectItem>}
-        </ToolSelect>
-        </div>
-        <Tip title={withKey('Save now', 'app.save')}>
-          <Button variant="outline" size="icon-sm" aria-label={withKey('Save now', 'app.save')} onMouseDown={keepFocus} onClick={() => saveNow()}><Save /></Button>
-        </Tip>
-        {(forum || pushed) && <Tip title={pushed ? 'Unpush: mark as not pushed (Submit was not pressed in the forum)' : 'Push to forum: fill the forum reply box with this draft'}>
-          {pushed
-            ? <Button variant="outline" size="icon-sm" aria-label="Unpush" data-agent-risk="destructive" onMouseDown={keepFocus} onClick={() => unpushDraft(getState().draft)}><Undo2 /></Button>
-            : <Button size="icon-sm" aria-label="Push to forum" data-agent-risk="approval" onMouseDown={keepFocus} onClick={push}><Send /></Button>}
-        </Tip>}
-      </CardContent>
-    </Card>
+    <Tip title={pushed ? 'Unpush: mark as not pushed (Submit was not pressed in the forum)' : 'Push to forum: fill the forum reply box with this draft'}>
+      {pushed
+        ? <Button variant="outline" size="icon-xs" aria-label="Unpush" data-agent-risk="destructive" onMouseDown={keepFocus}
+          onClick={(e) => { e.stopPropagation(); unpushDraft(getState().draft); }}><Undo2 /></Button>
+        : <Button size="icon-xs" aria-label="Push to forum" data-agent-risk="approval" onMouseDown={keepFocus}
+          onClick={(e) => { e.stopPropagation(); push(); }}><Send /></Button>}
+    </Tip>
   );
 }
 
 function Threads() {
   const settings = useStore((s) => s.settings);
+  const draftThread = useStore((s) => s.draft?.threadUrl) || '';
+  const pushed = useStore((s) => can('draft.pushed', s.draft));
   usePlans(); // the plan counts
   if (!settings) return null;
   const { threads, selectedThread } = settings;
@@ -173,6 +130,7 @@ function Threads() {
                     {topic && <RowAction title="Open in forum" risk="approval" onClick={() => openInForum(topic)}><ExternalLink /></RowAction>}
                     {isProject(t.url) && <RowAction title={topic ? 'Forum thread: change or unlink' : 'Link a forum thread'} onClick={() => editProjectThread(t)}><Link2 /></RowAction>}
                     <RowAction title="Remove project from list" risk="destructive" onClick={() => removeThread(t)}><X /></RowAction>
+                    {t.url === draftThread && (topic || pushed) && <PushButton />}
                   </Row>
                   );
                 })}
@@ -264,7 +222,7 @@ function TagMenu({ id, tag, tags, open, setOpen }) {
   );
 }
 
-function DraftRow({ d, folderId, folders, tag, tags, active, dragging, after, onDrag }) {
+function DraftRow({ d, folderId, folders, threads, tag, tags, active, dragging, after, onDrag }) {
   const [tagging, setTagging] = useState(false); // the tag menu is open
   const working = useStore((s) => s.bgWrites.includes(d.id)); // the assistant wrote to it in the background this turn (§7i)
   const background = useStore((s) => s.worker?.draftId === d.id); // the background window of computer use has it (§7i)
@@ -280,18 +238,27 @@ function DraftRow({ d, folderId, folders, tag, tags, active, dragging, after, on
         )}
         {d.pushedAt && <Tip title="Pushed to the forum"><CircleCheck className="size-3.5 shrink-0 text-success" aria-label="Pushed" /></Tip>}
         <HoverActions>
+          {d.pushedAt && <RowAction title="Unpush: mark as not pushed (Submit was not pressed in the forum)" risk="destructive" onClick={() => unpushDraft(d)}><Undo2 /></RowAction>}
           <RowAction title="Tag" onClick={() => setTagging(true)}><Tag /></RowAction>
           <RowAction title="Move to..." slot={DropdownMenuTrigger}><FolderInput /></RowAction>
           <RowAction title="Delete draft" risk="destructive" onClick={() => deleteDraft(d)}><X /></RowAction>
         </HoverActions>
       </Row>
       {/* Outside the Row: React events bubble out of the portal, and a menu click must not open the draft. */}
-      <DropdownMenuContent align="end" onCloseAutoFocus={refocusEditor}>
+      <DropdownMenuContent align="end" className="max-w-72" onCloseAutoFocus={refocusEditor}>
+        <DropdownMenuLabel className="text-xs text-muted-foreground">Folder</DropdownMenuLabel>
         {folders.map((f) => (
           <DropdownMenuCheckboxItem key={f.id} checked={folderId === f.id} onSelect={() => moveDraft(d.id, f.id)}>{f.name}</DropdownMenuCheckboxItem>
         ))}
-        {folders.length > 0 && <DropdownMenuSeparator />}
         <DropdownMenuCheckboxItem checked={!folderId} onSelect={() => moveDraft(d.id, null)}>Top level</DropdownMenuCheckboxItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuLabel className="text-xs text-muted-foreground">Project</DropdownMenuLabel>
+        {threads.map((t) => (
+          <DropdownMenuCheckboxItem key={t.url} checked={d.threadUrl === t.url} disabled={background} onSelect={() => setDraftThreadFor(d.id, t.url)}>
+            <span className="truncate">{threadLabel(t)}</span>
+          </DropdownMenuCheckboxItem>
+        ))}
+        <DropdownMenuCheckboxItem checked={!d.threadUrl} disabled={background} onSelect={() => setDraftThreadFor(d.id, '')}>No project</DropdownMenuCheckboxItem>
       </DropdownMenuContent>
     </DropdownMenu>
   );
@@ -331,7 +298,7 @@ function Drafts() {
   const showUnsaved = unsaved && (!sel || unsavedThread === sel);
   const { groups, loose } = draftGroups();
   const row = (d, folderId) => (
-    <DraftRow key={d.id} d={d} folderId={folderId} folders={settings.folders || []} tag={draftTag(settings, d.id)} tags={tagList(settings)}
+    <DraftRow key={d.id} d={d} folderId={folderId} folders={settings.folders || []} threads={settings.threads} tag={draftTag(settings, d.id)} tags={tagList(settings)}
       active={editorShown && currentId === d.id}
       dragging={drag?.id === d.id} after={!drag?.folder && drag?.to === d.id ? drag.after : undefined}
       onDrag={(e) => dragRow(e, d.id, false, setDrag)} />
@@ -372,8 +339,75 @@ function Drafts() {
   );
 }
 
-/** The fixed footer under the sections (§7g): the workspace tabs, Plans above Flowcharts. They navigate: the tab of the page
- * shown is highlighted and clicking it does nothing. */
+// The GitHub backup's state (SPEC §4b, main's github.status / github.event): [icon, tooltip, icon classes].
+const clock = (t) => new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+const backupState = (st) => (!(st.login && st.enabled && st.repo) ? [CloudOff, 'Not backed up. GitHub backup is not set up.', 'text-muted-foreground']
+  : st.busy ? [Cloud, 'Backing up to GitHub...', 'animate-pulse text-muted-foreground']
+    : st.error ? [CloudAlert, st.error, 'text-destructive']
+      : st.dirty ? [CloudUpload, 'Changes not backed up yet. The next push sends them to GitHub.', 'text-muted-foreground']
+        : [CloudCheck, st.lastSync ? `Backed up to GitHub at ${clock(st.lastSync)}` : 'Backed up to GitHub', 'text-success']);
+
+/** The warning of a backup that is not set up: what it means, a way to set it up, and "Don't show this warning again", which
+ * hides the warning icon at once (settings.hideBackupWarning) and leaves the dialog open. */
+function BackupWarning({ onClose }) {
+  const hidden = useStore((s) => !!s.settings?.hideBackupWarning);
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent aria-describedby={undefined} onCloseAutoFocus={refocusEditor}
+        className="gap-3 p-4 text-sm sm:max-w-md *:data-[slot=dialog-close]:top-4 *:data-[slot=dialog-close]:right-4">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2 text-base"><CircleAlert className="size-5 text-destructive" />Your work is not backed up</DialogTitle>
+        </DialogHeader>
+        <p className="text-muted-foreground">
+          GitHub backup is not set up, so your drafts and plans are only on this computer. If it breaks or is lost, they are lost with it.
+        </p>
+        <label className="flex w-fit cursor-pointer items-center gap-2">
+          <Checkbox checked={hidden} onCheckedChange={(v) => saveSettings({ hideBackupWarning: v === true })} />
+          Don't show this warning again
+        </label>
+        <DialogFooter>
+          <Button variant="outline" size="sm" onClick={onClose}>Dismiss</Button>
+          <Button size="sm" onClick={() => { onClose(); openSettings('github'); }}>Set up GitHub backup</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/** Whether the changes are backed up to GitHub (a click opens Settings > GitHub backup); with the backup not set up, a red
+ * warning before it that opens BackupWarning, unless the user turned the warning off. */
+function BackupStatus() {
+  const [st, setSt] = useState(null);
+  const [warning, setWarning] = useState(false);
+  const hidden = useStore((s) => !!s.settings?.hideBackupWarning);
+  useEffect(() => {
+    if (WORKER) return undefined;
+    window.api.github.status().then(setSt, () => {});
+    return window.api.github.onEvent(setSt);
+  }, []);
+  if (!st) return null;
+  const [Icon, title, cls] = backupState(st);
+  const off = !(st.login && st.enabled && st.repo);
+  return (
+    <>
+      {off && !hidden && (
+        <Tip title="Your work is not backed up" side="top">
+          <Button variant="ghost" size="icon-sm" aria-label="Backup warning" data-backup-warning className="text-destructive hover:text-destructive"
+            onMouseDown={keepFocus} onClick={() => setWarning(true)}><CircleAlert /></Button>
+        </Tip>
+      )}
+      <Tip title={title} side="top">
+        <Button variant="ghost" size="icon-sm" aria-label="GitHub backup status" aria-description={title} data-backup-status onMouseDown={keepFocus} onClick={() => openSettings('github')}>
+          <Icon className={cls} />
+        </Button>
+      </Tip>
+      {warning && <BackupWarning onClose={() => setWarning(false)} />}
+    </>
+  );
+}
+
+/** The fixed footer under the sections (§7g): the workspace tabs, Plans above Flowcharts, then Settings with the GitHub
+ * backup's state at the right. The tabs navigate: the tab of the page shown is highlighted and clicking it does nothing. */
 function SidebarNav() {
   const view = useStore((s) => s.view.type);
   const tab = (type, icon, label, hint) => (
@@ -385,11 +419,19 @@ function SidebarNav() {
     </Button>
   );
   return (
-    <nav aria-label="Workspaces" className="flex flex-col gap-0.5 border-t p-1">
-      {tab('plan', <SquareKanban />, 'Plans', keyLabel('app.plans'))}
-      {tab('flows', <Workflow />, 'Flowcharts')}
-      {tab('browser', <Globe />, 'Browser', keyLabel('app.browser'))}
-    </nav>
+    <div className="flex flex-col gap-0.5 border-t p-1">
+      <nav aria-label="Workspaces" className="flex flex-col gap-0.5">
+        {tab('plan', <SquareKanban />, 'Plans', keyLabel('app.plans'))}
+        {tab('flows', <Workflow />, 'Flowcharts')}
+        {tab('browser', <Globe />, 'Browser', keyLabel('app.browser'))}
+      </nav>
+      <div className="flex items-center gap-0.5">
+        <Button variant="ghost" size="sm" aria-label="Settings" onMouseDown={keepFocus} onClick={() => openSettings()} className="h-8 flex-1 justify-start px-2 font-normal">
+          <Settings />Settings
+        </Button>
+        <BackupStatus />
+      </div>
+    </div>
   );
 }
 
@@ -398,8 +440,6 @@ export function Sidebar() {
     <div data-agent-area="sidebar" className="flex min-h-0 flex-col border-r">
       <ScrollArea className="min-h-0 flex-1 [&_[data-slot=scroll-area-viewport]>div]:block!">
         <aside className="flex flex-col divide-y text-sm">
-          <Account />
-          <Post />
           <Threads />
           <Drafts />
         </aside>
