@@ -1,7 +1,7 @@
 import { useState, useSyncExternalStore } from 'react';
 import { cn } from 'cn';
 import {
-  AlignCenter, AlignJustify, AlignLeft, AlignRight, Ban, Baseline, BetweenHorizontalEnd, BetweenVerticalEnd, Bold, ChevronDown, Code, Frame,
+  AlignCenter, AlignJustify, AlignLeft, AlignRight, Ban, Baseline, BetweenHorizontalEnd, BetweenVerticalEnd, Bold, ChevronDown, ChevronUp, Code, Frame,
   Grid2x2X, Highlighter, ImagePlus, Italic, Link, List, ListOrdered, Minus, Palette, PanelTop, Quote, Redo2,
   RemoveFormatting, SquareCode, SquareKanban, Strikethrough, Subscript, Superscript, Table, Underline, Undo2, Workflow,
 } from 'lucide-react';
@@ -267,9 +267,28 @@ export function PresetsMenu({ disabled }) {
 // Every text tool greyed out (while a canvas is being edited).
 const greyed = (T) => Object.fromEntries(Object.entries(T).map(([key, t]) => [key, { ...t, disabled: true }]));
 
-/** The bottom island holds every tool (the left rail only those for what is being worked on): the text tools, greyed out
- * while a canvas is being edited, and the board tools, greyed out with none open. Undo and Redo serve whichever it is. */
+// The bottom island's More tools row is open (per computer).
+const MORE_KEY = 'daf-writer.toolbarMore';
+const readMore = () => {
+  try {
+    return localStorage.getItem(MORE_KEY) === '1';
+  } catch {
+    return false;
+  }
+};
+
+/** The bottom island holds every tool (the left rail only those for what is being worked on): one row of the common text
+ * tools, ending in More tools, which opens a row above it, centred, of the rest: the less common text tools and the board
+ * tools. Text tools are greyed out while a canvas is being edited, board tools with none open. Undo and Redo serve whichever
+ * it is. */
 export function Toolbar() {
+  const [more, setMore] = useState(readMore);
+  const toggleMore = () => setMore((m) => {
+    try {
+      localStorage.setItem(MORE_KEY, m ? '0' : '1');
+    } catch {}
+    return !m;
+  });
   const ed = useEditor();
   const session = useSyncExternalStore(canvasEditor.subscribe, canvasEditor.get);
   const active = useBoard();
@@ -285,60 +304,82 @@ export function Toolbar() {
   // An island floating over the editor area at the bottom centre, next to where new lines are typed. The draft actions are
   // in the sidebar's Post card. Board chrome (§6c): a click in it keeps a canvas in edit mode, and the board its focus.
   return (
-    <div data-agent-area="toolbar" {...CHROME} onMouseDown={keepBoardFocus} className="absolute bottom-3 left-1/2 z-30 w-max max-w-[calc(100%-7rem)] -translate-x-1/2 rounded-island border bg-island px-1.5 py-1 text-sm shadow-xl">
-      <GroupRows>
-        <Group>
-          <ToolButton {...undo} />
-          <ToolButton {...redo} />
-        </Group>
-        <Group>
-          <BlockSelect T={T} />
-          <FontSelect T={T} />
-          <SizeSelect T={T} />
-        </Group>
-        <Group>
-          <ToolButton {...T.bold} />
-          <ToolButton {...T.italic} />
-          <ToolButton {...T.underline} />
-          <ToolButton {...T.strike} />
-          <ToolButton {...T.sub} />
-          <ToolButton {...T.sup} />
-          <ToolButton {...T.code} />
-        </Group>
-        <Group>
-          <SwatchMenu {...T.color} />
-          <SwatchMenu {...T.highlight} />
-        </Group>
-        <Group>
-          <ToolButton {...T.alignLeft} />
-          <ToolButton {...T.alignCenter} />
-          <ToolButton {...T.alignRight} />
-          <ToolButton {...T.justify} />
-        </Group>
-        <Group>
-          <ToolButton {...T.bulletList} />
-          <ToolButton {...T.orderedList} />
-          <ToolButton {...T.quote} />
-          <ToolButton {...T.codeBlock} />
-          <ToolButton {...T.rule} />
-        </Group>
-        <Group>
-          <TableTools T={T} ed={ed} all />
-          <ToolButton {...T.box} />
-          <ToolButton {...T.link} />
-          <ToolButton {...T.canvas} />
-          <ToolButton {...T.flowchart} />
-          <ToolButton {...T.planChart} />
-          <ToolButton {...T.image} />
-        </Group>
-        <Group>
-          <PresetsMenu disabled={!!board} />
-          <ToolButton {...T.clear} />
-        </Group>
-        <RailLayout.Provider value={BAR}>
-          <BoardTools board={board} />
-        </RailLayout.Provider>
-      </GroupRows>
+    <div data-agent-area="toolbar" {...CHROME} onMouseDown={keepBoardFocus}
+      className="absolute bottom-3 left-1/2 z-30 flex w-max max-w-[calc(100%-7rem)] -translate-x-1/2 flex-col items-center rounded-island border bg-island px-1.5 py-1 text-sm shadow-xl">
+      {more && (
+        <>
+          <div data-toolbar-more className="flex max-w-full justify-center animate-in fade-in-0 slide-in-from-bottom-1 duration-150">
+            <GroupRows>
+              <Group>
+                <ToolButton {...T.sub} />
+                <ToolButton {...T.sup} />
+                <ToolButton {...T.code} />
+              </Group>
+              <Group>
+                <ToolButton {...T.quote} />
+                <ToolButton {...T.codeBlock} />
+                <ToolButton {...T.rule} />
+              </Group>
+              <Group>
+                <TableTools T={T} ed={ed} all />
+              </Group>
+              <Group>
+                <ToolButton {...T.box} />
+                <ToolButton {...T.planChart} />
+              </Group>
+              <RailLayout.Provider value={BAR}>
+                <BoardTools board={board} />
+              </RailLayout.Provider>
+            </GroupRows>
+          </div>
+          <Separator className="my-1 self-stretch" />
+        </>
+      )}
+      <div className="flex max-w-full items-center">
+        <GroupRows>
+          <Group>
+            <ToolButton {...undo} />
+            <ToolButton {...redo} />
+          </Group>
+          <Group>
+            <BlockSelect T={T} />
+            <FontSelect T={T} />
+            <SizeSelect T={T} />
+          </Group>
+          <Group>
+            <ToolButton {...T.bold} />
+            <ToolButton {...T.italic} />
+            <ToolButton {...T.underline} />
+            <ToolButton {...T.strike} />
+          </Group>
+          <Group>
+            <SwatchMenu {...T.color} />
+            <SwatchMenu {...T.highlight} />
+          </Group>
+          <Group>
+            <ToolButton {...T.alignLeft} />
+            <ToolButton {...T.alignCenter} />
+            <ToolButton {...T.alignRight} />
+            <ToolButton {...T.justify} />
+          </Group>
+          <Group>
+            <ToolButton {...T.bulletList} />
+            <ToolButton {...T.orderedList} />
+          </Group>
+          <Group>
+            <ToolButton {...T.link} />
+            <ToolButton {...T.image} />
+            <ToolButton {...T.canvas} />
+            <ToolButton {...T.flowchart} />
+          </Group>
+          <Group>
+            <PresetsMenu disabled={!!board} />
+            <ToolButton {...T.clear} />
+          </Group>
+        </GroupRows>
+        <Separator orientation="vertical" className="mx-0.5 data-[orientation=vertical]:h-5" />
+        <ToolButton title={more ? 'Fewer tools' : 'More tools'} active={more} onClick={toggleMore}>{more ? <ChevronDown /> : <ChevronUp />}</ToolButton>
+      </div>
     </div>
   );
 }
