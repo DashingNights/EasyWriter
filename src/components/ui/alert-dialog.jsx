@@ -114,7 +114,7 @@ function AlertDialogDescription({
 function AlertDialogAction({
   className,
   variant = "default",
-  size = "default",
+  size = "sm",
   ...props
 }) {
   return (
@@ -127,7 +127,7 @@ function AlertDialogAction({
 function AlertDialogCancel({
   className,
   variant = "outline",
-  size = "default",
+  size = "sm",
   ...props
 }) {
   return (

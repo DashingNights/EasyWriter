@@ -6,7 +6,7 @@ import { ToggleGroup as ToggleGroupPrimitive } from "radix-ui"
 import { toggleVariants } from "@/components/ui/toggle"
 
 const ToggleGroupContext = React.createContext({
-  size: "default",
+  size: "sm",
   variant: "default",
   spacing: 0,
 })

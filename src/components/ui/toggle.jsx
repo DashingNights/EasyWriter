@@ -13,13 +13,13 @@ const toggleVariants = cva(
           "border border-input bg-transparent shadow-xs hover:bg-accent hover:text-accent-foreground",
       },
       size: {
-        default: "h-9 min-w-9 px-2",
+        xs: "h-6 min-w-6 gap-1 px-1.5 text-xs [&_svg:not([class*='size-'])]:size-3",
         sm: "h-8 min-w-8 px-1.5",
       },
     },
     defaultVariants: {
       variant: "default",
-      size: "default",
+      size: "sm",
     },
   }
 )

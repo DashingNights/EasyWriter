@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input';
 export function InlineInput({ value, onDone, className, ...props }) {
   const cancelled = useRef(false);
   return (
-    <Input autoFocus defaultValue={value} className={cn('h-5.5 px-1 py-0', className)} {...props}
+    <Input autoFocus size="xs" defaultValue={value} className={cn('px-1', className)} {...props}
       onFocus={(e) => e.target.select()}
       onKeyDown={(e) => {
         if (e.key === 'Escape') cancelled.current = true;
