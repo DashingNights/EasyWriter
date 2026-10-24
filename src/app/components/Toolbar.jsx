@@ -121,11 +121,11 @@ export function ToolButton({ title, onClick, active, disabled, children }) {
   );
 }
 
-export function ToolSelect({ title, value, onChange, placeholder, className, disabled, children }) {
+export function ToolSelect({ title, value, onChange, placeholder, size = 'sm', className, disabled, children }) {
   return (
     <Select value={value} onValueChange={onChange} disabled={disabled}>
       <Tip title={title}>
-        <SelectTrigger size="sm" aria-label={title} className={cn('gap-1 px-2', className)}>
+        <SelectTrigger size={size} aria-label={title} className={cn('gap-1 px-2', className)}>
           <SelectValue placeholder={placeholder} />
         </SelectTrigger>
       </Tip>
