@@ -412,7 +412,7 @@ export function buildExtensions(historyDepth) {
     TextAlign.configure({ types: ['heading', 'paragraph'] }),
     Subscript,
     Superscript,
-    Table.configure({ resizable: false }),
+    Table.configure({ resizable: true, cellMinWidth: 20 }), // the forum editor's own settings (SPEC §1)
     TableRow,
     TableHeader,
     TableCell,

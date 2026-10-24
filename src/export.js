@@ -1,6 +1,7 @@
 import { Extension, generateHTML, getHTMLFromFragment } from '@tiptap/core';
 import { Fragment } from '@tiptap/pm/model';
 import { NodeSelection, Plugin } from '@tiptap/pm/state';
+import { TableMap } from '@tiptap/pm/tables';
 import { toast } from 'sonner';
 import { getState } from './app/store.js';
 import { flowSource } from './canvas.js';
@@ -80,9 +81,33 @@ export const CopyPicture = Extension.create({
   },
 });
 
+/** The document JSON with every table cell's `colwidth` set to its columns' drawn widths. The forum lays tables out fixed at
+ * the widths they carry (SPEC §1), so a table with none would shrink to its minimum. A table not drawn keeps its own. */
+function sizedTablesJSON(editor) {
+  const { state, view } = editor;
+  const tr = state.tr; // never dispatched
+  state.doc.descendants((node, pos) => {
+    if (node.type.name !== 'table') return true;
+    const map = TableMap.get(node);
+    const cellAt = (rel) => ({ ...map.findCell(rel), cell: node.nodeAt(rel), dom: view.nodeDOM(pos + 1 + rel) });
+    const widths = [];
+    for (let col = 0; col < map.width; col++) { // the first row's cells; one spanning columns splits evenly
+      const { left, right, dom } = cellAt(map.map[col]);
+      widths.push(Math.round((dom?.offsetWidth ?? 0) / (right - left)));
+    }
+    if (widths.some((w) => !w)) return true;
+    for (const rel of new Set(map.map)) {
+      const { left, right, cell } = cellAt(rel);
+      tr.setNodeMarkup(pos + 1 + rel, null, { ...cell.attrs, colwidth: widths.slice(left, right) });
+    }
+    return true; // a table inside a cell gets its own widths
+  });
+  return tr.doc.toJSON();
+}
+
 /** Builds `{html, images}` for api.forum.push (SPEC §5). */
 export async function buildPayload(editor, settings) {
-  const { doc, boards: nodes } = replaceWhiteboards(applyBaseStyles(editor.getJSON(), settings));
+  const { doc, boards: nodes } = replaceWhiteboards(applyBaseStyles(sizedTablesJSON(editor), settings));
   const html = generateHTML(doc, editor.extensionManager.extensions);
   // A synced canvas exports what it shows: its library flowchart's live board; a missing record, its own attrs (the cache).
   const live = await Promise.all(nodes.map((b) => (b.kind === 'canvas' && validFlow(b.flow) ? flowSource.load(b.flow.id) : null)));

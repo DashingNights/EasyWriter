@@ -116,6 +116,19 @@
 }
 .page .ProseMirror th { background: var(--th-bg); font-weight: 600; text-align: left; }
 .page .ProseMirror th > p, .page .ProseMirror td > p { margin: 0; }
+/* Column resizing (extensions.js Table): a table wider than the page scrolls, as on the forum */
+.page .ProseMirror .tableWrapper { overflow-x: auto; }
+.page .ProseMirror .column-resize-handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: -2px;
+  width: 4px;
+  background: var(--ui-accent);
+  pointer-events: none;
+}
+.page .ProseMirror :is(td, th):last-child > .column-resize-handle { right: 0; } /* inside the wrapper: no scrollbar */
+.page .ProseMirror.resize-cursor { cursor: col-resize; }
 .page .ProseMirror .selectedCell::after {
   content: "";
   position: absolute;
