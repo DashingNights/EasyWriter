@@ -1,5 +1,6 @@
 import { Extension, Mark, Node } from '@tiptap/core';
 import { AllSelection, Plugin, TextSelection } from '@tiptap/pm/state';
+import { columnResizingPluginKey, TableMap } from '@tiptap/pm/tables';
 import { Decoration, DecorationSet } from '@tiptap/pm/view';
 import StarterKit from '@tiptap/starter-kit';
 import TextAlign from '@tiptap/extension-text-align';
@@ -9,7 +10,7 @@ import { Table, TableRow, TableHeader, TableCell } from '@tiptap/extension-table
 import { contentWidth, injectStyle, make, WhiteboardPaste } from './whiteboard.js';
 import { Canvas, scaleOf } from './canvas.js';
 import { PlanChart } from './plan-chart.js';
-import { CopyPicture } from './export.js';
+import { CopyPicture, drawnColumnWidths, setColumnWidths } from './export.js';
 import { FONT_SIZES, FONTS, HIGHLIGHTS, presetChain, TEXT_COLORS } from './format.mjs';
 import { keyAmong } from './app/keybinds.js';
 import { chordOf } from './app/keys.mjs';
@@ -401,6 +402,57 @@ const TextKeys = Extension.create({
   },
 });
 
+const MIN_COLUMN = 20; // the forum editor's cellMinWidth (SPEC §1)
+
+// Dragging a table column border. Table's columnResizing still finds the border under the pointer (its handle); this drag
+// runs ahead of its own, which adds the pointer's screen px to unzoomed widths and lets the other columns reflow. Here the
+// border stays under the pointer: the column right of it gives or takes the width (the right edge resizes the table), and
+// on release every column keeps its width, in one undo step.
+export const ColumnDrag = Extension.create({
+  name: 'columnDrag',
+  priority: 101, // before Table's mousedown
+  addProseMirrorPlugins() {
+    const mousedown = (view, event) => {
+      const handle = columnResizingPluginKey.getState(view.state)?.activeHandle ?? -1;
+      if (handle < 0 || event.button !== 0) return false;
+      const $cell = view.state.doc.resolve(handle);
+      const table = $cell.node(-1);
+      const pos = $cell.before(-1);
+      const widths = drawnColumnWidths(view, table, pos);
+      const el = view.nodeDOM(pos)?.querySelector(':scope > table');
+      if (!widths || !el) return false;
+      const col = TableMap.get(table).colCount($cell.pos - $cell.start(-1)) + $cell.nodeAfter.attrs.colspan - 1;
+      const scale = el.getBoundingClientRect().width / el.offsetWidth; // the page's zoom
+      const { doc } = view.state;
+      const win = view.dom.ownerDocument.defaultView;
+      const widthsAt = (x) => {
+        const room = col + 1 < widths.length ? widths[col + 1] - MIN_COLUMN : Infinity;
+        const d = Math.round(Math.min(Math.max((x - event.clientX) / scale, MIN_COLUMN - widths[col]), room));
+        return widths.map((w, i) => (i === col ? w + d : i === col + 1 ? w - d : w));
+      };
+      const finish = (e) => {
+        win.removeEventListener('mousemove', move);
+        win.removeEventListener('mouseup', finish);
+        const tr = view.state.tr.setMeta(columnResizingPluginKey, { setDragging: null });
+        view.dispatch(view.state.doc === doc ? setColumnWidths(tr, table, pos, widthsAt(e.clientX)) : tr);
+      };
+      const move = (e) => {
+        if (!e.buttons) return finish(e);
+        const next = widthsAt(e.clientX);
+        el.querySelectorAll(':scope > colgroup > col').forEach((c, i) => Object.assign(c.style, { width: `${next[i]}px`, minWidth: '' }));
+        Object.assign(el.style, { width: `${next.reduce((a, b) => a + b)}px`, minWidth: '' });
+      };
+      // Dragging stops columnResizing moving its handle under the pointer.
+      view.dispatch(view.state.tr.setMeta(columnResizingPluginKey, { setDragging: { startX: event.clientX, startWidth: widths[col] } }));
+      win.addEventListener('mousemove', move);
+      win.addEventListener('mouseup', finish);
+      event.preventDefault();
+      return true;
+    };
+    return [new Plugin({ props: { handleDOMEvents: { mousedown } } })];
+  },
+});
+
 /** `historyDepth`: the undo steps the history keeps (§7e). */
 export function buildExtensions(historyDepth) {
   return [
@@ -412,7 +464,8 @@ export function buildExtensions(historyDepth) {
     TextAlign.configure({ types: ['heading', 'paragraph'] }),
     Subscript,
     Superscript,
-    Table.configure({ resizable: true, cellMinWidth: 20 }), // the forum editor's own settings (SPEC §1)
+    Table.configure({ resizable: true, cellMinWidth: MIN_COLUMN }), // the forum editor's own settings (SPEC §1)
+    ColumnDrag,
     TableRow,
     TableHeader,
     TableCell,

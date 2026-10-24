@@ -81,6 +81,28 @@ export const CopyPicture = Extension.create({
   },
 });
 
+/** The drawn width of each column of the `table` node at `pos` (the first row's cells; one spanning columns splits evenly),
+ * or null when the table is not drawn. */
+export function drawnColumnWidths(view, table, pos) {
+  const map = TableMap.get(table);
+  const widths = [];
+  for (let col = 0; col < map.width; col++) {
+    const { left, right } = map.findCell(map.map[col]);
+    widths.push(Math.round((view.nodeDOM(pos + 1 + map.map[col])?.offsetWidth ?? 0) / (right - left)));
+  }
+  return widths.every(Boolean) ? widths : null;
+}
+
+/** Adds to `tr` every cell of the `table` node at `pos` taking its columns' `widths` (attrs only: no position moves). */
+export function setColumnWidths(tr, table, pos, widths) {
+  const map = TableMap.get(table);
+  for (const rel of new Set(map.map)) {
+    const { left, right } = map.findCell(rel);
+    tr.setNodeMarkup(pos + 1 + rel, null, { ...table.nodeAt(rel).attrs, colwidth: widths.slice(left, right) });
+  }
+  return tr;
+}
+
 /** The document JSON with every table cell's `colwidth` set to its columns' drawn widths. The forum lays tables out fixed at
  * the widths they carry (SPEC §1), so a table with none would shrink to its minimum. A table not drawn keeps its own. */
 function sizedTablesJSON(editor) {
@@ -88,18 +110,8 @@ function sizedTablesJSON(editor) {
   const tr = state.tr; // never dispatched
   state.doc.descendants((node, pos) => {
     if (node.type.name !== 'table') return true;
-    const map = TableMap.get(node);
-    const cellAt = (rel) => ({ ...map.findCell(rel), cell: node.nodeAt(rel), dom: view.nodeDOM(pos + 1 + rel) });
-    const widths = [];
-    for (let col = 0; col < map.width; col++) { // the first row's cells; one spanning columns splits evenly
-      const { left, right, dom } = cellAt(map.map[col]);
-      widths.push(Math.round((dom?.offsetWidth ?? 0) / (right - left)));
-    }
-    if (widths.some((w) => !w)) return true;
-    for (const rel of new Set(map.map)) {
-      const { left, right, cell } = cellAt(rel);
-      tr.setNodeMarkup(pos + 1 + rel, null, { ...cell.attrs, colwidth: widths.slice(left, right) });
-    }
+    const widths = drawnColumnWidths(view, node, pos);
+    if (widths) setColumnWidths(tr, node, pos, widths);
     return true; // a table inside a cell gets its own widths
   });
   return tr.doc.toJSON();
