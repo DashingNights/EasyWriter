@@ -11,6 +11,7 @@ import { contentWidth, injectStyle, make, WhiteboardPaste } from './whiteboard.j
 import { Canvas, scaleOf } from './canvas.js';
 import { PlanChart } from './plan-chart.js';
 import { CopyPicture, drawnColumnWidths, setColumnWidths } from './export.js';
+import { Find } from './find.js';
 import { FONT_SIZES, FONTS, HIGHLIGHTS, presetChain, TEXT_COLORS } from './format.mjs';
 import { keyAmong } from './app/keybinds.js';
 import { chordOf } from './app/keys.mjs';
@@ -481,6 +482,7 @@ export function buildExtensions(historyDepth) {
     PlanChart,
     Media,
     CopyPicture,
+    Find,
     InactiveSelection,
     TextKeys,
   ];

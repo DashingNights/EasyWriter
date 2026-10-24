@@ -129,6 +129,9 @@
 }
 .page .ProseMirror :is(td, th):last-child > .column-resize-handle { right: 0; } /* inside the wrapper: no scrollbar */
 .page .ProseMirror.resize-cursor { cursor: col-resize; }
+/* Find in the draft (find.js): every match, and the current one stronger */
+.page .ProseMirror .find-match { background: rgb(255 200 0 / 0.35); border-radius: 2px; }
+.page .ProseMirror .find-current { background: rgb(255 140 0 / 0.75); }
 .page .ProseMirror .selectedCell::after {
   content: "";
   position: absolute;

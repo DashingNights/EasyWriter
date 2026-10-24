@@ -14,6 +14,7 @@ import { PlanChartBar } from './components/board/PlanChartBar.jsx';
 import { DialogHost } from './components/Dialogs.jsx';
 import { DraftMenu } from './components/DraftMenu.jsx';
 import { EditorPage } from './components/EditorPage.jsx';
+import { FindBar } from './components/FindBar.jsx';
 import { FlowsPage } from './components/flows/FlowsPage.jsx';
 import { HoverHint } from './components/HoverHint.jsx';
 import { Notices } from './components/Notices.jsx';
@@ -128,6 +129,7 @@ export function App() {
             {!editor && !browser && <Workspace ui={ui} />}
             <Rail ui={ui} />
             <BrowserTabs ui={ui} />
+            {editor && <FindBar />}
             {editor && <Toolbar />}
             {editor && <SidebarToggle />}
             {/* §7h: the bottom column over the toolbar: the transcript pane with the §7c notice stack resting on it */}

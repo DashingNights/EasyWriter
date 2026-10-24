@@ -185,6 +185,7 @@ export const DEFS = [
   general('app.plans', 'Plans page', ['Ctrl+Alt+P']),
   general('app.browser', 'Browser page', ['Ctrl+Alt+B']),
   generalEditor('app.sidebar', 'Show or hide the sidebar', ['Ctrl+\\']),
+  generalEditor('app.find', 'Find in the draft', ['Ctrl+F']),
   general('app.assistant', 'Assistant panel', ['Ctrl+Shift+A']),
   general('app.dictate', 'Hold to dictate', ['Ctrl+Shift+D']),
   general('app.zoomIn', 'Zoom the window in', ['Ctrl+=', 'Ctrl+Shift+=', 'Ctrl+Num+']),
