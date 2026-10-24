@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { cn } from 'cn';
 import {
   ChevronRight, CircleAlert, CircleCheck, Cloud, CloudAlert, CloudCheck, CloudOff, CloudUpload, ExternalLink, Folder, FolderInput, FolderOpen,
-  FolderPlus, Globe, Link2, LoaderCircle, PanelLeftClose, PanelLeftOpen, Plus, Send, Settings, SquareKanban, Tag, Undo2, Workflow, X,
+  FolderPlus, Globe, Link2, LoaderCircle, PanelLeftClose, PanelLeftOpen, Plus, Send, Settings, SquareKanban, Undo2, Workflow, X,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -21,7 +21,6 @@ import {
 import { isProject, topicOf } from '../../thread-url.mjs';
 import { draftTag, tagList } from '../drafts-meta.js';
 import { keyLabel, withKey } from '../keybinds.js';
-import { can } from '../gates.mjs';
 import { openCount, openPlan, planFor, usePlans } from '../plans.js';
 import { getState, useStore, WORKER } from '../store.js';
 import { showPage } from '../views.js';
@@ -66,24 +65,8 @@ function RowAction({ title, onClick, slot: Slot, risk, children }) {
   return <Tip title={title}>{button}</Tip>;
 }
 
-/** The open draft's Push to forum (its project has a forum thread) or Unpush (it was pushed), at the end of its project's row. */
-function PushButton() {
-  const pushed = useStore((s) => can('draft.pushed', s.draft));
-  return (
-    <Tip title={pushed ? 'Unpush: mark as not pushed (Submit was not pressed in the forum)' : 'Push to forum: fill the forum reply box with this draft'}>
-      {pushed
-        ? <Button variant="outline" size="icon-xs" aria-label="Unpush" data-agent-risk="destructive" onMouseDown={keepFocus}
-          onClick={(e) => { e.stopPropagation(); unpushDraft(getState().draft); }}><Undo2 /></Button>
-        : <Button size="icon-xs" aria-label="Push to forum" data-agent-risk="approval" onMouseDown={keepFocus}
-          onClick={(e) => { e.stopPropagation(); push(); }}><Send /></Button>}
-    </Tip>
-  );
-}
-
 function Threads() {
   const settings = useStore((s) => s.settings);
-  const draftThread = useStore((s) => s.draft?.threadUrl) || '';
-  const pushed = useStore((s) => can('draft.pushed', s.draft));
   usePlans(); // the plan counts
   if (!settings) return null;
   const { threads, selectedThread } = settings;
@@ -130,7 +113,6 @@ function Threads() {
                     {topic && <RowAction title="Open in forum" risk="approval" onClick={() => openInForum(topic)}><ExternalLink /></RowAction>}
                     {isProject(t.url) && <RowAction title={topic ? 'Forum thread: change or unlink' : 'Link a forum thread'} onClick={() => editProjectThread(t)}><Link2 /></RowAction>}
                     <RowAction title="Remove project from list" risk="destructive" onClick={() => removeThread(t)}><X /></RowAction>
-                    {t.url === draftThread && (topic || pushed) && <PushButton />}
                   </Row>
                   );
                 })}
@@ -197,8 +179,8 @@ const Dot = ({ tag }) => (
   <span className={cn('size-2.5 shrink-0 rounded-full', !tag && 'border border-muted-foreground/60')} style={tag && { background: tag.color }} />
 );
 
-/** The draft's tag dot, in a fixed slot at the left of the row so titles line up; it opens the tag menu (so does the "Tag"
- * hover action, through `open`). Clicks stop at the dot and the menu: they bubble (through the portal) to the row. */
+/** The draft's tag dot, in a fixed slot at the left of the row so titles line up; it opens the tag menu. Clicks stop at the
+ * dot and the menu: they bubble (through the portal) to the row. */
 function TagMenu({ id, tag, tags, open, setOpen }) {
   const stop = (e) => e.stopPropagation();
   return (
@@ -222,6 +204,12 @@ function TagMenu({ id, tag, tags, open, setOpen }) {
   );
 }
 
+/** Push to forum for draft `id`: the open one at once, another once it is open (push fills the reply box with the open draft). */
+async function pushDraft(id) {
+  if (getState().draft?.id !== id) await openDraft(id);
+  if (getState().draft?.id === id) push();
+}
+
 function DraftRow({ d, folderId, folders, threads, tag, tags, active, dragging, after, onDrag }) {
   const [tagging, setTagging] = useState(false); // the tag menu is open
   const working = useStore((s) => s.bgWrites.includes(d.id)); // the assistant wrote to it in the background this turn (§7i)
@@ -238,8 +226,9 @@ function DraftRow({ d, folderId, folders, threads, tag, tags, active, dragging, 
         )}
         {d.pushedAt && <Tip title="Pushed to the forum"><CircleCheck className="size-3.5 shrink-0 text-success" aria-label="Pushed" /></Tip>}
         <HoverActions>
-          {d.pushedAt && <RowAction title="Unpush: mark as not pushed (Submit was not pressed in the forum)" risk="destructive" onClick={() => unpushDraft(d)}><Undo2 /></RowAction>}
-          <RowAction title="Tag" onClick={() => setTagging(true)}><Tag /></RowAction>
+          {d.pushedAt
+            ? <RowAction title="Unpush: mark as not pushed (Submit was not pressed in the forum)" risk="destructive" onClick={() => unpushDraft(d)}><Undo2 /></RowAction>
+            : topicOf(threads, d.threadUrl) && <RowAction title="Push to forum: fill the forum reply box with this draft" risk="approval" onClick={() => pushDraft(d.id)}><Send /></RowAction>}
           <RowAction title="Move to..." slot={DropdownMenuTrigger}><FolderInput /></RowAction>
           <RowAction title="Delete draft" risk="destructive" onClick={() => deleteDraft(d)}><X /></RowAction>
         </HoverActions>
