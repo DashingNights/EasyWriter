@@ -61,7 +61,7 @@ export function HoverHint() {
   // The shared tooltip look (components/ui/tooltip.jsx).
   return (
     <div ref={ref} role="tooltip" data-hover-hint=""
-      className="pointer-events-none fixed z-50 w-fit max-w-xs animate-in fade-in-0 rounded-md bg-foreground/80 px-3 py-1.5 text-xs text-balance text-background backdrop-blur-sm">
+      className="pointer-events-none fixed z-50 w-fit max-w-xs animate-in fade-in-0 duration-(--motion-tooltips) rounded-md bg-foreground/80 px-3 py-1.5 text-xs text-balance text-background backdrop-blur-sm">
       {hint.text}
     </div>
   );

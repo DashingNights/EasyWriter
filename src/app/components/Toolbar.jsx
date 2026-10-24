@@ -311,7 +311,7 @@ export function Toolbar() {
       className="absolute bottom-3 left-1/2 z-30 flex w-max max-w-[calc(100%-7rem)] -translate-x-1/2 flex-col items-center rounded-island border bg-island px-1.5 py-1 text-sm shadow-xl">
       {more && (
         <>
-          <div data-toolbar-more className="flex max-w-full justify-center animate-in fade-in-0 slide-in-from-bottom-1 duration-150">
+          <div data-toolbar-more className="flex max-w-full justify-center animate-in fade-in-0 slide-in-from-bottom-1 duration-(--motion-islands)">
             <GroupRows>
               <Group>
                 <ToolButton {...T.sub} />

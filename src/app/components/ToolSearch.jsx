@@ -114,7 +114,7 @@ function Palette({ board, at }) {
   return (
     <Dialog open modal={false} onOpenChange={(open) => !open && closeToolSearch()}>
       <DialogContent {...CHROME} ref={(el) => place(el, at)} showCloseButton={false} onCloseAutoFocus={(e) => e.preventDefault()}
-        className="top-auto left-auto translate-x-0 translate-y-0 gap-0 overflow-hidden bg-island p-0 sm:max-w-md data-flip:[&_[data-slot=command]]:flex-col-reverse data-flip:[&_[data-slot=command-input-wrapper]]:border-t data-flip:[&_[data-slot=command-input-wrapper]]:border-b-0">
+        className="top-auto left-auto translate-x-0 translate-y-0 gap-0 overflow-hidden bg-island p-0 duration-(--motion-menus) sm:max-w-md data-flip:[&_[data-slot=command]]:flex-col-reverse data-flip:[&_[data-slot=command-input-wrapper]]:border-t data-flip:[&_[data-slot=command-input-wrapper]]:border-b-0">
         <DialogTitle className="sr-only">Tool search</DialogTitle>
         <DialogDescription className="sr-only">Type a tool name. Enter switches to it, Tab opens its options.</DialogDescription>
         <Command className="bg-transparent" filter={filter} value={value} onValueChange={setValue} onKeyDown={onKeyDown}>

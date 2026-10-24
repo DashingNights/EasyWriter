@@ -34,7 +34,7 @@ import { useViewportBox } from './viewport.js';
  * overlay: the sidebar navigates away from it and Escape at page level does nothing. */
 function Workspace({ ui }) {
   return (
-    <div id="workspace-root" tabIndex={-1} className="absolute inset-0 z-10 bg-background outline-none">
+    <div id="workspace-root" tabIndex={-1} className="absolute inset-0 z-10 bg-background outline-none animate-page-in">
       {can('view.plan', ui) ? <PlanPage /> : <FlowsPage />}
     </div>
   );

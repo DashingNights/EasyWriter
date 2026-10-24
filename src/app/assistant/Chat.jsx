@@ -16,6 +16,7 @@ import { DictationButton, hold } from '../dictation/Dictation.jsx';
 import { dictationReady, pttDown, pttUp, warm as warmDictation } from '../dictation/dictation.js';
 import { can } from '../gates.mjs';
 import { keyIs, withKey } from '../keybinds.js';
+import { motion } from '../motion.js';
 import { getState, setState, useStore, WORKER } from '../store.js';
 import { viewportRect } from '../viewport.js';
 // LOCAL LLM (commented out 2026-10-07): BACKENDS, cancelInstall, closeInstall, install, openInstall, size.
@@ -259,7 +260,7 @@ const MAX_IMAGES = 6; // images in one message (each is about 1,000 tokens or mo
 const BOX = 'max-h-[calc(4lh+0.75rem)] min-h-8 w-full overflow-y-auto rounded-md border border-input bg-background/60 px-2 py-1.5 text-sm break-words '
   + 'outline-none focus-visible:border-ring dark:bg-input/30';
 
-function ChatPanel({ islandRef }) {
+function ChatPanel({ islandRef, closing, onClosed }) {
   const a = useAssistant();
   const frame = useFrame(islandRef);
   const conf = useStore((s) => s.settings?.assistant);
@@ -269,6 +270,7 @@ function ChatPanel({ islandRef }) {
   const [blank, setBlank] = useState(true); // nothing at all in the text box: the placeholder shows
   const [locked, setLocked] = useState(false); // read-only while the dictated text is transcribed
   const panelRef = useRef(null);
+  const shownPart = useRef(0); // how far open (0 to 1) a sequence was when it turned round
   const scrollRef = useRef(null);
   const boxRef = useRef(null);
   const edRef = useRef(null); // the text box's editor (chat-input.js)
@@ -355,6 +357,42 @@ function ChatPanel({ islandRef }) {
     const el = scrollRef.current;
     if (el && stick.current) el.scrollTop = el.scrollHeight;
   }, [a.messages, !!frame, ready]);
+  // The open sequence (motion.js 'panel'), in the manner of the dictation pane's: a pill in the panel's bottom-right corner (by
+  // the right island) widens to the panel's width, rises to its height, then its contents fade in. Closing plays it backwards
+  // and then unmounts it (onClosed). Turning round midway (closed while opening, opened while closing) carries on from where
+  // it is; a reopen of the closing panel also gives the text box the focus back (closing gave it to the draft).
+  useLayoutEffect(() => {
+    const el = panelRef.current;
+    const ms = motion('panel');
+    if (!closing) edRef.current?.commands.focus('end'); // null on the first open: the box focuses itself as it mounts
+    if (!el || !ms) {
+      shownPart.current = 0;
+      if (closing) onClosed();
+      return undefined;
+    }
+    const pill = `${2.5 * rem()}px`;
+    const round = `${1.25 * rem()}px`; // the pill's: half its height (a larger one turns the rising pill round)
+    const radius = getComputedStyle(el).borderRadius;
+    const play = (target, keyframes) => target.animate(keyframes, { duration: ms, easing: 'ease-in-out', fill: 'both', direction: closing ? 'reverse' : 'normal' });
+    const anims = [
+      play(el, [
+        { clipPath: `inset(calc(100% - ${pill}) 0 0 calc(100% - ${pill}) round ${round})`, opacity: 0 },
+        { clipPath: `inset(calc(100% - ${pill}) 0 0 calc(100% - ${pill}) round ${round})`, opacity: 1, offset: 0.12 },
+        { clipPath: `inset(calc(100% - ${pill}) 0 0 0 round ${round})`, offset: 0.5 },
+        { clipPath: `inset(0 0 0 0 round ${radius})`, opacity: 1 },
+      ]),
+      ...[...el.children].map((child) => play(child, [{ opacity: 0 }, { opacity: 0, offset: 0.7 }, { opacity: 1 }])),
+    ];
+    const part = shownPart.current;
+    if (part) anims.forEach((x) => { x.currentTime = (closing ? 1 - part : part) * ms; });
+    // Open: the finished sequence is dropped, so no clip stays (it would cut off the shadow); closed: it holds until unmounted.
+    Promise.all(anims.map((x) => x.finished)).then(() => (closing ? onClosed() : anims.forEach((x) => x.cancel())), () => {});
+    return () => {
+      const t = anims[0].playState === 'running' ? anims[0].currentTime / ms : null;
+      shownPart.current = t === null ? 0 : closing ? 1 - t : t;
+      anims.forEach((x) => x.cancel());
+    };
+  }, [closing, !!frame]);
   if (!frame) return null;
 
   const r0 = rem();
@@ -461,7 +499,7 @@ function ChatPanel({ islandRef }) {
   // const missing = s?.missing.reduce((n, x) => n + x.bytes, 0); // LOCAL LLM (commented out 2026-10-07): the install size
   const badge = MODE_BADGE[assistantMode(conf).permission];
   return (
-    <div ref={panelRef} id="assistant-panel" data-assistant-panel role="region" aria-label="Assistant"
+    <div ref={panelRef} id="assistant-panel" data-assistant-panel role="region" aria-label="Assistant" inert={closing || undefined}
       className="absolute z-[44] flex flex-col rounded-island border bg-island p-1 text-sm shadow-xl"
       style={{ left: vp.left - box.left + r.left, top: vp.top - box.top + r.top, width: r.width, height: r.height }}
       onPointerDownCapture={onPointerDownCapture} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onLostPointerCapture={onPointerUp}
@@ -679,6 +717,8 @@ export function Assistant() {
   const open = useAssistant().open;
   const pane = useStore((s) => s.workerPane && !!s.worker); // the background window's live view (§7i Background window)
   const off = useStore((s) => s.settings?.assistant?.provider === 'none'); // Settings > Assistant > Provider > None
+  const [shown, setShown] = useState(open); // the panel stays mounted while it plays its close sequence
+  if (open && !shown) setShown(true);
   const ready = usable(useAssistant().status);
   const conf = useStore((s) => s.settings?.assistant);
   useEffect(() => { if (!WORKER) refreshStatus(); }, [conf]); // whether the chat button shows
@@ -703,7 +743,7 @@ export function Assistant() {
   return (
     <>
       <RightIsland islandRef={islandRef} chat={!off && ready} />
-      {!off && open && <ChatPanel islandRef={islandRef} />}
+      {!off && shown && <ChatPanel islandRef={islandRef} closing={!open} onClosed={() => setShown(false)} />}
       {pane && <BackgroundPane />}
       {/* <InstallDialog /> LOCAL LLM (commented out 2026-10-07) */}
     </>

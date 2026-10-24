@@ -68,6 +68,15 @@
   backdrop-filter: blur(2px);
 }
 
+/* A page shown (the editor, a workspace) fades in over motion.js's pages length: opacity only, no transform, so nothing in
+   it gets a new containing block. */
+@theme {
+  --animate-page-in: page-in var(--motion-pages) ease-out;
+  @keyframes page-in {
+    from { opacity: 0; }
+  }
+}
+
 @theme inline {
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);

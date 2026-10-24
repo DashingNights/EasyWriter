@@ -25,6 +25,7 @@ import { clearRevLog, recordRev } from './rev.js';
 import { cell, demoDoc, para, sampleImage, text } from './samples/demo.js';
 import { flowSample } from './samples/flow.js';
 import { planSample } from './samples/plan.js';
+import { applyMotion } from './motion.js';
 import { getState, setState, SMOKE, WORKER, WORKER_DRAFT } from './store.js';
 import { closeWorkspace, restoreView, showPage } from './views.js';
 import { backgroundClick, viewportRect } from './viewport.js';
@@ -138,6 +139,7 @@ function applySettings() {
   setKeybinds(s.keybinds); // §7k
   applyUiTheme();
   if (!WORKER) applyPalette(s.palette);
+  applyMotion(s.motion);
   const root = document.documentElement;
   root.dataset.theme = s.theme === 'light' ? 'light' : 'dark';
   root.style.setProperty('--forum-width', `${s.forumWidth}px`);

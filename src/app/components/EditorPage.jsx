@@ -10,7 +10,7 @@ import { cn } from 'cn';
 export function EditorPage({ inert }) {
   return (
     <div id="editor-area" data-viewport inert={inert}
-      className={cn('min-h-0 flex-1 overflow-auto bg-(--pg-bg) [container-type:size] [scrollbar-gutter:stable]', inert && 'invisible pointer-events-none')}>
+      className={cn('min-h-0 flex-1 overflow-auto bg-(--pg-bg) [container-type:size] [scrollbar-gutter:stable]', inert ? 'invisible pointer-events-none' : 'animate-page-in')}>
       <div className="w-max p-[calc(100cqh-var(--page-keep))_calc(100cqw-var(--page-keep))] [--page-keep:120px]">
         <div id="page-wrap">
           <div className="page">

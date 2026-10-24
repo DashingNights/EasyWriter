@@ -1,5 +1,6 @@
 import { toast } from 'sonner';
 import { saveSettings } from '../actions.js';
+import { motion } from '../motion.js';
 import { getState, setState, useStore } from '../store.js';
 import { cleanText, commitPoint, DICTATION_DEFAULTS, encodeWav, hasSpeech, joinText, RATE } from './core.mjs';
 
@@ -27,7 +28,7 @@ const message = (e) => String(e?.message || e).replace(/^Error invoking remote m
 
 let seqTimer = 0; // the playing sequence's end (close or reverse open)
 let closeEnd = null; // the playing close sequence's end
-const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+const reduced = () => !motion('pane'); // reduced motion, or the pane's sequences turned off (motion.js)
 const seqMs = (d) => (d.committed || d.partial || d.error ? CLOSE_MS : CLOSE_STEPS[2] + CLOSE_STEPS[3]);
 
 /** Plays the close sequence (`closing`), then applies `end`; at once when reduced motion is preferred or the pane is
