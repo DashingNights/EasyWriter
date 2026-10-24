@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { Tabs, TabsContent } from '@/components/ui/tabs';
 import { OPTION_DEFAULTS } from '../../../plan/plan-model.mjs';
 import { newTicket, planContext, redoPlan, setPlanTab, undoPlan, usePlans } from '../../plans.js';
 import { keyAmong, keyIs } from '../../keybinds.js';
@@ -47,12 +48,14 @@ export function PlanPage() {
   if (!ctx) return <p className="m-auto text-sm text-muted-foreground">This plan no longer exists.</p>;
   const view = { ...OPTION_DEFAULTS, ...options, search: filter };
   return (
-    <div data-viewport className="flex h-full flex-col">
+    <Tabs data-viewport value={tab} onValueChange={setPlanTab} activationMode="manual" className="h-full">
       <PlanHeader plan={ctx.plan} tab={tab} />
-      {tab === 'board'
-        ? <Kanban key={planId} ctx={ctx} options={{ ...view, fields: options.fields }} />
-        : tab === 'backlog' ? <Backlog key={planId} ctx={ctx} options={view} />
-          : <Gantt key={planId} ctx={ctx} options={view} />}
-    </div>
+      <TabsContent value={tab} className="flex flex-col">
+        {tab === 'board'
+          ? <Kanban key={planId} ctx={ctx} options={{ ...view, fields: options.fields }} />
+          : tab === 'backlog' ? <Backlog key={planId} ctx={ctx} options={view} />
+            : <Gantt key={planId} ctx={ctx} options={view} />}
+      </TabsContent>
+    </Tabs>
   );
 }

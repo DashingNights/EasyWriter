@@ -7,7 +7,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import { Toggle } from '@/components/ui/toggle';
-import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
+import { TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { OPTION_DEFAULTS } from '../../../plan/plan-model.mjs';
 import { keyLabel, withKey } from '../../keybinds.js';
 import { confirmDialog, refocusEditor } from '../../actions.js';
@@ -91,13 +91,13 @@ export function PlanHeader({ plan, tab }) {
     <header className="flex h-9 shrink-0 items-center gap-1 border-b px-1 text-xs">
       <SidebarButton />
       <span className="min-w-0 flex-1 truncate px-1 font-medium" title={thread ? `${label}\n${plan.threadUrl}` : plan.threadUrl}>{label}</span>
-      <ToggleGroup type="single" size="sm" aria-label="Plan view" value={tab} onValueChange={(v) => v && setPlanTab(v)}>
+      <TabsList aria-label="Plan view">
         {TABS.map(([value, name, Icon], i) => (
           <Tip key={value} title={withKey(name, ['plan.board', 'plan.backlog', 'plan.gantt'][i])}>
-            <ToggleGroupItem value={value} aria-label={name} className="h-7 gap-1 px-1.5 text-xs" onMouseDown={keepFocus}><Icon />{name}</ToggleGroupItem>
+            <TabsTrigger value={value}><Icon />{name}</TabsTrigger>
           </Tip>
         ))}
-      </ToggleGroup>
+      </TabsList>
       <Input id="plan-filter" value={filter} placeholder={(keyLabel('plan.filter') ? `Filter... ( ${keyLabel('plan.filter')} )` : 'Filter...')} aria-label="Filter tickets" className="ml-1 h-7 w-36 text-xs md:text-xs"
         onChange={(e) => setState({ planUi: { ...getState().planUi, filter: e.target.value } })}
         onKeyDown={(e) => {
