@@ -14,14 +14,14 @@ import {
   canRedoFlow, canUndoFlow, draftThread, duplicateFlow, getFlow, insertFlowchartDialog, newFlow, openFlows, removeFlow, updateFlow, useFlows,
 } from '../../flows.js';
 import { can } from '../../gates.mjs';
-import { keyAmong, keyIs, keyLabel, withKey } from '../../keybinds.js';
+import { keyAmong, keyIs, withKey } from '../../keybinds.js';
 import { useStore } from '../../store.js';
 import { closeWorkspace } from '../../views.js';
 import { SizeInput } from '../board/CanvasBar.jsx';
 import { CHROME } from '../board/controls.jsx';
 import { InlineInput } from '../InlineInput.jsx';
 import { SidebarButton } from '../Sidebar.jsx';
-import { Tip } from '../Tip.jsx';
+import { IconButton, Tip } from '../Tip.jsx';
 import { keepFocus, NONE, ToolSelect } from '../Toolbar.jsx';
 import { FlowEditor } from './FlowEditor.jsx';
 import { FlowLibrary } from './FlowLibrary.jsx';
@@ -42,19 +42,16 @@ function threadItems(threads, extra) {
 function EditorControls({ record, board }) {
   const threads = useStore((s) => s.settings?.threads) ?? [];
   const { id, board: { w, h } } = record;
-  const tip = (title, button) => <Tip title={title}>{button}</Tip>;
   return (
     <div {...CHROME} className="flex items-center gap-1" onMouseDown={(e) => e.target.tagName !== 'INPUT' && e.preventDefault()}>
       <SizeInput board={board} label="W" value={w} onCommit={(v) => setArtboardSize(board, v, h)} />
       <SizeInput board={board} label="H" value={h} onCommit={(v) => setArtboardSize(board, w, v)} />
-      {tip('Shrink the artboard to the items', <Button variant="ghost" size="xs" onClick={() => fitArtboard(board)}><Shrink />Fit to content</Button>)}
-      {tip('Insert it into the open draft, synced or as a copy', <Button variant="ghost" size="xs" onClick={() => insertFlowchartDialog(id)}><SquarePlus />Insert into draft...</Button>)}
-      {tip(withKey('Undo', 'edit.undo'), <Button variant="ghost" size="icon-xs" aria-label="Undo" disabled={!can('history.canUndo', { canUndo: canUndoFlow(id) })} onClick={() => board.undo()}><Undo2 /></Button>)}
-      {tip(withKey('Redo', 'edit.redo'), <Button variant="ghost" size="icon-xs" aria-label="Redo" disabled={!can('history.canRedo', { canRedo: canRedoFlow(id) })} onClick={() => board.redo()}><Redo2 /></Button>)}
+      <Tip title="Shrink the artboard to the items"><Button variant="ghost" size="xs" onClick={() => fitArtboard(board)}><Shrink />Fit to content</Button></Tip>
+      <Tip title="Insert it into the open draft, synced or as a copy"><Button variant="ghost" size="xs" onClick={() => insertFlowchartDialog(id)}><SquarePlus />Insert into draft...</Button></Tip>
+      <IconButton label="Undo" keybind="edit.undo" disabled={!can('history.canUndo', { canUndo: canUndoFlow(id) })} onClick={() => board.undo()}><Undo2 /></IconButton>
+      <IconButton label="Redo" keybind="edit.redo" disabled={!can('history.canRedo', { canRedo: canRedoFlow(id) })} onClick={() => board.redo()}><Redo2 /></IconButton>
       <DropdownMenu modal={false}>
-        <DropdownMenuTrigger asChild>
-          <Button variant="ghost" size="icon-xs" aria-label="More flowchart actions"><Ellipsis /></Button>
-        </DropdownMenuTrigger>
+        <IconButton label="More flowchart actions" slot={DropdownMenuTrigger}><Ellipsis /></IconButton>
         <DropdownMenuContent align="end" onCloseAutoFocus={refocusEditor}>
           <DropdownMenuItem onSelect={() => duplicateFlow(id).then((r) => r && openFlows(r.id))}><Copy />Duplicate</DropdownMenuItem>
           <DropdownMenuSub>
@@ -124,16 +121,16 @@ export function FlowsPage() {
         </Tip>
         {record && <ChevronRight className="size-3.5 shrink-0 text-muted-foreground" />}
         {record && (renaming
-          ? <InlineInput value={record.title} maxLength={120} className="h-6 w-56 text-xs md:text-xs" aria-label="Title" onDone={rename} />
-          : <span className="min-w-0 truncate px-1 font-medium" title="Double-click to rename" onDoubleClick={() => setRenaming(true)}>{record.title}</span>)}
+          ? <InlineInput value={record.title} maxLength={120} className="w-56" aria-label="Title" onDone={rename} />
+          : <Tip title="Double-click to rename" wrap="min-w-0"><span className="min-w-0 truncate px-1 font-medium" onDoubleClick={() => setRenaming(true)}>{record.title}</span></Tip>)}
         {!flowId && (
           <>
-            <ToolSelect title="Thread" className="ml-1 h-7 max-w-64 min-w-0 text-xs" value={scope} onChange={setScope}>
+            <ToolSelect title="Thread" size="xs" className="ml-1 max-w-64 min-w-0" value={scope} onChange={setScope}>
               {threadItems(threads, scope)}
               <SelectItem value={NONE}>No thread</SelectItem>
               <SelectItem value={ALL}>All flowcharts</SelectItem>
             </ToolSelect>
-            <Input ref={filterRef} value={filter} placeholder={(keyLabel('flows.find') ? `Filter... ( ${keyLabel('flows.find')} )` : 'Filter...')} aria-label="Filter flowcharts" className="h-7 w-44 text-xs md:text-xs"
+            <Input ref={filterRef} value={filter} size="xs" placeholder={withKey('Filter...', 'flows.find')} aria-label="Filter flowcharts" className="w-44"
               onChange={(e) => setFilter(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key !== 'Escape') return;
@@ -145,10 +142,10 @@ export function FlowsPage() {
         <span className="flex-1" />
         {can('flow.open', record) && board && <EditorControls record={record} board={board} />}
         {!flowId && (
-          <ToggleGroup type="single" size="sm" aria-label="View" value={view} onValueChange={(v) => v && saveSettings({ flowView: v })}>
+          <ToggleGroup type="single" size="xs" aria-label="View" value={view} onValueChange={(v) => v && saveSettings({ flowView: v })}>
             {[['grid', 'Grid', LayoutGrid], ['list', 'List', List]].map(([value, name, Icon]) => (
               <Tip key={value} title={name}>
-                <ToggleGroupItem value={value} aria-label={name} className="h-7 px-1.5" onMouseDown={keepFocus}><Icon /></ToggleGroupItem>
+                <ToggleGroupItem value={value} aria-label={name} className="px-1.5" onMouseDown={keepFocus}><Icon /></ToggleGroupItem>
               </Tip>
             ))}
           </ToggleGroup>

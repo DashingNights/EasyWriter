@@ -124,10 +124,10 @@ function ImportDiagramDialog({ text: initial = '', board = false, onClose }) {
       }}
       result={() => ({ text, dir: dir === AS_WRITTEN ? null : dir, replace })}>
       <Textarea autoFocus spellCheck={false} aria-label="Mermaid flowchart" placeholder={EXAMPLE} value={text} onChange={(e) => setText(e.target.value)}
-        className="max-h-40 min-h-40 resize-none font-mono text-xs md:text-xs" />
+        className="max-h-40 min-h-40 resize-none font-mono text-xs" />
       {shown?.error
         ? <p className="text-xs text-destructive" data-diagram-error="">{where(shown.error)}</p>
-        : <p className="text-xs text-muted-foreground">Mermaid flowchart: shapes, links and their labels, subgraphs and classDef fills.</p>}
+        : <p className="text-xs text-muted-foreground">Reads a Mermaid flowchart with its shapes, links, link labels, subgraphs and classDef fills.</p>}
       <DiagramPreview shown={shown} />
       {warnings.length > 0 && <p className="text-xs text-muted-foreground">{warnings.map((w) => `Line ${w.line}: ${w.message}`).join(' ')}</p>}
       <div className="flex flex-wrap items-center gap-3">

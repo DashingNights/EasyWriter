@@ -418,7 +418,7 @@ export function autoLayout(board, dir) {
   board.finishEdit();
   const u = board.unit;
   const graph = toGraph(board.items, { unit: u });
-  if (!graph.nodes.length) return void toast('Nothing to lay out: the board has no shapes.');
+  if (!graph.nodes.length) return void toast('The board has no shapes to lay out.');
   const r = layout(graph, { dir });
   if (r.error) return void toast.error(r.error.message);
   const byId = new Map(board.items.map((i) => [i.id, i]));

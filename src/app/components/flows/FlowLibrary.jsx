@@ -2,36 +2,24 @@ import { useEffect, useRef, useState } from 'react';
 import { cn } from 'cn';
 import { Copy, Pencil, SquarePlus, Trash2, Workflow } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
 import { flowRefs } from '../../../doc-utils.mjs';
 import { rasterizeWhiteboard, resolveBg } from '../../../whiteboard.js';
 import { duplicateFlow, flowList, insertFlowchartDialog, loadFlow, openFlows, removeFlow, updateFlow, useFlows } from '../../flows.js';
 import { useEditor, useStore } from '../../store.js';
 import { InlineInput } from '../InlineInput.jsx';
-import { Tip } from '../Tip.jsx';
+import { IconButton } from '../Tip.jsx';
 import { keepFocus } from '../Toolbar.jsx';
 
 const root = () => document.getElementById('workspace-root');
 let lastSel = null; // the selected flowchart, kept while one is open in the editor
 
-/** A row's or card's hover action. */
-function Act({ title, onClick, children }) {
-  return (
-    <Tip title={title}>
-      <Button variant="ghost" size="icon-xs" aria-label={title} onMouseDown={keepFocus} onClick={(e) => { e.stopPropagation(); onClick(); }}>
-        {children}
-      </Button>
-    </Tip>
-  );
-}
-
 function Actions({ id, onRename, className }) {
   return (
     <div className={cn('invisible flex shrink-0 items-center group-focus-within:visible group-hover:visible', className)}>
-      <Act title="Insert into draft..." onClick={() => insertFlowchartDialog(id)}><SquarePlus /></Act>
-      <Act title="Rename" onClick={onRename}><Pencil /></Act>
-      <Act title="Duplicate" onClick={() => duplicateFlow(id)}><Copy /></Act>
-      <Act title="Delete..." onClick={() => removeFlow(id)}><Trash2 /></Act>
+      <IconButton label="Insert into draft..." onMouseDown={keepFocus} onClick={() => insertFlowchartDialog(id)}><SquarePlus /></IconButton>
+      <IconButton label="Rename" onMouseDown={keepFocus} onClick={onRename}><Pencil /></IconButton>
+      <IconButton label="Duplicate" onMouseDown={keepFocus} onClick={() => duplicateFlow(id)}><Copy /></IconButton>
+      <IconButton label="Delete..." variant="destructive-ghost" onMouseDown={keepFocus} onClick={() => removeFlow(id)}><Trash2 /></IconButton>
     </div>
   );
 }
@@ -140,7 +128,7 @@ export function FlowLibrary({ inScope, filter, view }) {
     onFocus: (e) => e.target === e.currentTarget && setSel((lastSel = s.id)),
   });
   const title = (s, className) => (renaming === s.id
-    ? <InlineInput value={s.title} maxLength={120} className={cn('h-6 flex-1', className)} aria-label="Title" onClick={(e) => e.stopPropagation()} onDone={(t) => rename(s.id, t)} />
+    ? <InlineInput value={s.title} maxLength={120} className={cn('flex-1 text-sm', className)} aria-label="Title" onClick={(e) => e.stopPropagation()} onDone={(t) => rename(s.id, t)} />
     : <span className={cn('min-w-0 flex-1 truncate', className)}>{s.title}</span>);
   const items = (s) => `${s.items} item${s.items === 1 ? '' : 's'}`;
 
@@ -150,7 +138,7 @@ export function FlowLibrary({ inScope, filter, view }) {
         <div className="mx-auto flex max-w-3xl flex-col gap-0.5 p-3 text-sm">
           {rows.map((s) => (
             <div key={s.id} {...itemProps(s)} className={cn('group flex h-9 cursor-pointer items-center gap-2 rounded-md px-2 outline-none hover:bg-accent/60 focus-visible:ring-1 focus-visible:ring-ring',
-              s.id === sel && 'bg-accent/60')}>
+              s.id === sel && 'bg-accent hover:bg-accent')}>
               <Workflow className="size-4 shrink-0 text-muted-foreground" />
               {title(s)}
               {used[s.id] > 0 && <Badge variant="secondary" title="Synced canvases of it in this draft">used here ({used[s.id]})</Badge>}

@@ -1,9 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { PanelLeftClose, PanelLeftOpen } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { keyIs, keyLabel } from '../../keybinds.js';
+import { keyIs } from '../../keybinds.js';
 import { armTile, CHROME, ShapeList, useSnapshot } from '../board/controls.jsx';
-import { Tip } from '../Tip.jsx';
+import { IconButton } from '../Tip.jsx';
 
 // The library editor's shape panel (SPEC §6g; draw.io-like): the shape list docked on the left of the board. Its width,
 // collapsed state and closed sections are the user's, kept in localStorage.
@@ -74,12 +73,10 @@ export function ShapePanel({ board }) {
   };
 
   const toggle = (
-    <Tip title={ui.collapsed ? (keyLabel('flows.find') ? `Show shapes ( ${keyLabel('flows.find')} )` : 'Show shapes') : 'Hide shapes'} side="right">
-      <Button variant="ghost" size="icon-xs" aria-label={ui.collapsed ? 'Show shapes' : 'Hide shapes'} onMouseDown={(e) => e.preventDefault()}
-        onClick={() => update({ collapsed: !ui.collapsed })}>
-        {ui.collapsed ? <PanelLeftOpen /> : <PanelLeftClose />}
-      </Button>
-    </Tip>
+    <IconButton label={ui.collapsed ? 'Show shapes' : 'Hide shapes'} keybind={ui.collapsed ? 'flows.find' : undefined} tip={{ side: 'right' }}
+      onMouseDown={(e) => e.preventDefault()} onClick={() => update({ collapsed: !ui.collapsed })}>
+      {ui.collapsed ? <PanelLeftOpen /> : <PanelLeftClose />}
+    </IconButton>
   );
   if (ui.collapsed) {
     return <aside ref={ref} {...CHROME} aria-label="Shapes" className="flex w-8 shrink-0 flex-col items-center border-r bg-card pt-1">{toggle}</aside>;
@@ -95,7 +92,7 @@ export function ShapePanel({ board }) {
   };
   return (
     <aside ref={ref} {...CHROME} aria-label="Shapes" style={{ width: ui.w }} className="relative flex shrink-0 flex-col border-r bg-card text-sm">
-      <div className="flex h-8 shrink-0 items-center px-1.5 text-xs font-medium text-muted-foreground">
+      <div className="flex h-8 shrink-0 items-center px-1.5 text-sm font-semibold">
         <span className="flex-1">Shapes</span>
         {toggle}
       </div>
