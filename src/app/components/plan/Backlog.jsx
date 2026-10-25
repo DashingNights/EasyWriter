@@ -16,7 +16,7 @@ import { deleteTickets, dispatch, editTicket, moveCards } from '../../plans.js';
 import { getState, setState, useStore } from '../../store.js';
 import { backgroundClick } from '../../viewport.js';
 import { DateField } from '../DateField.jsx';
-import { Tip } from '../Tip.jsx';
+import { IconButton, Tip } from '../Tip.jsx';
 import { keepFocus } from '../Toolbar.jsx';
 import { openDraftFromPlan, PRIORITIES } from './Card.jsx';
 import { dragRows, shiftRows } from './drag.js';
@@ -25,7 +25,9 @@ import { dragRows, shiftRows } from './drag.js';
 // parents are per-viewer conveniences in localStorage (`daf-writer.plan.<planId>`, §3.4).
 
 const root = () => document.getElementById('workspace-root');
-const typing = (e) => e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target.isContentEditable;
+// Also the view tabs: their arrows and Enter are the tab list's.
+const typing = (e) => e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target.isContentEditable
+  || !!e.target.closest?.('[role=tablist]');
 const ui = (patch) => setState({ planUi: { ...getState().planUi, ...patch } });
 const NO_STATUS = '-'; // Radix Select items need a non-empty value
 const day = (s) => fmt(toDay(s), 'd MMM');
@@ -72,8 +74,8 @@ function DateCell({ value, muted, calendar, onCommit }) {
     if (!cancel.current && (v || null) !== value) onCommit(v || null);
   };
   return (
-    <DateField autoFocus defaultValue={value ?? ''} aria-label="Date" calendar={calendar}
-      className="h-6 w-full rounded border border-input bg-input/30 px-1 text-xs shadow-none md:text-xs"
+    <DateField autoFocus defaultValue={value ?? ''} aria-label="Date" calendar={calendar} size="xs"
+      className="w-full rounded bg-input/30 px-1 shadow-none"
       onPick={commit} onBlur={(e) => commit(e.target.value)}
       onKeyDown={(e) => {
         if (e.key === 'Enter') e.currentTarget.blur();
@@ -89,7 +91,7 @@ function DateCell({ value, muted, calendar, onCommit }) {
 function SelectCell({ value, label, items, onChange }) {
   return (
     <Select value={value} onValueChange={onChange}>
-      <SelectTrigger size="sm" aria-label={label} className="h-6! w-full gap-1 border-transparent bg-transparent! px-1 text-xs shadow-none hover:border-input" onMouseDown={keepFocus}>
+      <SelectTrigger size="xs" aria-label={label} className="w-full border-transparent bg-transparent! px-1 shadow-none" onMouseDown={keepFocus}>
         <SelectValue />
       </SelectTrigger>
       <SelectContent onCloseAutoFocus={refocusEditor}>
@@ -218,7 +220,7 @@ export function Backlog({ ctx, options }) {
       case 'labels': return (
         <span className="flex min-w-0 flex-wrap gap-1">
           {t.labels.map((id) => plan.labels.find((l) => l.id === id)).filter(Boolean).map((l) => (
-            <span key={l.id} className="rounded px-1 text-[10px] leading-4" style={{ background: `${l.color}33`, color: `color-mix(in oklab, ${l.color} 65%, var(--foreground))` }}>{l.name}</span>
+            <span key={l.id} className="rounded px-1 text-xs leading-4" style={{ background: `${l.color}33`, color: `color-mix(in oklab, ${l.color} 65%, var(--foreground))` }}>{l.name}</span>
           ))}
         </span>
       );
@@ -241,10 +243,12 @@ export function Backlog({ ctx, options }) {
       case 'draft': {
         const draft = t.draftId && ctx.drafts.find((d) => d.id === t.draftId);
         return draft && (
-          <button type="button" className="flex min-w-0 items-center gap-0.5 text-muted-foreground hover:text-foreground" title={`Open the draft "${draft.title}"`}
-            onClick={() => openDraftFromPlan(draft.id)}>
-            <FileText className="size-3.5 shrink-0" /><span className="truncate">{draft.title || 'Untitled draft'}</span>
-          </button>
+          <Tip title={`Open the draft "${draft.title}"`} wrap="min-w-0 max-w-full">
+            <button type="button" className="flex min-w-0 items-center gap-0.5 text-muted-foreground hover:text-foreground"
+              onClick={() => openDraftFromPlan(draft.id)}>
+              <FileText className="size-3.5 shrink-0" /><span className="truncate">{draft.title || 'Untitled draft'}</span>
+            </button>
+          </Tip>
         );
       }
       case 'checklist': return t.checklist.length > 0 && <span className="tabular-nums">{t.checklist.filter((c) => c.done).length}/{t.checklist.length}</span>;
@@ -271,11 +275,7 @@ export function Backlog({ ctx, options }) {
         )}
         <span className="flex-1" />
         <DropdownMenu modal={false}>
-          <Tip title="Columns">
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon-sm" aria-label="Backlog columns" onMouseDown={keepFocus}><Columns3 /></Button>
-            </DropdownMenuTrigger>
-          </Tip>
+          <IconButton label="Backlog columns" slot={DropdownMenuTrigger} onMouseDown={keepFocus}><Columns3 /></IconButton>
           <DropdownMenuContent align="end" onCloseAutoFocus={refocusEditor}>
             <DropdownMenuLabel>Show columns</DropdownMenuLabel>
             {BACKLOG_COLS.filter(([k]) => k !== 'title').map(([k, label]) => (
@@ -303,15 +303,17 @@ export function Backlog({ ctx, options }) {
             const line = drag?.target?.id === t.id && !drag.target.parent && (drag.target.before ? 'before:top-0' : 'before:bottom-0');
             return (
               <div key={t.id} data-row={t.id} role="row" aria-selected={selection.includes(t.id)} onClick={(e) => click(e, t.id)}
-                className={cn('relative grid h-8 cursor-pointer items-center border-b border-border/50 select-none hover:bg-accent/40',
-                  selection.includes(t.id) && 'bg-accent/70 hover:bg-accent/70', focusId === t.id && 'outline outline-1 -outline-offset-1 outline-ring',
+                className={cn('relative grid h-8 cursor-pointer items-center border-b border-border/50 select-none hover:bg-accent/60',
+                  selection.includes(t.id) && 'bg-accent hover:bg-accent', focusId === t.id && 'outline outline-1 -outline-offset-1 outline-ring',
                   drag?.ids.includes(t.id) && 'opacity-40', drag?.target?.parent && drag.target.id === t.id && 'bg-primary/20 outline outline-1 outline-primary',
                   line && `before:absolute before:inset-x-0 before:h-0.5 before:bg-primary ${line}`)}
                 style={grid}>
-                <span data-handle="" className={cn('flex justify-center text-muted-foreground', sort ? 'opacity-30' : 'cursor-grab hover:text-foreground')}
-                  title={sort ? 'Clear the sort to drag' : 'Drag to reorder (Alt: drop on a row to make it the parent)'} onPointerDown={(e) => startDrag(e, t)}>
-                  <GripVertical className="size-3.5" />
-                </span>
+                <Tip title={sort ? 'Clear the sort to drag' : 'Drag to reorder. Hold Alt and drop on a row to make it the parent'}>
+                  <span data-handle="" className={cn('flex flex-1 justify-center text-muted-foreground', sort ? 'opacity-30' : 'cursor-grab hover:text-foreground')}
+                    onPointerDown={(e) => startDrag(e, t)}>
+                    <GripVertical className="size-3.5" />
+                  </span>
+                </Tip>
                 {cols.map(([k]) => <div key={k} role="cell" className="min-w-0 overflow-hidden px-1.5">{cell(k, node)}</div>)}
               </div>
             );

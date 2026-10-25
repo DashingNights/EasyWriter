@@ -10,17 +10,19 @@ import { Input } from '@/components/ui/input';
 import { canDrop, cards as cardsOf, columnsOf, doneColumnOf, OPTION_DEFAULTS, PLAN_GATES, wipState } from '../../../plan/plan-model.mjs';
 import { refocusEditor } from '../../actions.js';
 import { deleteColumn, deleteTickets, dispatch, editColumns, editTicket, moveCards } from '../../plans.js';
-import { keyIs, withKey } from '../../keybinds.js';
+import { keyIs } from '../../keybinds.js';
 import { getState, setState, useStore } from '../../store.js';
 import { backgroundClick } from '../../viewport.js';
 import { InlineInput } from '../InlineInput.jsx';
-import { Tip } from '../Tip.jsx';
+import { IconButton, Tip } from '../Tip.jsx';
 import { keepFocus } from '../Toolbar.jsx';
 import { Card, convertDraft } from './Card.jsx';
 import { startDrag } from './drag.js';
 
 const root = () => document.getElementById('workspace-root');
-const typing = (e) => e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target.isContentEditable;
+// Also the view tabs: their arrows and Enter are the tab list's.
+const typing = (e) => e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target.isContentEditable
+  || !!e.target.closest?.('[role=tablist]');
 const ui = (patch) => setState({ planUi: { ...getState().planUi, ...patch } });
 /** The workspace's card fields: the chart defaults plus the estimate. */
 const FIELDS = [...OPTION_DEFAULTS.fields, 'estimate'];
@@ -30,7 +32,7 @@ const FIELDS = [...OPTION_DEFAULTS.fields, 'estimate'];
 function QuickAdd({ add, onClose }) {
   const [value, setValue] = useState('');
   return (
-    <Input autoFocus value={value} placeholder="Ticket title, Enter" aria-label="New ticket title" className="h-7 shrink-0 bg-card text-xs md:text-xs"
+    <Input autoFocus value={value} placeholder="Ticket title, Enter" aria-label="New ticket title" size="xs" className="shrink-0 bg-card"
       onChange={(e) => setValue(e.target.value)}
       onBlur={() => !value.trim() && onClose()}
       onPaste={(e) => {
@@ -59,9 +61,7 @@ function ColumnMenu({ plan, col, index, onRename }) {
   const rename = useRef(false); // Rename starts once the menu has closed (its focus return would end the edit)
   return (
     <DropdownMenu modal={false}>
-      <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="icon-xs" aria-label={`Column ${col.name} actions`} onMouseDown={keepFocus}><Ellipsis /></Button>
-      </DropdownMenuTrigger>
+      <IconButton label={`Column ${col.name} actions`} slot={DropdownMenuTrigger} onMouseDown={keepFocus}><Ellipsis /></IconButton>
       <DropdownMenuContent align="end" onCloseAutoFocus={(e) => {
         if (!rename.current) return refocusEditor(e);
         e.preventDefault();
@@ -219,7 +219,7 @@ export function Kanban({ ctx, options }) {
             <header className="flex h-8 shrink-0 items-center gap-1.5 px-2 text-xs">
               <Dot color={col.id === null ? undefined : col.color} />
               {renaming === col.id && col.id !== null ? (
-                <InlineInput value={col.name} maxLength={40} aria-label="Column name" className="h-6 flex-1 text-xs md:text-xs"
+                <InlineInput value={col.name} maxLength={40} aria-label="Column name" className="flex-1"
                   onKeyDownCapture={(e) => e.key === 'Escape' && e.preventDefault()} // cancels the edit only, not the workspace
                   onDone={(name) => { setRenaming(null); if (name != null && name.trim() !== col.name) dispatch('plan.columns.update', { planId, columnId: col.id, patch: { name } }); }} />
               ) : (
@@ -229,9 +229,7 @@ export function Kanban({ ctx, options }) {
               {col.done && <Tip title="Done column"><CircleCheck className="size-3 shrink-0 text-success" aria-label="Done column" /></Tip>}
               <span className={cn('text-muted-foreground tabular-nums', w.over && 'text-destructive')}>{w.limit ? `${w.count}/${w.limit}` : w.count}</span>
               <span className="flex-1" />
-              <Tip title={withKey('Add a ticket here', 'plan.newTicket')}>
-                <Button variant="ghost" size="icon-xs" aria-label={`Add a ticket to ${col.name}`} onMouseDown={keepFocus} onClick={() => setAdding(col.id)}><Plus /></Button>
-              </Tip>
+              <IconButton label={`Add a ticket to ${col.name}`} keybind="plan.newTicket" onMouseDown={keepFocus} onClick={() => setAdding(col.id)}><Plus /></IconButton>
               {col.id !== null && <ColumnMenu plan={plan} col={col} index={index} onRename={() => setRenaming(col.id)} />}
             </header>
             <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto p-1.5 pt-0">
@@ -246,7 +244,7 @@ export function Kanban({ ctx, options }) {
             </div>
             {noTag && (
               <div className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-lg border-2 border-dashed border-ring bg-background/70 p-4 text-center text-xs">
-                Follows no status tag: drop to create one
+                This column follows no status tag. Drop to create one.
               </div>
             )}
           </section>

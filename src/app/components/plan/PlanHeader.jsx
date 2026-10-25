@@ -1,4 +1,4 @@
-import { Bookmark, ChartGantt, Ellipsis, EyeOff, ListFilter, ListTodo, Plus, Redo2, Signal, SquareKanban, Tags, Undo2, X } from 'lucide-react';
+import { Bookmark, ChartGantt, Ellipsis, EyeOff, ListFilter, ListTodo, Plus, Redo2, Signal, SquareKanban, Tags, Trash2, Undo2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Dot } from '@/components/ui/dot';
 import {
@@ -6,10 +6,9 @@ import {
   DropdownMenuSub, DropdownMenuSubContent, DropdownMenuSubTrigger, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
-import { Toggle } from '@/components/ui/toggle';
 import { TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { OPTION_DEFAULTS } from '../../../plan/plan-model.mjs';
-import { keyLabel, withKey } from '../../keybinds.js';
+import { withKey } from '../../keybinds.js';
 import { confirmDialog, refocusEditor } from '../../actions.js';
 import { can } from '../../gates.mjs';
 import {
@@ -19,7 +18,7 @@ import {
 import { getState, setState, useStore } from '../../store.js';
 import { closeWorkspace } from '../../views.js';
 import { SidebarButton } from '../Sidebar.jsx';
-import { Tip } from '../Tip.jsx';
+import { IconButton, Tip } from '../Tip.jsx';
 import { keepFocus } from '../Toolbar.jsx';
 import { backlogFields } from './Backlog.jsx';
 import { PRIORITIES } from './Card.jsx';
@@ -38,22 +37,11 @@ const toggleIn = (options, key, v) => {
   setOptions({ [key]: next.length ? next : null });
 };
 
-/** A header icon button with its tooltip. */
-const IconButton = ({ title, onClick, disabled, children }) => (
-  <Tip title={title}>
-    <Button variant="ghost" size="icon-sm" aria-label={title} disabled={disabled} onMouseDown={keepFocus} onClick={onClick}>{children}</Button>
-  </Tip>
-);
-
 /** A header filter menu (Labels, Priority, Views). */
 function Menu({ title, icon, active, children }) {
   return (
     <DropdownMenu modal={false}>
-      <Tip title={title}>
-        <DropdownMenuTrigger asChild>
-          <Button variant="ghost" size="icon-sm" aria-label={title} className={active ? 'bg-accent text-primary' : undefined} onMouseDown={keepFocus}>{icon}</Button>
-        </DropdownMenuTrigger>
-      </Tip>
+      <IconButton label={title} slot={DropdownMenuTrigger} onMouseDown={keepFocus} className={active ? 'bg-accent hover:bg-accent' : undefined}>{icon}</IconButton>
       <DropdownMenuContent align="end" className="max-w-72" onCloseAutoFocus={refocusEditor}>{children}</DropdownMenuContent>
     </DropdownMenu>
   );
@@ -98,7 +86,7 @@ export function PlanHeader({ plan, tab }) {
           </Tip>
         ))}
       </TabsList>
-      <Input id="plan-filter" value={filter} placeholder={(keyLabel('plan.filter') ? `Filter... ( ${keyLabel('plan.filter')} )` : 'Filter...')} aria-label="Filter tickets" className="ml-1 h-7 w-36 text-xs md:text-xs"
+      <Input id="plan-filter" value={filter} size="xs" placeholder={withKey('Filter...', 'plan.filter')} aria-label="Filter tickets" className="ml-1 w-36"
         onChange={(e) => setState({ planUi: { ...getState().planUi, filter: e.target.value } })}
         onKeyDown={(e) => {
           if (e.key !== 'Escape') return;
@@ -123,17 +111,13 @@ export function PlanHeader({ plan, tab }) {
           </DropdownMenuCheckboxItem>
         ))}
       </Menu>
-      <Tip title="Hide done">
-        <Toggle size="sm" aria-label="Hide done" className="h-8 min-w-8" pressed={!!options.hideDone} onMouseDown={keepFocus}
-          onPressedChange={(v) => setOptions({ hideDone: v })}><EyeOff /></Toggle>
-      </Tip>
+      <IconButton label="Hide done" pressed={!!options.hideDone} onMouseDown={keepFocus} onClick={() => setOptions({ hideDone: !options.hideDone })}><EyeOff /></IconButton>
       <Menu title="Saved views" icon={<Bookmark />}>
         {plan.views.map((v) => (
           <DropdownMenuItem key={v.id} className="group/view" onSelect={() => applyView(v)}>
             <span className="min-w-0 flex-1 truncate">{v.name}</span>
             <span className="text-xs text-muted-foreground">{TABS.find((t) => t[3] === v.view)[1]}</span>
-            <Button variant="ghost" size="icon-xs" aria-label={`Delete the view ${v.name}`} className="-my-1"
-              onClick={(e) => { e.stopPropagation(); removeView(v); }}><X /></Button>
+            <IconButton label={`Delete the view ${v.name}`} variant="destructive-ghost" className="-my-1" onClick={() => removeView(v)}><Trash2 className="text-current" /></IconButton>
           </DropdownMenuItem>
         ))}
         {plan.views.length > 0 && <DropdownMenuSeparator />}
@@ -142,14 +126,10 @@ export function PlanHeader({ plan, tab }) {
       <Tip title={withKey('New ticket', 'plan.newTicket')}>
         <Button variant="ghost" size="xs" onMouseDown={keepFocus} onClick={() => newTicket(planId)}><Plus />Ticket</Button>
       </Tip>
-      <IconButton title={withKey('Undo', 'edit.undo')} disabled={!can('history.canUndo', { canUndo: canUndoPlan(planId) })} onClick={() => undoPlan(planId)}><Undo2 /></IconButton>
-      <IconButton title={withKey('Redo', 'edit.redo')} disabled={!can('history.canRedo', { canRedo: canRedoPlan(planId) })} onClick={() => redoPlan(planId)}><Redo2 /></IconButton>
+      <IconButton label="Undo" keybind="edit.undo" disabled={!can('history.canUndo', { canUndo: canUndoPlan(planId) })} onMouseDown={keepFocus} onClick={() => undoPlan(planId)}><Undo2 /></IconButton>
+      <IconButton label="Redo" keybind="edit.redo" disabled={!can('history.canRedo', { canRedo: canRedoPlan(planId) })} onMouseDown={keepFocus} onClick={() => redoPlan(planId)}><Redo2 /></IconButton>
       <DropdownMenu modal={false}>
-        <Tip title="More plan actions">
-          <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon-sm" aria-label="More plan actions" onMouseDown={keepFocus}><Ellipsis /></Button>
-          </DropdownMenuTrigger>
-        </Tip>
+        <IconButton label="More plan actions" slot={DropdownMenuTrigger} onMouseDown={keepFocus}><Ellipsis /></IconButton>
         <DropdownMenuContent align="end" onCloseAutoFocus={refocusEditor}>
           <DropdownMenuItem onSelect={() => openDialog('planLabels', { planId })}>Labels...</DropdownMenuItem>
           <DropdownMenuItem onSelect={() => editColumns(planId)}>Columns...</DropdownMenuItem>

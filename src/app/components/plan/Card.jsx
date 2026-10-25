@@ -13,7 +13,7 @@ import { blockers, doneColumnOf, unitOf } from '../../../plan/plan-model.mjs';
 import { openDraft, refocusEditor } from '../../actions.js';
 import { deleteTickets, dispatch, editTicket, moveCards, newTicket } from '../../plans.js';
 import { closeWorkspace } from '../../views.js';
-import { Tip } from '../Tip.jsx';
+import { IconButton, Tip } from '../Tip.jsx';
 
 const NO_STATUS = '-'; // radio value of "No status" (Radix needs a non-empty value)
 const stop = (e) => e.stopPropagation();
@@ -37,10 +37,7 @@ function CardMenu({ card, ctx, ids, open, setOpen }) {
   const tickets = ids.filter((id) => plan.tickets.some((x) => x.id === id));
   return (
     <DropdownMenu modal={false} open={open} onOpenChange={setOpen}>
-      <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="icon-xs" aria-label="Card actions" onClick={stop}
-          className="invisible absolute top-0.5 right-0.5 bg-card group-hover:visible data-[state=open]:visible"><Ellipsis /></Button>
-      </DropdownMenuTrigger>
+      <IconButton reveal label="Card actions" slot={DropdownMenuTrigger} tip={{ wrap: 'absolute top-0.5 right-0.5' }} className="bg-card"><Ellipsis /></IconButton>
       {/* React events bubble out of the portal to the card: a menu click must not open the ticket or start a drag. */}
       <DropdownMenuContent align="end" onCloseAutoFocus={refocusEditor} onClick={stop} onPointerDown={stop}>
         <DropdownMenuSub>
@@ -131,10 +128,10 @@ export function Card({ card, ctx, fields, ids, selected, focused, dragging, line
       </div>
       <div className="mt-1 flex flex-wrap items-center gap-1.5 text-muted-foreground empty:hidden">
         {t && has('num') && <span className="tabular-nums">#{t.num}</span>}
-        {!t && <><FileText className="size-3.5" /><Badge variant="outline" className="h-4 px-1 text-[10px] text-muted-foreground">draft</Badge></>}
+        {!t && <><FileText className="size-3.5" /><Badge variant="outline" className="h-4 px-1 text-muted-foreground">draft</Badge></>}
         {PriorityIcon && <Tip title={`${priorityName} priority`}><PriorityIcon className={cn('size-3.5', t.priority === 1 && 'text-destructive')} aria-label={priorityName} /></Tip>}
         {t && has('labels') && t.labels.map((id) => plan.labels.find((l) => l.id === id)).filter(Boolean).map((l) => (
-          <span key={l.id} className="rounded px-1 text-[10px] leading-4" style={{ background: `${l.color}33`, color: `color-mix(in oklab, ${l.color} 65%, var(--foreground))` }}>{l.name}</span>
+          <span key={l.id} className="rounded px-1 text-xs leading-4" style={{ background: `${l.color}33`, color: `color-mix(in oklab, ${l.color} 65%, var(--foreground))` }}>{l.name}</span>
         ))}
         {t?.end && has('due') && (
           <span className={cn('tabular-nums', !done && t.end < ctx.today && 'text-destructive', !done && t.end === ctx.today && 'text-warning')}>
@@ -149,20 +146,22 @@ export function Card({ card, ctx, fields, ids, selected, focused, dragging, line
           <Tip title={`Blocked by ${blocked.map((b) => `#${b.num} ${b.title}`).join(', ')}`}><Ban className="size-3.5 text-warning" aria-label="Blocked" /></Tip>
         )}
         {t && draft && has('draft') && (
-          <button type="button" className="flex min-w-0 items-center gap-0.5 hover:text-foreground" title={`Open the draft "${draft.title}"`}
-            onClick={(e) => { e.stopPropagation(); openDraftFromPlan(draft.id); }}>
-            <FileText className="size-3.5 shrink-0" /><span className="max-w-32 truncate">{draft.title || 'Untitled draft'}</span>
-          </button>
+          <Tip title={`Open the draft "${draft.title}"`} wrap="min-w-0">
+            <button type="button" className="flex min-w-0 items-center gap-0.5 hover:text-foreground"
+              onClick={(e) => { e.stopPropagation(); openDraftFromPlan(draft.id); }}>
+              <FileText className="size-3.5 shrink-0" /><span className="max-w-32 truncate">{draft.title || 'Untitled draft'}</span>
+            </button>
+          </Tip>
         )}
         {card.pushedAt != null && has('pushed') && <Tip title="Pushed to the forum"><CircleCheck className="size-3.5 text-success" aria-label="Pushed" /></Tip>}
         {tag && (
           <Tip title={`Its draft's tag "${tag.name}" is followed by no column`}>
-            <Badge variant="outline" className="h-4 gap-1 px-1 text-[10px] text-muted-foreground"><Dot color={tag.color} />{tag.name}</Badge>
+            <Badge variant="outline" className="h-4 gap-1 px-1 text-muted-foreground"><Dot color={tag.color} />{tag.name}</Badge>
           </Tip>
         )}
       </div>
       {!t && (
-        <Button variant="outline" size="xs" className="invisible absolute right-1 bottom-1 h-5 bg-card text-[11px] group-hover:visible"
+        <Button variant="outline" size="xs" className="invisible absolute right-1 bottom-1 bg-card group-hover:visible"
           onClick={(e) => { e.stopPropagation(); convertDraft(plan.id, card); }}>Convert to ticket</Button>
       )}
       <CardMenu card={card} ctx={ctx} ids={ids} open={menu} setOpen={setMenu} />

@@ -37,14 +37,16 @@ const APP = { accent: 'var(--ui-accent)', critical: '#e05252', conflict: '#e0995
 const ZOOMS = [['day', 'Day'], ['week', 'Week'], ['month', 'Month'], ['quarter', 'Quarter'], ['fit', 'Fit']];
 const STEPS = ['day', 'week', 'month', 'quarter']; // Ctrl + wheel and + / − step through them
 const SHOW = [['showDeps', 'Dependencies'], ['showCritical', 'Critical path'], ['showBaseline', 'Baseline'], ['showToday', 'Today line'],
-  ['showWeekends', 'Weekends (off: working days only)'], ['showTaskList', 'Task list']];
+  ['showWeekends', 'Weekends (off shows working days only)'], ['showTaskList', 'Task list']];
 const CURSOR = { lane: 'cell', bar: 'grab', 'edge-l': 'ew-resize', 'edge-r': 'ew-resize', progress: 'ew-resize', 'port-s': 'crosshair', 'port-e': 'crosshair', dep: 'pointer' };
 const LIST_MIN = 160;
 const NO_STATUS = '-'; // radio value of "No status"
 const ROW = { height: 28 }; // gantt-layout's row (rem sizes follow the 13 px root)
 
 const root = () => document.getElementById('workspace-root');
-const typing = (e) => e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target.isContentEditable;
+// Also the view tabs: their arrows and Enter are the tab list's.
+const typing = (e) => e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target.isContentEditable
+  || !!e.target.closest?.('[role=tablist]');
 const ui = (patch) => setState({ planUi: { ...getState().planUi, ...patch } });
 const setOptions = (patch) => {
   const s = getState().planUi;
@@ -385,7 +387,7 @@ export function Gantt({ ctx, options }) {
     select(e, hit.id);
     if (hit.kind === 'lane') { // schedule in place: a click gives it that working day, a drag draws its span
       if (e.ctrlKey || e.metaKey || e.shiftKey) return;
-      if (hasKids(hit.id)) return void toast('Schedule its subtasks: a parent\'s dates come from them.');
+      if (hasKids(hit.id)) return void toast('A parent\'s dates come from its subtasks. Schedule those instead.');
       const d0 = nextWorkday(dayAt(x), cal);
       let span = [d0, d0];
       run(e, {
@@ -558,8 +560,8 @@ export function Gantt({ ctx, options }) {
   return (
     <div className="flex min-h-0 flex-1 flex-col text-xs select-none">
       <div className="flex h-9 shrink-0 items-center gap-1 px-2">
-        <ToggleGroup type="single" size="sm" aria-label="Zoom" value={options.zoom} onValueChange={(v) => v && setOptions({ zoom: v })}>
-          {ZOOMS.map(([v, name]) => <ToggleGroupItem key={v} value={v} aria-label={name} className="h-7 px-2 text-xs" onMouseDown={keepFocus}>{name}</ToggleGroupItem>)}
+        <ToggleGroup type="single" size="xs" aria-label="Zoom" value={options.zoom} onValueChange={(v) => v && setOptions({ zoom: v })}>
+          {ZOOMS.map(([v, name]) => <ToggleGroupItem key={v} value={v} aria-label={name} className="px-2" onMouseDown={keepFocus}>{name}</ToggleGroupItem>)}
         </ToggleGroup>
         <Tip title={withKey('Scroll to today', 'plan.today')}>
           <Button variant="ghost" size="xs" onMouseDown={keepFocus} onClick={scrollToday}>Today</Button>
@@ -587,7 +589,7 @@ export function Gantt({ ctx, options }) {
           </Tip>
         )}
         <span className="min-w-0 flex-1 truncate text-right text-muted-foreground">
-          Drag a task row to reorder it (Alt: onto a parent); click or drag in an unscheduled row to schedule it; drag a bar to move it (Shift: with its successors), its ends to resize, a dot beside it to link; Alt-drag a link: lag
+          Drag a row to reorder it, or with Alt onto a parent. Click or drag in an unscheduled row to schedule it. Drag a bar to move it (with Shift, its successors move too), its ends to resize it, the dot beside it to link it. Alt-drag a link to set its lag.
         </span>
       </div>
       <div ref={pane} className="relative min-h-0 flex-1 overflow-auto border-t" onScroll={onScroll}
@@ -617,7 +619,7 @@ export function Gantt({ ctx, options }) {
                   const line = rowDrag?.target?.id === r.id && !rowDrag.target.parent && (rowDrag.target.before ? 'before:top-0' : 'before:bottom-0');
                   return (
                     <div key={r.id} data-gantt-row={r.id} aria-selected={selection.includes(r.id)} style={ROW}
-                      className={cn('relative flex cursor-pointer items-center tabular-nums hover:bg-accent/40', selection.includes(r.id) && 'bg-accent/70 hover:bg-accent/70',
+                      className={cn('relative flex cursor-pointer items-center tabular-nums hover:bg-accent/60', selection.includes(r.id) && 'bg-accent hover:bg-accent',
                         focusId === r.id && 'outline outline-1 -outline-offset-1 outline-ring', hasKids(r.id) && 'font-medium', rowDrag?.ids.includes(r.id) && 'opacity-40',
                         rowDrag?.target?.parent && rowDrag.target.id === r.id && 'bg-primary/20 outline outline-1 outline-primary',
                         line && `before:absolute before:inset-x-0 before:h-0.5 before:bg-primary ${line}`)}
@@ -648,7 +650,7 @@ export function Gantt({ ctx, options }) {
                 onDoubleClick={onDoubleClick} onContextMenu={onContextMenu}>
                 <GanttGrid L={L} p={APP} />
                 {L.rows.filter((r) => selection.includes(r.id) || r.id === focusId).map((r) => (
-                  <rect key={r.id} x={0} y={r.y} width={L.width} height={L.rowH} fill={APP.accent} fillOpacity={selection.includes(r.id) ? 0.14 : 0.05} />
+                  <rect key={r.id} x={0} y={r.y} width={L.width} height={L.rowH} fill="var(--accent)" fillOpacity={selection.includes(r.id) ? 1 : 0.6} />
                 ))}
                 <GanttDeps L={L} p={APP} selected={dep} />
                 <GanttRows L={{ ...L, rows: L.rows.filter((r) => r.bar) }} ctx={vctx} p={APP} sched={sched} />
@@ -672,7 +674,7 @@ export function Gantt({ ctx, options }) {
                 </svg>
                 <span className="relative">
                   {!plan.tickets.length
-                    ? <>No tickets yet. <Button variant="outline" size="xs" className="ml-1" onMouseDown={keepFocus} onClick={() => newTicket(planId)}><Plus />Ticket</Button></>
+                    ? <>No tickets yet. <Button variant="ghost" size="xs" className="ml-1" onMouseDown={keepFocus} onClick={() => newTicket(planId)}><Plus />Ticket</Button></>
                     : filterTickets(ctx, options).length ? 'The matching tickets have no dates. Show > Unscheduled tickets lists them.' : 'No ticket matches the filters.'}
                 </span>
               </div>
