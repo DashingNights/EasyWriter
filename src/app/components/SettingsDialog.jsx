@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ArrowDown, ArrowUp, Bot, Check, ChevronsUpDown, CloudUpload, Globe, RefreshCw, Keyboard, MessageSquare, MessagesSquare, Mic, Monitor, Moon, Plus, SlidersHorizontal, Sparkles, Sun, Tags, Type, X } from 'lucide-react';
+import { ArrowDown, ArrowUp, Bot, Check, CloudUpload, Globe, RefreshCw, Keyboard, MessageSquare, MessagesSquare, Mic, Monitor, Moon, Plus, SlidersHorizontal, Sparkles, Sun, Tags, Trash2, Type } from 'lucide-react';
 import { toast } from 'sonner';
 // import { Badge } from '@/components/ui/badge'; // LOCAL LLM (commented out 2026-10-07): the model file row's state
 import { Button } from '@/components/ui/button';
@@ -8,7 +8,7 @@ import { Command, CommandEmpty, CommandInput, CommandItem, CommandList } from '@
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Select, SelectButton, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Slider } from '@/components/ui/slider';
 import { Switch } from '@/components/ui/switch';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
@@ -31,6 +31,7 @@ import { DEFS, effective, overridesOf } from '../keys.mjs';
 import { FormDialog } from './FormDialog.jsx';
 import { KeybindsSection } from './KeybindsSection.jsx';
 import { startTour } from './Onboarding.jsx';
+import { IconButton, Tip } from './Tip.jsx';
 
 const NONE = '-'; // Radix Select items need a non-empty value: stands for '' (default font, no highlight)
 const BLANK = { name: '', fontFamily: '', size: 100, color: 'root', highlight: '', bold: false, italic: false, underline: false };
@@ -113,9 +114,11 @@ function UiPalette() {
     <Label className="text-muted-foreground">{theme === 'dark' ? 'Dark palette' : 'Light palette'}</Label>
     <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
       {PALETTE.map(([key, label, title]) => (
-        <label key={key} title={title} className="flex cursor-pointer items-center gap-1.5 text-xs">
-          <input type="color" className={SWATCH} value={values[key]} onChange={(e) => edit(key, e.target.value)} />{label}
-        </label>
+        <Tip key={key} title={title}>
+          <label className="flex cursor-pointer items-center gap-1.5 text-xs">
+            <input type="color" className={SWATCH} value={values[key]} onChange={(e) => edit(key, e.target.value)} />{label}
+          </label>
+        </Tip>
       ))}
       <Button type="button" variant="outline" size="sm" disabled={!changed} onClick={reset}>Reset</Button>
     </div>
@@ -247,7 +250,7 @@ function DictationSection({ value: d, onChange }) {
       <Pick label="Microphone" value={mics.some((m) => m.deviceId === d.micId) ? d.micId : ''} onChange={(micId) => edit({ micId })} className="w-72"
         options={[['', 'System default'], ...mics.map((m, i) => [m.deviceId, m.label || `Microphone ${i + 1}`])]} />
       <details className="col-span-2" data-agent-deny>
-        <summary className="cursor-pointer text-muted-foreground">Advanced: use an existing whisper.cpp</summary>
+        <summary className="cursor-pointer text-muted-foreground">Use an existing whisper.cpp (advanced)</summary>
         <div className={`mt-2 ${FIELDS}`}>
           <Label htmlFor="set-dict-exe" className="text-muted-foreground">Server program</Label>
           <Input id="set-dict-exe" className="h-8 w-96" placeholder="C:\...\whisper-server.exe" value={d.serverPath} onChange={(e) => edit({ serverPath: e.target.value })} />
@@ -256,7 +259,7 @@ function DictationSection({ value: d, onChange }) {
           <Label htmlFor="set-dict-url" className="text-muted-foreground">Server URL</Label>
           <Input id="set-dict-url" className="h-8 w-96" placeholder="http://127.0.0.1:8080" value={d.serverUrl} onChange={(e) => edit({ serverUrl: e.target.value })} />
           <span />
-          <span className="text-xs text-muted-foreground">The program and model file replace the downloads. A server URL is used as it is: nothing is started.</span>
+          <span className="text-xs text-muted-foreground">The program and model file replace the downloads. With a server URL, nothing is started.</span>
         </div>
       </details>
     </div>
@@ -387,7 +390,7 @@ function QwenModels({ value: a, edit }) {
       <div className="flex items-center gap-2">
         <Input aria-label="Model id" className="h-8 w-60" spellCheck={false} placeholder="Another model id" value={id}
           onChange={(e) => setId(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), add())} />
-        <Button type="button" size="sm" variant="outline" disabled={!id.trim()} onClick={add}>Add</Button>
+        <Button type="button" size="sm" variant="ghost" disabled={!id.trim()} onClick={add}><Plus />Add</Button>
       </div>
     </div>
   );
@@ -417,7 +420,7 @@ function AdvancedFields({ value: a, edit }) {
       <div className={`mt-2 ${FIELDS}`}>
         <Label htmlFor="set-asst-limit" className="text-muted-foreground">Tool calls</Label>
         <div className="flex items-center gap-2">
-          <Checkbox id="set-asst-limit" checked={limit} onCheckedChange={(v) => set('limitCalls', v === true ? undefined : false)} />
+          <Switch id="set-asst-limit" checked={limit} onCheckedChange={(on) => set('limitCalls', on ? undefined : false)} />
           <Label htmlFor="set-asst-limit">At most</Label>
           {num('maxCalls', 'w-20')}
           <span className="text-sm text-muted-foreground">per request. A batch of calls counts as one.</span>
@@ -428,7 +431,7 @@ function AdvancedFields({ value: a, edit }) {
         ])}
         <span />
         <div className="flex items-center gap-2">
-          <Checkbox id="set-asst-repeat" checked={own.repeatStop ?? ADVANCED.repeatStop} onCheckedChange={(v) => set('repeatStop', v === true ? undefined : false)} />
+          <Switch id="set-asst-repeat" checked={own.repeatStop ?? ADVANCED.repeatStop} onCheckedChange={(on) => set('repeatStop', on ? undefined : false)} />
           <Label htmlFor="set-asst-repeat">Stop a turn when the same call repeats or fails twice</Label>
         </div>
         <span />
@@ -537,14 +540,14 @@ function AssistantSection({ value: a, onChange }) {
         <Pick label="Assistant permissions" value={a.permission} onChange={(permission) => savePermission({ permission })} options={PERMISSIONS} className="w-48" />
         <span className="max-w-[36rem] text-xs text-muted-foreground" data-permission-hint>{PERMISSION_HINT[a.permission]}</span>
         <div className="flex items-start gap-2">
-          <Checkbox id="set-asst-ui" className="mt-0.5" checked={a.uiControl !== false} onCheckedChange={(v) => savePermission({ uiControl: v === true })} />
+          <Switch id="set-asst-ui" className="mt-0.5" checked={a.uiControl !== false} onCheckedChange={(on) => savePermission({ uiControl: on })} />
           <div className="grid gap-0.5">
             <Label htmlFor="set-asst-ui">Let the assistant use on-screen controls</Label>
             <span className="text-xs text-muted-foreground">Lets it click and type in the app when no command fits.</span>
           </div>
         </div>
         <div className="flex items-start gap-2">
-          <Checkbox id="set-asst-picture" className="mt-0.5" checked={a.pictureAfterWrite !== false} onCheckedChange={(v) => savePermission({ pictureAfterWrite: v === true })} />
+          <Switch id="set-asst-picture" className="mt-0.5" checked={a.pictureAfterWrite !== false} onCheckedChange={(on) => savePermission({ pictureAfterWrite: on })} />
           <div className="grid gap-0.5">
             <Label htmlFor="set-asst-picture">Show the assistant the board after each change</Label>
             <span className="text-xs text-muted-foreground">It checks its work on a picture of the board. Each picture uses about 1,000 tokens.</span>
@@ -675,14 +678,14 @@ function AssistantSection({ value: a, onChange }) {
 //         <Pick label="Assistant permissions" value={a.permission} onChange={(permission) => savePermission({ permission })} options={PERMISSIONS} className="w-48" />
 //         <span className="max-w-[36rem] text-xs text-muted-foreground" data-permission-hint>{PERMISSION_HINT[a.permission]}</span>
 //         <div className="flex items-start gap-2">
-//           <Checkbox id="set-asst-ui" className="mt-0.5" checked={a.uiControl !== false} onCheckedChange={(v) => savePermission({ uiControl: v === true })} />
+//           <Switch id="set-asst-ui" className="mt-0.5" checked={a.uiControl !== false} onCheckedChange={(on) => savePermission({ uiControl: on })} />
 //           <div className="grid gap-0.5">
 //             <Label htmlFor="set-asst-ui">Let the assistant use on-screen controls</Label>
 //             <span className="text-xs text-muted-foreground">Lets it click and type in the app when no command fits.</span>
 //           </div>
 //         </div>
 //         <div className="flex items-start gap-2">
-//           <Checkbox id="set-asst-picture" className="mt-0.5" checked={a.pictureAfterWrite !== false} onCheckedChange={(v) => savePermission({ pictureAfterWrite: v === true })} />
+//           <Switch id="set-asst-picture" className="mt-0.5" checked={a.pictureAfterWrite !== false} onCheckedChange={(on) => savePermission({ pictureAfterWrite: on })} />
 //           <div className="grid gap-0.5">
 //             <Label htmlFor="set-asst-picture">Show the assistant the board after each change</Label>
 //             <span className="text-xs text-muted-foreground">It checks its work on a picture of the board. Each picture uses about 1,000 tokens.</span>
@@ -703,7 +706,7 @@ function AssistantSection({ value: a, onChange }) {
 //         <span className="max-w-[36rem] text-xs text-muted-foreground" data-model-hint>{MODEL_HINT[a.model]}</span>
 //         {MTP_HINT[a.model] && (
 //           <div className="flex items-start gap-2">
-//             <Checkbox id="set-asst-mtp" className="mt-0.5" checked={!!a.mtp} onCheckedChange={(v) => pickModel({ mtp: v === true })} />
+//             <Switch id="set-asst-mtp" className="mt-0.5" checked={!!a.mtp} onCheckedChange={(on) => pickModel({ mtp: on })} />
 //             <div className="grid gap-0.5">
 //               <Label htmlFor="set-asst-mtp">Faster replies (MTP)</Label>
 //               <span className="text-xs text-muted-foreground" data-mtp-hint>{MTP_HINT[a.model]}</span>
@@ -933,9 +936,9 @@ function GitHubSection({ value: g, onChange, setProblem }) {
               {/* The button shows the pick; the list opens under it, search by typing, a click or Enter picks and closes */}
               <Popover open={repoOpen} onOpenChange={setRepoOpen}>
                 <PopoverTrigger asChild>
-                  <Button type="button" variant="outline" role="combobox" aria-expanded={repoOpen} aria-label="Repository" className="w-96 justify-between font-normal">
-                    <span className="truncate">{g.repo || 'Choose a repository'}</span><ChevronsUpDown className="opacity-50" />
-                  </Button>
+                  <SelectButton role="combobox" aria-expanded={repoOpen} aria-label="Repository" data-placeholder={g.repo ? undefined : ''} className="w-96">
+                    <span className="truncate">{g.repo || 'Choose a repository'}</span>
+                  </SelectButton>
                 </PopoverTrigger>
                 <PopoverContent align="start" className="w-96 p-0">
                   <Command className="bg-transparent">
@@ -952,8 +955,7 @@ function GitHubSection({ value: g, onChange, setProblem }) {
                   </Command>
                 </PopoverContent>
               </Popover>
-              <Button type="button" variant="ghost" size="icon-sm" aria-label="Reload the list" title="Reload the list" disabled={!repos}
-                onClick={loadRepos}><RefreshCw /></Button>
+              <IconButton size="regular" label="Reload the list" disabled={!repos} onClick={loadRepos}><RefreshCw /></IconButton>
             </div>
             {repoNote && <span className={`text-xs ${check && !check.ok ? 'text-destructive' : 'text-muted-foreground'}`}>{repoNote}</span>}
           </div>
@@ -1179,15 +1181,15 @@ export function SettingsDialog({ settings: s, section, onClose }) {
                       </td>
                     ))}
                     <td className="p-1">
-                      <Button type="button" variant="ghost" size="icon-sm" aria-label="Delete preset" title="Delete preset"
-                        onClick={() => setRows((list) => list.filter((x) => x.key !== r.key))}><X /></Button>
+                      <IconButton size="regular" variant="destructive-ghost" label="Delete preset"
+                        onClick={() => setRows((list) => list.filter((x) => x.key !== r.key))}><Trash2 /></IconButton>
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
             <div>
-              <Button type="button" variant="outline" size="sm" onClick={() => setRows((list) => [...list, presetRow(BLANK)])}><Plus />Add preset</Button>
+              <Button type="button" variant="ghost" size="xs" onClick={() => setRows((list) => [...list, presetRow(BLANK)])}><Plus />Add preset</Button>
             </div>
           </Section>
 
@@ -1195,17 +1197,18 @@ export function SettingsDialog({ settings: s, section, onClose }) {
             <div className="grid gap-1">
               {tagRows.map((r, i) => (
                 <div key={r.key} className="flex items-center gap-1">
-                  <input type="color" aria-label="Tag colour" title="Tag colour" className={SWATCH} value={r.color} onChange={(e) => editTag(r.key, { color: e.target.value })} />
+                  <Tip title="Tag colour">
+                    <input type="color" aria-label="Tag colour" className={SWATCH} value={r.color} onChange={(e) => editTag(r.key, { color: e.target.value })} />
+                  </Tip>
                   <Input aria-label="Tag name" className="h-8 w-44" placeholder={`Tag ${i + 1}`} value={r.name} onChange={(e) => editTag(r.key, { name: e.target.value })} />
-                  <Button type="button" variant="ghost" size="icon-sm" aria-label="Move up" title="Move up" disabled={!i} onClick={() => moveTag(i, -1)}><ArrowUp /></Button>
-                  <Button type="button" variant="ghost" size="icon-sm" aria-label="Move down" title="Move down" disabled={i === tagRows.length - 1}
-                    onClick={() => moveTag(i, 1)}><ArrowDown /></Button>
-                  <Button type="button" variant="ghost" size="icon-sm" aria-label="Delete tag" title="Delete tag" onClick={() => deleteTag(r, i)}><X /></Button>
+                  <IconButton size="regular" label="Move up" disabled={!i} onClick={() => moveTag(i, -1)}><ArrowUp /></IconButton>
+                  <IconButton size="regular" label="Move down" disabled={i === tagRows.length - 1} onClick={() => moveTag(i, 1)}><ArrowDown /></IconButton>
+                  <IconButton size="regular" variant="destructive-ghost" label="Delete tag" onClick={() => deleteTag(r, i)}><Trash2 /></IconButton>
                 </div>
               ))}
             </div>
             <div>
-              <Button type="button" variant="outline" size="sm" onClick={() => setTagRows((list) => [...list, tagRow({ id: crypto.randomUUID(), name: '', color: '#a3a3a3' })])}>
+              <Button type="button" variant="ghost" size="xs" onClick={() => setTagRows((list) => [...list, tagRow({ id: crypto.randomUUID(), name: '', color: '#a3a3a3' })])}>
                 <Plus />Add tag
               </Button>
             </div>

@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Kbd } from '@/components/ui/kbd';
 import { chordOf, collisions, DEFS, effective, GROUPS, windowsUse } from '../keys.mjs';
+import { IconButton } from './Tip.jsx';
 
 // Settings > Keybinds (SPEC §7k): every binding of the registry with its chords. A chord button records a new chord in its place,
 // + adds one, x removes one, the reset arrow brings the defaults back. Warnings (Windows's own use of a chord, and two bindings
@@ -99,7 +100,7 @@ export function KeybindsSection({ value, onChange }) {
               const warnings = warningsOf(d, keys, clashes[d.id]);
               const isDefault = keys.join() === DEFAULTS[d.id].join();
               return (
-                <div key={d.id} data-keybind={d.id} className="grid grid-cols-[minmax(10rem,15rem)_1fr_auto] items-start gap-x-3 rounded-md px-1 py-1 hover:bg-accent/30">
+                <div key={d.id} data-keybind={d.id} className="grid grid-cols-[minmax(10rem,15rem)_1fr_auto] items-start gap-x-3 rounded-md px-1 py-1 hover:bg-accent/60">
                   <span className="pt-0.5 text-sm">{d.label}</span>
                   <div className="flex flex-wrap items-center gap-1" data-recording={rec?.id === d.id ? '' : undefined}>
                     {keys.map((c, i) => (
@@ -108,14 +109,14 @@ export function KeybindsSection({ value, onChange }) {
                     ))}
                     {rec?.id === d.id && rec.index == null
                       ? <Kbd className="ring-2 ring-ring">Press keys...</Kbd>
-                      : <Button type="button" variant="ghost" size="icon-xs" aria-label={`Add a key to ${d.label}`} onClick={() => setRec({ id: d.id, index: null })}><Plus /></Button>}
+                      : <IconButton label={`Add a key to ${d.label}`} onClick={() => setRec({ id: d.id, index: null })}><Plus /></IconButton>}
                     {!keys.length && rec?.id !== d.id && <span className="text-xs text-muted-foreground">No key</span>}
                     {warnings.map((w) => (
                       <p key={w} className="flex w-full items-start gap-1 text-xs text-warning"><TriangleAlert className="mt-px size-3 shrink-0" />{w}</p>
                     ))}
                   </div>
-                  <Button type="button" variant="ghost" size="icon-xs" aria-label={`Reset ${d.label}`} className={cn(isDefault && 'invisible')}
-                    onClick={() => onChange({ ...value, [d.id]: DEFAULTS[d.id] })}><RotateCcw /></Button>
+                  <IconButton label={`Reset ${d.label}`} tip={{ wrap: cn(isDefault && 'invisible') }}
+                    onClick={() => onChange({ ...value, [d.id]: DEFAULTS[d.id] })}><RotateCcw /></IconButton>
                 </div>
               );
             })}
