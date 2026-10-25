@@ -1,6 +1,6 @@
 # Download
-Download installer: ![EasyWriter-Setup-x.x.x.exe](https://github.com/DashingNights/EasyWriter/releases/latest)
-Download Portable (school computers): ![EasyWriter-x.x.x-win.zip](https://github.com/DashingNights/EasyWriter/releases/latest)
+Download installer: [EasyWriter-Setup-x.x.x.exe](https://github.com/DashingNights/EasyWriter/releases/latest)
+Download Portable (school computers): [EasyWriter-x.x.x-win.zip](https://github.com/DashingNights/EasyWriter/releases/latest)
 
 # EasyWriter
 
