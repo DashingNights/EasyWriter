@@ -7,7 +7,7 @@ import { findEnd, findReplace, findReplaceAll, findState, findStep, findText } f
 import { getState, setState, useEditor, useStore } from '../store.js';
 import { useViewportBox } from '../viewport.js';
 import { notify } from './Notices.jsx';
-import { Tip } from './Tip.jsx';
+import { IconButton } from './Tip.jsx';
 
 // Opens the find bar, or focuses it again; a one-line text selection becomes its query. `replace`: with its replace row
 // (null: as it was).
@@ -68,21 +68,19 @@ export function FindBar() {
     e.preventDefault();
     fn();
   };
-  const icon = (title, Icon, onClick, enabled = matches.length > 0) => (
-    <Tip title={title} side="bottom">
-      <Button variant="ghost" size="icon-xs" aria-label={title} disabled={!enabled} onClick={onClick}><Icon /></Button>
-    </Tip>
+  const icon = (label, Icon, onClick, enabled = matches.length > 0, props) => (
+    <IconButton label={label} tip={{ side: 'bottom' }} disabled={!enabled} onClick={onClick} {...props}><Icon /></IconButton>
   );
-  const field = 'h-7 w-60 text-xs shadow-none md:text-xs focus-visible:ring-1';
-  // p-2 around the h-7 fields, so their corners sit evenly inside the island's rounder ones
+  const field = 'w-60 shadow-none focus-visible:ring-1';
+  // p-2 around the h-6 fields, so their corners sit evenly inside the island's rounder ones
   return (
     <div role="search" className="absolute z-[26] flex -translate-x-full flex-col gap-2 rounded-island border bg-island p-2 text-xs shadow-xl"
       style={{ left: box.left + box.width - 8, top: box.top + 8 }}>
       <div className="flex items-center gap-1">
-        {icon(find.replace ? 'Hide replace' : 'Replace (Ctrl+H)', find.replace ? ChevronDown : ChevronRight,
-          () => setState({ find: { ...find, replace: !find.replace } }), true)}
+        {icon(find.replace ? 'Hide replace' : 'Replace', find.replace ? ChevronDown : ChevronRight,
+          () => setState({ find: { ...find, replace: !find.replace } }), true, { keybind: find.replace ? undefined : 'app.replace', 'aria-expanded': find.replace })}
         <div className="relative">
-          <Input ref={findBox} aria-label="Find in draft" placeholder="Find in draft" spellCheck={false} className={cn(field, 'pr-20')}
+          <Input ref={findBox} size="xs" aria-label="Find in draft" placeholder="Find in draft" spellCheck={false} className={cn(field, 'pr-20')}
             value={query} onChange={(e) => setQuery(e.target.value)}
             onKeyDown={keys({ Enter: () => findStep(editor, 1), 'Shift+Enter': () => findStep(editor, -1) })} />
           {/* the count at the box's right end, as browsers' find bars show it */}
@@ -99,7 +97,7 @@ export function FindBar() {
       </div>
       {find.replace && (
         <div className="flex items-center gap-1 pl-7">
-          <Input ref={replaceBox} aria-label="Replace with" placeholder="Replace with" spellCheck={false} className={field}
+          <Input ref={replaceBox} size="xs" aria-label="Replace with" placeholder="Replace with" spellCheck={false} className={field}
             value={replacement} onChange={(e) => setReplacement(e.target.value)}
             onKeyDown={keys({ Enter: replaceOne })} />
           <Button variant="ghost" size="xs" disabled={!matches.length} onClick={replaceOne}>Replace</Button>
