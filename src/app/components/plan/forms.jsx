@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { ArrowDown, ArrowUp, CircleCheck, Plus, X } from 'lucide-react';
+import { ArrowDown, ArrowUp, CircleCheck, Plus, Trash2, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Dot } from '@/components/ui/dot';
@@ -8,10 +8,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Toggle } from '@/components/ui/toggle';
 import { cards, doneColumnOf, MAX_COLUMNS, PLAN_GATES } from '../../../plan/plan-model.mjs';
 import { confirmDialog, refocusEditor, threadLabel } from '../../actions.js';
+import { keyLabel } from '../../keybinds.js';
 import { deletePlan, dispatch, dispatchAll, planContext, planList, usePlans } from '../../plans.js';
 import { useStore } from '../../store.js';
 import { DateField } from '../DateField.jsx';
 import { FormDialog } from '../FormDialog.jsx';
+import { IconButton, Tip } from '../Tip.jsx';
 import { TicketDialog } from './TicketDialog.jsx';
 
 // Form dialogs of the plan workspace (openDialog types; Gantt plan §6.2–§6.3, §6.6; roadmap A2), spread into FORMS
@@ -53,12 +55,19 @@ export function ColorInput({ value, onCommit, ...props }) {
   return <input ref={ref} type="color" className={SWATCH} defaultValue={value} key={value} {...props} />;
 }
 
-/** The list dialogs' shell: title, rows, one Close button. */
-export function ListDialog({ title, onClose, className, children }) {
+/** onOpenAutoFocus for a list whose first control has a tooltip (a colour, a Default toggle): the first name field, or the
+ * dialog itself, takes the focus, so no tooltip opens with the dialog. */
+const firstName = (e) => {
+  e.preventDefault();
+  (e.currentTarget.querySelector('input:not([type=color])') ?? e.currentTarget).focus();
+};
+
+/** The list dialogs' shell: title, rows, one Close button. Other props go to the content. */
+export function ListDialog({ title, onClose, className, children, ...props }) {
   return (
     <Dialog open onOpenChange={(open) => !open && onClose(null)}>
       <DialogContent className={`max-h-[88vh] overflow-y-auto p-3 text-sm *:data-[slot=dialog-close]:top-2 *:data-[slot=dialog-close]:right-2 ${className ?? ''}`}
-        aria-describedby={undefined} onCloseAutoFocus={refocusEditor} onInteractOutside={(e) => e.preventDefault()}>
+        aria-describedby={undefined} onCloseAutoFocus={refocusEditor} onInteractOutside={(e) => e.preventDefault()} {...props}>
         <DialogHeader><DialogTitle>{title}</DialogTitle></DialogHeader>
         {children}
         <DialogFooter><Button type="button" size="sm" onClick={() => onClose(null)}>Close</Button></DialogFooter>
@@ -66,10 +75,6 @@ export function ListDialog({ title, onClose, className, children }) {
     </Dialog>
   );
 }
-
-const IconButton = ({ label, children, ...props }) => (
-  <Button type="button" variant="ghost" size="icon-sm" aria-label={label} title={label} {...props}>{children}</Button>
-);
 
 /** Columns… (§6.3): colour, name, the status tag it follows, WIP limit, done, order, delete; Add column. Delete closes the
  * dialog with {remove: columnId} (plans.js asks for the target column, then opens it again). */
@@ -82,13 +87,13 @@ function ColumnsDialog({ planId, onClose }) {
   const update = (columnId, patch) => dispatch('plan.columns.update', { planId, columnId, patch });
   const room = PLAN_GATES['plan.columnRoom'].test(plan);
   return (
-    <ListDialog title="Columns" onClose={onClose} className="sm:max-w-[min(640px,92vw)]">
+    <ListDialog title="Columns" onOpenAutoFocus={firstName} onClose={onClose} className="sm:max-w-[min(640px,92vw)]">
       <div className="grid gap-1">
         {plan.columns.map((c, i) => {
           const free = tags.filter((t) => t.id === c.tagId || !plan.columns.some((x) => x.tagId === t.id));
           return (
             <div key={c.id} className="flex items-center gap-1" data-plan-column={c.id}>
-              <ColorInput aria-label="Column colour" title="Column colour" value={c.color} onCommit={(color) => update(c.id, { color })} />
+              <Tip title="Column colour"><ColorInput aria-label="Column colour" value={c.color} onCommit={(color) => update(c.id, { color })} /></Tip>
               <CommitInput aria-label="Column name" className="h-8 w-40" maxLength={40} value={c.name} onCommit={(name) => update(c.id, { name })} />
               <Select value={tags.some((t) => t.id === c.tagId) ? c.tagId : NONE} onValueChange={(v) => update(c.id, { tagId: v === NONE ? null : v })}>
                 <SelectTrigger size="sm" aria-label="Status tag it follows" className="w-36"><SelectValue /></SelectTrigger>
@@ -97,21 +102,23 @@ function ColumnsDialog({ planId, onClose }) {
                   {free.map((t) => <SelectItem key={t.id} value={t.id}><Dot color={t.color} />{t.name}</SelectItem>)}
                 </SelectContent>
               </Select>
-              <CommitInput aria-label="WIP limit" title="WIP limit (empty: none)" placeholder="WIP" type="number" min={1} step={1} className="h-8 w-20"
-                value={c.wip == null ? '' : String(c.wip)}
-                onCommit={(v) => update(c.id, { wip: v.trim() === '' ? null : Math.max(1, Math.round(+v) || 1) })} />
-              <Toggle size="sm" aria-label="Done column" title="Done column" pressed={c.id === done} className="h-8 min-w-8"
-                onPressedChange={(on) => on && dispatch('plan.update', { planId, patch: { doneColumn: c.id } })}><CircleCheck /></Toggle>
-              <IconButton label="Move up" disabled={!i} onClick={() => dispatch('plan.columns.move', { planId, columnId: c.id, beforeId: plan.columns[i - 1].id })}><ArrowUp /></IconButton>
-              <IconButton label="Move down" disabled={i === plan.columns.length - 1}
+              <Tip title="WIP limit (leave empty for none)">
+                <CommitInput aria-label="WIP limit" placeholder="WIP" type="number" min={1} step={1} className="h-8 w-20"
+                  value={c.wip == null ? '' : String(c.wip)}
+                  onCommit={(v) => update(c.id, { wip: v.trim() === '' ? null : Math.max(1, Math.round(+v) || 1) })} />
+              </Tip>
+              <IconButton size="regular" label="Done column" pressed={c.id === done}
+                onClick={() => c.id !== done && dispatch('plan.update', { planId, patch: { doneColumn: c.id } })}><CircleCheck /></IconButton>
+              <IconButton size="regular" label="Move up" disabled={!i} onClick={() => dispatch('plan.columns.move', { planId, columnId: c.id, beforeId: plan.columns[i - 1].id })}><ArrowUp /></IconButton>
+              <IconButton size="regular" label="Move down" disabled={i === plan.columns.length - 1}
                 onClick={() => dispatch('plan.columns.move', { planId, columnId: c.id, afterId: plan.columns[i + 1].id })}><ArrowDown /></IconButton>
-              {PLAN_GATES['plan.otherColumn'].test(plan) && <IconButton label="Delete column..." onClick={() => onClose({ remove: c.id })}><X /></IconButton>}
+              {PLAN_GATES['plan.otherColumn'].test(plan) && <IconButton size="regular" variant="destructive-ghost" label="Delete column..." onClick={() => onClose({ remove: c.id })}><Trash2 /></IconButton>}
             </div>
           );
         })}
       </div>
       <div className="flex items-center gap-2">
-        <Button type="button" variant="outline" size="sm" disabled={!room} onClick={() => dispatch('plan.columns.add', { planId, column: { name: 'New column' } })}>
+        <Button type="button" variant="ghost" size="xs" disabled={!room} onClick={() => dispatch('plan.columns.add', { planId, column: { name: 'New column' } })}>
           <Plus />Add column
         </Button>
         <span className="text-xs text-muted-foreground">{room ? `Up to ${MAX_COLUMNS} columns.` : PLAN_GATES['plan.columnRoom'].message}</span>
@@ -132,7 +139,7 @@ function DeleteColumnDialog({ planId, columnId, onClose }) {
   const moving = plan.tickets.filter((t) => !t.draftId && t.status === columnId).length;
   const linked = cards(ctx).filter((c) => c.status === columnId && (c.kind === 'draft' || c.ticket.draftId)).length;
   return (
-    <FormDialog title={`Delete the column "${col.name}"?`} okText="Delete" result={() => (to === NONE ? '' : to)} onClose={onClose}>
+    <FormDialog title={`Delete the column "${col.name}"?`} okText="Delete" destructive result={() => (to === NONE ? '' : to)} onClose={onClose}>
       <div className="flex flex-wrap items-center gap-2">
         Move {plural(moving, 'ticket')} from "{col.name}" to
         <Select value={to} onValueChange={setTo}>
@@ -145,7 +152,7 @@ function DeleteColumnDialog({ planId, columnId, onClose }) {
       </div>
       {linked > 0 && <p className="text-xs text-muted-foreground">{plural(linked, 'linked draft')} keep{linked === 1 ? 's' : ''} its status tag and show{linked === 1 ? 's' : ''} in "No status".</p>}
       {doneColumnOf(plan) === columnId && <p className="text-xs text-muted-foreground">Done moves to "{others.at(-1).name}".</p>}
-      <p className="text-xs text-muted-foreground">Ctrl+Z in the plan restores the column and its tickets.</p>
+      <p className="text-xs text-muted-foreground">{`${keyLabel('edit.undo') || 'Undo'} in the plan restores the column and its tickets.`}</p>
     </FormDialog>
   );
 }
@@ -159,25 +166,25 @@ function LabelsDialog({ planId, onClose }) {
   const update = (labelId, patch) => dispatch('plan.labels.update', { planId, labelId, patch });
   const remove = async (l) => {
     const n = plan.tickets.filter((t) => t.labels.includes(l.id)).length;
-    if (await confirmDialog({ title: n ? `Remove the label "${l.name}" from ${plural(n, 'ticket')}?` : `Remove the label "${l.name}"?`, confirmText: 'Remove', destructive: true })) {
+    if (await confirmDialog({ title: n ? `Delete the label "${l.name}" from ${plural(n, 'ticket')}?` : `Delete the label "${l.name}"?`, confirmText: 'Delete', destructive: true })) {
       dispatch('plan.labels.remove', { planId, labelId: l.id });
     }
   };
   return (
-    <ListDialog title="Labels" onClose={onClose} className="sm:max-w-[min(420px,92vw)]">
+    <ListDialog title="Labels" onOpenAutoFocus={firstName} onClose={onClose} className="sm:max-w-[min(420px,92vw)]">
       <div className="grid gap-1">
         {!plan.labels.length && <p className="text-xs text-muted-foreground">No labels yet.</p>}
         {plan.labels.map((l) => (
           <div key={l.id} className="flex items-center gap-1">
-            <ColorInput aria-label="Label colour" title="Label colour" value={l.color} onCommit={(color) => update(l.id, { color })} />
+            <Tip title="Label colour"><ColorInput aria-label="Label colour" value={l.color} onCommit={(color) => update(l.id, { color })} /></Tip>
             <CommitInput aria-label="Label name" className="h-8 w-52" maxLength={40} autoFocus={fresh === l.id} onFocus={(e) => fresh === l.id && e.target.select()}
               value={l.name} onCommit={(name) => name.trim() && update(l.id, { name })} />
-            <IconButton label="Delete label" onClick={() => remove(l)}><X /></IconButton>
+            <IconButton size="regular" variant="destructive-ghost" label="Delete label" onClick={() => remove(l)}><Trash2 /></IconButton>
           </div>
         ))}
       </div>
       <div>
-        <Button type="button" variant="outline" size="sm" onClick={() => {
+        <Button type="button" variant="ghost" size="xs" onClick={() => {
           const r = dispatch('plan.labels.add', { planId, label: { name: 'New label' } });
           if (r.ok) setFresh(r.result.labelId);
         }}><Plus />Add label</Button>
@@ -217,9 +224,9 @@ function UnitRow({ planId, plan, unit, onAdded }) {
     const used = plan.tickets.filter((t) => t.unit === unit.id && t.estimate != null);
     const eg = used[0] && `${used[0].estimate} ${unit.name} = ${+(used[0].estimate * unit.daysPer).toFixed(3)} d`;
     if (await confirmDialog({
-      title: `Remove the unit "${unit.name}"?`,
+      title: `Delete the unit "${unit.name}"?`,
       description: used.length ? `${plural(used.length, 'ticket')} estimated in ${unit.name} ${used.length === 1 ? 'is' : 'are'} converted to days (e.g. ${eg}).` : '',
-      confirmText: 'Remove', destructive: true,
+      confirmText: 'Delete', destructive: true,
     })) dispatch('plan.units.remove', { planId, unitId: unit.id });
   };
   const keys = (e) => e.key === 'Enter' && commit();
@@ -235,9 +242,11 @@ function UnitRow({ planId, plan, unit, onAdded }) {
         <span className="flex-1" />
         {unit && (
           <>
-            <Toggle size="sm" aria-label="Default unit" title="Default unit for new tickets" pressed={plan.estimateUnit === unit.id} className="h-8 px-2 text-xs"
-              onPressedChange={(on) => on && dispatch('plan.update', { planId, patch: { estimateUnit: unit.id } })}>Default</Toggle>
-            <IconButton label="Delete unit" onClick={remove}><X /></IconButton>
+            <Tip title="Default unit for new tickets">
+              <Toggle size="sm" aria-label="Default unit" pressed={plan.estimateUnit === unit.id} className="h-8 px-2 text-xs"
+                onPressedChange={(on) => on && dispatch('plan.update', { planId, patch: { estimateUnit: unit.id } })}>Default</Toggle>
+            </Tip>
+            <IconButton size="regular" variant="destructive-ghost" label="Delete unit" onClick={remove}><Trash2 /></IconButton>
           </>
         )}
       </div>
@@ -253,20 +262,22 @@ function UnitsDialog({ planId, onClose }) {
   const plan = planContext(planId)?.plan;
   if (!plan) return null;
   return (
-    <ListDialog title="Estimate units" onClose={onClose} className="sm:max-w-[min(440px,92vw)]">
+    <ListDialog title="Estimate units" onOpenAutoFocus={firstName} onClose={onClose} className="sm:max-w-[min(440px,92vw)]">
       <div className="grid gap-1">
         <div className="flex h-8 items-center gap-1">
           <span className="w-24 px-3">d</span><span className="text-muted-foreground">working day = 1 d</span>
           <span className="flex-1" />
-          <Toggle size="sm" aria-label="Default unit" title="Default unit for new tickets" pressed={plan.estimateUnit === 'd'} className="h-8 px-2 text-xs"
-            onPressedChange={(on) => on && dispatch('plan.update', { planId, patch: { estimateUnit: 'd' } })}>Default</Toggle>
+          <Tip title="Default unit for new tickets">
+            <Toggle size="sm" aria-label="Default unit" pressed={plan.estimateUnit === 'd'} className="h-8 px-2 text-xs"
+              onPressedChange={(on) => on && dispatch('plan.update', { planId, patch: { estimateUnit: 'd' } })}>Default</Toggle>
+          </Tip>
           <span className="size-8" />
         </div>
         {plan.units.map((u) => <UnitRow key={u.id} planId={planId} plan={plan} unit={u} />)}
         {adding && <UnitRow planId={planId} plan={plan} onAdded={() => setAdding(false)} />}
       </div>
       <div>
-        <Button type="button" variant="outline" size="sm" disabled={adding} onClick={() => setAdding(true)}><Plus />Add unit</Button>
+        <Button type="button" variant="ghost" size="xs" disabled={adding} onClick={() => setAdding(true)}><Plus />Add unit</Button>
       </div>
       <p className="text-xs text-muted-foreground">Every unit says how many working days one unit is; sums and the schedule use days.</p>
     </ListDialog>
@@ -312,7 +323,7 @@ function CalendarDialog({ planId, onClose }) {
         <span className="text-xs text-muted-foreground">Week 1 starts on (week numbers on the Gantt axis count from it)</span>
         <div className="flex items-center gap-1">
           <DateInput aria-label="First day of week 1" calendar={cal} value={cal.weekOne} onCommit={(weekOne) => setCal({ weekOne })} />
-          {cal.weekOne && <IconButton label="No week numbers" onClick={() => setCal({ weekOne: null })}><X /></IconButton>}
+          {cal.weekOne && <IconButton size="regular" label="No week numbers" onClick={() => setCal({ weekOne: null })}><X /></IconButton>}
         </div>
       </div>
       <div className="grid gap-1">
@@ -321,7 +332,7 @@ function CalendarDialog({ planId, onClose }) {
         {cal.holidays.map((h) => (
           <div key={h} className="flex items-center gap-1" data-plan-holiday={h}>
             <DateInput aria-label="Holiday" calendar={cal} value={h} onCommit={(to) => to !== h && !cal.holidays.includes(to) && move(h, to)} />
-            <IconButton label="Remove holiday" onClick={() => dispatch('plan.holidays.remove', { planId, date: h })}><X /></IconButton>
+            <IconButton size="regular" label="Remove holiday" onClick={() => dispatch('plan.holidays.remove', { planId, date: h })}><X /></IconButton>
           </div>
         ))}
         {adding && (
@@ -330,7 +341,7 @@ function CalendarDialog({ planId, onClose }) {
             if (date && !cal.holidays.includes(date)) dispatch('plan.holidays.add', { planId, date });
           }} />
         )}
-        <div><Button type="button" variant="outline" size="sm" disabled={adding} onClick={() => setAdding(true)}><Plus />Add holiday</Button></div>
+        <div><Button type="button" variant="ghost" size="xs" disabled={adding} onClick={() => setAdding(true)}><Plus />Add holiday</Button></div>
       </div>
       <p className="text-xs text-muted-foreground">Durations, dependencies and the critical path count working days only.</p>
     </ListDialog>
@@ -351,18 +362,18 @@ function PlanPickDialog({ title = 'Plans', action = 'Open', createFor = null, on
   return (
     <ListDialog title={title} onClose={onClose} className="sm:max-w-[min(520px,92vw)]">
       {createFor && (
-        <div><Button type="button" variant="outline" size="sm" onClick={() => onClose('create')}><Plus />Create a plan for this thread</Button></div>
+        <div><Button type="button" variant="ghost" size="xs" onClick={() => onClose('create')}><Plus />Create a plan for this thread</Button></div>
       )}
       {!groups.length && !createFor && <p className="text-xs text-muted-foreground">No plans yet. Select a thread in the sidebar, then open Plans to create its plan.</p>}
       {groups.map(([heading, plans]) => (
         <div key={heading} className="grid gap-0.5">
           <div className="truncate text-xs text-muted-foreground">{heading}</div>
           {plans.map((p) => (
-            <div key={p.id} className="flex items-center gap-1 rounded-md px-1 hover:bg-accent/60">
+            <div key={p.id} className="flex h-8 items-center gap-1 rounded-md px-1 hover:bg-accent/60">
               <span className="min-w-0 flex-1 truncate">{p.title || p.threadUrl}</span>
               <span className="text-xs text-muted-foreground tabular-nums">{plural(p.tickets.length, 'ticket')}</span>
               <Button type="button" variant="ghost" size="xs" onClick={() => onClose(p.id)}>{action}</Button>
-              {action === 'Open' && <IconButton label="Delete plan..." onClick={() => deletePlan(p.id)}><X /></IconButton>}
+              {action === 'Open' && <IconButton variant="destructive-ghost" label="Delete plan..." onClick={() => deletePlan(p.id)}><Trash2 /></IconButton>}
             </div>
           ))}
         </div>

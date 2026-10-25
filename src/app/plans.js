@@ -10,6 +10,7 @@ import { afterNodeSel, confirmDialog, saveSettings, threadLabel } from './action
 import { ChartView } from './components/plan/ChartView.jsx';
 import { tagList } from './drafts-meta.js';
 import { can, GATES } from './gates.mjs';
+import { keyLabel } from './keybinds.js';
 import { getState, setState, subscribe as onStore } from './store.js';
 import { closeWorkspace, openWorkspace } from './views.js';
 
@@ -404,7 +405,7 @@ export async function deleteTickets(planId, ticketIds) {
   const one = ids.length === 1 && plan.tickets.find((t) => t.id === ids[0]);
   if (!(await confirmDialog({
     title: one ? `Delete #${one.num} "${one.title}"?` : `Delete ${ids.length} tickets?`,
-    description: 'Sub-tickets move up a level; dependencies on them are removed. Ctrl+Z restores them.',
+    description: `Sub-tickets move up a level; dependencies on them are removed. ${keyLabel('edit.undo') || 'Undo'} restores them.`,
     confirmText: 'Delete', destructive: true,
   }))) return false;
   return dispatch('plan.tickets.delete', { planId, ticketIds: ids }).ok;

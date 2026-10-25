@@ -16,6 +16,7 @@ import { getState } from '../../store.js';
 import { deleteTickets, dispatch, moveCards, planContext, usePlans } from '../../plans.js';
 import { openDraftFromPlan, PRIORITIES } from './Card.jsx';
 import { DateField } from '../DateField.jsx';
+import { IconButton, Tip } from '../Tip.jsx';
 import { CommitInput } from './forms.jsx';
 
 // The ticket dialog (Gantt plan §6.6). New ticket: every field and row kept here, OK = one plan.tickets.create. Edit: every
@@ -46,9 +47,6 @@ function Pick({ value, onChange, label, className = 'w-full', disabled, placehol
 }
 
 const Row = ({ children }) => <div className="flex items-center gap-1">{children}</div>;
-const IconButton = ({ label, children, ...props }) => (
-  <Button type="button" variant="ghost" size="icon-sm" aria-label={label} title={label} {...props}>{children}</Button>
-);
 
 /** Start and end: sent as one field set once both are dates with end ≥ start, or both are empty. */
 function Dates({ start, end, calendar, onCommit }) {
@@ -175,7 +173,7 @@ export function TicketDialog({ planId, ticketId, init = {}, onClose }) {
     if (isNew) return set({ draftId });
     const r = dispatch('plan.tickets.update', { planId, ticketIds, patch: { draftId } });
     const moved = r.ok && r.result.status !== undefined && plan.columns.find((c) => c.id === r.result.status);
-    if (moved) toast(`Moved to ${moved.name}: linked drafts follow their status tag.`);
+    if (moved) toast(`Moved to ${moved.name}. Linked drafts follow their status tag.`);
   };
 
   const validate = () => {
@@ -283,9 +281,9 @@ export function TicketDialog({ planId, ticketId, init = {}, onClose }) {
                   <SelectItem value={NONE}>No draft</SelectItem>
                   {drafts.map((d) => <SelectItem key={d.id} value={d.id}>{d.title || 'Untitled draft'}</SelectItem>)}
                 </Pick>
-                {!isNew && t.draftId && <IconButton label="Open draft" onClick={() => { onClose(null); openDraftFromPlan(t.draftId); }}><FileText /></IconButton>}
+                {!isNew && t.draftId && <IconButton size="regular" label="Open draft" onClick={() => { onClose(null); openDraftFromPlan(t.draftId); }}><FileText /></IconButton>}
               </Row>
-              <p className="text-xs text-muted-foreground">A linked draft shares one status with the ticket: its tag decides the column.</p>
+              <p className="text-xs text-muted-foreground">A linked draft has the ticket's status. Its tag decides the column.</p>
             </Field>
             <Field label="Dependencies (this ticket waits for)">
               {t.deps.map((d) => (
@@ -294,9 +292,11 @@ export function TicketDialog({ planId, ticketId, init = {}, onClose }) {
                   <Pick label="Dependency type" className="w-36" value={d.type} onChange={(type) => setDep(d.on, { type })}>
                     {DEP_TYPES.map((x) => <SelectItem key={x} value={x}>{DEP_NAMES[x]}</SelectItem>)}
                   </Pick>
-                  <CommitInput type="number" step={1} aria-label="Lag (working days)" title="Lag in working days (negative: lead)" className="h-8 w-16"
-                    value={String(d.lag)} onCommit={(v) => setDep(d.on, { lag: Math.round(+v) || 0 })} />
-                  <IconButton label="Remove dependency" onClick={() => removeDep(d.on)}><X /></IconButton>
+                  <Tip title="Lag in working days (a negative lag is a lead)">
+                    <CommitInput type="number" step={1} aria-label="Lag (working days)" className="h-8 w-16"
+                      value={String(d.lag)} onCommit={(v) => setDep(d.on, { lag: Math.round(+v) || 0 })} />
+                  </Tip>
+                  <IconButton size="regular" label="Remove dependency" onClick={() => removeDep(d.on)}><X /></IconButton>
                 </Row>
               ))}
               {adding === 'dep' ? (
@@ -313,9 +313,9 @@ export function TicketDialog({ planId, ticketId, init = {}, onClose }) {
                 <Row key={c.id}>
                   <Checkbox aria-label="Done" checked={c.done} onCheckedChange={(v) => setCheck(c.id, { done: v === true })} />
                   <CommitInput aria-label="Checklist item" maxLength={200} className="h-8 flex-1" value={c.text} onCommit={(v) => v.trim() && setCheck(c.id, { text: v })} />
-                  <IconButton label="Move up" disabled={!i} onClick={() => moveCheck(i, -1)}><ArrowUp /></IconButton>
-                  <IconButton label="Move down" disabled={i === t.checklist.length - 1} onClick={() => moveCheck(i, 1)}><ArrowDown /></IconButton>
-                  <IconButton label="Remove item" onClick={() => removeCheck(c.id)}><X /></IconButton>
+                  <IconButton size="regular" label="Move up" disabled={!i} onClick={() => moveCheck(i, -1)}><ArrowUp /></IconButton>
+                  <IconButton size="regular" label="Move down" disabled={i === t.checklist.length - 1} onClick={() => moveCheck(i, 1)}><ArrowDown /></IconButton>
+                  <IconButton size="regular" label="Remove item" onClick={() => removeCheck(c.id)}><X /></IconButton>
                 </Row>
               ))}
               {adding === 'check'
@@ -327,8 +327,8 @@ export function TicketDialog({ planId, ticketId, init = {}, onClose }) {
                 <Row key={u.id}>
                   <CommitInput aria-label="Link URL" className="h-8 flex-1" value={u.url} onCommit={(v) => WEB.test(v.trim()) && setUrl(u.id, { url: v.trim() })} />
                   <CommitInput aria-label="Link title" placeholder="Title" maxLength={80} className="h-8 w-32" value={u.title ?? ''} onCommit={(v) => setUrl(u.id, { title: v })} />
-                  <IconButton label="Open link" onClick={() => openUrl(u.url)}><ExternalLink /></IconButton>
-                  <IconButton label="Remove link" onClick={() => removeUrl(u.id)}><X /></IconButton>
+                  <IconButton size="regular" label="Open link" onClick={() => openUrl(u.url)}><ExternalLink /></IconButton>
+                  <IconButton size="regular" label="Remove link" onClick={() => removeUrl(u.id)}><X /></IconButton>
                 </Row>
               ))}
               {adding === 'url'
@@ -353,7 +353,7 @@ export function TicketDialog({ planId, ticketId, init = {}, onClose }) {
             </>
           ) : (
             <>
-              <Button type="button" variant="outline" size="sm" onClick={async () => (await deleteTickets(planId, ticketIds)) && onClose(null)}>Delete...</Button>
+              <Button type="button" variant="destructive-ghost" size="sm" onClick={async () => (await deleteTickets(planId, ticketIds)) && onClose(null)}>Delete...</Button>
               <Button type="button" size="sm" onClick={() => onClose(null)}>Close</Button>
             </>
           )}
