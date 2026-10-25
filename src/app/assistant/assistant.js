@@ -25,7 +25,7 @@ export const ASSISTANT_DEFAULTS = {
   deepseekKey: '', deepseekModel: 'deepseek-flash', // provider 'deepseek' (2026-10-08)
   claudePath: '', claudeModel: '', claudeEffort: '', codexPath: '', codexModel: '', codexEffort: '', // providers 'claude', 'codex' ('': found, the CLI's default)
   warmAtStart: true, sleepMinutes: 10, idleUnloadMinutes: 30, step: 0, panel: null, thinking: 'auto', permission: 'standard', uiControl: true,
-  pictureAfterWrite: true,
+  pictureAfterWrite: true, humanWriting: true,
 };
 // export const BACKENDS = [['auto', 'Auto'], ['cuda', 'NVIDIA CUDA'], ['vulkan', 'Vulkan'], ['cpu', 'CPU']]; // LOCAL LLM (commented out 2026-10-07)
 const THINK_RE = /\b(solve|derive|prove|verify|calculate|compute|integral|equation|simplif(y|ies))\b/i; // §13.16 routing
@@ -58,6 +58,9 @@ export async function saveAssistant(patch) {
 
 /** Whether the chat can run: installed (or a server URL, or a Claude Code or Codex that is ready) and nothing missing. */
 export const usable = (status) => !!status?.ready && (!!status.url || !!status.cli || assistantSettings().installed);
+/** The writing guide's text for the turn's system prompt (prompts.mjs GUIDE_RULE), read at every turn; '' while Settings turns it
+ * off or neither file can be read. */
+export const writingGuide = () => (assistantSettings().humanWriting ? api.assistant.writingGuide().then((g) => g.text, () => '') : Promise.resolve(''));
 /** Whether `provider` runs its turns on the user's Claude Code or Codex (SPEC §7i Coding CLIs). */
 export const isCli = (provider = assistantSettings().provider) => provider === 'claude' || provider === 'codex';
 

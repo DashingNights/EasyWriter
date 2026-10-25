@@ -4,14 +4,14 @@ import {
   ALargeSmall, AppWindow, BringToFront, CaseSensitive, Copy, Crop, Eraser, Eye, EyeOff, FilePlus, FolderInput, Group, Heading1,
   Heading2, Heading3, Globe, Heading4, Heading5, Heading6, ImagePlus, Layers, Lock, LockOpen, Magnet, MessagesSquare, MousePointer2, MoveHorizontal, PaintBucket, Palette, Pen, Pilcrow, Pin, Redo2, Save,
   Replace, Scaling, Search, MessageSquare, Send, SendToBack, Settings, Shapes, SlidersHorizontal, SpellCheck, SquarePen, TableColumnsSplit, TableRowsSplit, Tag, Trash2,
-  Type, Undo2, Ungroup, Workflow, X,
+  Type, Undo2, Ungroup, Workflow, X, PenLine,
 } from 'lucide-react';
 import { SelectItem } from '@/components/ui/select';
 import { canvasEditor, flowSource } from '../canvas.js';
 import { FONTS, TEXT_COLORS } from '../extensions.js';
 import { KINDS } from '../flow/shapes.mjs';
 import { applyPresetAt, commitBoardEdit, openSettings, push, saveNow, threadLabel } from './actions.js';
-import { toggleChat } from './assistant/assistant.js';
+import { assistantSettings, saveAssistant, toggleChat } from './assistant/assistant.js';
 import { closePanes, HOME, newTab, openPane, openPanes } from './browser.js';
 import { invoke } from './commands.js';
 import { byId } from './commands/catalogue.mjs';
@@ -330,6 +330,10 @@ const APP = [
     keywords: ['assistant', 'chat', 'ai', 'ask', 'help', 'bot', 'model', 'llm', 'local ai', 'agent', 'copilot', 'assistent', 'asistant'] },
   { id: 'spell-check', label: 'Spell check', group: 'App', icon: h(SpellCheck), toggle: true, active: () => getState().settings?.spellCheck ?? true,
     run: toggleSpellCheck, keywords: ['spell check', 'spellcheck', 'spelling', 'spell', 'red underline', 'squiggles', 'typos', 'dictionary', 'proofing', 'spellchecker'] },
+  // Settings > Assistant > Writing; headless false like that section's data-agent-deny: agents never change the assistant's settings.
+  { id: 'writing-guide', label: 'Human writing guide', group: 'App', icon: h(PenLine), toggle: true, headless: false,
+    active: () => assistantSettings().humanWriting, run: () => saveAssistant({ humanWriting: !assistantSettings().humanWriting }),
+    keywords: ['writing guide', 'human writing', 'writing style', 'style guide', 'prose', 'tone', 'em dash', 'ai writing', 'sound human', 'HUMAN-WRITING'] },
   { id: 'select-thread', label: 'Select project...', group: 'App', icon: h(MessagesSquare), options: () => h(ThreadPick),
     keywords: ['project', 'select project', 'thread', 'select thread', 'filter', 'topic', 'show thread', 'switch thread', 'all drafts', 'subject'] },
   { id: 'tag-draft', label: 'Tag draft...', group: 'App', icon: h(Tag), also: saved, options: () => h(TagPick),

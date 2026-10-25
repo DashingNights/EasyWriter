@@ -470,6 +470,8 @@ function AssistantSection({ value: a, onChange }) {
   const f = CLI[provider];
   const [keyField, modelField] = f ? [f.path, f.model] : [p.key, p.model];
   const [fresh, setFresh] = useState(0); // Check again: the CLI is asked again
+  const [guide, setGuide] = useState(null); // the writing guide's {path, home} (assistant-main.js writingGuide)
+  useEffect(() => { window.api.assistant.writingGuide().then(setGuide, () => setGuide(null)); }, []);
   useEffect(() => {
     if (!keyField) return undefined; // None: nothing to check
     let live = true;
@@ -549,6 +551,17 @@ function AssistantSection({ value: a, onChange }) {
             <Label htmlFor="set-asst-picture">Show the assistant the board after each change</Label>
             <span className="text-xs text-muted-foreground">It checks its work on a picture of the board. Each picture uses about 1,000 tokens.</span>
           </div>
+        </div>
+      </div>
+      <Label className="self-start pt-0.5 text-muted-foreground">Writing</Label>
+      <div className="flex items-start gap-2" data-assistant-guide>
+        <Checkbox id="set-asst-guide" className="mt-0.5" checked={a.humanWriting !== false} onCheckedChange={(v) => savePermission({ humanWriting: v === true })} />
+        <div className="grid gap-0.5">
+          <Label htmlFor="set-asst-guide">Follow the human writing guide</Label>
+          <span className="max-w-[36rem] break-all text-xs text-muted-foreground">
+            {!guide ? 'The guide could not be read.' : guide.path === guide.home ? `Reads ${guide.path} at every message.`
+              : `${guide.home} is missing, so it uses the copy at ${guide.path}.`} The guide adds about 2,000 tokens to each request.
+          </span>
         </div>
       </div>
       <Label className="text-muted-foreground">Chat panel</Label>

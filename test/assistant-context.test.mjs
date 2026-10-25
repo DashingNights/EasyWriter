@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import {
   briefArgs, buildHistory, callKey, callsLeft, CLAIM_RE, claims, clipResult, doneReply, fullResults, guardWrite, KEEP_RESULTS, loopKind, loopNote, NOTE_DRAFTS,
   pictureMessage, promises, READS_AFTER_WRITE, readsAfterWrite, repeats, RESULT_CHARS, resultLine, shouldCompact, situationNote, takePictures, turnMessages,
   withNote, markIds, sameSentence, withMarkIds,
 } from '../src/app/assistant/context.mjs';
-import { familyOf, NOTE_RULE, RENDER_RULE, RULES, STYLE_RULE, SYSTEM_PROMPT, systemPrompt, THOUSANDTHS_RULE, UI_RULE } from '../src/app/assistant/prompts.mjs';
+import { familyOf, GUIDE_RULE, NOTE_RULE, RENDER_RULE, RULES, STYLE_RULE, SYSTEM_PROMPT, systemPrompt, THOUSANDTHS_RULE, UI_RULE } from '../src/app/assistant/prompts.mjs';
 
 const ID = '11111111-2222-3333-4444-555555555555';
 
@@ -207,6 +208,11 @@ test('system prompt per model family: gemma12b gets the Gemma prompt, every othe
 ${THOUSANDTHS_RULE}
 `) && !thou.includes('are board pixels') && !/[–—…‘’“”]/.test(thou));
   assert.ok(!systemPrompt('gemini').includes(THOUSANDTHS_RULE) && systemPrompt('gemini').includes('x, y, w and h are board pixels'));
+
+  // The writing guide (2026-10-25): its own section after the writing rules, the bundled copy as it is; none while off or empty.
+  const guide = readFileSync(new URL('../src/assistant/human-writing.md', import.meta.url), 'utf8');
+  for (const f of ['qwen', 'gemini']) assert.equal(systemPrompt(f, { guide }), `${systemPrompt(f)}\n\n${GUIDE_RULE}\n\n${guide.trim()}`);
+  assert.equal(systemPrompt('qwen', { guide: ' \n' }), qwen);
 });
 
 test('callKey: the same tool with the same arguments in any key order; different arguments or tools differ', () => {

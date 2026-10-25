@@ -19,6 +19,10 @@ export const STYLE_RULE = [
   '- Say a thing once, with no stacked intensifiers. Bad: "really very important". Good: "important".',
   '- No filler openers or hedges. Bad: "Great question! It\'s worth noting that the map is wide." Good: "The map is wide."',
 ].join('\n');
+// The user's writing guide (HUMAN-WRITING.md, 2026-10-25), its own section after STYLE_RULE while settings.assistant.humanWriting
+// is on. It shapes prose only, so this line keeps the calls as the tools need them.
+export const GUIDE_RULE = 'The writing guide below applies to the prose you write: your replies and the text you put in a draft or on a board. '
+  + 'It never changes tool names, argument names, ids, paths, numbers, JSON or any other value a tool needs.';
 // While view_render is offered (wave 2: the editor and board sets), both families.
 // Tuning loop 2026-10-07: "use the numbers" sent a picture number as an item id; the legend line holds the id.
 export const RENDER_RULE = 'When a target is visual or ambiguous, call view_render. Its legend gives the item id of each number on the picture.';
@@ -100,10 +104,11 @@ export const familyOf = (model, provider) => (['google', 'deepseek', 'qwen'].inc
 
 /** The system message of a turn for `family`: SYSTEM_PROMPT and NOTE_RULE, then, when the request offers tools, the family's rules,
  * with view_render offered (`render`) RENDER_RULE and with on-screen controls on (`uiControl`) UI_RULE, each on its own line, then
- * STYLE_RULE. `thousandths` (Qwen Cloud) puts THOUSANDTHS_RULE in place of the board pixels line. */
-export function systemPrompt(family, { tools = true, uiControl = false, render = false, thousandths = false } = {}) {
+ * STYLE_RULE, then with a `guide` (the writing guide's text) GUIDE_RULE and the guide. `thousandths` (Qwen Cloud) puts
+ * THOUSANDTHS_RULE in place of the board pixels line. */
+export function systemPrompt(family, { tools = true, uiControl = false, render = false, thousandths = false, guide = '' } = {}) {
   const own = RULES[family] ?? QWEN;
   const rules = `${thousandths ? own.replace(PX_LINE, THOUSANDTHS_RULE) : own}${render ? `\n${RENDER_RULE}` : ''}${uiControl ? `\n${UI_RULE}` : ''}`;
   const intro = family === 'gemini' ? SYSTEM_PROMPT.replace(' You run on their computer.', '') : SYSTEM_PROMPT; // Gemini runs at Google
-  return `${intro} ${NOTE_RULE}${tools ? `\n${rules}` : ''}\n${STYLE_RULE}`;
+  return `${intro} ${NOTE_RULE}${tools ? `\n${rules}` : ''}\n${STYLE_RULE}${guide.trim() ? `\n\n${GUIDE_RULE}\n\n${guide.trim()}` : ''}`;
 }

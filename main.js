@@ -94,7 +94,7 @@ const DEFAULT_SETTINGS = {
   // Local assistant (docs/plans/agent-automation.md §13.2): installed doubles as enabled; off = nothing runs.
   assistant: {
     installed: false, backend: 'auto', serverPath: '', modelPath: '', mmprojPath: '', serverUrl: '',
-    warmAtStart: true, sleepMinutes: 10, idleUnloadMinutes: 30, step: 0, permission: 'standard', uiControl: true, pictureAfterWrite: true,
+    warmAtStart: true, sleepMinutes: 10, idleUnloadMinutes: 30, step: 0, permission: 'standard', uiControl: true, pictureAfterWrite: true, humanWriting: true,
   },
   agent: { enabled: false, port: agentServer.PORT }, // the MCP server (SPEC §8 Agents): its pipe and http://127.0.0.1:<port>/mcp
   // In-app browser (§7j): the floating pane's state and its opacity (percent) while it does not have the focus.

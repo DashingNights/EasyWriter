@@ -5,7 +5,7 @@ import { byId, MODEL_DEFS } from '../commands/catalogue.mjs';
 import { assistantMode, COMPUTER, CORE, DESCRIBED_CHARS, refusal, VIEW_SETS, viewOf } from '../commands/tool-sets.mjs';
 import { commandIdOf, toolName, toolsFor } from '../commands/tools-schema.mjs';
 import { getState, setState } from '../store.js';
-import { addMessage, assistantSettings, cliRun, complete, editMessages, history, patchMessage, stop, wantsThinking } from './assistant.js';
+import { addMessage, assistantSettings, cliRun, complete, editMessages, history, patchMessage, stop, wantsThinking, writingGuide } from './assistant.js';
 import { situation } from './capture.js';
 import {
   briefArgs, callKey, callsLeft, CLAIM_ASK, claims, cliMessages, cliResult, clipResult, doneReply, fullResults, guardWrite, loopKind, loopNote, pictureMessage, PROMISE_ASK,
@@ -81,7 +81,8 @@ export async function runTurn(session, userText, parts = []) {
     const tools = await toolList(session, parts, family); // also when thinking: Think must never take the tools away (it used to, and the model then faked actions)
     const render = tools.some((t) => t.function.name === 'view_render'); // the prompt's view_render line
     // Qwen Cloud boxes come in thousandths of the picture (2026-10-08, prompts.mjs THOUSANDTHS_RULE).
-    const messages = [{ role: 'system', content: systemPrompt(family, { tools: tools.length > 0, uiControl: modeNow().uiControl, render, thousandths: qwen }) }, ...history()];
+    const guide = await writingGuide(); // the writing guide (prompts.mjs GUIDE_RULE), read again every turn
+    const messages = [{ role: 'system', content: systemPrompt(family, { tools: tools.length > 0, uiControl: modeNow().uiControl, render, thousandths: qwen, guide }) }, ...history()];
     const asked = messages.findLastIndex((m) => m.role === 'user'); // the message being answered: this turn's requests only
     const content = messages[asked]?.content;
     let note = '';
@@ -267,7 +268,7 @@ export async function runCliTurn(session, parts) {
     addMessage({ role: 'assistant', streaming: true });
     const end = await cliRun({
       prompt: withNote(situation(parts), content),
-      system: systemPrompt('gemini', { uiControl: modeNow().uiControl, render: true }), // the cloud models' rules
+      system: systemPrompt('gemini', { uiControl: modeNow().uiControl, render: true, guide: await writingGuide() }), // the cloud models' rules
       session: session.cli?.provider === provider ? session.cli.id : '',
     }, session.signal, (e) => {
       if (e.type === 'tool_start') args.set(e.id, e.args);
