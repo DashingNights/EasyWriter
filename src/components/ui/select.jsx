@@ -58,7 +58,7 @@ function SelectTrigger({
  * asChild trigger of a Popover or DropdownMenu. No role: give role="combobox" only when the list's rows are role=option. */
 function SelectButton({ className, size = "sm", children, ...props }) {
   return (
-    <button type="button" data-slot="select-trigger" data-size={size} className={triggerClass(size, className)} {...props}>
+    <button type="button" data-size={size} className={triggerClass(size, className)} {...props} data-slot="select-trigger">
       {children}
       <ChevronDownIcon className="size-4 opacity-50" />
     </button>
