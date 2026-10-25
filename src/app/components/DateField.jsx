@@ -1,10 +1,10 @@
 import { useRef, useState } from 'react';
 import { CalendarDays } from 'lucide-react';
 import { cn } from 'cn';
-import { Button } from '@/components/ui/button';
 import { Calendar } from '@/components/ui/calendar';
 import { Input } from '@/components/ui/input';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { IconButton } from './Tip.jsx';
 
 // YYYY-MM-DD ↔ a local Date (the calendar works in local days).
 const toDate = (s) => (/^\d{4}-\d\d-\d\d$/.test(s) ? new Date(+s.slice(0, 4), s.slice(5, 7) - 1, +s.slice(8)) : undefined);
@@ -37,10 +37,8 @@ export function DateField({ onPick, onBlur, onKeyDown, calendar, contentProps, c
             e.preventDefault(); // not Chromium's own picker
             return show(true);
           }} />
-        <PopoverTrigger asChild>
-          <Button type="button" variant="ghost" size="icon-xs" tabIndex={-1} disabled={props.disabled} aria-label="Choose date" title="Choose date (Alt+Down)"
-            className="-ml-6 shrink-0 text-muted-foreground"><CalendarDays /></Button>
-        </PopoverTrigger>
+        <IconButton label="Choose date (Alt+Down)" slot={PopoverTrigger} tabIndex={-1} disabled={props.disabled} tip={{ wrap: '-ml-6 shrink-0' }}
+          className="text-muted-foreground"><CalendarDays /></IconButton>
       </div>
       {/* The day to start from (selected, else today, else the 1st) once the popover's focus scope is up: focused earlier, inside a
           dialog, the dialog's scope would take the focus back. */}

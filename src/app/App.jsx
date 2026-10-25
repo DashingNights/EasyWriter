@@ -91,7 +91,7 @@ function TitleBar() {
   return (
     <div ref={ref} data-titlebar className="titlebar col-span-2 flex items-center gap-[8px] border-b bg-card pl-[10px] text-card-foreground select-none">
       <img src="build/icon.svg" alt="" draggable={false} className="size-[16px]" />
-      <span className="text-[12px] text-muted-foreground">EasyWriter</span>
+      <span className="text-sm text-muted-foreground">EasyWriter</span>
     </div>
   );
 }

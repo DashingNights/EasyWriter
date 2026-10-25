@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { cn } from 'cn';
 import {
   ChevronRight, CircleAlert, CircleCheck, Cloud, CloudAlert, CloudCheck, CloudOff, CloudUpload, ExternalLink, Folder, FolderInput, FolderOpen,
-  FolderPlus, Globe, Link2, PanelLeftClose, PanelLeftOpen, Plus, Send, Settings, SquareKanban, Undo2, Workflow, X,
+  FolderPlus, Globe, Link2, PanelLeftClose, PanelLeftOpen, Plus, Send, Settings, SquareKanban, Trash2, Undo2, Workflow, X,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -22,22 +22,23 @@ import {
 } from '../actions.js';
 import { isProject, topicOf } from '../../thread-url.mjs';
 import { draftTag, tagList } from '../drafts-meta.js';
-import { keyLabel, withKey } from '../keybinds.js';
+import { keyLabel } from '../keybinds.js';
 import { openCount, openPlan, planFor, usePlans } from '../plans.js';
 import { getState, useStore, WORKER } from '../store.js';
 import { showPage } from '../views.js';
 import { InlineInput } from './InlineInput.jsx';
-import { Tip } from './Tip.jsx';
+import { IconButton, Tip } from './Tip.jsx';
 import { keepFocus } from './Toolbar.jsx';
 
 // Sidebar sections are flat (SPEC 7b): Card's layout without its box; the sidebar separates them with thin lines.
 const FLAT = 'rounded-none border-0 bg-transparent py-2.5 shadow-none';
-const SectionTitle = ({ children }) => <CardTitle className="text-xs tracking-wider text-muted-foreground uppercase">{children}</CardTitle>;
+const SectionTitle = ({ children }) => <CardTitle className="text-sm">{children}</CardTitle>;
 
-/** Single-line list row; its hover actions (RowAction) keep their space while hidden, so hovering shifts nothing. */
+/** Single-line list row; its hover actions (IconButton reveal) keep their space while hidden, so hovering shifts nothing.
+ * data-on marks the active row for HoverActions. */
 function Row({ active, onClick, title, className, children, ...props }) {
   return (
-    <div title={title} onClick={onClick} {...props}
+    <div title={title} onClick={onClick} data-on={active || undefined} {...props}
       className={cn('group flex min-h-7.5 cursor-pointer items-center gap-1.5 rounded-md px-1.5 py-0.5 hover:bg-accent/60', active && 'bg-accent hover:bg-accent', className)}>
       {children}
     </div>
@@ -45,26 +46,13 @@ function Row({ active, onClick, title, className, children, ...props }) {
 }
 
 /** Hover actions laid over the row's right end instead of taking space, so a title can use the whole row; they show on
- * hover and while one of their menus is open. */
+ * hover, while the row holds the focus and while one of their menus is open, over the row's own tint. */
 function HoverActions({ children }) {
   return (
-    <div className="invisible absolute top-1/2 right-1 flex -translate-y-1/2 items-center rounded-md bg-background bg-[image:linear-gradient(var(--accent),var(--accent))] pl-1 group-hover:visible has-[[data-state=open]]:visible">
+    <div className="invisible absolute top-1/2 right-1 flex -translate-y-1/2 items-center rounded-md bg-background bg-linear-to-b from-accent/60 to-accent/60 pl-1 group-focus-within:visible group-hover:visible group-data-on:from-accent group-data-on:to-accent has-[[data-state=open]]:visible">
       {children}
     </div>
   );
-}
-
-/** `slot` (DropdownMenuTrigger) wraps the button for its menu; the button stays shown while the menu is open. `risk`
- * ('destructive' | 'approval'): the assistant's ui.invoke asks on the approval card before pressing it (SPEC §8). */
-function RowAction({ title, onClick, slot: Slot, risk, children }) {
-  let button = (
-    <Button variant="ghost" size="icon-xs" aria-label={title} data-agent-risk={risk} className="invisible shrink-0 group-hover:visible data-[state=open]:visible"
-      onClick={(e) => { e.stopPropagation(); onClick?.(); }}>
-      {children}
-    </Button>
-  );
-  if (Slot) button = <Slot asChild>{button}</Slot>;
-  return <Tip title={title}>{button}</Tip>;
 }
 
 function Threads() {
@@ -97,11 +85,11 @@ function Threads() {
         {!threads.length && <p className="px-1.5 py-1 text-xs text-muted-foreground">No projects yet.</p>}
         {yearOrder.map((year) => (
           <div key={year}>
-            {year && <div className="mt-1.5 px-1.5 text-xs text-muted-foreground">{year}</div>}
+            {year && <div className="mt-1.5 px-1.5 text-xs font-medium text-muted-foreground">{year}</div>}
             <div className={cn(year && 'ml-2.5 border-l pl-1')}>
             {[...years.get(year).keys()].sort(byName).map((subject) => (
               <div key={subject}>
-                {subject && <div className="mt-1 truncate px-1.5 font-semibold" title={subject}>{subject}</div>}
+                {subject && <div className="mt-1 truncate px-1.5 text-xs font-medium text-muted-foreground" title={subject}>{subject}</div>}
                 {years.get(year).get(subject).map((t) => {
                   const topic = topicOf(threads, t.url);
                   return (
@@ -111,10 +99,10 @@ function Threads() {
                     {planFor(t.url) && (
                       <Tip title="Open tickets in its plan"><span className="shrink-0 text-xs text-muted-foreground tabular-nums">{openCount(planFor(t.url).id)}</span></Tip>
                     )}
-                    <RowAction title="Plan board" onClick={() => openPlan(t.url)}><SquareKanban /></RowAction>
-                    {topic && <RowAction title="Open in forum" risk="approval" onClick={() => openInForum(topic)}><ExternalLink /></RowAction>}
-                    {isProject(t.url) && <RowAction title={topic ? 'Forum thread: change or unlink' : 'Link a forum thread'} onClick={() => editProjectThread(t)}><Link2 /></RowAction>}
-                    <RowAction title="Remove project from list" risk="destructive" onClick={() => removeThread(t)}><X /></RowAction>
+                    <IconButton reveal label="Plan board" onClick={() => openPlan(t.url)}><SquareKanban /></IconButton>
+                    {topic && <IconButton reveal label="Open in forum" data-agent-risk="approval" onClick={() => openInForum(topic)}><ExternalLink /></IconButton>}
+                    {isProject(t.url) && <IconButton reveal label={topic ? 'Change or unlink the forum thread' : 'Link a forum thread'} onClick={() => editProjectThread(t)}><Link2 /></IconButton>}
+                    <IconButton reveal label="Remove project from list" data-agent-risk="destructive" onClick={() => removeThread(t)}><X /></IconButton>
                   </Row>
                   );
                 })}
@@ -123,7 +111,7 @@ function Threads() {
             </div>
           </div>
         ))}
-        <Button variant="ghost" size="xs" className="mt-0.5 h-7.5 w-full justify-start text-muted-foreground" data-add-thread onClick={addThreadUrl}>
+        <Button variant="ghost" size="xs" className="mt-0.5 w-full justify-start text-muted-foreground" data-add-thread onClick={addThreadUrl}>
           <Plus />New project
         </Button>
       </CardContent>
@@ -185,7 +173,7 @@ function TagMenu({ id, tag, tags, open, setOpen }) {
       <Tip title={tag?.name ?? 'No tag'}>
         <DropdownMenuTrigger asChild>
           <button type="button" aria-label={`Tag: ${tag?.name ?? 'none'}`} onClick={stop}
-            className="flex size-4 shrink-0 items-center justify-center rounded-full outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring/50">
+            className="flex size-4 shrink-0 items-center justify-center rounded-full outline-none hover:bg-accent/60 focus-visible:ring-2 focus-visible:ring-ring/50 data-[state=open]:bg-accent">
             <Dot color={tag?.color} />
           </button>
         </DropdownMenuTrigger>
@@ -219,15 +207,15 @@ function DraftRow({ d, folderId, folders, threads, tag, tags, active, dragging, 
         <TagMenu id={d.id} tag={tag} tags={tags} open={tagging} setOpen={setTagging} />
         <span className="min-w-0 flex-1 truncate">{d.title || 'Untitled draft'}</span>
         {(working || background) && (
-          <Badge variant="secondary" data-draft-assistant className="shrink-0 gap-1 px-1.5 py-0 text-[10px]">{working && <Spinner className="size-3" />}Assistant</Badge>
+          <Badge variant="secondary" data-draft-assistant className="shrink-0 gap-1 px-1.5 py-0">{working && <Spinner className="size-3" />}Assistant</Badge>
         )}
         {d.pushedAt && <Tip title="Pushed to the forum"><CircleCheck className="size-3.5 shrink-0 text-success" aria-label="Pushed" /></Tip>}
         <HoverActions>
           {d.pushedAt
-            ? <RowAction title="Unpush: mark as not pushed (Submit was not pressed in the forum)" risk="destructive" onClick={() => unpushDraft(d)}><Undo2 /></RowAction>
-            : topicOf(threads, d.threadUrl) && <RowAction title="Push to forum: fill the forum reply box with this draft" risk="approval" onClick={() => pushDraft(d.id)}><Send /></RowAction>}
-          <RowAction title="Move to..." slot={DropdownMenuTrigger}><FolderInput /></RowAction>
-          <RowAction title="Delete draft" risk="destructive" onClick={() => deleteDraft(d)}><X /></RowAction>
+            ? <IconButton label="Unpush" data-agent-risk="destructive" onClick={() => unpushDraft(d)}><Undo2 /></IconButton>
+            : topicOf(threads, d.threadUrl) && <IconButton label="Push to forum" data-agent-risk="approval" onClick={() => pushDraft(d.id)}><Send /></IconButton>}
+          <IconButton label="Move to..." slot={DropdownMenuTrigger}><FolderInput /></IconButton>
+          <IconButton label="Delete draft" variant="destructive-ghost" data-agent-risk="destructive" onClick={() => deleteDraft(d)}><Trash2 /></IconButton>
         </HoverActions>
       </Row>
       {/* Outside the Row: React events bubble out of the portal, and a menu click must not open the draft. */}
@@ -265,7 +253,7 @@ function FolderRow({ group: { folder, drafts }, over, renaming, setRenaming, onD
         <span className="min-w-0 flex-1 truncate" title={folder.name} onDoubleClick={() => setRenaming(folder.id)}>{folder.name}</span>
       )}
       <span className="shrink-0 text-xs text-muted-foreground tabular-nums">{drafts.length}</span>
-      <RowAction title="Delete folder" risk="destructive" onClick={() => deleteFolder(folder)}><X /></RowAction>
+      <IconButton reveal label="Delete folder" variant="destructive-ghost" data-agent-risk="destructive" onClick={() => deleteFolder(folder)}><Trash2 /></IconButton>
     </Row>
   );
 }
@@ -295,10 +283,7 @@ function Drafts() {
       <CardHeader className="px-2.5">
         <SectionTitle>Drafts</SectionTitle>
         <CardAction className="flex">
-          <Tip title="New folder">
-            <Button variant="ghost" size="icon-xs" aria-label="New folder" className="text-muted-foreground"
-              onClick={async () => setRenaming(await newFolder())}><FolderPlus /></Button>
-          </Tip>
+          <IconButton label="New folder" className="text-muted-foreground" onClick={async () => setRenaming(await newFolder())}><FolderPlus /></IconButton>
           <Button variant="ghost" size="xs" className="text-muted-foreground" onClick={startNewDraft}><Plus />New draft</Button>
         </CardAction>
       </CardHeader>
@@ -377,16 +362,12 @@ function BackupStatus() {
   return (
     <>
       {off && !hidden && (
-        <Tip title="Your work is not backed up" side="top">
-          <Button variant="ghost" size="icon-sm" aria-label="Backup warning" data-backup-warning className="text-destructive hover:text-destructive"
-            onMouseDown={keepFocus} onClick={() => setWarning(true)}><CircleAlert /></Button>
-        </Tip>
+        <IconButton size="regular" label="Your work is not backed up" tip={{ side: 'top' }} data-backup-warning className="text-destructive hover:text-destructive"
+          onMouseDown={keepFocus} onClick={() => setWarning(true)}><CircleAlert /></IconButton>
       )}
-      <Tip title={title} side="top">
-        <Button variant="ghost" size="icon-sm" aria-label="GitHub backup status" aria-description={title} data-backup-status onMouseDown={keepFocus} onClick={() => openSettings('github')}>
-          <Icon className={cls} />
-        </Button>
-      </Tip>
+      <IconButton size="regular" label={title} tip={{ side: 'top' }} data-backup-status onMouseDown={keepFocus} onClick={() => openSettings('github')}>
+        <Icon className={cls} />
+      </IconButton>
       {warning && <BackupWarning onClose={() => setWarning(false)} />}
     </>
   );
@@ -435,16 +416,14 @@ export function Sidebar() {
   );
 }
 
-/** Hides or shows the sidebar (also Ctrl+\): in the editor's corner (SidebarToggle) and in the workspace headers. */
-export function SidebarButton({ side }) {
+/** Hides or shows the sidebar (also Ctrl+\): in the editor's corner (SidebarToggle, `size` 'regular') and, compact, in the
+ * workspace headers. */
+export function SidebarButton({ side, size }) {
   const collapsed = useStore((s) => !!s.settings?.sidebarCollapsed);
-  const title = withKey(`${collapsed ? 'Show' : 'Hide'} sidebar`, 'app.sidebar');
   return (
-    <Tip title={title} side={side}>
-      <Button variant="ghost" size="icon-sm" aria-label={title} onMouseDown={keepFocus} onClick={toggleSidebar}>
-        {collapsed ? <PanelLeftOpen /> : <PanelLeftClose />}
-      </Button>
-    </Tip>
+    <IconButton label={`${collapsed ? 'Show' : 'Hide'} sidebar`} keybind="app.sidebar" size={size} tip={{ side }} onMouseDown={keepFocus} onClick={toggleSidebar}>
+      {collapsed ? <PanelLeftOpen /> : <PanelLeftClose />}
+    </IconButton>
   );
 }
 
@@ -453,7 +432,7 @@ export function SidebarButton({ side }) {
 export function SidebarToggle() {
   return (
     <div className="absolute bottom-3 left-2 z-30 rounded-island border bg-island p-1 shadow-xl">
-      <SidebarButton side="right" />
+      <SidebarButton side="right" size="regular" />
     </div>
   );
 }

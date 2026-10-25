@@ -14,7 +14,7 @@ import { getState, useStore } from '../store.js';
 import { useViewportBox } from '../viewport.js';
 import { closeWorkspace } from '../views.js';
 import { SidebarButton } from './Sidebar.jsx';
-import { Tip } from './Tip.jsx';
+import { IconButton, Tip } from './Tip.jsx';
 import { keepFocus } from './Toolbar.jsx';
 
 const label = (t) => t.title || t.url.replace(/^https?:\/\/(www\.)?/, '').replace(/\/$/, '') || 'New tab';
@@ -91,7 +91,7 @@ function AddressBar({ tab, compact = false, className }) {
   };
   return (
     <Input data-browser-address aria-label="Address" spellCheck={false} value={compact && !editing ? hostOf(url) || url : text} title={compact ? url : undefined}
-      className={cn('min-w-0 text-xs', compact ? 'h-6 px-2 md:text-xs' : 'h-7 flex-1', className)} placeholder={compact ? 'Search or URL' : 'Search Google or type a URL'}
+      size="xs" className={cn('min-w-0', !compact && 'flex-1', className)} placeholder={compact ? 'Search or URL' : 'Search Google or type a URL'}
       onChange={(e) => setText(e.target.value)}
       onFocus={(e) => {
         setEditing(true);
@@ -110,16 +110,14 @@ function AddressBar({ tab, compact = false, className }) {
   );
 }
 
-const tip = (title, button) => <Tip title={title}>{button}</Tip>;
-
 /** Back, Forward and Reload for `tab`. */
 function NavButtons({ tab }) {
   const view = () => views.get(tab?.id);
   return (
     <>
-      {tip(withKey('Back', 'browser.back'), <Button variant="ghost" size="icon-xs" aria-label="Back" onMouseDown={keepFocus} onClick={() => view()?.goBack()}><ArrowLeft /></Button>)}
-      {tip(withKey('Forward', 'browser.forward'), <Button variant="ghost" size="icon-xs" aria-label="Forward" onMouseDown={keepFocus} onClick={() => view()?.goForward()}><ArrowRight /></Button>)}
-      {tip(withKey('Reload', 'browser.reload'), <Button variant="ghost" size="icon-xs" aria-label="Reload" onMouseDown={keepFocus} onClick={() => view()?.reload()}><RotateCw /></Button>)}
+      <IconButton label="Back" keybind="browser.back" onMouseDown={keepFocus} onClick={() => view()?.goBack()}><ArrowLeft /></IconButton>
+      <IconButton label="Forward" keybind="browser.forward" onMouseDown={keepFocus} onClick={() => view()?.goForward()}><ArrowRight /></IconButton>
+      <IconButton label="Reload" keybind="browser.reload" onMouseDown={keepFocus} onClick={() => view()?.reload()}><RotateCw /></IconButton>
     </>
   );
 }
@@ -128,12 +126,14 @@ function NavButtons({ tab }) {
 function PageButtons({ tab }) {
   return (
     <>
-      {tab && zoomOf(tab) !== DEFAULT_ZOOM && tip(withKey('Reset zoom', 'browser.zoomReset'), (
-        <Button variant="ghost" size="xs" className="h-6 px-1.5 tabular-nums" aria-label="Reset zoom" onMouseDown={keepFocus} onClick={() => zoomTab(tab.id, 0)}>
-          {Math.round(zoomOf(tab) * 100)}%
-        </Button>
-      ))}
-      {tip('Open this page in your default browser', <Button variant="ghost" size="icon-xs" aria-label="Open in default browser" disabled={!tab} onMouseDown={keepFocus} onClick={() => window.open(tab.url)}><ExternalLink /></Button>)}
+      {tab && zoomOf(tab) !== DEFAULT_ZOOM && (
+        <Tip title={withKey('Reset zoom', 'browser.zoomReset')}>
+          <Button variant="ghost" size="xs" className="px-1.5 tabular-nums" aria-label="Reset zoom" onMouseDown={keepFocus} onClick={() => zoomTab(tab.id, 0)}>
+            {Math.round(zoomOf(tab) * 100)}%
+          </Button>
+        </Tip>
+      )}
+      <IconButton label="Open this page in your default browser" disabled={!tab} onMouseDown={keepFocus} onClick={() => window.open(tab.url)}><ExternalLink /></IconButton>
     </>
   );
 }
@@ -161,18 +161,17 @@ export function TabStrip({ shown = false }) {
       {tabs.map((t) => {
         const on = shown ? t.id === active : inPane.has(t.id);
         return (
-          <div key={t.id} role="tab" aria-selected={on} title={t.url} onMouseDown={keepFocus}
+          <div key={t.id} role="tab" aria-selected={on} onMouseDown={keepFocus}
             onClick={() => (shown ? activateTab(t.id) : on ? closePane(t.id) : openPane(t.id))}
             onAuxClick={(e) => e.button === 1 && closeTab(t.id)}
-            className={cn('flex h-7 w-44 shrink-0 cursor-default items-center gap-1 rounded-md pl-2 pr-0.5', on ? 'bg-accent' : 'hover:bg-accent/50')}>
-            <span className="min-w-0 flex-1 truncate">{label(t)}</span>
-            <Button variant="ghost" size="icon-xs" aria-label="Close tab" onMouseDown={keepFocus} onClick={(e) => { e.stopPropagation(); closeTab(t.id); }}><X /></Button>
+            className={cn('flex h-6 w-44 shrink-0 cursor-default items-center gap-1 rounded-md pl-2 pr-0.5', on ? 'bg-accent' : 'hover:bg-accent/60')}>
+            {/* The URL tip on the label only: nested in the X's tip, both would open at once. */}
+            <Tip title={t.url} wrap="min-w-0 flex-1"><span className="min-w-0 flex-1 truncate">{label(t)}</span></Tip>
+            <IconButton label="Close tab" onMouseDown={keepFocus} onClick={() => closeTab(t.id)}><X /></IconButton>
           </div>
         );
       })}
-      <Tip title={withKey('New tab', 'browser.newTab')}>
-        <Button variant="ghost" size="icon-xs" aria-label="New tab" onMouseDown={keepFocus} onClick={() => (shown ? newTab() : openPane(null, HOME))}><Plus /></Button>
-      </Tip>
+      <IconButton label="New tab" keybind="browser.newTab" onMouseDown={keepFocus} onClick={() => (shown ? newTab() : openPane(null, HOME))}><Plus /></IconButton>
     </div>
   );
 }
@@ -190,7 +189,7 @@ export function BrowserPage({ shown }) {
       className={cn('absolute inset-0 z-10 flex flex-col bg-background outline-none', !shown && 'invisible pointer-events-none')}
       onKeyDown={(e) => browserKey(e) && e.preventDefault()}>
       <header className="shrink-0 border-b text-xs">
-        <div className="flex min-h-9 items-start gap-1 px-1 py-0.5">
+        <div className="flex min-h-9 items-start gap-1 px-1 py-1.5">
           <SidebarButton />
           <TabStrip shown />
           <Tip title="Back to the open draft">
@@ -204,7 +203,7 @@ export function BrowserPage({ shown }) {
       <div data-web-slot className="relative min-h-0 flex-1">
         {!tabs.length && (
           <div className="flex h-full items-center justify-center">
-            <Button variant="outline" size="sm" onClick={() => newTab()}><Plus />New tab</Button>
+            <Button variant="ghost" size="xs" onClick={() => newTab()}><Plus />New tab</Button>
           </div>
         )}
       </div>
@@ -490,16 +489,13 @@ function TabFrame({ tab, mode, place, z }) {
           <AddressBar tab={tab} compact className="w-[clamp(5rem,30%,14rem)] shrink" />
           <span className="flex min-w-6 flex-1 justify-center"><GripHorizontal className="size-4 text-muted-foreground" /></span>
           <PageButtons tab={tab} />
-          <Tip title={resizing ? 'Done resizing (Enter)' : 'Resize the pane'}>
-            <Button variant="ghost" size="icon-xs" data-resize-toggle aria-label={resizing ? 'Done resizing' : 'Resize the pane'} aria-pressed={resizing}
-              className={cn(resizing && 'bg-[#3d99f5] text-white hover:bg-[#3d99f5]/90 hover:text-white')} onMouseDown={keepFocus}
-              onClick={() => {
-                setResizing(!resizing);
-                if (resizing) focusPage();
-              }}>
-              {resizing ? <Check /> : <Scaling />}
-            </Button>
-          </Tip>
+          <IconButton label={resizing ? 'Done resizing (Enter)' : 'Resize the pane'} pressed={resizing} data-resize-toggle onMouseDown={keepFocus}
+            onClick={() => {
+              setResizing(!resizing);
+              if (resizing) focusPage();
+            }}>
+            {resizing ? <Check /> : <Scaling />}
+          </IconButton>
           <Tip title="Minimize (the tab stays in the strip)">
             <button type="button" aria-label="Minimize pane" onMouseDown={keepFocus} onClick={() => closePane(tab.id)}
               className="ml-1 grid size-3.5 shrink-0 place-items-center rounded-full bg-[#febc2e] text-[#8a5300] ring-1 ring-black/15 hover:brightness-95">

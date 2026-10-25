@@ -1,15 +1,14 @@
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { cn } from 'cn';
-import { ChevronUp, SpellCheck } from 'lucide-react';
+import { SpellCheck } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
-import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { Combobox } from '@/components/ui/combobox';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Slider } from '@/components/ui/slider';
 import { hasForum, login, openSettings, refocusEditor, saveSettings, setZoom } from '../actions.js';
 import { on } from '../commands.js';
 import { getState, useStore } from '../store.js';
-import { InlineInput } from './InlineInput.jsx';
 import { Tip } from './Tip.jsx';
 
 const ZOOMS = ['fit', 50, 67, 75, 90, 100, 125, 150];
@@ -76,7 +75,6 @@ export function StatusBar() {
   const zoom = useStore((s) => s.zoom);
   const zoomPct = useStore((s) => s.zoomPct);
   const spell = useStore((s) => s.settings?.spellCheck ?? true);
-  const [editing, setEditing] = useState(false);
   return (
     <footer className="col-span-2 flex h-8 items-center gap-4 border-t px-2 text-xs text-muted-foreground">
       {/* The main window's spell checker (settings.spellCheck, main.js setSpellCheckerEnabled): off clears the underlines. */}
@@ -103,32 +101,12 @@ export function StatusBar() {
         Zoom
         <Slider aria-label="Page zoom" className="w-28" min={25} max={200} step={1} value={[Math.min(200, Math.max(25, zoomPct))]}
           onValueChange={([value]) => setZoom(value)} />
-        {editing ? (
-          <InlineInput aria-label="Zoom percent" value={zoomPct} className="h-6 w-13 text-xs md:text-xs"
-            onDone={(text) => {
-              setEditing(false);
-              const value = parseFloat(text);
-              if (Number.isFinite(value)) setZoom(value);
-            }} />
-        ) : (
-          <Tip title="Type an exact zoom">
-            <Button variant="ghost" size="xs" className="w-13 tabular-nums" onClick={() => setEditing(true)}>{`${zoomPct} %`}</Button>
-          </Tip>
-        )}
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="outline" size="xs" aria-label="Zoom presets" className="w-12 justify-end">
-              {zoom === 'fit' && 'Fit'}<ChevronUp />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent side="top" align="end" className="min-w-24" onCloseAutoFocus={refocusEditor}>
-            {ZOOMS.map((value) => (
-              <DropdownMenuCheckboxItem key={value} checked={zoom === value} onSelect={() => setZoom(value)}>
-                {value === 'fit' ? 'Fit' : `${value} %`}
-              </DropdownMenuCheckboxItem>
-            ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <Tip title="Type an exact zoom">
+          <Combobox size="xs" aria-label="Zoom percent" className="w-20 tabular-nums" value={zoom} text={`${zoomPct} %`}
+            options={ZOOMS.map((v) => [v, v === 'fit' ? 'Fit' : `${v} %`])}
+            onCommit={(t) => { const v = parseFloat(t); if (Number.isFinite(v)) setZoom(v); }}
+            onPick={setZoom} onDone={() => refocusEditor()} contentProps={{ side: 'top', align: 'end', className: 'min-w-24' }} />
+        </Tip>
       </div>
     </footer>
   );

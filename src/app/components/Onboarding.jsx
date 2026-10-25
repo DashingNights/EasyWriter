@@ -9,6 +9,7 @@ import { useViewportBox } from '../viewport.js';
 import { showPage } from '../views.js';
 import { CHROME, keepFocus } from './board/controls.jsx';
 import { STEPS } from './onboarding-steps.jsx';
+import { IconButton } from './Tip.jsx';
 
 // The tour (STEPS in onboarding-steps.jsx): a card mounted in the main column's area, above the islands and below dialogs
 // (z 45, like the agent request card). It starts on the first start (settings.onboarded not true; never in the background
@@ -118,9 +119,9 @@ export function Onboarding() {
             className="absolute size-2.5 rotate-45 bg-card data-[dir=above]:border-r data-[dir=above]:border-b data-[dir=below]:border-t data-[dir=below]:border-l data-[dir=right]:border-b data-[dir=right]:border-l data-[dir=left]:border-t data-[dir=left]:border-r" />
         )}
         <div className="flex items-center gap-2">
-          <p className="font-medium">{title}</p>
+          <p className="font-semibold">{title}</p>
           <span className="ml-auto text-xs text-muted-foreground">{`${i + 1} / ${STEPS.length}`}</span>
-          <Button variant="ghost" size="icon-xs" aria-label="Close tour" title="Close tour" onClick={() => go(i, STEPS.length)}><X /></Button>
+          <IconButton label="Close tour" onClick={() => go(i, STEPS.length)}><X /></IconButton>
         </div>
         <div className="mt-2 grid gap-2">{typeof Body === 'function' ? <Body /> : Body}</div>
         <div className="mt-3 flex flex-wrap items-center gap-2">
