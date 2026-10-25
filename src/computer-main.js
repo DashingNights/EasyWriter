@@ -310,7 +310,8 @@ async function fromWorker(sender, channel, args, fn) {
   if (channel === 'drafts.save') {
     const d = args[0];
     rec.title = String(d.title || 'Untitled draft');
-    notify({ type: 'saved', entry: { id: d.id, title: d.title, threadUrl: d.threadUrl ?? null, updated: out.updated, pushedAt: d.pushedAt ?? null } });
+    notify({ type: 'saved', entry: { id: d.id, title: d.title, threadUrl: d.threadUrl ?? null, updated: out.updated, pushedAt: d.pushedAt ?? null,
+      format: d.format ?? null } });
   }
   return out;
 }

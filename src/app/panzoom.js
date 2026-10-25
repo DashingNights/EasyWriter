@@ -20,6 +20,73 @@ export function zoomAround(area, wrap, zoom, anchor) {
   }
 }
 
+/** Keeps `wrap` where it sits in the view while `area` changes size (the window, the sidebar, a side pane, the chat panel).
+ * The room is the area minus `insets()` ({left, right, top, bottom} px the home view keeps clear). On each axis the gaps
+ * between the page and the room's edges keep their ratio: gapStart' = f * (room' - size'), f = gapStart / (gapStart + gapEnd)
+ * as it was before the resize (0.5 when that sum is about 0). This holds when the page is larger than the room too (both gaps
+ * negative). When the gaps have opposite signs (the page partly past one edge) f is held to 0 or 1, so one of the page's
+ * edges lines up with the room's; unheld, a sum near 0 gives a ratio that throws the page far off on the next resize.
+ * f is recorded whenever the page moves for another reason (a scroll, a zoom, the page growing, a Ctrl+wheel burst), never
+ * from the scroll a resize itself causes (the browser clamps scrollLeft before the observer runs). `before()` runs first on a
+ * resize, so a fit zoom is recomputed before the page is placed. Returns {stop, mark}: `mark()` records f at once, for a
+ * placement (the home view) that a resize may follow before its scroll event arrives. */
+export function keepPlace(area, wrap, insets, before = () => {}) {
+  let size = null; // the area's [clientWidth, clientHeight] when f was recorded
+  let f = [0.5, 0.5];
+  let placed = ''; // the geometry this function last set: its own scroll events are not a move
+  let frame = 0;
+  const geometry = () => [area.scrollLeft, area.scrollTop, wrap.offsetWidth, wrap.offsetHeight, wrap.style.zoom, wrap.style.transform].join();
+  // [gapStart, gapStart + gapEnd] per axis
+  const gaps = () => {
+    const [a, p, i] = [area.getBoundingClientRect(), wrap.getBoundingClientRect(), insets()];
+    return [
+      [p.left - a.left - i.left, area.clientWidth - i.left - i.right - p.width],
+      [p.top - a.top - i.top, area.clientHeight - i.top - i.bottom - p.height],
+    ];
+  };
+  const measure = () => {
+    placed = '';
+    f = gaps().map(([g, free]) => (Math.abs(free) < 2 ? 0.5 : Math.min(1, Math.max(0, g / free))));
+  };
+  const record = () => {
+    if (size && size[0] === area.clientWidth && size[1] === area.clientHeight && geometry() !== placed) measure();
+  };
+  const mark = () => {
+    if (!area.clientWidth || !area.clientHeight) return;
+    size = [area.clientWidth, area.clientHeight];
+    measure();
+  };
+  const ro = new ResizeObserver(() => {
+    if (!area.clientWidth || !area.clientHeight) return; // hidden: keep f for when it shows again
+    if (size && (size[0] !== area.clientWidth || size[1] !== area.clientHeight)) {
+      before();
+      const [[gx, fx], [gy, fy]] = gaps();
+      area.scrollLeft += gx - f[0] * fx;
+      area.scrollTop += gy - f[1] * fy;
+      size = [area.clientWidth, area.clientHeight];
+      placed = geometry();
+      return;
+    }
+    size = [area.clientWidth, area.clientHeight];
+    record(); // the page grew or shrank (typing, a zoom)
+  });
+  // A wheel zoom burst (bindPanZoom) only transforms `wrap`, which fires neither scroll nor the observer: look on the next frame.
+  const wheel = (e) => {
+    if (e.ctrlKey && !frame) frame = requestAnimationFrame(() => { frame = 0; record(); });
+  };
+  ro.observe(area);
+  ro.observe(wrap);
+  area.addEventListener('scroll', record, { passive: true });
+  area.addEventListener('wheel', wheel, { passive: true });
+  const stop = () => {
+    ro.disconnect();
+    cancelAnimationFrame(frame);
+    area.removeEventListener('scroll', record);
+    area.removeEventListener('wheel', wheel);
+  };
+  return { stop, mark };
+}
+
 const SETTLE_MS = 150; // a wheel pause this long ends a zoom burst
 
 /** Middle-button drag pans `area` (within its scroll limits); Ctrl + wheel over it zooms around the pointer. During a burst
@@ -63,6 +130,13 @@ export function bindPanZoom(area, wrap, zoomTo, preview = () => {}) {
     clearTimeout(b.timer);
     b.timer = setTimeout(settle, SETTLE_MS);
   }, { passive: false });
+  // A resize moves the page's untransformed origin in scrolled coordinates (the area's padding follows its size): measure it
+  // again, so the rest of the burst and settle() start from where the page is now.
+  new ResizeObserver(() => {
+    if (!burst) return;
+    const r = wrap.getBoundingClientRect(); // the transformed box: its origin is the untransformed one plus (tx, ty)
+    [burst.left, burst.top] = [r.left - burst.tx + area.scrollLeft, r.top - burst.ty + area.scrollTop];
+  }).observe(area);
   area.addEventListener('mousedown', (e) => e.button === 1 && e.preventDefault()); // no Windows autoscroll
   area.addEventListener('pointerdown', (e) => {
     if (e.button !== 1) return;

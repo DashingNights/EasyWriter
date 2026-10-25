@@ -37,7 +37,8 @@ const RPC = '2.0';
 // situation note names the mode).
 const HEAD = 'EasyWriter is a desktop editor for drafts with canvases, plans and flowcharts. '
   + 'Start with ui_state or drafts_list; commands_index and commands_describe explain the commands. Blocks are addressed by path '
-  + '(indices from doc_get or doc_find). Writes run at once and the user can undo them; ';
+  + '(indices from doc_get or doc_find). A draft has a format (drafts_list shows it); doc_format takes run and paragraph on a '
+  + 'document. Writes run at once and the user can undo them; ';
 const INSTRUCTIONS = `${HEAD}deletes ask the user in the app.`;
 const ASSISTANT_INSTRUCTIONS = `${HEAD}the app asks the user before a delete when the permission mode needs it, so never ask in text.`;
 // The stdio relay, outside the asar archive in a packaged app (package.json build.asarUnpack).

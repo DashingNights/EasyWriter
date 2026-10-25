@@ -11,11 +11,25 @@ function blockTexts(node, out = []) {
 
 const TITLE_MAX = 60;
 
-/** First non-empty block's text, at most 60 chars (ellipsis included), or 'Untitled draft'. */
+/** First non-empty block's text, at most 60 chars (ellipsis included), or 'Untitled'. A title taken from content
+ * (createDraft without a title); saving never rewrites a title (docs/plans/sidebar-menu.md decision 1). */
 export function draftTitle(doc) {
   const text = blockTexts(doc).map((t) => t.trim()).find(Boolean);
-  if (!text) return 'Untitled draft';
+  if (!text) return 'Untitled';
   return text.length > TITLE_MAX ? text.slice(0, TITLE_MAX - 3) + '...' : text;
+}
+
+export const TITLE_LIMIT = 200;
+
+/** A draft title as it is stored: whitespace runs (newlines too) become one space, trimmed, at most 200 characters;
+ * nothing left gives 'Untitled'. */
+export function cleanTitle(text) {
+  return String(text ?? '').replace(/\s+/g, ' ').trim().slice(0, TITLE_LIMIT).trim() || 'Untitled';
+}
+
+/** The title of a copy of a draft titled `title`: the source's words first, so the narrow sidebar still shows them. */
+export function copyTitle(title) {
+  return cleanTitle(title).slice(0, TITLE_LIMIT - ' (copy)'.length).trimEnd() + ' (copy)';
 }
 
 /** Number of whitespace-separated words in the document. */

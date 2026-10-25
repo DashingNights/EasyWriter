@@ -72,6 +72,10 @@ test('deny list: passwords, file pickers, the assistant, the approval card, the 
   assert.equal(denyReason({ tag: 'button', inside: null }), null);
   assert.equal(denyReason({ tag: 'input', type: 'text', inside: null }), null);
   for (const name of ['Undo (Ctrl+Z)', 'Redo', 'Undo plan change']) assert.ok(denyReason({ tag: 'button', name, inside: null }), name);
+  // Paste reads the user's clipboard: the ribbon button, its Paste options menu, tool search rows and right-click menu items.
+  for (const name of ['Paste (Ctrl+V)', 'Paste options', 'Paste Ctrl+V', 'Paste as plain text Ctrl+Shift+V']) {
+    assert.ok(denyReason({ tag: 'button', name, inside: null }), name);
+  }
   assert.equal(denyReason({ tag: 'button', name: 'Unpush', inside: null }), null);
   const listed = snapshotPage([rec(0), rec(1, { tag: 'input', type: 'password', role: 'textbox' }), rec(2, { inside: 'assistant' }), rec(3, { inside: 'marked' })]);
   assert.deepEqual(all(listed).map((n) => n.ref), ['e1']);

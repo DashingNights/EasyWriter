@@ -6,6 +6,7 @@ import { closeQuickTools } from '../actions.js';
 import { getState, useEditor, useStore } from '../store.js';
 import { AlignMenu, BoardTools, RailLayout } from './board/BoardRail.jsx';
 import { CHROME, keepFocus } from './board/controls.jsx';
+import { DocumentQuickTools } from '../../document/Ribbon.jsx';
 import { BlockSelect, Group, GroupRows, PresetsMenu, SelectRow, SizeSelect, SwatchMenu, TableTools, textTools, ToolButton, useBox } from './Toolbar.jsx';
 
 // §7d quick tools (Ctrl+Tab): the bottom toolbar island and the §6c rail merged into one island at the pointer, built
@@ -94,6 +95,7 @@ function Island({ open }) {
     },
   }));
   const active = useSyncExternalStore(activeBoard.subscribe, activeBoard.get);
+  const isDocument = useStore((s) => s.draft?.format === 'document'); // its own text tools (Ribbon.jsx DocumentQuickTools)
   const session = useSyncExternalStore(canvasEditor.subscribe, canvasEditor.get);
   const board = session?.board ?? active; // what Ctrl+Tab would open it for now
 
@@ -150,7 +152,7 @@ function Island({ open }) {
         // no scale or slide, so it never seems to fly in.
         style={{ left: `calc(${open.x}px - 10rem)`, top: open.y + GAP }}
         className="fixed z-50 w-[20rem] rounded-island border bg-island px-1.5 py-1 text-sm shadow-xl animate-in fade-in-0 duration-(--motion-menus)">
-        {open.board ? <BoardQuickTools board={open.board} /> : <TextTools anchor={ref} />}
+        {open.board ? <BoardQuickTools board={open.board} /> : isDocument ? <DocumentQuickTools anchor={ref} /> : <TextTools anchor={ref} />}
       </div>
     </RailLayout.Provider>
   );

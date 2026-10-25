@@ -288,8 +288,9 @@ export async function openFlows(flowId = null, opts) {
     if (!opts?.startup) toast.error('That flowchart is missing from the library.');
     return false;
   }
-  if (flowId) applyFlowPreset(); // the library editor
-  return openWorkspace({ type: 'flows', flowId }, opts);
+  const shown = await openWorkspace({ type: 'flows', flowId }, opts);
+  if (shown && flowId) applyFlowPreset(); // the library editor, in the page theme the workspace has set (applyPageTheme)
+  return shown;
 }
 
 /** Insert flowchart (toolbar, quick tools, Ctrl+Alt+F, palette; from the library with its `flowId`, then only the mode is

@@ -138,7 +138,7 @@ export function situationNote(s) {
   const lines = [
     '[Situation note from the app. It is current for this message.]',
     `Page: ${page}${where}`,
-    `Open draft: ${s.draft ? `${tagged(s.draft)}${s.draftId ? ` (id ${s.draftId})` : ''}${s.page === 'editor' ? '' : ' (behind this page)'}` : 'none'}`,
+    `Open draft: ${s.draft ? `${tagged(s.draft)}${s.draft.format ? `, a ${s.draft.format.toLowerCase()}` : ''}${s.draftId ? ` (id ${s.draftId})` : ''}${s.page === 'editor' ? '' : ' (behind this page)'}` : 'none'}`,
   ];
   if (s.draft) lines.push(`Project: ${s.thread ? `${q(s.thread)}${s.projectNote ?? ''}` : 'none'}`);
   if (s.background?.length) lines.push(`Working in the background on: ${s.background.map(q).join(', ')}`);

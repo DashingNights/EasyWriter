@@ -1,17 +1,22 @@
-import { createElement as h } from 'react';
+import { createElement as h, useEffect, useRef } from 'react';
 import { NodeSelection } from '@tiptap/pm/state';
 import {
-  ALargeSmall, AppWindow, BringToFront, CaseSensitive, Copy, Crop, Eraser, Eye, EyeOff, FilePlus, FolderInput, Group, Heading1,
-  Heading2, Heading3, Globe, Heading4, Heading5, Heading6, ImagePlus, Layers, Lock, LockOpen, Magnet, MessagesSquare, MousePointer2, MoveHorizontal, PaintBucket, Palette, Pen, Pilcrow, Pin, Puzzle, Redo2, Save,
-  Replace, Scaling, Search, MessageSquare, SendToBack, Settings, Shapes, SlidersHorizontal, SpellCheck, SquarePen, TableColumnsSplit, TableRowsSplit, Tag, Trash2,
+  ALargeSmall, AppWindow, BringToFront, CaseSensitive, ClipboardPaste, Copy, CopyPlus, Crop, Eraser, Eye, EyeOff, FilePlus, FileText, FolderInput, FolderPlus, Group, Heading1,
+  Heading2, Heading3, Globe, Heading4, Heading5, Heading6, ImagePlus, Layers, Lock, LockOpen, Magnet, MessagesSquare, MousePointer2, MoveHorizontal, PaintBucket, Palette, Pen, Pencil, Pilcrow, Pin, Puzzle, Redo2, Save,
+  Replace, Scaling, Scissors, Search, MessageSquare, SendToBack, Settings, Shapes, SlidersHorizontal, SpellCheck, SquarePen, TableColumnsSplit, TableRowsSplit, Tag, Trash2,
   Type, Undo2, Ungroup, Workflow, X, PenLine,
 } from 'lucide-react';
+import { Input } from '@/components/ui/input';
 import { SelectItem } from '@/components/ui/select';
 import { canvasEditor, flowSource } from '../canvas.js';
+import { cleanTitle, TITLE_LIMIT } from '../doc-utils.mjs';
+import { DOC_TOOLS, documentTools, inDocument } from '../document/tools.js';
 import { FONTS, TEXT_COLORS } from '../extensions.js';
 import { KINDS } from '../flow/shapes.mjs';
 import { all } from '../integrations/ui.js';
-import { applyPresetAt, commitBoardEdit, openSettings, saveNow, threadLabel } from './actions.js';
+import {
+  applyPresetAt, canPaste, commitBoardEdit, copyDraft, cutDraft, deleteDraft, openSettings, pasteDraft, saveNow, startNewDraft, threadLabel,
+} from './actions.js';
 import { assistantSettings, saveAssistant, toggleChat } from './assistant/assistant.js';
 import { closePanes, HOME, newTab, openPane, openPanes } from './browser.js';
 import { invoke } from './commands.js';
@@ -46,13 +51,13 @@ import { PLAN_TOOLS } from './tools-plan.js';
 // expresses (the plan and flowchart entries keep their own `when`). `risk` (default write) and `headless` (default true) are
 // what tool.run applies (commands/tool.mjs). ctx: see toolContext().
 
-/** What the entries look at: the editor `ed` with its toolbar definitions `T`, the main column's `view` (§7g), the
+/** What the entries look at: the editor `ed` with its toolbar definitions `T` (a Document's own, document/tools.js), the main column's `view` (§7g), the
  * `board` the search serves (null: the document) with its `snap`shot, the font presets, `flow`: flowchart mode (§7c), and
  * `block`: the node-selected block (selectedBlock). */
 export function toolContext(board) {
   const { editor: ed, settings, view } = getState();
   const snap = board && !board.destroyed ? board.getSnapshot() : null;
-  return { ed, view, T: textTools(ed), board, snap, presets: settings?.presets ?? [], flow: flowchartMode(view, snap?.kind === 'canvas' ? board.attrs : null),
+  return { ed, view, T: inDocument() ? documentTools(ed) : textTools(ed), board, snap, presets: settings?.presets ?? [], flow: flowchartMode(view, snap?.kind === 'canvas' ? board.attrs : null),
     block: selectedBlock(ed, view) };
 }
 
@@ -98,7 +103,7 @@ const needsOf = (t) => [...(t.needs ?? []), ...(t.command ? byId(t.command).need
 function failedNeeds(t, c) {
   const args = t.args?.(c) ?? {};
   const failed = needsOf(t).filter((n) => (!n.if || n.if(args)) && !can(n.gate, subjectOf(GATES[n.gate].subject, c), args, n.with))
-    .map(({ gate }) => ({ gate, message: GATES[gate].message, fix: GATES[gate].fix }));
+    .map(({ gate, fix }) => ({ gate, message: GATES[gate].message, fix: fix ?? GATES[gate].fix }));
   const off = failed.filter((f) => f.gate.startsWith('integration.'));
   return off.length ? off : failed;
 }
@@ -109,6 +114,10 @@ const withWhen = (t) => (t.when ? t : { ...t, when: (c) => !failedNeeds(t, c).le
 // formatting ones (FORMAT) also a caret or text selection, not a node-selected block.
 const TEXT = ['doc.open', 'view.editor'];
 const FORMAT = [...TEXT, 'node.none'];
+// The forum post's own controls (its value lists, presets, block select and forum-only nodes): forum posts only (gate
+// format.post, docs/plans/document.md Agent commands and gates). A Document brings its own entries.
+const POST = [...FORMAT, 'format.post'];
+const POST_INSERT = [...TEXT, 'format.post'];
 const noBoard = (c) => !c.board;
 const inText = (c) => noBoard(c) && !failedNeeds({ needs: TEXT }, c).length;
 const BOARD = ['board.active'];
@@ -130,7 +139,7 @@ const text = (key, label, group, keywords, more) => ({
 
 // Paragraph and headings: the block style select's command; options: that select.
 const block = (value, label, icon, keywords) => ({
-  id: value, label, group: 'Text', icon: h(icon), keywords: [...keywords, 'block style', 'style'], needs: FORMAT, also: noBoard,
+  id: value, label, group: 'Text', icon: h(icon), keywords: [...keywords, 'block style', 'style'], needs: POST, also: noBoard,
   run: (c) => c.T.block.set(value), options: (c) => h(BlockSelect, { T: c.T }),
 });
 
@@ -236,9 +245,9 @@ const CORE = [
   block('h4', 'Heading 4', Heading4, ['h4', 'small heading', 'header 4', 'heading four']),
   block('h5', 'Heading 5', Heading5, ['h5', 'small heading', 'header 5', 'heading five']),
   block('h6', 'Heading 6', Heading6, ['h6', 'smallest heading', 'header 6', 'heading six']),
-  { id: 'font', label: 'Font', group: 'Text', icon: h(CaseSensitive), needs: FORMAT, also: noBoard, options: (c) => h(FontSelect, { T: c.T }),
+  { id: 'font', label: 'Font', group: 'Text', icon: h(CaseSensitive), needs: POST, also: noBoard, options: (c) => h(FontSelect, { T: c.T }),
     keywords: ['typeface', 'font family', 'family', 'fonts', 'face', 'type', 'serif', 'sans', 'monospace', ...FONTS.map((f) => f.label)] },
-  { id: 'size', label: 'Font size', group: 'Text', icon: h(ALargeSmall), needs: FORMAT, also: noBoard, options: (c) => h(SizeSelect, { T: c.T }),
+  { id: 'size', label: 'Font size', group: 'Text', icon: h(ALargeSmall), needs: POST, also: noBoard, options: (c) => h(SizeSelect, { T: c.T }),
     keywords: ['size', 'text size', 'bigger', 'larger', 'smaller', 'scale', 'percent', 'big', 'small', 'fontsize'] },
   text('bold', 'Bold', 'Text', ['strong', 'thick', 'heavy', 'fat', 'emphasis', 'emphasise', 'emphasize', 'b', 'bolt', 'blod'], TOGGLE),
   text('italic', 'Italic', 'Text', ['italics', 'slanted', 'slant', 'oblique', 'emphasis', 'cursive', 'i', 'itallic', 'italik'], TOGGLE),
@@ -246,31 +255,31 @@ const CORE = [
   text('strike', 'Strikethrough', 'Text', ['strike', 'strikeout', 'strike out', 'cross out', 'crossed out', 'line through', 'scratch', 'stroke'], TOGGLE),
   text('sub', 'Subscript', 'Text', ['sub', 'lower', 'below', 'subscipt', 'chemical', 'index'], TOGGLE),
   text('sup', 'Superscript', 'Text', ['sup', 'power', 'exponent', 'raised', 'above', 'squared', 'ordinal', 'superscipt'], TOGGLE),
-  text('code', 'Inline code', 'Text', ['code', 'monospace', 'mono', 'typewriter', 'backtick', 'snippet', 'programming', 'variable'], TOGGLE),
+  text('code', 'Inline code', 'Text', ['code', 'monospace', 'mono', 'typewriter', 'backtick', 'snippet', 'programming', 'variable'], { ...TOGGLE, needs: POST }),
   text('color', 'Text colour', 'Text', ['colour', 'color', 'text color', 'font colour', 'font color', 'foreground', 'ink', 'tint', 'hue',
-    'paint', 'colur', 'colr', ...COLOURS], { options: (c) => h(Swatches, { swatches: c.T.color.swatches }) }),
+    'paint', 'colur', 'colr', ...COLOURS], { needs: POST, options: (c) => h(Swatches, { swatches: c.T.color.swatches }) }),
   text('highlight', 'Highlight', 'Text', ['highlighter', 'marker', 'background colour', 'background color', 'text background', 'mark',
-    'shade', 'fill', 'hilight', 'hilite', 'highlite', 'higlight', 'highligh', ...COLOURS], { options: (c) => h(Swatches, { swatches: c.T.highlight.swatches }) }),
+    'shade', 'fill', 'hilight', 'hilite', 'highlite', 'higlight', 'highligh', ...COLOURS], { needs: POST, options: (c) => h(Swatches, { swatches: c.T.highlight.swatches }) }),
   text('alignLeft', 'Align left', 'Text', ['left', 'flush left', 'ragged right', 'left align', ...ALIGN], { options: alignOptions }),
   text('alignCenter', 'Align centre', 'Text', ['center', 'centre', 'centered', 'centred', 'middle', 'align center', ...ALIGN], { options: alignOptions }),
   text('alignRight', 'Align right', 'Text', ['right', 'flush right', 'right align', ...ALIGN], { options: alignOptions }),
   text('justify', 'Justify', 'Text', ['justified', 'justify text', 'full width', 'both sides', 'block', ...ALIGN], { options: alignOptions }),
   text('bulletList', 'Bullet list', 'Text', ['unordered', 'unordered list', 'dots', 'points', 'bullets', 'bulleted', 'bullet points', 'ul', 'list', 'buller'], TOGGLE),
   text('orderedList', 'Numbered list', 'Text', ['ordered', 'ordered list', 'numbers', 'numbered', 'numbering', 'ol', 'list', 'steps', 'enumerate', '1 2 3'], TOGGLE),
-  text('quote', 'Quote', 'Text', ['blockquote', 'block quote', 'quotation', 'citation', 'cite', 'indent', 'qoute'], TOGGLE),
-  text('codeBlock', 'Code block', 'Text', ['pre', 'preformatted', 'source code', 'code', 'snippet', 'monospace', 'program'], TOGGLE),
+  text('quote', 'Quote', 'Text', ['blockquote', 'block quote', 'quotation', 'citation', 'cite', 'indent', 'qoute'], { ...TOGGLE, needs: POST }),
+  text('codeBlock', 'Code block', 'Text', ['pre', 'preformatted', 'source code', 'code', 'snippet', 'monospace', 'program'], { ...TOGGLE, needs: POST }),
   text('link', 'Link', 'Text', ['url', 'hyperlink', 'href', 'web', 'website', 'address', 'anchor', 'lnk', 'linc'], { headless: false }),
   text('canvas', 'Insert canvas', 'Insert', ['canvas', 'frame', 'artboard', 'smart canvas', 'graphic', 'design', 'layout', 'canvass',
     'whiteboard', 'board', 'drawing', 'draw', 'sketch', 'diagram', 'doodle', 'paint', 'wb', 'white board']),
-  text('image', 'Insert image', 'Insert', ['image', 'picture', 'photo', 'img', 'pic', 'upload', 'file', 'png', 'jpg', 'screenshot', 'imgae'], { headless: false }),
-  text('table', 'Insert table', 'Insert', ['table', 'grid', 'rows', 'columns', 'cells', 'spreadsheet', '3x3', 'tabel', 'tbale']),
+  text('image', 'Insert image', 'Insert', ['image', 'picture', 'photo', 'img', 'pic', 'upload', 'file', 'png', 'jpg', 'screenshot', 'imgae'], { headless: false, needs: POST_INSERT }), // a Document's is Pictures
+  text('table', 'Insert table', 'Insert', ['table', 'grid', 'rows', 'columns', 'cells', 'spreadsheet', '3x3', 'tabel', 'tbale'], { needs: POST_INSERT }),
   text('addRow', 'Add row after', 'Insert', ['row', 'new row', 'insert row', 'table row'], { needs: [...TEXT, 'doc.inTable'] }),
   text('addColumn', 'Add column after', 'Insert', ['column', 'new column', 'insert column', 'table column', 'col'], { needs: [...TEXT, 'doc.inTable'] }),
   text('deleteRow', 'Delete row', 'Insert', ['remove row', 'row'], { icon: h(TableRowsSplit), needs: [...TEXT, 'doc.inTable'] }),
   text('deleteColumn', 'Delete column', 'Insert', ['remove column', 'column', 'col'], { icon: h(TableColumnsSplit), needs: [...TEXT, 'doc.inTable'] }),
   text('deleteTable', 'Delete table', 'Insert', ['remove table', 'table'], { needs: [...TEXT, 'doc.inTable'], risk: 'destructive' }),
   text('box', 'Insert titled box', 'Insert', ['box', 'titled box', 'panel', 'callout', 'container', 'card', 'section', 'spoiler'], { needs: [...TEXT, 'format.box'] }),
-  text('rule', 'Horizontal rule', 'Insert', ['divider', 'separator', 'line', 'hr', 'rule', 'horizontal line', 'break', 'section break']),
+  text('rule', 'Horizontal rule', 'Insert', ['divider', 'separator', 'line', 'hr', 'rule', 'horizontal line', 'break', 'section break'], { needs: POST_INSERT }),
 
   // Both modes: history; text mode: formatting and presets.
   { id: 'undo', label: 'Undo', group: 'Edit', icon: h(Undo2), key: 'edit.undo', keywords: ['back', 'revert', 'go back', 'step back', 'reverse', 'oops', 'undo last'],
@@ -282,13 +291,20 @@ const CORE = [
   { id: 'replace', label: 'Find and replace', group: 'Edit', icon: h(Replace), key: 'app.replace', needs: TEXT, also: noBoard, run: openReplace, headless: false,
     keywords: ['replace', 'replace all', 'find and replace', 'substitute', 'swap', 'change all', 'rename', 'ctrl h', 'replce', 'repalce'] },
   text('clear', 'Clear formatting', 'Edit', ['remove formatting', 'clear format', 'plain text', 'unformat', 'reset format', 'strip', 'clean', 'normal']),
-  { id: 'presets', label: 'Manage presets', group: 'Edit', icon: h(Palette), needs: FORMAT, also: noBoard, run: openSettings, headless: false,
+  { id: 'presets', label: 'Manage presets', group: 'Edit', icon: h(Palette), needs: POST, also: noBoard, run: openSettings, headless: false,
     keywords: ['presets', 'font presets', 'edit presets', 'settings', 'preferences', 'options'] },
 ];
 
 // App (§7c): drafts and the app. New draft and the pickers' choices run commands (source 'palette', audited, SPEC §8).
 const runCommand = (id, args) => invoke({ id, args, source: 'palette' }).then((r) => r.ok || notify({ text: r.error.message }));
 const saved = () => !!getState().draft?.id; // a draft not saved yet has no id to tag or file
+const openId = () => getState().draft?.id;
+/** The open draft's folder (null: the top level), where Paste draft puts the draft. */
+function openFolder() {
+  const { settings } = getState();
+  const f = settings.draftFolders?.[openId()];
+  return settings.folders?.some((x) => x.id === f) ? f : null;
+}
 
 function ThreadPick() {
   const threads = useStore((s) => s.settings.threads);
@@ -306,6 +322,27 @@ function TagPick() {
     ...tags.map((t) => h(SelectItem, { key: t.id, value: t.id }, t.name)));
 }
 
+/** The open draft's title in a box, renamed through drafts.rename when the options panel closes (Enter, or a click away);
+ * Escape, an empty box or the same title renames nothing (docs/plans/sidebar-menu.md decision 1). The panel takes Enter and
+ * Escape before the box sees them (ToolSearch.jsx OptionsPanel), so the box commits on unmount and a window capture listener,
+ * which runs before the panel's, notes Escape. */
+function RenameBox() {
+  const draft = useRef(getState().draft).current; // the draft the panel opened for
+  const value = useRef(draft.title);
+  useEffect(() => {
+    let cancelled = false;
+    const onKey = (e) => { if (e.key === 'Escape') cancelled = true; };
+    window.addEventListener('keydown', onKey, true);
+    return () => {
+      window.removeEventListener('keydown', onKey, true);
+      const title = value.current;
+      if (!cancelled && title.trim() && cleanTitle(title) !== draft.title) runCommand(PALETTE.rename, { draftId: draft.id, title });
+    };
+  }, []);
+  return h(Input, { autoFocus: true, size: 'xs', className: 'w-64 px-1', 'aria-label': 'Draft title', maxLength: TITLE_LIMIT, defaultValue: draft.title,
+    onFocus: (e) => e.target.select(), onChange: (e) => { value.current = e.target.value; } });
+}
+
 function FolderPick() {
   const folders = useStore((s) => s.settings.folders) ?? [];
   const value = useStore((s) => s.settings.draftFolders?.[s.draft?.id] ?? NONE);
@@ -316,8 +353,11 @@ function FolderPick() {
 }
 
 const APP = [
-  { id: 'new-draft', label: 'New draft', group: 'App', icon: h(FilePlus), command: PALETTE.newDraft,
-    keywords: ['new', 'create', 'add draft', 'blank', 'start', 'new document', 'new file', 'draft'] },
+  // New draft opens the dialog (a person picks); New document skips it, as Word's Ctrl+N does. The forum adds New forum post.
+  { id: 'new-draft', label: 'New draft', group: 'App', icon: h(FilePlus), key: 'app.newDraft', run: startNewDraft, headless: false,
+    keywords: ['new', 'create', 'add draft', 'start', 'new file', 'draft', 'folder'] },
+  { id: 'new-document', label: 'New document', group: 'App', icon: h(FileText), command: PALETTE.newDraft, args: () => ({ format: 'document' }),
+    keywords: ['new document', 'word', 'docx', 'blank document', 'blank', 'report', 'essay', 'letter'] },
   { id: 'save', label: 'Save', group: 'App', icon: h(Save), key: 'app.save', needs: ['doc.open'], notice: 'Saved',
     run: () => {
       commitBoardEdit();
@@ -342,6 +382,8 @@ const APP = [
     keywords: ['writing guide', 'human writing', 'writing style', 'style guide', 'prose', 'tone', 'em dash', 'ai writing', 'sound human', 'HUMAN-WRITING'] },
   { id: 'select-thread', label: 'Select project...', group: 'App', icon: h(MessagesSquare), options: () => h(ThreadPick),
     keywords: ['project', 'select project', 'filter', 'switch project', 'all drafts'] },
+  { id: 'rename-draft', label: 'Rename draft...', group: 'App', icon: h(Pencil), also: saved, via: 'drafts.rename', options: () => h(RenameBox),
+    keywords: ['rename', 'title', 'name', 'retitle', 'change title'] },
   { id: 'tag-draft', label: 'Tag draft...', group: 'App', icon: h(Tag), also: saved, options: () => h(TagPick),
     keywords: ['tag', 'status', 'label', 'to do', 'todo', 'in progress', 'done', 'mark as', 'workflow'] },
   // The browser (§7j): a new tab in the pane over this page (on the browser page, a new tab there), the browser page, the pane.
@@ -354,17 +396,31 @@ const APP = [
   { id: 'browser-close-pane', label: 'Close browser panes', group: 'App', icon: h(X), headless: false,
     also: (c) => !can('view.browser', c) && openPanes().length > 0,
     run: closePanes, keywords: ['close browser', 'hide browser', 'browser pane', 'close pane', 'hide pane', 'minimise', 'minimize'] },
+  // The sidebar menu's draft actions for the open draft (docs/plans/sidebar-menu.md decision 7). The draft clipboard is UI state:
+  // Cut, Copy and Paste are headless false, and agents use drafts.duplicate and drafts.move.
+  { id: 'duplicate-draft', label: 'Duplicate draft', group: 'App', icon: h(CopyPlus), also: saved, command: PALETTE.duplicate,
+    args: () => ({ draftId: openId() }), notice: 'Duplicated', keywords: ['duplicate', 'copy draft', 'clone', 'make a copy', 'duplicate draft'] },
+  { id: 'cut-draft', label: 'Cut draft', group: 'App', icon: h(Scissors), also: saved, run: () => cutDraft(openId()), notice: 'Cut', headless: false,
+    keywords: ['cut', 'cut draft', 'move draft'] },
+  { id: 'copy-draft', label: 'Copy draft', group: 'App', icon: h(Copy), also: saved, run: () => copyDraft(openId()), notice: 'Copied', headless: false,
+    keywords: ['copy', 'copy draft'] },
+  { id: 'paste-draft', label: 'Paste draft', group: 'App', icon: h(ClipboardPaste), also: () => saved() && canPaste(), run: () => pasteDraft(openFolder()),
+    notice: 'Pasted', headless: false, keywords: ['paste', 'paste draft'] },
+  { id: 'delete-draft', label: 'Delete draft', group: 'App', icon: h(Trash2), also: saved, run: () => deleteDraft(getState().draft), risk: 'destructive',
+    headless: false, keywords: ['delete', 'delete draft', 'remove draft', 'trash', 'discard'] },
+  { id: 'new-folder', label: 'New folder', group: 'App', icon: h(FolderPlus), command: PALETTE.newFolder, args: () => ({ name: 'New folder' }),
+    keywords: ['new folder', 'add folder', 'create folder', 'folder', 'directory', 'organise', 'organize'] },
   { id: 'move-draft', label: 'Move to folder...', group: 'App', icon: h(FolderInput), also: () => saved() && !!getState().settings.folders?.length,
     options: () => h(FolderPick), keywords: ['folder', 'move', 'file', 'organise', 'organize', 'group', 'directory'] },
 ];
 
 const TEXT_IDS = ['add-text', 'connector-label']; // flowchart mode's Text section (the shape kinds have their category)
-const TOOLS = [...CORE, ...APP, ...PLAN_TOOLS, ...FLOW_TOOLS, ...all('TOOLS')].map(withWhen).map((t) => (TEXT_IDS.includes(t.id) ? { ...t, category: 'text' } : t));
+const TOOLS = [...CORE, ...DOC_TOOLS, ...APP, ...PLAN_TOOLS, ...FLOW_TOOLS, ...all('TOOLS')].map(withWhen).map((t) => (TEXT_IDS.includes(t.id) ? { ...t, category: 'text' } : t));
 
 /** Every entry in registry order, with one entry per font preset. */
 const allTools = (c) => [...TOOLS, ...c.presets.map((p, i) => withWhen({
   id: `preset-${i}`, label: p.name || `Preset ${i + 1}`, group: 'Text', icon: h(Palette), key: i < 9 ? `text.preset${i + 1}` : undefined,
-  keywords: ['preset', 'font preset', 'apply preset', 'style'], needs: FORMAT, also: noBoard, run: () => applyPresetAt(i),
+  keywords: ['preset', 'font preset', 'apply preset', 'style'], needs: POST, also: noBoard, run: () => applyPresetAt(i),
 }))];
 
 /** The chord an entry shows: its binding's (§7k keybinds), else its fixed widget key. */

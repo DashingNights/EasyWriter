@@ -68,7 +68,7 @@ test('the registry: unique ids, known groups and scopes, every default parses, a
   assert.equal(new Set(ids).size, ids.length);
   for (const d of DEFS) {
     assert.ok(GROUPS.includes(d.group), d.id);
-    assert.ok(['global', 'editor', 'text', 'board', 'plan', 'flows', 'browser', 'chat'].includes(d.scope), d.id);
+    assert.ok(['global', 'editor', 'text', 'document', 'board', 'plan', 'flows', 'browser', 'chat'].includes(d.scope), d.id);
     for (const k of d.keys) assert.equal(normalize(k), k, `${d.id} ${k}`);
   }
   assert.deepEqual(collisions(DEFS, effective(DEFS)), {});
@@ -91,4 +91,28 @@ test('board keys: Ctrl+Shift+L locks and Ctrl+Shift+H hides (Figma), Align left 
 test('board keys: Ctrl+G groups and Ctrl+Shift+G ungroups (Figma)', () => {
   const b = effective(DEFS);
   assert.deepEqual([b['board.group'], b['board.ungroup']], [['Ctrl+G'], ['Ctrl+Shift+G']]);
+});
+
+test("Document keys: Word's chords, Ctrl+E shadowing inline code, none taking a global chord, the board keeping its own", () => {
+  const b = effective(DEFS);
+  const docs = DEFS.filter((d) => d.scope === 'document');
+  assert.ok(docs.every((d) => d.group === 'Document' && d.id.startsWith('document.')));
+  assert.deepEqual([b['document.alignCenter'], b['document.growFont1'], b['document.indent'], b['document.normalStyle']], [['Ctrl+E'], ['Ctrl+]'], ['Ctrl+M'], ['Ctrl+Shift+N']]);
+  assert.deepEqual(DEFS.find((d) => d.id === 'document.alignCenter').shadows, ['text.code']);
+  assert.deepEqual(b['document.pageBreak'], ['Ctrl+Enter']); // nothing else binds Ctrl+Enter: no collision below
+  const c = collisions(DEFS, b);
+  for (const d of docs) assert.equal(c[d.id], undefined, d.id);
+  const global = new Set(DEFS.filter((d) => d.scope === 'global').flatMap((d) => b[d.id]));
+  for (const d of docs) for (const k of b[d.id]) assert.ok(!global.has(k), `${d.id} ${k}`);
+  // Without the shadow, Ctrl+E would collide with inline code.
+  assert.ok(collisions(DEFS.map((d) => (d.id === 'document.alignCenter' ? { ...d, shadows: undefined } : d)), b)['document.alignCenter']);
+  assert.deepEqual([b['board.forward'], b['board.duplicate']], [['Ctrl+]'], ['Ctrl+J']]); // same chords, scopes that never overlap
+});
+
+test('Ctrl+N opens New draft everywhere and collides with nothing (N alone stays the plan and flowchart key)', () => {
+  const b = effective(DEFS);
+  assert.deepEqual(b['app.newDraft'], ['Ctrl+N']);
+  assert.equal(DEFS.find((d) => d.id === 'app.newDraft').scope, 'global');
+  assert.equal(collisions(DEFS, b)['app.newDraft'], undefined);
+  assert.deepEqual(DEFS.filter((d) => b[d.id].includes('Ctrl+N')).map((d) => d.id), ['app.newDraft']);
 });

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { NodeSelection, TextSelection } from '@tiptap/pm/state';
 import {
-  BetweenHorizontalEnd, BetweenVerticalEnd, Bold, BookPlus, ClipboardPaste, ClipboardType, Copy, ExternalLink, Grid2x2X, Italic, Link, Link2Off,
+  BetweenHorizontalEnd, BetweenVerticalEnd, Bold, BookPlus, Captions, ClipboardPaste, ClipboardType, Copy, ExternalLink, Grid2x2X, Italic, Link, Link2Off,
   Plus, RemoveFormatting, Scissors, Strikethrough, Table, TableColumnsSplit, TableRowsSplit, TextSelect, Underline,
 } from 'lucide-react';
 import {
@@ -15,6 +15,7 @@ import { getState, useEditor } from '../store.js';
 import { BLOCK_SECTIONS } from '../tool-rank.mjs';
 import { entryKey, listTools, toolContext } from '../tools.js';
 import { PointerMenu } from './board/BoardMenu.jsx';
+import { documentTools, editAltText, insertTable } from '../../document/tools.js';
 import { textTools, useBox } from './Toolbar.jsx';
 
 /** A right-click outside the selection moves it to the pointer first, as in a word processor: a block preview (canvas, plan
@@ -80,7 +81,8 @@ export function DraftMenu() {
     };
   }, []);
   if (!menu || !ed) return null;
-  const T = textTools(ed);
+  const isDocument = getState().draft?.format === 'document';
+  const T = isDocument ? documentTools(ed) : textTools(ed); // the open format's own commands (docs/plans/document.md Risks)
   const c = toolContext(null);
   const act = (name) => () => window.api.editMenu.act(name);
   // A right-click on a misspelling selects it (Chromium), so a suggestion replaces the selection, keeping its marks. Chromium's
@@ -138,6 +140,7 @@ export function DraftMenu() {
   } else if (selected) {
     body = (
       <>
+        {T.picture?.alt != null && <>{item('Alt text...', <Captions />, '', editAltText)}<DropdownMenuSeparator /></>}
         {item('Cut', <Scissors />, 'Ctrl+X', act('cut'), canCut)}
         {item('Copy', <Copy />, 'Ctrl+C', act('copy'), canCopy)}
         {paste}
@@ -158,16 +161,29 @@ export function DraftMenu() {
         <DropdownMenuSeparator />
         <DropdownMenuSub>
           <DropdownMenuSubTrigger><Plus />Insert</DropdownMenuSubTrigger>
-          <DropdownMenuSubContent className="min-w-48">
-            {!link && tool('link', 'Link...', <Link />)}
-            {tool('canvas', 'Canvas')}
-            {tool('flowchart', 'Flowchart')}
-            {tool('planChart', 'Plan chart')}
-            {tool('image', 'Images or videos')}
-            {tool('table', 'Table')}
-            {box && tool('box', 'Titled box')}
-            {tool('rule', 'Horizontal rule')}
-          </DropdownMenuSubContent>
+          {isDocument ? (
+            // A Document's Insert tab (docs/plans/document.md editorAndUi); its table is a 3 x 3 Table Grid.
+            <DropdownMenuSubContent className="min-w-48">
+              {tool('pageBreak', 'Page break')}
+              {item('Table', <Table />, '', () => insertTable(3, 3))}
+              {tool('image', 'Pictures')}
+              {!link && tool('link', 'Link...', <Link />)}
+              {tool('canvas', 'Smart canvas')}
+              {tool('flowchart', 'Flowchart')}
+              {tool('planChart', 'Plan chart')}
+            </DropdownMenuSubContent>
+          ) : (
+            <DropdownMenuSubContent className="min-w-48">
+              {!link && tool('link', 'Link...', <Link />)}
+              {tool('canvas', 'Canvas')}
+              {tool('flowchart', 'Flowchart')}
+              {tool('planChart', 'Plan chart')}
+              {tool('image', 'Images or videos')}
+              {tool('table', 'Table')}
+              {box && tool('box', 'Titled box')}
+              {tool('rule', 'Horizontal rule')}
+            </DropdownMenuSubContent>
+          )}
         </DropdownMenuSub>
         {table}
         <DropdownMenuSeparator />

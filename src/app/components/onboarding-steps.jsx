@@ -11,7 +11,7 @@ import { useStore } from '../store.js';
 // The first-run tour's steps (Onboarding.jsx runs them). Each step: `title`; `body`, a component returning one <p> (the card
 // lays the body out as a grid), so the shortcuts in it follow a rebind (keyLabel / withKey read at render); `target`, a CSS
 // selector of the element the ring marks (null: none); `view`, the page "Show me" opens (views.js showPage); `Actions`, a
-// component ({ next }) for the footer's left side.
+// component ({ next }) for the footer's left side; `island`, the Document island's tab that holds the target (Ribbon.jsx).
 
 const Note = ({ children }) => <span className="text-xs text-muted-foreground">{children}</span>;
 
@@ -45,7 +45,7 @@ export const STEPS = [
   {
     id: 'welcome',
     title: 'Welcome to EasyWriter',
-    body: () => <p>Write your drafts here and keep them in projects. This tour shows where things are, and its card stays open while you try them.</p>,
+    body: () => <p>Write your drafts here and keep them in projects. {withKey('New draft', 'app.newDraft')} in the sidebar starts a draft. This tour shows where things are, and its card stays open while you try them.</p>,
     target: null, view: null, Actions: null,
   },
   {
@@ -58,13 +58,13 @@ export const STEPS = [
     id: 'canvas',
     title: 'Smart canvas',
     body: () => <p>{withKey('Insert canvas', 'insert.canvas')} adds a smart canvas, a drawing area that goes into the draft as one picture. It opens for editing at once and Done closes it. Double-click it later to edit it again.</p>,
-    target: toolbar('Insert canvas'), view: 'editor', Actions: null,
+    target: toolbar('Insert canvas'), view: 'editor', Actions: null, island: 'insert',
   },
   {
     id: 'flowchart',
     title: 'Flowcharts',
     body: () => <p>{withKey('Insert flowchart', 'insert.flowchart')} adds a new flowchart or one from your library. A synced flowchart matches the library, so an edit to it shows everywhere it is placed. To keep one as it is, select it and click Unlink on its bar. The Flowcharts tab in the sidebar holds the library.</p>,
-    target: toolbar('Insert flowchart'), view: 'editor', Actions: null,
+    target: toolbar('Insert flowchart'), view: 'editor', Actions: null, island: 'insert',
   },
   {
     id: 'prefabs',
@@ -94,7 +94,7 @@ export const STEPS = [
     id: 'dictation',
     title: 'Dictation',
     body: () => <p>Once dictation is installed, the mic button at the bottom right opens its pane. Hold its Hold to dictate button and speak, or hold <Kbd>{keyLabel('app.dictate')}</Kbd> anywhere. The words appear in the pane, where you can copy them. Dictation runs Whisper on this computer after a one-time download, so no audio leaves it.</p>,
-    target: '[data-dictation-button]', view: null, Actions: DictationActions,
+    target: '[data-right-island] [data-dictation-button]', view: null, Actions: DictationActions, // the bottom right one, not a Document island's
   },
   {
     id: 'assistant',

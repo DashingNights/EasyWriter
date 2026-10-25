@@ -14,7 +14,7 @@ const tools = () => registry ?? fail('failed', 'The tool registry is not loaded'
 
 const brief = (t, c) => ({
   id: t.id, label: t.label, group: t.group, shortcut: (registry?.shortcut?.(t) ?? t.shortcut) || null, hasOptions: !!t.options, active: !!t.active?.(c),
-  risk: t.risk ?? 'write', headless: t.headless ?? true, ...(t.command && { command: t.command }),
+  risk: t.risk ?? 'write', headless: t.headless ?? true, ...(t.command && { command: t.command }), ...(t.via && { via: t.via }),
 });
 
 export const defs = [
@@ -52,13 +52,13 @@ export const defs = [
         fail('precondition_failed', failed.map((f) => f.message).join('; ') || message,
           { failed: failed.length ? failed : [{ gate: null, message, fix: 'tool.list lists the tools that apply now' }] });
       }
-      if (!entry.run && !entry.command) fail('refused', `${entry.label} only has options: use doc.format or doc.command`, { code: 'options_only' });
+      if (!entry.run && !entry.command) fail('refused', `${entry.label} only has options: use ${entry.via ?? 'doc.format or doc.command'}`, { code: 'options_only' });
       if (ctx.source.startsWith('agent:') && entry.headless === false) fail('denied', `${entry.label} needs the user at the window`, { reason: 'headless' });
       const risk = entry.risk ?? 'write';
       const rule = ctx.policy[risk];
       if (rule === 'deny') fail('denied', `${entry.label} is not allowed for ${ctx.source}`, { reason: 'policy' });
       if (rule === 'ask' && !(await ctx.ask(`run the tool "${entry.label}"`, '', { risk }))) fail('denied', 'The user denied the request', { reason: 'user' });
-      // ponytail: a command entry runs its command's `run` here (New draft); a builder command would need the executor's dispatch.
+      // ponytail: a command entry runs its command's `run` here (New document, New forum post); a builder command would need the executor's dispatch.
       if (entry.command) return r.command(entry.command).run(ctx, entry.args?.(c) ?? {});
       await entry.run(c);
       return { id: entry.id, ...(entry.toggle && { active: !!entry.active(r.context(ctx.board)) }) };

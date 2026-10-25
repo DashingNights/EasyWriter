@@ -2,17 +2,21 @@
 // call through the actions namespace, never a bare imported binding: this module can be evaluated inside the
 // app/actions.js cycle, before forum/actions.js has run. The same goes for the app/* imports below: read only at render or call.
 import { useState } from 'react';
-import { CircleCheck, ExternalLink, Link2, MessagesSquare, Send, Undo2 } from 'lucide-react';
+import { CircleCheck, ExternalLink, Link2, MessageSquareText, MessagesSquare, Send, Undo2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { DropdownMenuItem, DropdownMenuSeparator } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { openDraft, openSettings, threadLabel } from '../../app/actions.js';
 import { FormDialog } from '../../app/components/FormDialog.jsx';
 import { IconButton, Tip } from '../../app/components/Tip.jsx';
+import { PALETTE } from '../../app/commands/palette.mjs';
+import { can } from '../../app/gates.mjs';
 import { getState, useStore } from '../../app/store.js';
 import { isProject } from '../../thread-url.mjs';
 import * as actions from './actions.js';
+import { FORMAT_POST } from './commands.mjs';
 import { enabled } from '../index.mjs';
 import { forumOrigin, hasForum } from './topic.mjs';
 
@@ -46,7 +50,9 @@ function ProjectRowActions({ t }) {
   );
 }
 
-const DraftRowBadge = ({ d }) => d.pushedAt && <Tip title="Pushed to the forum"><CircleCheck className="size-3.5 shrink-0 text-success" aria-label="Pushed" /></Tip>;
+// Forum services follow the draft's format (gate format.post): a document's row has no push badge or push actions.
+const DraftRowBadge = ({ d }) => d.pushedAt && can('format.post', d)
+  && <Tip title="Pushed to the forum"><CircleCheck className="size-3.5 shrink-0 text-success" aria-label="Pushed" /></Tip>;
 
 /** Push to forum for draft `id`: the open one at once, another once it is open (push fills the reply box with the open draft). */
 async function pushDraft(id) {
@@ -54,14 +60,32 @@ async function pushDraft(id) {
   if (getState().draft?.id === id) actions.push();
 }
 
-/** A draft row's hover actions: Unpush once pushed, else Push to forum while its project links a forum thread. With the forum
- * off they show on the open forum draft's row only (integrations/ui.js Slot) and first ask to turn it back on (actions.wake). */
+/** A draft's forum action → {label, Icon, risk, run}, or null: Unpush once pushed, else Push to forum while its project links a
+ * forum thread. With the forum off, the slots show it on the open forum draft only (integrations/ui.js Slot), and `run` first
+ * asks to turn the forum back on (actions.wake). */
+function pushAction(d) {
+  if (!can('format.post', d)) return null;
+  if (d.pushedAt) return { label: 'Unpush', Icon: Undo2, risk: 'destructive', run: async () => (await actions.wake('Unpushing')) && actions.unpushDraft(d) };
+  if (!actions.projectTopic(d.threadUrl)) return null;
+  return { label: 'Push to forum', Icon: Send, risk: 'approval', run: async () => (await actions.wake('Pushing')) && pushDraft(d.id) };
+}
+
+/** A draft row's hover action (pushAction). */
 function DraftRowActions({ d }) {
-  if (d.pushedAt) {
-    return <IconButton label="Unpush" data-agent-risk="destructive" onClick={async () => (await actions.wake('Unpushing')) && actions.unpushDraft(d)}><Undo2 /></IconButton>;
-  }
-  return actions.projectTopic(d.threadUrl)
-    && <IconButton label="Push to forum" data-agent-risk="approval" onClick={async () => (await actions.wake('Pushing')) && pushDraft(d.id)}><Send /></IconButton>;
+  const a = pushAction(d);
+  return a && <IconButton label={a.label} data-agent-risk={a.risk} onClick={a.run}><a.Icon /></IconButton>;
+}
+
+/** The same action in the sidebar's right-click menu of a draft (docs/plans/sidebar-menu.md decision 4): `pick` runs it once
+ * the menu has closed. */
+function DraftMenuItems({ d, pick }) {
+  const a = pushAction(d);
+  return a && (
+    <>
+      <DropdownMenuSeparator />
+      <DropdownMenuItem data-agent-risk={a.risk} onSelect={() => pick(a.run)}><a.Icon />{a.label}</DropdownMenuItem>
+    </>
+  );
 }
 
 /** New project (actions.newProject): a name, a forum thread (optional), or both → {name, thread}. */
@@ -152,6 +176,7 @@ export default {
   ProjectRowActions,
   DraftRowBadge,
   DraftRowActions,
+  DraftMenuItems,
   TourProjects,
   FORMS: { forumNewProject: ForumNewProjectDialog, projectThread: ProjectThreadDialog, chooseThread: ChooseThreadDialog },
   // tools.js: the integration.forum gate hides them while the forum is off. Push runs push() itself (push.prepare's gates): through
@@ -159,12 +184,14 @@ export default {
   // forum is off, on a forum draft only (gate wake.forum, untagged): it asks to turn the forum back on first (plan step 9).
   TOOLS: [
     { id: 'push', label: 'Push to forum', group: 'App', icon: <Send />, risk: 'approval', run: () => actions.push(),
-      needs: ['integration.forum', 'app.forum', 'doc.open', 'draft.hasThread', 'draft.unpushed'],
+      needs: ['integration.forum', 'app.forum', 'doc.open', FORMAT_POST, 'draft.hasThread', 'draft.unpushed'],
       keywords: ['push', 'post', 'publish', 'send', 'forum', 'reply', 'upload', 'submit', 'share'] },
     { id: 'push-wake', label: 'Push to forum', group: 'App', icon: <Send />, risk: 'approval',
       run: async () => (await actions.wake('Pushing')) && actions.push(),
-      needs: ['doc.open', 'wake.forum', 'draft.unpushed'], also: () => !enabled(getState().settings, 'forum'),
+      needs: ['doc.open', FORMAT_POST, 'wake.forum', 'draft.unpushed'], also: () => !enabled(getState().settings, 'forum'),
       keywords: ['push', 'post', 'publish', 'send', 'forum', 'reply', 'upload', 'submit', 'share'] },
+    { id: 'new-forum-post', label: 'New forum post', group: 'App', icon: <MessageSquareText />, command: PALETTE.newDraft,
+      args: () => ({ format: 'forum-post' }), needs: ['integration.forum'], keywords: ['new forum post', 'new post', 'forum', 'reply', 'new reply'] },
     { id: 'forum-settings', label: 'Forum settings', group: 'App', icon: <MessagesSquare />, needs: ['integration.forum'], headless: false,
       run: () => openSettings('forum'), keywords: ['forum', 'forum site', 'forum address'] },
   ],

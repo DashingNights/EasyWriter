@@ -6,6 +6,7 @@ import { toMermaid } from '../../flow/mermaid.mjs';
 import { flowPreset } from '../../flow/shapes.mjs';
 import { statusOf } from '../../plan/plan-model.mjs';
 import { planSource } from '../../plan-chart.js';
+import { formatOf } from '../../formats.mjs';
 import { situationNotes } from '../../integrations/index.mjs';
 import { activeBoard } from '../../whiteboard.js';
 import { selection } from '../commands.js';
@@ -85,7 +86,7 @@ export function captureSelection() {
   return s.text.trim() ? textAttachment(s) : null;
 }
 
-/** The situation note (context.mjs situationNote) for a message with `parts`: the page, the open draft, its thread, what is
+/** The situation note (context.mjs situationNote) for a message with `parts`: the page, the open draft (and its format), its thread, what is
  * selected (and whether it is attached; board items the message attaches count as selected), the canvas being edited, the drafts of the thread (else all drafts) and the playbooks
  * for the message (playbooks.mjs pickPlaybooks; `viewKey`: the turn's tool-set key, tool-sets.mjs viewOf). */
 export function situation(parts = [], viewKey = '') {
@@ -116,7 +117,7 @@ export function situation(parts = [], viewKey = '') {
     page: view.type,
     plan: view.type === 'plan' ? planSource.context(view.planId)?.plan.title ?? '' : '',
     flow: view.type === 'flows' && view.flowId ? getFlow(view.flowId)?.title ?? '' : '',
-    draft: draft && { title: draft.title, tag: draft.id ? tag(draft.id) : '' },
+    draft: draft && { title: draft.title, tag: draft.id ? tag(draft.id) : '', format: formatOf(draft, settings)?.label ?? '' },
     thread: draft?.threadUrl ? (settings.threads ?? []).find((t) => t.url === draft.threadUrl)?.title || draft.threadUrl : '',
     selection: sel && {
       label: sel.label,

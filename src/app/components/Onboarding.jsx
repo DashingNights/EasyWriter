@@ -3,6 +3,7 @@ import { cn } from 'cn';
 import { X } from 'lucide-react';
 import { TITLEBAR } from '@/components/ui/bounds';
 import { Button } from '@/components/ui/button';
+import { showIslandTab } from '../../document/Ribbon.jsx';
 import { saveSettings } from '../actions.js';
 import { getState, setState, useStore, WORKER } from '../store.js';
 import { useViewportBox } from '../viewport.js';
@@ -57,7 +58,7 @@ function place(el, r, card) {
   const across = dir === 'right' || dir === 'left';
   const x = { right: side ? side.right + 8 : r.right + PAD + GAP, left: r.left - PAD - GAP - w }[dir] ?? cx - w / 2;
   const left = clamp(x, side ? EDGE : main.left + STRIP, innerWidth - w - EDGE);
-  const bar = document.querySelector('[data-agent-area="toolbar"]')?.getBoundingClientRect();
+  const bar = document.querySelector('[data-agent-area="toolbar"]:not([data-ribbon])')?.getBoundingClientRect(); // the bottom island, never a Document's tools island
   const floor = bar?.width && left < bar.right && left + w > bar.left ? bar.top - GAP : main.bottom - EDGE;
   const top = clamp(across ? cy - h / 2 : dir === 'above' ? r.top - PAD - GAP - h : r.bottom + PAD + GAP, TITLEBAR + EDGE, floor - h);
   // The arrow at the target's centre along that edge; none where that is past the card's rounded corners (a clamped card).
@@ -105,6 +106,7 @@ export function Onboarding() {
   useEffect(() => {
     if (fresh && !WORKER) startTour();
   }, [fresh]);
+  useEffect(() => { if (step?.island) showIslandTab(step.island); }, [step]); // a Document's Insert tab holds the Insert buttons
   if (!tour || smoke || !box) return null;
   const i = tour.step;
   const { title, body: Body, view, Actions } = step;

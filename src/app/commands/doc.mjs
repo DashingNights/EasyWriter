@@ -1,6 +1,7 @@
 import { BOARD_TYPES, find, nodeAt, outline, pathOfPos, posOfPath } from '../../doc-path.mjs';
 import { FONT_SIZES, FONTS, HIGHLIGHTS, presetChain, TEXT_COLORS } from '../../format.mjs';
-import { formatOf } from '../../formats.mjs';
+import { resolveColor } from '../../office.mjs';
+import { can } from '../gates.mjs';
 import { keyLabel } from '../keybinds.js';
 import { blockKind } from '../tool-rank.mjs';
 import { define, fail } from './define.mjs';
@@ -80,17 +81,80 @@ const orNull = (s) => ({ anyOf: [s, { type: 'null' }] });
 // deleteTable, focus … are not among them (deleting a block is doc.delete, which asks).
 const TABLE_COMMANDS = ['addRowBefore', 'addRowAfter', 'addColumnBefore', 'addColumnAfter', 'deleteRow', 'deleteColumn'];
 const SELECT_COMMANDS = ['setTextSelection', 'setNodeSelection'];
+// The forum post's value-list marks (format.mjs).
+const FORUM_MARK_COMMANDS = ['FontSize', 'TextColor', 'Highlight', 'FontFamily'].flatMap((m) => [`set${m}`, `unset${m}`]);
 const COMMANDS = [
-  ...Object.values(MARKS).flatMap((m) => [`toggle${m}`, `set${m}`, `unset${m}`]), 'setLink', 'unsetLink',
-  ...['FontSize', 'TextColor', 'Highlight', 'FontFamily'].flatMap((m) => [`set${m}`, `unset${m}`]),
+  ...Object.values(MARKS).flatMap((m) => [`toggle${m}`, `set${m}`, `unset${m}`]), 'setLink', 'unsetLink', ...FORUM_MARK_COMMANDS,
   'setTextAlign', 'setParagraph', 'setHeading', 'toggleBulletList', 'toggleOrderedList', 'toggleBlockquote', 'toggleCodeBlock',
   'setHorizontalRule', 'insertTable', ...TABLE_COMMANDS, 'insertBox', 'unsetAllMarks', 'clearNodes', ...SELECT_COMMANDS,
 ];
+// Each format's allow list (docs/plans/document.md agentsAndTools): the forum post and the core page take COMMANDS; a Document
+// drops FORUM_COMMANDS, which act on the forum post's own marks and nodes (gate format.post), and adds DOCUMENT_COMMANDS, its
+// paragraph commands (document/schema.js; gate format.document elsewhere).
+const FORUM_COMMANDS = [...FORUM_MARK_COMMANDS, 'toggleCode', 'setCode', 'unsetCode', 'insertBox', 'toggleBlockquote', 'toggleCodeBlock',
+  'setHorizontalRule'];
+// The Document's table commands need the caret in a table; setCellSelection (Merge cells' range) takes cell positions.
+const DOC_TABLE_COMMANDS = ['mergeCells', 'splitCell', 'toggleHeaderRow', 'setCellAttribute'];
+const DOCUMENT_COMMANDS = ['setStyle', 'increaseIndent', 'decreaseIndent', 'applyList', 'clearParagraph', 'setPageBreak', 'setAltText',
+  'setCellSelection', ...DOC_TABLE_COMMANDS];
+// setCellAttribute's names and values: cell shading '#RRGGBB' and vertical alignment, each null for none.
+const CELL_ATTRS = { shading: (v) => v === null || (typeof v === 'string' && /^#[0-9A-F]{6}$/.test(v)), vAlign: (v) => [null, 'top', 'center', 'bottom'].includes(v) };
+const ALL_COMMANDS = [...COMMANDS, ...DOCUMENT_COMMANDS];
+const OTHER_COMMANDS = [...COMMANDS.filter((n) => !FORUM_COMMANDS.includes(n)), ...DOCUMENT_COMMANDS];
+const commandsOf = (draft) => (can('format.post', draft) ? COMMANDS : OTHER_COMMANDS);
+// doc.format: the marks and the preset only a forum post has.
+const FORUM_MARKS = ['fontSize', 'textColor', 'highlight', 'fontFamily', 'code'];
 
 /** A link target as the Link dialog keeps it: without a scheme, https:// is added. */
 const href = (v) => (/^[a-z][a-z0-9+.-]*:/i.test(v) ? v : `https://${v}`);
 
 const cannot = (what) => fail('refused', `${what} does not apply here`, { code: 'cannot_apply' });
+
+/** doc.format run (a Document's run properties, office.mjs RUN_ARGS) onto `chain`'s range, as the ribbon sets them. */
+function runChain(chain, run, theme) {
+  const text = {};
+  if ('font' in run) text.font = run.font;
+  if ('sizePt' in run) text.size = Math.round(run.sizePt * 2) / 2;
+  if ('highlight' in run) text.highlight = run.highlight;
+  if ('color' in run) {
+    const c = run.color;
+    const link = c && typeof c === 'object' ? { slot: c.theme, lum: c.lum ?? 0 } : null;
+    Object.assign(text, { color: link ? resolveColor(theme, link) : c?.toUpperCase() ?? null, themeColor: link });
+  }
+  if (Object.keys(text).length) chain.setMark('textStyle', text).removeEmptyTextStyle();
+  if (run.underline === 'none') chain.unsetUnderline();
+  else if (run.underline) chain.setMark('underline', { val: run.underline });
+}
+
+/** doc.format paragraph (office.mjs PARA_ARGS) onto the block at `pos` of `doc`, through the Document's paragraph commands. */
+function paragraphChain(chain, p, doc, pos) {
+  if (p.style) {
+    const list = doc.attrs.styles?.list ?? {};
+    if (p.style !== 'Normal' && list[p.style]?.type !== 'paragraph') {
+      fail('not_found', `The document has no paragraph style ${p.style}`, { hint: `Its styles: ${Object.keys(list).filter((k) => list[k].type === 'paragraph').join(', ')}` });
+    }
+    chain.setStyle(p.style);
+  }
+  const spacing = {};
+  if ('spaceBeforePt' in p) spacing.before = p.spaceBeforePt;
+  if ('spaceAfterPt' in p) spacing.after = p.spaceAfterPt;
+  const l = p.lineSpacing;
+  if (l) spacing.line = l.multiple != null ? { rule: 'auto', value: l.multiple } : l.exactPt != null ? { rule: 'exact', value: l.exactPt } : { rule: 'atLeast', value: l.atLeastPt };
+  if (Object.keys(spacing).length) chain.setSpacing(spacing);
+  const i = p.indent;
+  if (i) chain.setIndent({ ...('leftPt' in i && { left: i.leftPt }), ...('rightPt' in i && { right: i.rightPt }), ...('firstLinePt' in i && { firstLine: i.firstLinePt }) });
+  if (p.list) {
+    // Bullets or a number list (the list above when it is the same kind, as the ribbon's), then the level; kind null leaves the list.
+    const { kind, level = 0 } = p.list;
+    chain.command(({ tr, commands }) => {
+      const n = tr.doc.nodeAt(pos).attrs.numbering;
+      if (!kind) return !!tr.setNodeAttribute(pos, 'numbering', null);
+      const now = n && tr.doc.attrs.numbering?.nums[n.numId]?.abstract;
+      if (!n || (kind === 'bullet') !== (now === 'bullet')) commands.applyList(kind === 'bullet' ? 'bullet' : 'decimal');
+      return !!tr.setNodeAttribute(pos, 'numbering', { ...tr.doc.nodeAt(pos).attrs.numbering, ilvl: level });
+    });
+  }
+}
 
 export const defs = [
   define({
@@ -318,9 +382,15 @@ export const defs = [
     risk: 'write',
     undo: 'doc',
     needs: ['doc.open'],
+    // Forum marks and presets on another format, a Document's run and paragraph on a forum post: refused before any ask
+    // (commands.js failedGates), like doc.command's check.
+    check: (a, draft) => [
+      ...((a.presetId || FORUM_MARKS.some((k) => Object.hasOwn(a.marks ?? {}, k))) && !can('format.post', draft) ? ['format.post'] : []),
+      ...((a.run || a.paragraph) && !can('format.document', draft) ? ['format.document'] : []),
+    ],
     args: {
       type: 'object', required: ['path'], additionalProperties: false,
-      anyOf: [{ required: ['marks'] }, { required: ['block'] }, { required: ['presetId'] }],
+      anyOf: [{ required: ['marks'] }, { required: ['block'] }, { required: ['presetId'] }, { required: ['run'] }, { required: ['paragraph'] }],
       properties: {
         path: ref('PATH', 'The block path from doc_get outline'),
         // block-local text offsets, as doc.find returns (default: the whole block)
@@ -343,6 +413,8 @@ export const defs = [
           properties: { type: { enum: ['paragraph', 'heading'] }, level: { type: 'integer', minimum: 1, maximum: 6 }, align: { enum: ['left', 'center', 'right', 'justify'] } },
         },
         presetId: { type: 'string', minLength: 1, maxLength: 64, description: 'A font preset id' },
+        run: ref('RUN', 'Documents only'),
+        paragraph: ref('PARA', 'Documents only'),
         draftId: DRAFT_ID,
       },
     },
@@ -351,6 +423,10 @@ export const defs = [
       { args: { path: [2], from: 0, to: 5, marks: { bold: true } } },
       { args: { path: [0], block: { type: 'heading', level: 2, align: 'center' } } },
       { args: { path: [3], presetId: 'p1' } },
+      { args: { path: [2], run: { sizePt: 14, color: '#C00000' }, paragraph: { lineSpacing: { multiple: 1.5 } } } },
+      { args: { path: [0], paragraph: { style: 'Title' } } },
+      { args: { path: [4], from: 0, to: 6, run: { color: { theme: 'accent1', lum: -0.25 }, highlight: 'yellow', underline: 'double' } } },
+      { args: { path: [5], paragraph: { list: { kind: 'number', level: 1 }, indent: { leftPt: 36, firstLinePt: -18 } } } },
     ],
     plan: (ctx, a) => {
       const ed = ctx.editor;
@@ -377,6 +453,8 @@ export const defs = [
         else if (k === 'link') (v ? chain.setLink({ href: href(v) }) : chain.unsetLink());
         else chain[`set${k[0].toUpperCase()}${k.slice(1)}`](v); // setFontSize / setTextColor / setHighlight / setFontFamily (null: unset)
       }
+      if (a.run) runChain(chain, a.run, state.doc.attrs.theme);
+      if (a.paragraph) paragraphChain(chain, a.paragraph, state.doc, pos);
       if (a.block?.type === 'paragraph') chain.setParagraph();
       if (a.block?.type === 'heading') chain.setHeading({ level: a.block.level });
       if (a.block?.align) chain.setTextAlign(a.block.align);
@@ -392,22 +470,26 @@ export const defs = [
     group: 'doc',
     risk: 'write',
     undo: 'doc',
-    needs: ['doc.open', { gate: 'doc.inTable', if: (a) => TABLE_COMMANDS.includes(a.name) }],
+    needs: ['doc.open', { gate: 'doc.inTable', if: (a) => TABLE_COMMANDS.includes(a.name) || DOC_TABLE_COMMANDS.includes(a.name) }],
     // A check, not a need: capabilities() drops a need's `if`, which would hide doc.command (docs/plans/integrations.md Titled
     // box). The executor runs it with the gates, before any ask.
-    check: (a, draft, settings) => (a.name === 'insertBox' && !formatOf(draft, settings)?.blocks.includes('box') ? ['format.box'] : []),
+    check: (a, draft) => (ALL_COMMANDS.includes(a.name) && !commandsOf(draft).includes(a.name) ? [DOCUMENT_COMMANDS.includes(a.name) ? 'format.document' : 'format.post']
+      : a.name === 'insertBox' && !can('format.box', draft) ? ['format.box'] : []),
     args: {
       type: 'object', required: ['name'], additionalProperties: false,
       properties: {
-        name: { type: 'string', minLength: 1, maxLength: 40, description: `One of: ${COMMANDS.join(', ')}` },
+        name: { type: 'string', minLength: 1, maxLength: 40, description: `One of: ${ALL_COMMANDS.join(', ')}. Forum posts only: ${FORUM_COMMANDS.join(', ')}. Documents only: ${DOCUMENT_COMMANDS.join(', ')}` },
         args: { type: 'array', maxItems: 4, default: [] },
         draftId: DRAFT_ID,
       },
     },
     result: { type: 'object', required: ['name'] },
-    examples: [{ args: { name: 'toggleBold' } }, { args: { name: 'setHeading', args: [{ level: 2 }] } }, { args: { name: 'insertTable', args: [{ rows: 3, cols: 3, withHeaderRow: true }] } }],
+    examples: [{ args: { name: 'toggleBold' } }, { args: { name: 'setHeading', args: [{ level: 2 }] } }, { args: { name: 'insertTable', args: [{ rows: 3, cols: 3, withHeaderRow: true }] } },
+      { args: { name: 'setStyle', args: ['Quote'] } }, { args: { name: 'increaseIndent' } }, { args: { name: 'applyList', args: ['lowerRoman'] } },
+      { args: { name: 'setPageBreak' } }, { args: { name: 'setCellSelection', args: [{ anchorCell: 5, headCell: 9 }] } }, { args: { name: 'mergeCells' } },
+      { args: { name: 'setCellAttribute', args: ['shading', '#E8E8E8'] } }, { args: { name: 'setAltText', args: ['A bar chart of sales'] } }],
     plan: (ctx, a) => {
-      if (!COMMANDS.includes(a.name)) {
+      if (!ALL_COMMANDS.includes(a.name)) {
         fail('denied', `${a.name} is not an allowed editor command`, {
           reason: 'policy', hint: 'doc.delete deletes blocks, doc.insert / doc.replace change content; app.capabilities lists the allowed names',
         });
@@ -420,6 +502,10 @@ export const defs = [
       }
       const t = a.name === 'insertTable' && a.args[0];
       if (t && (t.rows > 50 || t.cols > 20)) fail('invalid_args', 'A table has at most 50 rows and 20 columns', { path: '/args/0', message: 'is too large', expected: {} });
+      if (a.name === 'setCellAttribute' && !(Object.hasOwn(CELL_ATTRS, a.args[0]) && CELL_ATTRS[a.args[0]](a.args[1] ?? null))) {
+        fail('invalid_args', "setCellAttribute takes ['shading', '#RRGGBB' or null] or ['vAlign', 'top', 'center', 'bottom' or null]",
+          { path: '/args', message: 'is not a cell attribute and value', expected: {} });
+      }
       if (!ed.can()[a.name]?.(...a.args)) cannot(a.name);
       const tr = state.tr;
       const chain = ed.commandManager.createChain(tr);

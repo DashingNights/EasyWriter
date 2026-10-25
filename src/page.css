@@ -1,4 +1,5 @@
-/* Page preview: the core page typography (the forum's, SPEC §1 / §7) under .page .ProseMirror. Unlayered, so it wins over Tailwind's layers. */
+/* Page preview: the core page typography (the forum's, SPEC §1 / §7) under .page .ProseMirror, scoped to forum posts and the
+   core page by data-format. Unlayered, so it wins over Tailwind's layers. */
 :root {
   /* set from settings by applySettings() */
   --page-width: 1454px;
@@ -16,8 +17,10 @@
 }
 
 /* ---------- Page themes (SPEC §1) ---------- */
+/* The area around the page follows the page theme even while a Document makes data-theme light (applyPageTheme). */
+:root[data-canvas-theme="dark"] { --pg-bg: #21212a; }
+:root[data-canvas-theme="light"] { --pg-bg: #f2f2f5; }
 :root[data-theme="dark"] {
-  --pg-bg: #21212a;
   --post-bg: #303039;
   --text: #c5c6d0;
   --head: #ffffff;
@@ -32,7 +35,6 @@
   --c-hard: #ffffff;
 }
 :root[data-theme="light"] {
-  --pg-bg: #f2f2f5;
   --post-bg: #ffffff;
   --text: #333340;
   --head: #111111;
@@ -51,43 +53,46 @@
   box-sizing: content-box; /* content width = the format's width exactly (SPEC §7; formats.mjs pageOf) */
   width: var(--page-width);
   padding: var(--page-pad, 22px);
+}
+/* The forum's tokens. Each format scopes its own look by data-format (applyPage, assistant/sessions.js); :where keeps the
+   specificity of .page, so these rules win exactly as before. Find, selection, table resizing, media and the inactive
+   selection below stay on every .page. */
+.page:where([data-format="forum-post"], [data-format="page"]) {
   background: var(--post-bg);
   color: var(--text);
   border-radius: 6px;
   font-family: var(--base-font);
 }
 
-/* ---------- Page typography (the forum's, SPEC §1) ---------- */
-.page .ProseMirror {
+/* ---------- Page typography (the forum's, SPEC §1): forum posts and the core page only (SPEC §5 Formats) ---------- */
+.page .ProseMirror { outline: none; word-wrap: break-word; }
+.page:where([data-format="forum-post"], [data-format="page"]) .ProseMirror {
   font-size: 16px;
   line-height: 1.8;
   min-height: 60vh;
-  outline: none;
-  word-wrap: break-word;
 }
-.page .ProseMirror > :first-child { margin-top: 0; }
+.page:where([data-format="forum-post"], [data-format="page"]) .ProseMirror > :first-child { margin-top: 0; }
 /* Base size scales only paragraph text, like applyBaseStyles (not headings, code or sized runs); margins stay 16px-based. */
-.page .ProseMirror p { font-size: calc(1em * var(--base-scale)); margin: calc(1em / var(--base-scale)) 0; }
-.page .ProseMirror p code { font-size: calc(1em / var(--base-scale)); }
-.page .ProseMirror h1, .page .ProseMirror h2, .page .ProseMirror h3,
-.page .ProseMirror h4, .page .ProseMirror h5, .page .ProseMirror h6 { font-weight: bold; color: var(--head); margin: 14.5px 0; }
-.page .ProseMirror h1 { font-size: 3em; line-height: 1.1; margin: 0 0 14.5px; }
-.page .ProseMirror h2 { font-size: 2.2em; line-height: 1.1; }
-.page .ProseMirror h3 { font-size: 1.8em; line-height: 1.1; }
-.page .ProseMirror h4 { font-size: 1.5em; line-height: 1.8; }
-.page .ProseMirror h5 { font-size: 1.2em; line-height: 1.8; }
-.page .ProseMirror h6 { font-size: 1em; line-height: 1.8; }
-.page .ProseMirror a { color: var(--head); text-decoration: underline; }
-.page .ProseMirror blockquote {
+.page:where([data-format="forum-post"], [data-format="page"]) .ProseMirror p { font-size: calc(1em * var(--base-scale)); margin: calc(1em / var(--base-scale)) 0; }
+.page:where([data-format="forum-post"], [data-format="page"]) .ProseMirror p code { font-size: calc(1em / var(--base-scale)); }
+.page:where([data-format="forum-post"], [data-format="page"]) .ProseMirror :is(h1, h2, h3, h4, h5, h6) { font-weight: bold; color: var(--head); margin: 14.5px 0; }
+.page:where([data-format="forum-post"], [data-format="page"]) .ProseMirror h1 { font-size: 3em; line-height: 1.1; margin: 0 0 14.5px; }
+.page:where([data-format="forum-post"], [data-format="page"]) .ProseMirror h2 { font-size: 2.2em; line-height: 1.1; }
+.page:where([data-format="forum-post"], [data-format="page"]) .ProseMirror h3 { font-size: 1.8em; line-height: 1.1; }
+.page:where([data-format="forum-post"], [data-format="page"]) .ProseMirror h4 { font-size: 1.5em; line-height: 1.8; }
+.page:where([data-format="forum-post"], [data-format="page"]) .ProseMirror h5 { font-size: 1.2em; line-height: 1.8; }
+.page:where([data-format="forum-post"], [data-format="page"]) .ProseMirror h6 { font-size: 1em; line-height: 1.8; }
+.page:where([data-format="forum-post"], [data-format="page"]) .ProseMirror a { color: var(--head); text-decoration: underline; }
+.page:where([data-format="forum-post"], [data-format="page"]) .ProseMirror blockquote {
   margin: 1em 0;
   padding: 20px;
   background: var(--quote-bg);
   border-left: 3px solid var(--quote-border);
   color: var(--quote-text);
 }
-.page .ProseMirror blockquote > :first-child { margin-top: 0; }
-.page .ProseMirror blockquote > :last-child { margin-bottom: 0; }
-.page .ProseMirror pre {
+.page:where([data-format="forum-post"], [data-format="page"]) .ProseMirror blockquote > :first-child { margin-top: 0; }
+.page:where([data-format="forum-post"], [data-format="page"]) .ProseMirror blockquote > :last-child { margin-bottom: 0; }
+.page:where([data-format="forum-post"], [data-format="page"]) .ProseMirror pre {
   margin: 1em 0;
   padding: 18px;
   background: var(--quote-bg);
@@ -96,25 +101,26 @@
   font-size: .9em;
   white-space: pre-wrap;
 }
-.page .ProseMirror pre code { background: none; padding: 0; border-radius: 0; font-size: inherit; }
-.page .ProseMirror code {
+.page:where([data-format="forum-post"], [data-format="page"]) .ProseMirror pre code { background: none; padding: 0; border-radius: 0; font-size: inherit; }
+.page:where([data-format="forum-post"], [data-format="page"]) .ProseMirror code {
   background: var(--icode-bg);
   padding: 3px 8px;
   border-radius: 4px;
   font-family: ui-monospace, "Cascadia Code", monospace;
 }
-.page .ProseMirror hr { border: none; border-top: 1px solid var(--hr); margin: 1em 0; }
-.page .ProseMirror ul, .page .ProseMirror ol { margin: 1em 0 0; padding-left: 1.5em; }
-.page .ProseMirror li > p { margin: 0; }
-.page .ProseMirror table { border-collapse: collapse; width: 100%; margin: 1em 0; table-layout: fixed; }
-.page .ProseMirror th, .page .ProseMirror td {
+.page:where([data-format="forum-post"], [data-format="page"]) .ProseMirror hr { border: none; border-top: 1px solid var(--hr); margin: 1em 0; }
+.page:where([data-format="forum-post"], [data-format="page"]) .ProseMirror :is(ul, ol) { margin: 1em 0 0; padding-left: 1.5em; }
+.page:where([data-format="forum-post"], [data-format="page"]) .ProseMirror li > p { margin: 0; }
+.page .ProseMirror table { border-collapse: collapse; table-layout: fixed; }
+.page:where([data-format="forum-post"], [data-format="page"]) .ProseMirror table { width: 100%; margin: 1em 0; }
+.page .ProseMirror th, .page .ProseMirror td { position: relative; } /* the column resize handle */
+.page:where([data-format="forum-post"], [data-format="page"]) .ProseMirror :is(th, td) {
   border: 1px solid var(--table-border);
   padding: 11px;
   vertical-align: top;
-  position: relative;
 }
-.page .ProseMirror th { background: var(--th-bg); font-weight: 600; text-align: left; }
-.page .ProseMirror th > p, .page .ProseMirror td > p { margin: 0; }
+.page:where([data-format="forum-post"], [data-format="page"]) .ProseMirror th { background: var(--th-bg); font-weight: 600; text-align: left; }
+.page:where([data-format="forum-post"], [data-format="page"]) .ProseMirror :is(th, td) > p { margin: 0; }
 /* Column resizing (extensions.js Table): a table wider than the page scrolls, as on the forum */
 .page .ProseMirror .tableWrapper { overflow-x: auto; }
 .page .ProseMirror .column-resize-handle {
@@ -146,55 +152,55 @@
 .page .ProseMirror .inactive-sel { background: color-mix(in oklab, var(--ui-accent) 30%, transparent); }
 
 /* Box (titled panel) */
-.page .ProseMirror .ipsRichTextBox {
+.page:where([data-format="forum-post"], [data-format="page"]) .ProseMirror .ipsRichTextBox {
   margin: 1em 0;
   border: 1px solid var(--table-border);
   border-radius: 6px;
   overflow: hidden;
 }
-.page .ProseMirror .ipsRichTextBox__title {
+.page:where([data-format="forum-post"], [data-format="page"]) .ProseMirror .ipsRichTextBox__title {
   padding: 8px 16px;
   background: var(--th-bg);
   color: var(--head);
   font-weight: bold;
 }
-.page .ProseMirror .ipsRichTextBox__title p { margin: 0; }
-.page .ProseMirror i-richtext-box-content { display: block; padding: 0 16px; }
+.page:where([data-format="forum-post"], [data-format="page"]) .ProseMirror .ipsRichTextBox__title p { margin: 0; }
+.page:where([data-format="forum-post"], [data-format="page"]) .ProseMirror i-richtext-box-content { display: block; padding: 0 16px; }
 
 /* Font size marks */
-.page [data-ips-font-size="80"] { font-size: 80%; }
-.page [data-ips-font-size="90"] { font-size: 90%; }
-.page [data-ips-font-size="100"] { font-size: 100%; }
-.page [data-ips-font-size="125"] { font-size: 125%; }
-.page [data-ips-font-size="150"] { font-size: 150%; }
-.page [data-ips-font-size="175"] { font-size: 175%; }
-.page [data-ips-font-size="200"] { font-size: 200%; }
-.page .ProseMirror p [data-ips-font-size="80"] { font-size: calc(80% / var(--base-scale)); }
-.page .ProseMirror p [data-ips-font-size="90"] { font-size: calc(90% / var(--base-scale)); }
-.page .ProseMirror p [data-ips-font-size="100"] { font-size: calc(100% / var(--base-scale)); }
-.page .ProseMirror p [data-ips-font-size="125"] { font-size: calc(125% / var(--base-scale)); }
-.page .ProseMirror p [data-ips-font-size="150"] { font-size: calc(150% / var(--base-scale)); }
-.page .ProseMirror p [data-ips-font-size="175"] { font-size: calc(175% / var(--base-scale)); }
-.page .ProseMirror p [data-ips-font-size="200"] { font-size: calc(200% / var(--base-scale)); }
+.page:where([data-format="forum-post"], [data-format="page"]) [data-ips-font-size="80"] { font-size: 80%; }
+.page:where([data-format="forum-post"], [data-format="page"]) [data-ips-font-size="90"] { font-size: 90%; }
+.page:where([data-format="forum-post"], [data-format="page"]) [data-ips-font-size="100"] { font-size: 100%; }
+.page:where([data-format="forum-post"], [data-format="page"]) [data-ips-font-size="125"] { font-size: 125%; }
+.page:where([data-format="forum-post"], [data-format="page"]) [data-ips-font-size="150"] { font-size: 150%; }
+.page:where([data-format="forum-post"], [data-format="page"]) [data-ips-font-size="175"] { font-size: 175%; }
+.page:where([data-format="forum-post"], [data-format="page"]) [data-ips-font-size="200"] { font-size: 200%; }
+.page:where([data-format="forum-post"], [data-format="page"]) .ProseMirror p [data-ips-font-size="80"] { font-size: calc(80% / var(--base-scale)); }
+.page:where([data-format="forum-post"], [data-format="page"]) .ProseMirror p [data-ips-font-size="90"] { font-size: calc(90% / var(--base-scale)); }
+.page:where([data-format="forum-post"], [data-format="page"]) .ProseMirror p [data-ips-font-size="100"] { font-size: calc(100% / var(--base-scale)); }
+.page:where([data-format="forum-post"], [data-format="page"]) .ProseMirror p [data-ips-font-size="125"] { font-size: calc(125% / var(--base-scale)); }
+.page:where([data-format="forum-post"], [data-format="page"]) .ProseMirror p [data-ips-font-size="150"] { font-size: calc(150% / var(--base-scale)); }
+.page:where([data-format="forum-post"], [data-format="page"]) .ProseMirror p [data-ips-font-size="175"] { font-size: calc(175% / var(--base-scale)); }
+.page:where([data-format="forum-post"], [data-format="page"]) .ProseMirror p [data-ips-font-size="200"] { font-size: calc(200% / var(--base-scale)); }
 
 /* Text colour marks */
-.page [data-i-color="root"] { color: inherit; }
-.page [data-i-color="soft"] { color: var(--c-soft); }
-.page [data-i-color="hard"] { color: var(--c-hard); }
-.page [data-i-color="red"] { color: #e05252; }
-.page [data-i-color="orange"] { color: #e09952; }
-.page [data-i-color="yellow"] { color: #e0c952; }
-.page [data-i-color="green"] { color: #62d926; }
-.page [data-i-color="blue"] { color: #3d99f5; }
-.page [data-i-color="indigo"] { color: #9c6ef7; }
-.page [data-i-color="violet"] { color: #e052e0; }
+.page:where([data-format="forum-post"], [data-format="page"]) [data-i-color="root"] { color: inherit; }
+.page:where([data-format="forum-post"], [data-format="page"]) [data-i-color="soft"] { color: var(--c-soft); }
+.page:where([data-format="forum-post"], [data-format="page"]) [data-i-color="hard"] { color: var(--c-hard); }
+.page:where([data-format="forum-post"], [data-format="page"]) [data-i-color="red"] { color: #e05252; }
+.page:where([data-format="forum-post"], [data-format="page"]) [data-i-color="orange"] { color: #e09952; }
+.page:where([data-format="forum-post"], [data-format="page"]) [data-i-color="yellow"] { color: #e0c952; }
+.page:where([data-format="forum-post"], [data-format="page"]) [data-i-color="green"] { color: #62d926; }
+.page:where([data-format="forum-post"], [data-format="page"]) [data-i-color="blue"] { color: #3d99f5; }
+.page:where([data-format="forum-post"], [data-format="page"]) [data-i-color="indigo"] { color: #9c6ef7; }
+.page:where([data-format="forum-post"], [data-format="page"]) [data-i-color="violet"] { color: #e052e0; }
 
 /* Highlight marks: same hue at 25 % alpha */
-.page mark[data-i-background-color] { color: inherit; padding: 3px 0; }
-.page mark[data-i-background-color="red"] { background: rgba(224, 82, 82, .25); }
-.page mark[data-i-background-color="orange"] { background: rgba(224, 153, 82, .25); }
-.page mark[data-i-background-color="yellow"] { background: rgba(224, 201, 82, .25); }
-.page mark[data-i-background-color="green"] { background: rgba(98, 217, 38, .25); }
-.page mark[data-i-background-color="blue"] { background: rgba(61, 153, 245, .25); }
-.page mark[data-i-background-color="indigo"] { background: rgba(156, 110, 247, .25); }
-.page mark[data-i-background-color="violet"] { background: rgba(224, 82, 224, .25); }
+.page:where([data-format="forum-post"], [data-format="page"]) mark[data-i-background-color] { color: inherit; padding: 3px 0; }
+.page:where([data-format="forum-post"], [data-format="page"]) mark[data-i-background-color="red"] { background: rgba(224, 82, 82, .25); }
+.page:where([data-format="forum-post"], [data-format="page"]) mark[data-i-background-color="orange"] { background: rgba(224, 153, 82, .25); }
+.page:where([data-format="forum-post"], [data-format="page"]) mark[data-i-background-color="yellow"] { background: rgba(224, 201, 82, .25); }
+.page:where([data-format="forum-post"], [data-format="page"]) mark[data-i-background-color="green"] { background: rgba(98, 217, 38, .25); }
+.page:where([data-format="forum-post"], [data-format="page"]) mark[data-i-background-color="blue"] { background: rgba(61, 153, 245, .25); }
+.page:where([data-format="forum-post"], [data-format="page"]) mark[data-i-background-color="indigo"] { background: rgba(156, 110, 247, .25); }
+.page:where([data-format="forum-post"], [data-format="page"]) mark[data-i-background-color="violet"] { background: rgba(224, 82, 224, .25); }

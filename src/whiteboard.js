@@ -1,6 +1,7 @@
 // Board: the free-form surface of image, text, stroke, shape and connector items behind canvases and the flowchart library (SPEC §6).
 import { Extension } from '@tiptap/core';
-import { Plugin, PluginKey, NodeSelection, TextSelection } from '@tiptap/pm/state';
+import { Fragment, Slice } from '@tiptap/pm/model';
+import { Plugin, PluginKey, NodeSelection, Selection, TextSelection } from '@tiptap/pm/state';
 import { toBlob } from 'html-to-image';
 import { toast } from 'sonner';
 import { anchorPoint, kindOf, portNormal, portsOf, rotatePoint, rotBox, rotOf, turns } from './flow/shapes.mjs';
@@ -839,6 +840,7 @@ function localPoint(wb, event) {
 // image's natural size (≤ 8000 px), the image at 0,0, displayed at most as wide as the page content. A video or GIF is a
 // media node instead.
 async function addImages(view, files, insertPos = null) {
+  if (view.state.schema.nodes.image) return addPictures(view, files, insertPos);
   const images = (await Promise.all(files.map((f) => (isMedia(f) ? readMedia(f) : readImage(f))))).filter(Boolean);
   if (!images.length || view.isDestroyed) return;
   const { state } = view;
@@ -857,6 +859,31 @@ async function addImages(view, files, insertPos = null) {
     at += node.nodeSize;
   }
   view.dispatch(insertBoard(tr, at, nodes.at(-1)).scrollIntoView());
+}
+
+// A Document's pictures (only its schema has the image node): inline image nodes at `insertPos` or the selection (after a
+// node-selected block), at most the text width wide (docs/plans/document.md Pictures). Word holds no video.
+async function addPictures(view, files, insertPos) {
+  const videos = files.filter((f) => f.type.startsWith('video/'));
+  if (videos.length) toast(videos.length === 1 ? `${videos[0].name} is a video. A document holds pictures only.` : 'A document holds pictures only.');
+  const images = (await Promise.all(files.filter((f) => !videos.includes(f)).map(readImage))).filter(Boolean);
+  if (!images.length || view.isDestroyed) return;
+  const { state } = view;
+  const width = contentWidth(view);
+  const nodes = images.map((img) => state.schema.nodes.image.create({ src: img.src, ...pictureSize(img, width) }));
+  const tr = state.tr;
+  const at = insertPos !== null ? Math.min(insertPos, tr.doc.content.size) : tr.selection instanceof NodeSelection ? tr.selection.to : null;
+  if (at !== null) { // a caret in text: never a node selection, which the pictures would replace
+    const $p = tr.doc.resolve(at);
+    tr.setSelection($p.parent.inlineContent ? TextSelection.create(tr.doc, at) : Selection.findFrom($p, 1, true) ?? Selection.findFrom($p, -1, true));
+  }
+  view.dispatch(tr.replaceSelection(new Slice(Fragment.fromArray(nodes), 0, 0)).scrollIntoView());
+}
+
+/** A picture's {width, height} in px: its natural size {w, h}, at most `maxW` wide. */
+export function pictureSize(img, maxW) {
+  const { w, h } = scaled(img, maxW);
+  return { width: w, height: h };
 }
 
 export function addImageFilesToEditor(editor, files) {

@@ -1,0 +1,113 @@
+/* The Document's sheet (docs/plans/document.md Page view): one white sheet at the paper width with the margins as padding, at
+   least one page tall. applyPage (actions.js) sets --page-width to the text width and the --sheet-* margins from doc.attrs.sect.
+   The area around it keeps the palette's canvas colour. Style definitions come from each editor's own stylesheet
+   (document/stylesheet.js), direct formatting is inline style; the rules here only clear the browser's defaults, at a
+   specificity those beat. */
+.page[data-format="document"] {
+  padding: var(--sheet-top) var(--sheet-right) var(--sheet-bottom) var(--sheet-left);
+  min-height: var(--sheet-body);
+  background: #ffffff;
+  color: #000000;
+  border-radius: 0;
+  box-shadow: 0 0 0 1px rgb(0 0 0 / 0.06), 0 2px 6px rgb(0 0 0 / 0.18);
+}
+:where(.page[data-format="document"]) .ProseMirror { min-height: var(--sheet-body); tab-size: 0.5in; }
+/* Pages (document/pagination.js): the text is the offsetParent its blocks are measured against, and holds its floats, so the
+   sheet ends at the last page's bottom margin. */
+.page[data-format="document"] .ProseMirror { position: relative; display: flow-root; }
+:where(.page[data-format="document"] .ProseMirror) :is(p, h1, h2, h3, h4, h5, h6) { margin: 0; font: inherit; }
+:where(.page[data-format="document"] .ProseMirror) table { width: 100%; margin: 0; }
+:where(.page[data-format="document"] .ProseMirror) :is(td, th) { vertical-align: top; text-align: left; font-weight: inherit; }
+/* List paragraphs (document/lists.js): the label decoration sets data-label and the level's indents (--list-left,
+   --list-hanging); the label sits in the hanging indent, as Word's number does before its tab. These beat a paragraph style's
+   indents (stylesheet.js, one attribute less), and a paragraph's own indent (inline style) beats them, as in Word. */
+.page[data-format="document"] .ProseMirror [data-label] { margin-left: var(--list-left); text-indent: calc(-1 * var(--list-hanging)); }
+.page[data-format="document"] .ProseMirror [data-label]::before {
+  content: attr(data-label);
+  display: inline-block;
+  min-width: var(--list-hanging);
+  text-indent: 0;
+  white-space: pre;
+}
+/* A page break (document/schema.js PageBreak) draws its page's bottom margin, a 16 px gap in the canvas colour and the next
+   page's top margin, across the sheet's whole width. It clears the floats before it (pagination.js), so it starts where its
+   page's text area ends. */
+.page[data-format="document"] .ProseMirror > [data-page-break] {
+  clear: both;
+  height: calc(var(--sheet-bottom) + 16px + var(--sheet-top));
+  margin: -10000px calc(-1 * var(--sheet-right)) 0 calc(-1 * var(--sheet-left));
+  background: linear-gradient(#ffffff var(--sheet-bottom), var(--pg-bg) 0 calc(var(--sheet-bottom) + 16px), #ffffff 0);
+}
+/* A break inside a table cell (pasted; the schema allows it, as Word does) stays inside the cell as a dashed rule. */
+.page[data-format="document"] .ProseMirror :is(td, th) [data-page-break] { margin: 4px 0; border-top: 1px dashed #a6a6a6; }
+.page[data-format="document"] .ProseMirror [data-page-break].ProseMirror-selectednode { outline: 2px solid #3d99f5; outline-offset: -2px; }
+/* Pictures (inline image nodes; TipTap's resizable view wraps each in [data-resize-container]): never wider than the text, a
+   corner handle per side when selected. */
+.page[data-format="document"] .ProseMirror img { max-width: 100%; max-height: var(--sheet-body); object-fit: contain; vertical-align: bottom; }
+.page[data-format="document"] .ProseMirror [data-resize-container] { max-width: 100%; vertical-align: bottom; }
+.page[data-format="document"] .ProseMirror [data-resize-handle] { display: none; width: 9px; height: 9px; background: #ffffff; border: 1px solid #5c5c5c; z-index: 1; }
+.page[data-format="document"] .ProseMirror .ProseMirror-selectednode [data-resize-handle],
+.page[data-format="document"] .ProseMirror [data-resize-container]:hover [data-resize-handle] { display: block; }
+.page[data-format="document"] .ProseMirror [data-resize-handle="top-left"] { margin: -4px 0 0 -4px; cursor: nwse-resize; }
+.page[data-format="document"] .ProseMirror [data-resize-handle="top-right"] { margin: -4px -4px 0 0; cursor: nesw-resize; }
+.page[data-format="document"] .ProseMirror [data-resize-handle="bottom-left"] { margin: 0 0 -4px -4px; cursor: nesw-resize; }
+.page[data-format="document"] .ProseMirror [data-resize-handle="bottom-right"] { margin: 0 -4px -4px 0; cursor: nwse-resize; }
+.page[data-format="document"] .ProseMirror :is(.ProseMirror-selectednode img, img.ProseMirror-selectednode) { outline: 2px solid #3d99f5; }
+/* The page floats (pagination.js): a zero-width spacer per page's text area, so lines beside it keep the whole column, and a
+   breaker across the sheet between pages. The widget itself takes no room. */
+.page[data-format="document"] .ProseMirror > .pg-pages { height: 0; }
+.page[data-format="document"] .pg-page, .page[data-format="document"] .pg-breaker { float: left; clear: both; }
+.page[data-format="document"] .pg-page { width: 0; position: relative; }
+.page[data-format="document"] .pg-number { position: absolute; left: 0; font-size: 12pt; line-height: 1.2; color: #000000; pointer-events: none; user-select: none; }
+/* Objects (canvases, plan charts, tables that move whole) are formatting contexts, which cannot overlap a float, so one that
+   does not fit the rest of its page moves whole below the breaker, as Word moves a picture. Paragraphs and headings stay
+   ordinary blocks, so their lines cross page ends one by one. --fit-h is the tallest an object may be: a canvas's width is
+   capped so it and its 1em margins fit (canvas.js sets --sc-ratio, its artboard's w / h), and plan-chart.js and schema.js
+   DocTableView scale a taller one down to it (it would otherwise move below every new breaker). A whole table's wrapper takes
+   the text width: with an auto width the browser may squeeze it into the zero-width room beside a page spacer. */
+.page[data-format="document"] .ProseMirror { --fit-h: var(--sheet-body); }
+.page[data-format="document"] .ProseMirror > :is(.sc, .pc, .tableWrapper:has(> table[data-whole])) { display: flow-root; }
+.page[data-format="document"] .ProseMirror > .tableWrapper:has(> table[data-whole]) { width: 100%; }
+.page[data-format="document"] .ProseMirror .sc { max-width: calc((var(--fit-h) - 2em - 2px) * var(--sc-ratio, 1)); }
+/* A line holding only a break (an empty paragraph) needs no width, so the browser would set it in the zero-width room beside a
+   breaker, in the page gap: a 1 px box sends it below. List paragraphs have their label there already. ponytail: the empty
+   last line after a hard break (Shift+Enter) still can sit in the gap until text is typed on it. */
+.page[data-format="document"] .ProseMirror > :is(p, h1, h2, h3, h4, h5, h6):not([data-label]):has(> br.ProseMirror-trailingBreak:only-child)::before {
+  content: "";
+  display: inline-block;
+  width: 1px;
+}
+/* The last block's space after, and the space after a block before a page break, may end past the page's text area: it would
+   make the sheet taller than whole pages, or push the page break down. Word drops space after at a page's bottom. A large
+   negative top margin on what follows (an empty block after the text, and the break, which then clears the floats to its
+   page's end exactly) collapses with that space after, so it takes no room; the block keeps its own margin. */
+.page[data-format="document"] .ProseMirror::after { content: ""; display: block; margin-top: -10000px; }
+/* Tables split between rows: the table and its body give their rows to the wrapper, each row is a grid on the colgroup's
+   widths (schema.js DocTableView --cols), so a row that would cross a page end moves below the breaker. Borders of
+   neighbouring cells would double: a cell drops the left side its neighbour draws, and a row overlaps the one above by the
+   style's border width (stylesheet.js --cell-border), so a row starting a page keeps its top border. A table with a cell
+   spanning rows keeps table layout (data-whole) and moves whole. */
+.page[data-format="document"] .ProseMirror .tableWrapper { overflow: visible; }
+.page[data-format="document"] .ProseMirror table:not([data-whole]) { display: contents; }
+.page[data-format="document"] .ProseMirror table:not([data-whole]) > colgroup { display: none; }
+.page[data-format="document"] .ProseMirror table:not([data-whole]) > tbody { display: contents; }
+.page[data-format="document"] .ProseMirror table:not([data-whole]) > tbody > tr {
+  display: grid;
+  grid-template-columns: var(--cols);
+  width: var(--table-w);
+  min-width: var(--table-min);
+}
+.page[data-format="document"] .ProseMirror table:not([data-whole]) > tbody > tr > :is(td, th) { grid-column: span attr(colspan type(<integer>), 1); min-width: 0; }
+.page[data-format="document"] .ProseMirror table:not([data-whole]) > tbody > tr + tr { margin-top: calc(-1 * var(--cell-border, 0px)); }
+.page[data-format="document"] .ProseMirror table:not([data-whole]) > tbody > tr > :is(td, th) + :is(td, th) { border-left-style: none; }
+.page[data-format="document"] .ProseMirror table:not([data-whole]) > tbody > tr > [style*="vertical-align: middle"] { align-content: center; }
+.page[data-format="document"] .ProseMirror table:not([data-whole]) > tbody > tr > [style*="vertical-align: bottom"] { align-content: end; }
+/* Print (Phase 2's PDF view; pages.mjs printCss gives the @page size and margins): the browser makes the pages, so the screen's
+   floats, sheet padding and drawn breaks go; widows and orphans 1 match the screen's line-by-line breaks. */
+@media print {
+  .page[data-format="document"] { padding: 0; min-height: 0; box-shadow: none; }
+  .page[data-format="document"] .ProseMirror > .pg-pages { display: none; }
+  .page[data-format="document"] .ProseMirror > [data-page-break] { height: 0; margin: 0; background: none; break-after: page; }
+  .page[data-format="document"] .ProseMirror :is(p, h1, h2, h3, h4, h5, h6) { widows: 1; orphans: 1; }
+  .page[data-format="document"] .ProseMirror :is(tr, .sc, .pc, table[data-whole]) { break-inside: avoid; }
+}

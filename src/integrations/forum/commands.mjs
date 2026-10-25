@@ -28,6 +28,8 @@ function pictures(doc) {
   return n;
 }
 
+// Forum services follow the draft's format. The gate's own fix names doc_format, so they carry their own.
+export const FORMAT_POST = { gate: 'format.post', fix: 'Use a forum post draft' };
 const bytesOf = (base64) => Math.floor((base64.length * 3) / 4) - (base64.endsWith('==') ? 2 : base64.endsWith('=') ? 1 : 0);
 
 export const defs = [
@@ -39,7 +41,7 @@ export const defs = [
     risk: 'read',
     undo: 'none',
     slow: true,
-    needs: ['doc.open'],
+    needs: ['doc.open', FORMAT_POST],
     args: { type: 'object', additionalProperties: false, properties: { images: { type: 'boolean', default: false } } },
     result: { type: 'object', required: ['html', 'images'] },
     examples: [{ args: {} }, { args: { images: true } }],
@@ -56,7 +58,7 @@ export const defs = [
     risk: 'approval',
     undo: 'none',
     slow: true,
-    needs: ['app.forum', 'draft.hasThread', 'draft.unpushed'], // on the addressed draft (draftId), else the open one
+    needs: ['app.forum', FORMAT_POST, 'draft.hasThread', 'draft.unpushed'], // on the addressed draft (draftId), else the open one
     args: { type: 'object', additionalProperties: false, properties: { draftId: ref('ID') } },
     result: { type: 'object', required: ['ok', 'attachments', 'submitted'] },
     examples: [{ args: {} }, { args: { draftId: '0b2c8f0e-1c4e-4f8a-9d6a-2b7f3c9e1a55' } }],

@@ -28,7 +28,8 @@ export const CONTENT = {
       type: 'array', minItems: 1, maxItems: 20,
       items: {
         type: 'object', required: ['dataUrl'], additionalProperties: false,
-        properties: { dataUrl: { type: 'string', pattern: '^data:image/', maxLength: 20000000 }, w: { type: 'integer', minimum: 1 } },
+        properties: { dataUrl: { type: 'string', pattern: '^data:image/', maxLength: 20000000 }, w: { type: 'integer', minimum: 1 },
+          alt: { type: 'string', maxLength: 2000, description: 'Alt text (Documents)' } },
       },
     },
   },
@@ -123,5 +124,27 @@ export const ITEM_BRIEF = {
     from: OBJ, to: OBJ, route: { enum: ROUTES }, heads: { ...OBJ, description: 'start, end: such as none, arrow, triangle, diamond, circle, bar' }, dash: { enum: DASHES },
     labels: { ...OBJ, description: 'start, mid, end: {html}' },
     src: S,
+  },
+};
+
+// A Document's run and paragraph (doc.format; office.mjs RUN_ARGS, PARA_ARGS) as the assistant sees them (MODEL_DEFS): the fields
+// with their common values in words, within MAX_TOOL. The executor still validates against the full ones.
+const PT_NUM = { type: 'number' };
+export const RUN_BRIEF = {
+  type: 'object',
+  properties: {
+    font: { ...S, description: 'Family, +major or +minor' }, sizePt: PT_NUM,
+    // No type on color and highlight: RUN_ARGS also takes a theme object and null, which a declared string would forbid.
+    color: { description: '#RRGGBB, {"theme":"accent1","lum":-0.25} or null' },
+    highlight: { description: 'yellow, green... or null' }, underline: { ...S, description: 'single, double, none...' },
+  },
+};
+export const PARA_BRIEF = {
+  type: 'object',
+  properties: {
+    style: { ...S, description: 'Normal, Title, Heading1...' }, spaceBeforePt: PT_NUM, spaceAfterPt: PT_NUM,
+    lineSpacing: { ...OBJ, description: '{"multiple":1.5}, or exactPt, atLeastPt' },
+    indent: { ...OBJ, description: 'leftPt, rightPt, firstLinePt' },
+    list: { ...OBJ, description: '{"kind":"bullet"|"number"|null,"level":0}' },
   },
 };

@@ -357,7 +357,7 @@ export const InactiveSelection = Extension.create({
 // The text shortcuts (SPEC §7k): a chord bound to one of these runs it, before TipTap's own keymaps (higher priority); a chord
 // TipTap binds to one of them that the user has moved does nothing. TipTap's other keys (Enter, Backspace, Tab in lists and
 // tables, Shift+Enter) stay its own.
-const TEXT_KEYS = {
+export const TEXT_KEYS = {
   'edit.undo': (c) => c.undo(),
   'edit.redo': (c) => c.redo(),
   'text.bold': (c) => c.toggleBold(),
@@ -378,31 +378,37 @@ const TEXT_KEYS = {
   'text.alignRight': (c) => c.setTextAlign('right'),
   'text.alignJustify': (c) => c.setTextAlign('justify'),
 };
-const TEXT_IDS = Object.keys(TEXT_KEYS);
 // TipTap's chords for those commands (StarterKit, TextAlign, Subscript, Superscript; Mod-B and the like also take Shift).
-const TIPTAP_CHORDS = new Set(['Ctrl+Z', 'Ctrl+Y', 'Ctrl+Shift+Z', 'Ctrl+B', 'Ctrl+Shift+B', 'Ctrl+I', 'Ctrl+Shift+I', 'Ctrl+U', 'Ctrl+Shift+U',
+export const TIPTAP_CHORDS = new Set(['Ctrl+Z', 'Ctrl+Y', 'Ctrl+Shift+Z', 'Ctrl+B', 'Ctrl+Shift+B', 'Ctrl+I', 'Ctrl+Shift+I', 'Ctrl+U', 'Ctrl+Shift+U',
   'Ctrl+Shift+S', 'Ctrl+E', 'Ctrl+Alt+C', 'Ctrl+Shift+8', 'Ctrl+Shift+7', 'Ctrl+,', 'Ctrl+.', 'Ctrl+Shift+L', 'Ctrl+Shift+E', 'Ctrl+Shift+R',
   'Ctrl+Shift+J', ...[0, 1, 2, 3, 4, 5, 6].map((n) => `Ctrl+Alt+${n}`)]);
 
-const TextKeys = Extension.create({
-  name: 'textKeys',
-  priority: 1100,
-  addProseMirrorPlugins() {
-    const { editor } = this;
-    return [new Plugin({
-      props: {
-        handleKeyDown(_view, event) {
-          const id = keyAmong(TEXT_IDS, event);
-          if (id) {
-            TEXT_KEYS[id](editor.chain()).run();
-            return true;
-          }
-          return TIPTAP_CHORDS.has(chordOf(event));
+/** The text shortcuts of a format's editor: `map` {keybind id: (chain) => chain} runs a chord bound to one of its ids; a chord in
+ * `chords` (TipTap's own for those commands) that the user has moved does nothing. */
+export function textKeys(map, chords) {
+  const ids = Object.keys(map);
+  return Extension.create({
+    name: 'textKeys',
+    priority: 1100,
+    addProseMirrorPlugins() {
+      const { editor } = this;
+      return [new Plugin({
+        props: {
+          handleKeyDown(_view, event) {
+            const id = keyAmong(ids, event);
+            if (id) {
+              map[id](editor.chain()).run();
+              return true;
+            }
+            return chords.has(chordOf(event));
+          },
         },
-      },
-    })];
-  },
-});
+      })];
+    },
+  });
+}
+
+const TextKeys = textKeys(TEXT_KEYS, TIPTAP_CHORDS);
 
 const MIN_COLUMN = 20; // the forum editor's cellMinWidth (SPEC §1)
 
@@ -421,10 +427,12 @@ export const ColumnDrag = Extension.create({
       const table = $cell.node(-1);
       const pos = $cell.before(-1);
       const widths = drawnColumnWidths(view, table, pos);
-      const el = view.nodeDOM(pos)?.querySelector(':scope > table');
-      if (!widths || !el) return false;
+      const wrapper = view.nodeDOM(pos);
+      const el = wrapper?.querySelector(':scope > table');
+      // The page's zoom, measured on the wrapper: a Document table split into row grids has no box of its own (document.css).
+      const scale = wrapper?.getBoundingClientRect().width / wrapper?.offsetWidth;
+      if (!widths || !el || !(scale > 0 && Number.isFinite(scale))) return false;
       const col = TableMap.get(table).colCount($cell.pos - $cell.start(-1)) + $cell.nodeAfter.attrs.colspan - 1;
-      const scale = el.getBoundingClientRect().width / el.offsetWidth; // the page's zoom
       const { doc } = view.state;
       const win = view.dom.ownerDocument.defaultView;
       const widthsAt = (x) => {
@@ -455,8 +463,9 @@ export const ColumnDrag = Extension.create({
   },
 });
 
-/** `historyDepth`: the undo steps the history keeps (§7e). */
-export function buildExtensions(historyDepth) {
+/** The forum post's (and the core page's) editor extensions (src/editors.js kitOf); `historyDepth`: the undo steps the history
+ * keeps (§7e). */
+export function forumExtensions(historyDepth) {
   return [
     StarterKit.configure({
       heading: { levels: [1, 2, 3, 4, 5, 6] },

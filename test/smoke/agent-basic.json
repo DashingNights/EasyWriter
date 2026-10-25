@@ -1,5 +1,5 @@
 [
-  { "id": "drafts.create", "args": {}, "expect": { "ok": true } },
+  { "id": "drafts.create", "args": { "format": "forum-post" }, "expect": { "ok": true } },
   { "id": "doc.insert", "args": { "at": "end", "content": { "markdown": "## Week 3\n\nFirst paragraph about level design.\n\n- one\n- two" } },
     "expect": { "ok": true, "undoSteps": 1, "result": { "paths": [[1], [2], [3]] } } },
   { "id": "doc.find", "args": { "text": "level design" }, "expect": { "ok": true, "result": [{ "path": [2], "from": 22, "to": 34 }] } },
@@ -69,6 +69,15 @@
       { "id": "doc_insert", "args": { "at": "end", "content": { "markdown": "Batch line one" } } },
       { "id": "doc.insert", "args": { "at": "end", "content": { "markdown": "Batch line two" } } }] },
     "expect": { "ok": true, "undoSteps": 1, "result": { "results": { "$length": 2 } } } },
+  { "id": "drafts.rename", "args": { "draftId": "$steps[0].result.draftId", "title": "Smoke draft" },
+    "expect": { "ok": true, "result": { "title": "Smoke draft", "previous": "Untitled" } } },
+  { "id": "doc.insert", "args": { "at": "end", "content": { "markdown": "After the rename" } }, "expect": { "ok": true } },
+  { "id": "drafts.create", "args": { "format": "document", "title": "  Spaced   title " }, "expect": { "ok": true } },
+  { "id": "drafts.get", "args": { "draftId": "$prev.result.draftId" }, "expect": { "ok": true, "result": { "draft": { "title": "Spaced title" } } } },
+  { "id": "drafts.get", "args": { "draftId": "$steps[0].result.draftId" }, "expect": { "ok": true, "result": { "draft": { "title": "Smoke draft" } } } },
+  { "id": "drafts.delete", "args": { "draftId": "$steps[41].result.draftId" }, "expect": { "ok": true, "result": { "trashed": true } } },
+  { "id": "drafts.duplicate", "args": { "draftId": "$steps[0].result.draftId" }, "expect": { "ok": true, "result": { "title": "Smoke draft (copy)", "folderId": null } } },
+  { "id": "drafts.delete", "args": { "draftId": "$prev.result.draftId" }, "expect": { "ok": true, "result": { "trashed": true } } },
   { "id": "drafts.delete", "args": { "draftId": "$steps[0].result.draftId" }, "expect": { "ok": true, "result": { "trashed": true } } },
   { "id": "threads.add", "args": { "title": "x", "thread": "https://forum.test/topic/1-a/" },
     "expect": { "ok": false, "code": "precondition_failed", "error": { "message": "The Invision Community forum integration is off", "data": { "failed": [{ "gate": "integration.forum" }] } } } }

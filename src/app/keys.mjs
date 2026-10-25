@@ -110,6 +110,7 @@ const OVERLAP = {
   global: null, // every scope
   editor: ['editor', 'text', 'board'],
   text: ['editor', 'text'],
+  document: ['editor', 'text', 'document'], // a Document's editor: never with the board scope, so Ctrl+J and Ctrl+[ ] stay the board's there
   board: ['editor', 'board', 'flows'],
   plan: ['plan'],
   flows: ['flows', 'board'],
@@ -164,13 +165,14 @@ export function overridesOf(defs, binds) {
  * kind → binding id. The key arms the shape tool with that kind; S arms it with the last kind used. */
 export const SHAPE_KEYS = { rect: 'board.box', ellipse: 'board.circle', line: 'board.line', arrow: 'board.arrow' };
 
-export const GROUPS = ['General', 'Text', 'Insert', 'Boards', 'Plans', 'Flowcharts', 'Browser'];
+export const GROUPS = ['General', 'Text', 'Document', 'Insert', 'Boards', 'Plans', 'Flowcharts', 'Browser'];
 const def = (group, scope) => (id, label, keys, more) => ({ id, label, group, scope, keys, ...more });
 const general = def('General', 'global');
 const generalEditor = def('General', 'editor');
 const text = def('Text', 'text');
 const textEditor = def('Text', 'editor');
 const insert = def('Insert', 'editor');
+const doc = def('Document', 'document');
 const board = def('Boards', 'board');
 const plan = def('Plans', 'plan');
 const flows = def('Flowcharts', 'flows');
@@ -184,6 +186,7 @@ export const DEFS = [
   general('app.quickTools', 'Quick tools', ['Ctrl+Tab']),
   general('app.plans', 'Plans page', ['Ctrl+Alt+P']),
   general('app.browser', 'Browser page', ['Ctrl+Alt+B']),
+  general('app.newDraft', 'New draft', ['Ctrl+N']),
   generalEditor('app.sidebar', 'Show or hide the sidebar', ['Ctrl+\\']),
   generalEditor('app.find', 'Find in the draft', ['Ctrl+F']),
   generalEditor('app.replace', 'Find and replace in the draft', ['Ctrl+H']),
@@ -213,6 +216,26 @@ export const DEFS = [
   text('text.alignJustify', 'Justify', ['Ctrl+Shift+J']),
   textEditor('text.link', 'Link', ['Ctrl+K']),
   ...[1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => textEditor(`text.preset${n}`, `Font preset ${n}`, [`Alt+${n}`])),
+
+  // Word's own chords in a Document (docs/plans/document.md Keys); the app-wide chords keep their meaning there.
+  doc('document.alignLeft', 'Align left', ['Ctrl+L']),
+  doc('document.alignCenter', 'Align centre', ['Ctrl+E'], { shadows: ['text.code'] }), // a Document has no inline code
+  doc('document.alignRight', 'Align right', ['Ctrl+R']),
+  doc('document.justify', 'Justify', ['Ctrl+J']),
+  doc('document.growFont', 'Grow font', ['Ctrl+Shift+.']),
+  doc('document.shrinkFont', 'Shrink font', ['Ctrl+Shift+,']),
+  doc('document.growFont1', 'Grow font by 1 point', ['Ctrl+]']),
+  doc('document.shrinkFont1', 'Shrink font by 1 point', ['Ctrl+[']),
+  doc('document.spacing1', 'Single line spacing', ['Ctrl+1']),
+  doc('document.spacing15', '1.5 line spacing', ['Ctrl+5']),
+  doc('document.spacing2', 'Double line spacing', ['Ctrl+2']),
+  doc('document.indent', 'Increase indent', ['Ctrl+M']),
+  doc('document.outdent', 'Decrease indent', ['Ctrl+Shift+M']),
+  doc('document.hanging', 'Hanging indent', ['Ctrl+T']),
+  doc('document.removeHanging', 'Remove hanging indent', ['Ctrl+Shift+T']),
+  doc('document.clearParagraph', 'Clear paragraph formatting', ['Ctrl+Q']),
+  doc('document.normalStyle', 'Normal style', ['Ctrl+Shift+N']),
+  doc('document.pageBreak', 'Page break', ['Ctrl+Enter']), // TipTap's hard break also takes Mod-Enter; DocumentKeys swallows it
 
   insert('insert.canvas', 'Insert canvas', ['Ctrl+Alt+C']),
   insert('insert.flowchart', 'Insert flowchart', ['Ctrl+Alt+F']),

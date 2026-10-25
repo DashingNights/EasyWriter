@@ -30,6 +30,7 @@ const state = {
   toolOptions: null, // { entry, ctx } — the open options panel of a tool search entry (ctx: as toolSearch)
   notices: [],       // [{ id, icon, text, mode? }] — the fading notices above the toolbar island (§7c; Notices.jsx notify)
   quickTools: null,  // { board, x, y } — the open quick tools island (§7d): the board it serves (null: the document), the pointer it opened at
+  wordCount: false,  // the status bar's Word count popover is open (a Document's; document/tools.js openWordCount)
   find: null,        // { n, seed } — the open find bar (FindBar.jsx): n +1 per Ctrl+F (focuses it again), seed: a query to start with
   tour: null,        // { step } — the open tour (Onboarding.jsx): the index of its shown step in STEPS
   view: { type: 'editor' }, // the main column (§7g): {type:'editor'} | {type:'plan', planId, tab} | {type:'flows', flowId} | {type:'browser'}
@@ -42,6 +43,7 @@ const state = {
   bgWrites: [],      // draft ids the assistant wrote in a background session this turn (§7i Background drafts; the sidebar badge, the chat status)
   worker: null,      // the background window's draft { draftId, title } (§7i Background window), null while it has none
   workerPane: false, // the pane with the background window's live view is shown
+  draftClip: null,   // { id, cut } — the sidebar's draft clipboard (§7 Drafts menu): Copy or Cut, for this session only, never the OS clipboard
 };
 
 // This window is the background window of computer use (§7i Background window: main.js loads the app with ?worker=1&draft=<id>):

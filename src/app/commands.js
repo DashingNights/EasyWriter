@@ -1,12 +1,14 @@
-import { generateJSON, getHTMLFromFragment } from '@tiptap/core';
-import { MarkdownManager } from '@tiptap/markdown';
+import { elementFromString, getHTMLFromFragment } from '@tiptap/core';
 import { closeHistory, redoDepth, redoNoScroll, undoDepth, undoNoScroll } from '@tiptap/pm/history';
-import { Fragment } from '@tiptap/pm/model';
+import { DOMParser, Fragment } from '@tiptap/pm/model';
 import { NodeSelection } from '@tiptap/pm/state';
 import { version as appVersion } from '../../package.json';
 import { canvasEditor } from '../canvas.js';
 import { BOARD_TYPES, pathOfPos, posOfPath } from '../doc-path.mjs';
-import { pageOf } from '../formats.mjs';
+import { DEFAULT_NUMBERING } from '../document/defaults.mjs';
+import { normaliseHtml } from '../document/paste.js';
+import { kitOf } from '../editors.js';
+import { formatOf, pageOf } from '../formats.mjs';
 import { activeBoard, contentWidth, migrateBoards } from '../whiteboard.js';
 import * as actions from './actions.js';
 import { familyOf } from './assistant/prompts.mjs';
@@ -280,7 +282,7 @@ function subjectOf(kind, args = {}, sess = null) {
     case 'ui': return sess ? { editor: sess.editor, view: { type: 'editor' } } : state;
     case 'draft': {
       const d = args.draftId ? draftById(args.draftId) : state.draft;
-      return d && { id: d.id, threadUrl: d.threadUrl ?? null, pushedAt: d.pushedAt ?? null, threads: state.settings?.threads };
+      return d && { id: d.id, threadUrl: d.threadUrl ?? null, pushedAt: d.pushedAt ?? null, format: d.format ?? null, threads: state.settings?.threads };
     }
     case 'doc': return ed && { inTable: ed.isActive('table') };
     case 'history': return ed && { canUndo: undoDepth(ed.state) > 0, canRedo: redoDepth(ed.state) > 0 };
@@ -525,12 +527,17 @@ function makeCtx(source, signal, sess = null) {
 
 // The helpers that read the editor, on a session's (its schema: nodes of another editor's schema do not insert); a hidden board is
 // never busy.
-const sessionLib = ({ editor: ed, draft }) => ({ ...lib, toNodes: (c) => toNodes(c, ed, draft), toHtml: (p, i) => toHtml(p, i, ed), selection: () => selection(ed), boardBusy: () => false });
+const sessionLib = ({ editor: ed, draft }) => ({
+  ...lib,
+  toNodes: (c, e = ed, d = draft) => toNodes(c, e, d),
+  toMarkdown: (n, p) => toMarkdown(n, p, draft, ed),
+  toHtml: (p, i) => toHtml(p, i, ed),
+  selection: () => selection(ed),
+  boardBusy: () => false,
+});
 
-// One manager for the app's life: every editor has the same extensions (only the history depth differs), and the manager
-// works on JSON, so it never needs a particular editor's schema.
-let mdManager = null;
-const markdown = () => (mdManager ??= new MarkdownManager({ extensions: state.editor.extensionManager.baseExtensions }));
+// The Markdown manager of `draft`'s format (editors.js kitOf: one per format, on JSON, so it needs no particular editor).
+const markdown = (draft = state.draft) => kitOf(formatOf(draft, state.settings).id).markdown;
 
 const IMG_MD = /!\[[^\]]*\]\([^)]*\)/g;
 const DATA_URL = /data:(image|video)\/[a-z0-9.+-]+;base64,[A-Za-z0-9+/=]+/gi;
@@ -546,8 +553,9 @@ function stripImages(v) {
 const newId = () => Math.random().toString(36).slice(2, 9).padEnd(7, '0');
 
 /** A canvas node holding the picture `dataUrl` at its natural size (≤ 8000 px a side), displayed `w` wide (default: the
- * natural width), never wider than the page of editor `ed` (the addImages pattern, whiteboard.js). */
-async function imageNode({ dataUrl, w: want }, i, ed) {
+ * natural width), never wider than `width`, the target's text width (the addImages pattern, whiteboard.js). In a Document
+ * (`inline`) a paragraph holding the picture as an image node instead (docs/plans/document.md Pictures). */
+async function imageNode({ dataUrl, w: want, alt }, i, width, inline) {
   const img = new Image();
   img.src = dataUrl;
   try {
@@ -555,18 +563,29 @@ async function imageNode({ dataUrl, w: want }, i, ed) {
   } catch {
     fail('invalid_args', `content.images[${i}] is not a picture the app can read`, { path: `/content/images/${i}/dataUrl`, message: 'cannot be decoded', expected: {} });
   }
+  if (inline) {
+    const w = Math.max(1, Math.round(Math.min(want ?? img.naturalWidth, width))); // `w` may enlarge it, as a canvas's dw does
+    const h = Math.max(1, Math.round((w * img.naturalHeight) / img.naturalWidth));
+    return { type: 'paragraph', content: [{ type: 'image', attrs: { src: dataUrl, alt: alt?.trim() || null, width: w, height: h } }] };
+  }
   const k = Math.min(1, 8000 / Math.max(img.naturalWidth, img.naturalHeight));
   const w = Math.max(1, Math.round(img.naturalWidth * k));
   const h = Math.max(1, Math.round(img.naturalHeight * k));
   const id = newId();
   return {
     type: 'canvas',
-    attrs: { w, h, dw: Math.min(want ?? w, contentWidth(ed.view)), frame: { x: 0, y: 0, w, h, item: id }, bg: 'post', items: [{ id, type: 'image', src: dataUrl, x: 0, y: 0, w, h }] },
+    attrs: { w, h, dw: Math.min(want ?? w, width), frame: { x: 0, y: 0, w, h, item: id }, bg: 'post', items: [{ id, type: 'image', src: dataUrl, x: 0, y: 0, w, h }] },
   };
 }
 
-/** SPEC §8 Content: {json | html | markdown | images} → {nodes: ProseMirror block nodes of editor `ed`, dropped: [construct]}. */
+/** SPEC §8 Content: {json | html | markdown | images} → {nodes: ProseMirror block nodes of editor `ed`, dropped: [construct]}.
+ * html and markdown parse with the kit of `draft`'s format; a Document's html first goes through the paste pre-pass
+ * (document/paste.js: lists to list paragraphs, quotes to the Quote style). `ed` null: nodes of that kit's schema, for a draft
+ * not made yet (drafts.create passes {format}), so invalid content creates nothing. */
 async function toNodes(content, ed = state.editor, draft = state.draft) {
+  const format = formatOf(draft, state.settings).id;
+  const kit = kitOf(format);
+  const schema = ed?.schema ?? kit.schema;
   const dropped = new Set();
   const [key] = Object.keys(content);
   let json;
@@ -574,21 +593,25 @@ async function toNodes(content, ed = state.editor, draft = state.draft) {
     const j = migrateBoards(content.json, pageOf(draft, state.settings).width); // an old whiteboard becomes a canvas (§6b Converted whiteboards)
     json = Array.isArray(j) ? j : j?.type === 'doc' ? j.content ?? [] : [j];
   } else if (key === 'html') {
-    if (/<img\b/i.test(content.html)) dropped.add('img'); // no image node: pictures go in as `images`
-    json = generateJSON(content.html, ed.extensionManager.extensions).content ?? [];
+    // No image node, or a Document's, which parses only data URLs: other pictures go in as `images`.
+    if ((format === 'document' ? /<img\b(?![^>]*\ssrc=["']?data:)/i : /<img\b/i).test(content.html)) dropped.add('img');
+    const html = format === 'document' ? normaliseHtml(content.html, ed?.state.doc.attrs.numbering ?? DEFAULT_NUMBERING) : content.html;
+    json = DOMParser.fromSchema(kit.schema).parse(elementFromString(html)).toJSON().content ?? [];
   } else if (key === 'markdown') {
     const md = content.markdown.replace(IMG_MD, () => {
       dropped.add('img');
       return '';
     });
-    json = markdown().parse(md).content ?? [];
+    json = kit.markdown.parse(md).content ?? [];
   } else {
-    json = await Promise.all(content.images.map((img, i) => imageNode(img, i, ed)));
+    // `ed` null (a draft not made yet): its format's page width, not the open draft's editor, which may be another format.
+    const width = ed ? contentWidth(ed.view) : pageOf(draft, state.settings).width;
+    json = await Promise.all(content.images.map((img, i) => imageNode(img, i, width, format === 'document')));
   }
   let nodes;
   try {
     nodes = json.map((j) => {
-      const node = ed.schema.nodeFromJSON(j);
+      const node = schema.nodeFromJSON(j);
       node.check();
       if (!node.isBlock) throw new Error(`${node.type.name} is not a block`);
       return node;
@@ -600,13 +623,22 @@ async function toNodes(content, ed = state.editor, draft = state.draft) {
   return { nodes, dropped: [...dropped] };
 }
 
-/** Markdown of TipTap JSON `node` (the doc, or the block at `path`): a board as `![canvas: 3 items](block:[4])`. */
-function toMarkdown(node, path = null) {
+/** Markdown of TipTap JSON `node` of `draft` (the doc, or the block at `path`) open in editor `ed`: a board as
+ * `![canvas: 3 items](block:[4])`. A Document's consecutive list paragraphs stay one Markdown list (one line apart). */
+function toMarkdown(node, path = null, draft = state.draft, ed = state.editor) {
   const board = (n, p) => (n.type === 'media' ? `![media: ${n.attrs?.name}](block:[${p}])` : `![${n.type}: ${n.attrs?.items?.length ?? 0} items](block:[${p}])`);
   const stub = (t) => BOARD_TYPES.includes(t) || t === 'media';
-  if (path) return stub(node.type) ? board(node, path) : markdown().serialize({ type: 'doc', content: [node] });
-  return (node.content ?? []).map((n, i) => (stub(n.type) ? board(n, [i]) : markdown().serialize({ type: 'doc', content: [n] })))
-    .filter((s) => s.trim()).join('\n\n');
+  // The doc attrs tell a list paragraph's kind (bullet or number) to the Document's Markdown (document/lists.js docMarkdown).
+  const attrs = (path ? ed?.state.doc.attrs : node.attrs) ?? {};
+  const md = (content) => markdown(draft).serialize({ type: 'doc', attrs, content });
+  if (path) return stub(node.type) ? board(node, path) : md([node]);
+  // Consecutive list paragraphs go together, so each item indents under its parent item's text.
+  const runs = [];
+  (node.content ?? []).forEach((n, i) => {
+    if (n.attrs?.numbering && runs.at(-1)?.list) runs.at(-1).list.push(n);
+    else runs.push(stub(n.type) ? { s: board(n, [i]) } : n.attrs?.numbering ? { list: [n] } : { n });
+  });
+  return runs.map((r) => r.s ?? md(r.list ?? [r.n])).filter((s) => s.trim()).join('\n\n');
 }
 
 /** HTML of the open doc (of editor `ed`) or of its block at `path`; pictures shortened unless `images`. */
@@ -718,7 +750,7 @@ function capabilities(available) {
   return CATALOGUE.map((def) => listed(def, state.settings)).filter(Boolean).map((def) => ({
     id: def.id, title: def.title, group: def.group, risk: def.risk, undo: def.undo, headless: def.headless, slow: def.slow,
     args: def.args, result: def.result ?? {},
-    needs: def.needs.map(needOf).map(({ gate }) => ({ gate, message: GATES[gate].message, fix: GATES[gate].fix, byArgs: fromArgs(def, GATES[gate].subject) })),
+    needs: def.needs.map(needOf).map(({ gate, fix }) => ({ gate, message: GATES[gate].message, fix: fix ?? GATES[gate].fix, byArgs: fromArgs(def, GATES[gate].subject) })),
   })).filter((c) => !available || c.needs.every((n) => n.byArgs || can(n.gate, subjectOf(GATES[n.gate].subject))));
 }
 

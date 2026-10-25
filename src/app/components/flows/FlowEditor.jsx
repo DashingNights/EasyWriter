@@ -2,7 +2,7 @@ import { useLayoutEffect, useRef, useState } from 'react';
 import { flowSource } from '../../../canvas.js';
 import { Board } from '../../../whiteboard.js';
 import { canRedoFlow, canUndoFlow, commitLibrary, getFlow, redoFlow, undoFlow } from '../../flows.js';
-import { bindPanZoom, zoomAround } from '../../panzoom.js';
+import { bindPanZoom, keepPlace, zoomAround } from '../../panzoom.js';
 import { backgroundClick } from '../../viewport.js';
 import { ShapePanel } from './ShapePanel.jsx';
 
@@ -56,12 +56,16 @@ export function FlowEditor({ id, onBoard }) {
     const b = board.dom.getBoundingClientRect();
     area.scrollLeft += b.left - a.left - (area.clientWidth - b.width) / 2;
     area.scrollTop += b.top - a.top - HOME.top;
+    // A resize of the area keeps the artboard's gaps to the opening view's room in proportion (its top stays HOME.top down).
+    const place = keepPlace(area, wrap, () => ({ left: HOME.side, right: HOME.side, top: HOME.top, bottom: 0 }));
+    place.mark();
     const unsubscribe = flowSource.subscribe((changed) => changed === id && getFlow(id) && board.setAttrs(getFlow(id).board));
     window.addEventListener('paste', board.pasteEvent, true); // outside ProseMirror, as a canvas being edited
     onBoard(board);
     setBoard(board);
     requestAnimationFrame(() => requestAnimationFrame(() => board.focus())); // after openWorkspace focused the workspace
     return () => {
+      place.stop();
       unsubscribe();
       window.removeEventListener('paste', board.pasteEvent, true);
       onBoard(null);

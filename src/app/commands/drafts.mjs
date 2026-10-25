@@ -1,4 +1,4 @@
-import { pageOf } from '../../formats.mjs';
+import { defaultFormat, pageOf } from '../../formats.mjs';
 import { bare } from '../../integrations/index.mjs';
 import { migrateBoards } from '../../whiteboard.js';
 import { sortDrafts } from '../draft-order.mjs';
@@ -46,7 +46,7 @@ export const defs = [
     run: (ctx, a) => sortDrafts(ctx.state.drafts, ctx.state.settings.draftOrder)
       .filter((d) => !a.threadUrl || d.threadUrl === a.threadUrl)
       .map((d) => bare('draft', {
-        id: d.id, title: d.title, threadUrl: d.threadUrl, updated: d.updated, pushedAt: d.pushedAt,
+        id: d.id, title: d.title, threadUrl: d.threadUrl, updated: d.updated, pushedAt: d.pushedAt, format: d.format ?? null,
         tag: draftTag(ctx.state.settings, d.id)?.id ?? null, folder: folderOf(ctx, d.id),
       }, ctx.state.settings)),
   }),
@@ -80,21 +80,28 @@ export const defs = [
     args: {
       type: 'object', additionalProperties: false,
       properties: {
+        title: { type: 'string', maxLength: 200, description: 'Omitted: the first line of content, else Untitled' },
         threadUrl: { anyOf: [ref('URL'), { type: 'null' }], description: 'The project or thread URL, or null for none' },
         folderId: { type: 'string', minLength: 1, description: 'A folder id from folders_list' },
         tagId: { ...TAG_ID, description: 'A tag id from tags_list' },
         content: { ...CONTENT, description: 'The first text, as markdown, html or json' },
+        format: { enum: ['forum-post', 'document'], description: 'Omitted: a forum post in a forum-thread project while the forum is on, else a document' },
       },
     },
-    result: { type: 'object', required: ['draftId', 'rev'] },
-    examples: [{ args: {} }, { args: { threadUrl: THREAD, tagId: 'todo', content: { markdown: '# Week 3\n\nNotes.' } } }],
+    result: { type: 'object', required: ['draftId', 'rev', 'format'] },
+    examples: [{ args: {} }, { args: { threadUrl: THREAD, tagId: 'todo', content: { markdown: '# Week 3\n\nNotes.' } } },
+      { args: { format: 'document', content: { markdown: '# Report\n\nText' } } }, { args: { title: 'Week 3 notes', format: 'document' } }],
     run: async (ctx, a) => {
       needFolder(ctx, a.folderId);
       needTag(ctx, a.tagId);
-      const { nodes, dropped } = a.content ? await ctx.lib.toNodes(a.content) : { nodes: null, dropped: [] };
+      // docs/plans/document.md New-draft defaults: without the user's last pick, so an agent's result never depends on it. An
+      // explicit forum-post is allowed with the forum off: the format opens in either state.
+      const format = a.format ?? defaultFormat(ctx.state.settings, a.threadUrl === undefined ? ctx.state.settings.selectedThread : a.threadUrl);
+      // Parsed in the new draft's own schema before it exists, so content that does not parse creates nothing.
+      const { nodes, dropped } = a.content ? await ctx.lib.toNodes(a.content, null, { format }) : { nodes: null, dropped: [] };
       const doc = nodes && { type: 'doc', content: nodes.map((n) => n.toJSON()) };
-      const { draftId } = await ctx.actions.createDraft({ threadUrl: a.threadUrl, folderId: a.folderId, tagId: a.tagId, doc });
-      return { draftId, rev: ctx.state.rev, ...(dropped.length && { dropped }) };
+      const { draftId } = await ctx.actions.createDraft({ title: a.title, threadUrl: a.threadUrl, folderId: a.folderId, tagId: a.tagId, doc, format });
+      return { draftId, rev: ctx.state.rev, format, ...(dropped.length && { dropped }) };
     },
   }),
   define({
@@ -129,6 +136,55 @@ export const defs = [
     run: async (ctx, a) => {
       await ctx.actions.doDeleteDraft(a.draftId);
       return { draftId: a.draftId, trashed: true };
+    },
+  }),
+  define({
+    id: 'drafts.rename',
+    title: 'Rename a draft',
+    brief: 'Use it when the user asks to rename a draft.',
+    group: 'drafts',
+    risk: 'write',
+    undo: 'none',
+    args: {
+      ...DRAFT, required: ['draftId', 'title'],
+      properties: { ...DRAFT.properties, title: { type: 'string', minLength: 1, maxLength: 200, pattern: '\\S', description: 'The new title' } },
+    },
+    result: { type: 'object', required: ['draftId', 'title', 'previous'] },
+    examples: [{ args: { draftId: EXAMPLE_ID, title: 'Week 3 notes' } }],
+    run: async (ctx, a) => {
+      const draft = draftOf(ctx, a.draftId);
+      if (!draft) fail('not_found', `No draft has the id ${a.draftId}`);
+      const previous = draft.title;
+      // renameDraft refuses while the background window holds the draft (docs/plans/sidebar-menu.md decision 1).
+      if (!(await ctx.actions.renameDraft(a.draftId, a.title))) {
+        fail('failed', ctx.state.worker?.draftId === a.draftId ? 'The background window has this draft open' : 'The draft could not be saved');
+      }
+      return { draftId: a.draftId, title: draftOf(ctx, a.draftId).title, previous };
+    },
+  }),
+  define({
+    id: 'drafts.duplicate',
+    title: 'Copy a draft (titled "<title> (copy)", not opened)',
+    brief: 'Use it when the user asks for a copy of a draft.',
+    group: 'drafts',
+    risk: 'write',
+    undo: 'none',
+    args: {
+      ...DRAFT,
+      properties: { ...DRAFT.properties, folderId: { type: ['string', 'null'], minLength: 1, description: 'A folder id from folders_list, null: the top level. Omitted: after the source' } },
+    },
+    result: { type: 'object', required: ['draftId', 'title', 'folderId'] },
+    examples: [{ args: { draftId: EXAMPLE_ID } }, { args: { draftId: EXAMPLE_ID, folderId: null } }],
+    run: async (ctx, a) => {
+      if (!draftOf(ctx, a.draftId)) fail('not_found', `No draft has the id ${a.draftId}`);
+      needFolder(ctx, a.folderId);
+      let draftId;
+      try {
+        ({ draftId } = await ctx.actions.duplicateDraft(a.draftId, { folderId: a.folderId }));
+      } catch (e) {
+        fail('failed', e.message);
+      }
+      return { draftId, title: draftOf(ctx, draftId).title, folderId: folderOf(ctx, draftId) };
     },
   }),
   define({

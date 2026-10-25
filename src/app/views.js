@@ -1,7 +1,7 @@
 import { NodeSelection, TextSelection } from '@tiptap/pm/state';
 import { canvasEditor } from '../canvas.js';
 import { activeBoard, withoutScroll } from '../whiteboard.js';
-import { closeSummoned, commitBoardEdit, saveNow, saveSettings } from './actions.js';
+import { applyPageTheme, closeSummoned, commitBoardEdit, saveNow, saveSettings } from './actions.js';
 import { openBrowser } from './browser.js';
 import { openFlows } from './flows.js';
 import { openPlan } from './plans.js';
@@ -31,6 +31,7 @@ export async function openWorkspace(view, { startup = false, remember = true } =
   }
   ed?.commands.blur();
   setState({ view });
+  applyPageTheme(); // a Document's light paper stays with the editor page
   requestAnimationFrame(() => root()?.focus()); // once React has drawn it
   if (remember) await saveSettings({ lastView: view });
   return true;
@@ -40,6 +41,7 @@ export async function openWorkspace(view, { startup = false, remember = true } =
 export async function closeWorkspace({ remember = true } = {}) {
   commitBoardEdit(); // flushes the plan and flowchart writes
   setState({ view: { type: 'editor' } });
+  applyPageTheme();
   requestAnimationFrame(() => state.editor?.view.focus()); // once the editor page is no longer inert
   if (remember) await saveSettings({ lastView: { type: 'editor' } });
 }

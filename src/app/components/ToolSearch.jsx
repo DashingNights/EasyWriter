@@ -51,7 +51,7 @@ function commit(entry, tab) {
   notify({ icon: entry.icon, text });
 }
 
-/** An entry with a `command` (SPEC §8): invoked as source 'palette' (audited); then the focus goes back again (New draft
+/** An entry with a `command` (SPEC §8): invoked as source 'palette' (audited); then the focus goes back again (New document
  * remounts the editor) and the notice shows the label, or the error. */
 async function runCommand(entry, ctx) {
   const res = await invoke({ id: entry.command, args: entry.args?.(toolContext(ctx.board)) ?? {}, source: 'palette' });

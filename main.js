@@ -30,6 +30,9 @@ const DATA_DIR = argValue('data-dir'); // a profile of its own (smoke:agent's th
 const EXE_DIR = path.dirname(process.execPath);
 const PORTABLE = app.isPackaged && !fsSync.existsSync(path.join(EXE_DIR, 'Uninstall EasyWriter.exe'));
 const DATA = path.join(EXE_DIR, 'data');
+// Test runs (smoke, and harnesses with a throwaway --data-dir) stay behind the user's windows (src/test-window.js).
+const testWindow = (SMOKE || DATA_DIR) && require('./src/test-window.js');
+if (testWindow) testWindow.prepare();
 if (DATA_DIR) {
   require('fs').mkdirSync(path.resolve(DATA_DIR), { recursive: true });
   app.setPath('userData', path.resolve(DATA_DIR));
@@ -70,6 +73,8 @@ const ICON = app.isPackaged ? undefined : path.join(__dirname, 'build', 'icon.ic
 const DEFAULT_SETTINGS = {
   theme: 'light', // the core page theme (Settings > General Page theme)
   pageWidth: 1454, // the core page's content width, 320-4000 (src/formats.mjs PAGE; Settings > General Page width)
+  paper: 'a4', // a new Document's paper, per device: 'letter' or 'a4' from the Windows region (localPaper, at read)
+  lastFormat: 'document', // the New draft dialog's last pick, preselected next time, per device (src/formats.mjs defaultFormat)
   uiTheme: 'dark', // the app's own colours (Settings > General Theme): dark | light | system (actions.js applyUiTheme)
   palette: {}, // {dark, light}: the user's colours over each theme's (Settings > General Palette, actions.js PALETTE)
   reduceMotion: 'system', // Settings > Motion: off | system | on | custom (src/app/motion.js)
@@ -120,6 +125,9 @@ const settingsFile = () => path.join(app.getPath('userData'), 'settings.json');
 const userDir = (name) => () => path.join(app.getPath('userData'), name);
 const images = userDir('images'); // the records' pictures, one file each (src/file-family.js externalize)
 
+// Word's paper by region: Letter in the US, Canada, Mexico and the Philippines, A4 elsewhere (docs/plans/document.md Fonts and paper).
+const localPaper = () => (['US', 'CA', 'MX', 'PH'].includes(app.getLocaleCountryCode()) ? 'letter' : 'a4');
+
 async function getSettings() {
   let stored;
   try {
@@ -132,7 +140,7 @@ async function getSettings() {
   }
   // A missing file is not migrated: a new install starts with every integration off.
   const { DEFAULTS, migrateSettings } = await integrations;
-  return { ...structuredClone(DEFAULT_SETTINGS), ...structuredClone(DEFAULTS), ...(isPlainObject(stored) ? migrateSettings(stored) : {}) };
+  return { ...structuredClone(DEFAULT_SETTINGS), paper: localPaper(), ...structuredClone(DEFAULTS), ...(isPlainObject(stored) ? migrateSettings(stored) : {}) };
 }
 
 function setSettings(partial) {
@@ -163,7 +171,8 @@ function setSettings(partial) {
 
 // Drafts (`drafts/<id>.json`, list = summaries), each with its persistent undo history (§7e) next to it.
 const drafts = fileFamily(userDir('drafts'), {
-  summary: (d) => ({ id: d.id, title: d.title, threadUrl: d.threadUrl ?? null, updated: d.updated, pushedAt: d.pushedAt ?? null }),
+  summary: (d) => ({ id: d.id, title: d.title, threadUrl: d.threadUrl ?? null, updated: d.updated, pushedAt: d.pushedAt ?? null,
+    format: d.format ?? null }),
   siblings: (id) => [historyFile(id)],
   images,
 });
@@ -300,7 +309,8 @@ handle('window.titleBar', ({ color, symbolColor } = {}) => {
 // The page as the user sees it (§8 view.render): the whole window's content as PNG bytes; the renderer crops its viewport.
 handle('window.capture', () => mainWin.webContents.capturePage().then((img) => img.toPNG()));
 // The draft menu's entries on the last right-click (editMenuAct): native | learn (Add to dictionary) | copyLink | an edit command.
-handle('editMenu.act', (act) => menuParams && editMenuAct(act));
+// The edit commands need no right-click: a Document's ribbon and tool search run Cut, Copy and Paste through them too.
+handle('editMenu.act', (act) => (menuParams || EDIT_ACTS.includes(act)) && editMenuAct(act));
 // Push-to-talk dictation (§7h): dictation.status|install|cancel|warm|transcribe, the local whisper server, mic permission.
 dictation.register(handle, getSettings, () => mainWin);
 // Local assistant (agent-automation plan §13.2): assistant.status|install|cancel|warm|stop|delete|chat|cancelChat, llama-server.
@@ -749,6 +759,7 @@ if (!SMOKE && !app.requestSingleInstanceLock()) {
     }
     applyNativeTheme((await getSettings()).uiTheme);
     mainWin = createMainWindow();
+    if (testWindow) testWindow.keepBehind(mainWin);
     if (SMOKE) {
       mainWin.showInactive();
       runSmoke(mainWin);

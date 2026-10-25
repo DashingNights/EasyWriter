@@ -20,14 +20,17 @@ const DENY_INSIDE = {
   marked: 'kept from the assistant',
 };
 
-/** Why record `r` is never listed or pressed, or null: password fields (never their values), file pickers, undo and redo
- * controls, and everything inside the assistant panel, the approval card, the title bar, the editor or a board, or under
+/** Why record `r` is never listed or pressed, or null: password fields (never their values), file pickers, undo, redo and
+ * paste controls, and everything inside the assistant panel, the approval card, the title bar, the editor or a board, or under
  * data-agent-deny. */
 export function denyReason(r) {
   if ((r.tag === 'input' && r.type === 'password') || /password/i.test(r.autocomplete ?? '')) return 'a password field';
   if (r.tag === 'input' && r.type === 'file') return 'a file picker';
   // As history.undo / history.redo are never offered (loop.js NEVER): the model must not undo the user's own work.
   if (/^(undo|redo)\b/i.test(r.name ?? '')) return 'an undo or redo control (each step line has its own Undo)';
+  // Paste reads the user's clipboard (the ribbon and its Paste options, tool search rows, right-click menus). The user's own
+  // clicks still paste; this only keeps ui.invoke away.
+  if (/^paste\b/i.test(r.name ?? '')) return "a paste control (the clipboard is the user's)";
   return DENY_INSIDE[r.inside] ?? null;
 }
 

@@ -66,6 +66,16 @@ test('listed: a forum command only while the forum is on', () => {
   assert.equal(listed(def, ON), def);
 });
 
+test('forum services need format.post: push.prepare, export.preview, and the push and push-wake tool entries', () => {
+  for (const id of ['push.prepare', 'export.preview']) assert.ok(byId(id).needs.some((n) => (n.gate ?? n) === 'format.post'), id);
+  // ui.jsx is JSX (not loadable here): read its TOOLS entries as text.
+  const ui = readFileSync('src/integrations/forum/ui.jsx', 'utf8');
+  for (const id of ['push', 'push-wake']) {
+    const entry = ui.slice(ui.indexOf(`{ id: '${id}',`)).split('keywords:')[0];
+    assert.match(entry, /needs: \[[^\]]*FORMAT_POST/, id);
+  }
+});
+
 test('listed: forum arguments only while the forum is on', () => {
   const add = byId('threads.add');
   const patch = byId('settings.patch');
@@ -91,6 +101,8 @@ test("wakes: with the forum off, only the open forum draft's row keeps the forum
   const off = { settings: { ...OFF, threads }, draft };
   assert.equal(wakes('forum', 'DraftRowActions', { d: draft }, off), true);
   assert.equal(wakes('forum', 'DraftRowBadge', { d: draft }, off), true);
+  assert.equal(wakes('forum', 'DraftMenuItems', { d: draft }, off), true); // the sidebar menu's Push to forum (sidebar-menu.md step 2)
+  assert.equal(wakes('forum', 'DraftMenuItems', { d: { id: 'b', threadUrl: PROJECT } }, off), false);
   assert.equal(wakes('forum', 'DraftRowActions', { d: { id: 'b', threadUrl: PROJECT } }, off), false); // not the open draft
   assert.equal(wakes('forum', 'ProjectRowActions', { t: threads[0] }, off), false);
   assert.equal(wakes('forum', 'StatusBarItem', {}, off), false);

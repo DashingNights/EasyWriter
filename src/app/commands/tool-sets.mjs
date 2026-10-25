@@ -32,10 +32,10 @@ export const CORE = ['ui.state', 'drafts.list', 'drafts.open', 'batch', 'command
 // Not history.undo / history.redo: the model must not undo the user's own typing (each step line has its own Undo).
 // Not board.render: its PNG would reach the model as base64 text. view.render's picture goes as the next user message (loop.js).
 export const VIEW_SETS = {
-  editor: ['doc.get', 'doc.find', 'doc.selection', 'doc.insert', 'doc.replace', 'doc.delete', 'doc.format', 'board.list', 'canvas.edit', 'view.render'],
+  editor: ['doc.get', 'doc.find', 'doc.selection', 'doc.insert', 'doc.replace', 'doc.delete', 'doc.format', 'doc.pageSetup', 'board.list', 'canvas.edit', 'view.render'],
   board: ['board.list', 'board.get', 'board.find', 'board.items.add', 'board.items.update', 'board.items.place', 'board.items.straighten', 'board.items.remove', 'ui.select',
     'board.fit', 'canvas.edit', 'canvas.close', 'view.render'],
-  none: ['drafts.create', 'drafts.get', 'drafts.setTag', 'drafts.delete', 'threads.list', 'tags.list', 'folders.list'],
+  none: ['drafts.create', 'drafts.get', 'drafts.rename', 'drafts.setTag', 'drafts.delete', 'threads.list', 'tags.list', 'folders.list'],
   plan: ['drafts.get', 'drafts.setTag', 'tags.list'],
   // The flowchart library (flow.mjs FLOW_VIEW_SET; test/flow-commands.test.mjs checks the two lists agree).
   flows: ['flow.library.list', 'flow.library.get', 'flow.find', 'flow.items.add', 'flow.items.update', 'flow.items.remove', 'flow.items.place', 'flow.items.straighten', 'flow.insert',

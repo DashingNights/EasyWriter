@@ -7,9 +7,10 @@ import { Combobox } from '@/components/ui/combobox';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Slider } from '@/components/ui/slider';
 import { openSettings, refocusEditor, saveSettings, setZoom } from '../actions.js';
+import { paginationKey } from '../../document/pagination.js';
 import { Slot } from '../../integrations/ui.js';
 import { on } from '../commands.js';
-import { getState, useStore } from '../store.js';
+import { getState, setState, useEditor, useStore } from '../store.js';
 import { Tip } from './Tip.jsx';
 
 const ZOOMS = ['fit', 50, 67, 75, 90, 100, 125, 150];
@@ -66,6 +67,54 @@ function Model() {
   );
 }
 
+const countWords = (text) => text.split(/\s+/).filter(Boolean).length;
+
+/** Word's statistics of `doc` (a Document's ProseMirror doc; the Word count popover adds the pages): words, characters with and without spaces (paragraph marks not
+ * counted), and the paragraphs that hold text. Words are read as the selection count reads them, so a line break (Shift+Enter)
+ * splits two words, as in the status bar's total. */
+function counts(doc) {
+  const blocks = [];
+  doc.descendants((n) => {
+    if (n.isTextblock) blocks.push(n.textContent);
+    return !n.isTextblock;
+  });
+  return { words: countWords(doc.textBetween(0, doc.content.size, ' ', ' ')), chars: blocks.join('').length, noSpaces: blocks.join('').replace(/\s/g, '').length, paragraphs: blocks.filter((b) => b.trim()).length };
+}
+
+/** A Document's pages (document/pagination.js): {page: the caret's, pages}, or null without an editor. */
+const pagesOf = (ed) => (ed ? paginationKey.getState(ed.state) ?? null : null);
+
+/** 'Page X of Y' (Word's status bar): the caret's page and the page count. */
+function DocumentPage() {
+  const p = pagesOf(useEditor());
+  return p && <span data-page-count="" className="tabular-nums">{`Page ${p.page} of ${p.pages}`}</span>;
+}
+
+/** A Document's word count (Word's status bar): 'N of M words' while text is selected; a press opens the Word count popover
+ * (also from the tool search, document/tools.js openWordCount). */
+function DocumentWords({ total }) {
+  const ed = useEditor();
+  const open = useStore((s) => s.wordCount);
+  const { from, to, empty } = ed?.state.selection ?? { empty: true };
+  const selected = !empty && ed ? countWords(ed.state.doc.textBetween(from, to, ' ', ' ')) : null;
+  const c = open && ed ? { pages: pagesOf(ed)?.pages, ...counts(ed.state.doc) } : null;
+  return (
+    <Popover open={open} onOpenChange={(o) => setState({ wordCount: o })}>
+      <PopoverTrigger asChild>
+        <Button variant="ghost" size="xs" className="-mx-1 font-normal text-muted-foreground" data-word-count="">
+          {selected != null ? `${selected} of ${total} ${total === 1 ? 'word' : 'words'}` : `${total} ${total === 1 ? 'word' : 'words'}`}
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent side="top" align="start" className="w-64 p-3 text-xs" onCloseAutoFocus={refocusEditor}>
+        <div className="mb-2 text-sm font-medium">Word count</div>
+        {c && [['Pages', c.pages], ['Words', c.words], ['Characters (no spaces)', c.noSpaces], ['Characters (with spaces)', c.chars], ['Paragraphs', c.paragraphs]].map(([label, n]) => (
+          <div key={label} className="flex justify-between py-0.5"><span className="text-muted-foreground">{label}</span><span className="tabular-nums">{n}</span></div>
+        ))}
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 export function StatusBar() {
   const saveLabel = useStore((s) => s.saveLabel);
   const saveError = useStore((s) => s.saveError);
@@ -73,6 +122,7 @@ export function StatusBar() {
   const zoom = useStore((s) => s.zoom);
   const zoomPct = useStore((s) => s.zoomPct);
   const spell = useStore((s) => s.settings?.spellCheck ?? true);
+  const isDocument = useStore((s) => s.draft?.format === 'document');
   return (
     <footer className="col-span-2 flex h-8 items-center gap-4 border-t px-2 text-xs text-muted-foreground">
       {/* The main window's spell checker (settings.spellCheck, main.js setSpellCheckerEnabled): off clears the underlines. */}
@@ -83,7 +133,8 @@ export function StatusBar() {
         </Button>
       </Tip>
       <span className={cn(saveError && 'text-destructive')}>{saveLabel}</span>
-      <span>{`${words} ${words === 1 ? 'word' : 'words'}`}</span>
+      {isDocument && <DocumentPage />}
+      {isDocument ? <DocumentWords total={words} /> : <span>{`${words} ${words === 1 ? 'word' : 'words'}`}</span>}
       <Slot name="StatusBarItem" />
       <Model />
       <Agents />

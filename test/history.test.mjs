@@ -7,7 +7,7 @@ import { encode, newLog, rebuild, record } from '../src/app/history.js';
 
 const schema = new Schema({
   nodes: {
-    doc: { content: 'block+' },
+    doc: { content: 'block+', attrs: { sect: { default: null } } }, // a Document's page setup (tr.setDocAttribute)
     paragraph: { group: 'block', content: 'inline*' },
     image: { group: 'inline', inline: true, attrs: { src: {} } },
     text: { group: 'inline' },
@@ -116,4 +116,16 @@ test('a file that does not lead to the saved doc, or is corrupt, gives no histor
   assert.equal(rebuild(fresh, { ...file, base: { type: 'nope' } }, 50), null);
   assert.equal(rebuild(fresh, { ...file, events: 'x' }, 50), null);
   assert.ok(rebuild(fresh, file, 50));
+});
+
+test('an undone doc attribute step goes back to the base value after a reopen', () => {
+  const s = session(50);
+  s.dispatch(s.state.tr.setDocAttribute('sect', { w: 595.3 }).setTime((s.t += 2000)));
+  s.dispatch(s.state.tr.setDocAttribute('sect', { w: 612 }).setTime((s.t += 2000)));
+  const { r, rebuilt } = reopen(s, 50);
+  assert.ok(rebuilt);
+  r.cmd(undo);
+  assert.deepEqual(r.state.doc.attrs.sect, { w: 595.3 });
+  r.cmd(undo);
+  assert.equal(r.state.doc.attrs.sect, null);
 });

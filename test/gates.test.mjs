@@ -74,9 +74,16 @@ test('node.none and node.is read the node-selected block (node.is: the kind the 
   assert.equal(can('node.is', null, null, ['canvas']), false);
 });
 
-test('format.box holds while the default format is the forum post, with the forum on or off', () => {
-  assert.equal(can('format.box', { integrations: { forum: { enabled: true } } }), true);
-  assert.equal(can('format.box', { integrations: { forum: { enabled: false } } }), true);
+test('format.post and format.document read the draft subject (no draft or no format: a forum post)', () => {
+  const drafts = [null, {}, { format: null }, { format: 'forum-post' }, { format: 'page' }, { format: 'document' }];
+  assert.deepEqual(drafts.map((d) => can('format.post', d)), [true, true, true, true, true, false]);
+  assert.deepEqual(drafts.map((d) => can('format.document', d)), [false, false, false, false, false, true]);
+  assert.equal(can('format.post', { format: 'forum-post', formatVersion: 2 }), false); // a newer build's draft is neither
+});
+
+test("format.box follows the draft's format, not the app default", () => {
+  assert.equal(GATES['format.box'].subject, 'draft');
+  assert.deepEqual([{}, { format: 'forum-post' }, { format: 'page' }, { format: 'document' }].map((d) => can('format.box', d)), [true, true, false, false]);
 });
 
 test("doc.command checks insertBox against the draft's format (before the ask, commands.js failedGates)", async () => {
@@ -89,6 +96,23 @@ test("doc.command checks insertBox against the draft's format (before the ask, c
   assert.deepEqual(check({ name: 'insertBox' }, {}, on), []);
   assert.deepEqual(check({ name: 'insertBox' }, { format: 'page' }, on), ['format.box']);
   assert.deepEqual(check({ name: 'toggleBold' }, {}, off), []);
+  assert.deepEqual(check({ name: 'insertBox' }, { format: 'document' }, on), ['format.post']);
+  for (const name of ['setFontSize', 'unsetTextColor', 'toggleCode', 'toggleBlockquote', 'toggleCodeBlock', 'setHorizontalRule']) {
+    assert.deepEqual(check({ name }, { format: 'document' }, on), ['format.post'], name);
+  }
+  assert.deepEqual(check({ name: 'toggleBold' }, { format: 'document' }, on), []);
+});
+
+test('doc.format refuses the forum marks and presets on a non-forum draft', async () => {
+  const { defs } = await import('../src/app/commands/doc.mjs');
+  const { check } = defs.find((d) => d.id === 'doc.format');
+  const doc = { format: 'document' };
+  for (const marks of [{ fontSize: 150 }, { textColor: null }, { highlight: 'red' }, { fontFamily: null }, { code: true }]) {
+    assert.deepEqual(check({ path: [0], marks }, doc), ['format.post'], Object.keys(marks)[0]);
+    assert.deepEqual(check({ path: [0], marks }, {}), [], Object.keys(marks)[0]);
+  }
+  assert.deepEqual(check({ path: [0], presetId: 'p1' }, doc), ['format.post']);
+  assert.deepEqual(check({ path: [0], marks: { bold: true }, block: { align: 'center' } }, doc), []);
 });
 
 test('integration gates follow the settings and carry their integration', () => {

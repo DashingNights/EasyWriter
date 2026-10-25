@@ -228,16 +228,21 @@ class PlanChartView {
     this.resizeObserver = new ResizeObserver(() => requestAnimationFrame(() => !this.destroyed && this.fit()));
     this.resizeObserver.observe(this.dom);
     this.resizeObserver.observe(this.inner);
+    // A Document's pagination fits it before each measure (pagination.js), so a page count never counts it unscaled.
+    this.dom.dataset.pgFit = '';
+    this.dom.pgFit = () => this.fit();
     // Plan, draft and settings changes (a frozen chart too: the page theme may have changed), once per frame, after the store
     // has applied them.
     this.unsubscribe = planSource.subscribe(() => {
       cancelAnimationFrame(this.redraw);
       this.redraw = requestAnimationFrame(() => !this.destroyed && this.render());
     });
-    this.render();
+    // At once (flushSync), not when React gets to it: a Document's pagination measures the new view in the next frame, and a
+    // page setup or an opened draft builds every view again, so an empty chart would count short of its pages for a frame.
+    this.render(true);
   }
 
-  render() {
+  render(now = false) {
     if (this.seen !== this.node.attrs) {
       this.seen = this.node.attrs;
       this.chart = parseChart(this.node.attrs);
@@ -253,17 +258,24 @@ class PlanChartView {
     this.warn.textContent = `Cannot export as a picture: ${this.error}`;
     if (this.error) this.dom.append(this.warn);
     else this.warn.remove();
-    this.root.render(this.ctx && planSource.Chart
+    const draw = () => this.root.render(this.ctx && planSource.Chart
       ? h(planSource.Chart, { ctx: this.ctx, view: c.view, options: c.options, palette: pagePalette(pageTheme()), width: this.layoutWidth })
       : h('div', { className: 'pc-missing' }, 'Plan not found. Pick a plan or delete this chart.'));
+    if (now) flushSync(draw);
+    else draw();
     this.fit();
   }
 
-  // A new drawn width lays the chart out again; a layout wider than the drawn width is scaled down to it.
+  // A new drawn width lays the chart out again; a layout wider than the drawn width is scaled down to it. In a Document a chart
+  // taller than a page's text area (document.css --fit-h, less its margins) is scaled down to fit one page, as a picture is.
   fit() {
     const w = this.dom.offsetWidth;
     if (w && Math.abs(w - this.width) > 0.5) return this.render();
-    const s = w && this.layoutWidth > w ? w / this.layoutWidth : 1;
+    let s = w && this.layoutWidth > w ? w / this.layoutWidth : 1;
+    const cs = getComputedStyle(this.dom);
+    const max = parseFloat(cs.getPropertyValue('--fit-h')) - 2 * parseFloat(cs.marginTop) - 2;
+    const ih = this.inner.offsetHeight;
+    if (ih * s > max) s = max / ih;
     this.inner.style.transform = s === 1 ? '' : `scale(${s})`;
     this.dom.style.height = s === 1 ? '' : `${this.inner.offsetHeight * s}px`;
     if (selected === this) emitChart();

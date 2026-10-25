@@ -77,7 +77,7 @@ function useFrame(islandRef) {
   const [frame, setFrame] = useState(null);
   useLayoutEffect(() => {
     const box = islandRef.current.parentElement;
-    const bar = box.querySelector('[data-agent-area="toolbar"]');
+    const bar = box.querySelector('[data-agent-area="toolbar"]:not([data-ribbon])'); // a Document's tools island is at the left edge; it has no bottom island
     const measure = () => {
       const v = viewportRect();
       setFrame({ box: box.getBoundingClientRect(), vp: v, btn: islandRef.current.getBoundingClientRect(), bar: bar?.isConnected ? bar.getBoundingClientRect() : null });

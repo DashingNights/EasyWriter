@@ -26,6 +26,8 @@ import { StatusBar } from './components/StatusBar.jsx';
 import { Toolbar } from './components/Toolbar.jsx';
 import { ToolSearch } from './components/ToolSearch.jsx';
 import { Dictation } from './dictation/Dictation.jsx';
+import { NavPane } from '../document/NavPane.jsx';
+import { DocIsland } from '../document/Ribbon.jsx';
 import { can } from './gates.mjs';
 import { useStore, WORKER } from './store.js';
 import { keybindsVersion, subscribeKeybinds } from './keybinds.js';
@@ -42,16 +44,22 @@ function Workspace({ ui }) {
 }
 
 /** The rail serves the editor and, in the flowchart library, only a board (the library editor's): it never formats the
- * document hidden behind a workspace. */
+ * document hidden behind a workspace. In a Document the tools island takes its place until a canvas is being edited
+ * (docs/plans/document.md step 10). */
 function Rail({ ui }) {
   const board = useBoard();
   const flows = can('view.flows', ui) && !!board;
-  const box = useViewportBox(flows);
+  const isDocument = useStore((s) => s.draft?.format === 'document');
+  const nav = useStore((s) => !!s.navPane) && isDocument && !flows; // the Document's navigation pane is at the column's left edge
+  const box = useViewportBox(flows || nav);
   if (!(can('view.editor', ui) || flows)) return null;
-  const rail = <BoardRail className={cn('max-h-[calc(100%-8rem)]', flows && 'pointer-events-auto')} />;
-  // In the library editor the rail's positioned ancestor is the whole column: a box over the board's view ([data-viewport],
-  // right of the shape panel, following its width and collapse) puts the rail at the view's left edge and centres it there.
-  return flows ? <div className="pointer-events-none absolute" style={box ?? undefined}>{rail}</div> : rail;
+  const rail = isDocument && !board
+    ? <DocIsland className={cn(nav && 'pointer-events-auto')} />
+    : <BoardRail className={cn('max-h-[calc(100%-8rem)]', (flows || nav) && 'pointer-events-auto')} />;
+  // In the library editor (and beside a Document's navigation pane) the rail's (or island's) positioned ancestor is the whole
+  // column: a box over the board's view ([data-viewport], right of the shape panel, following its width and collapse) puts the rail at the
+  // view's left edge and centres it there.
+  return flows || nav ? <div className="pointer-events-none absolute" style={box ?? undefined}>{rail}</div> : rail;
 }
 
 /** The browser's tabs over the editor page (§7j): a strip at the top-left of the page's viewport (with no tabs, only its +
@@ -112,6 +120,9 @@ export function App() {
   const editor = can('view.editor', ui);
   const browser = can('view.browser', ui);
   const dark = useStore((s) => s.uiDark);
+  // A Document has its tools island at the editor area's left edge (Rail) in place of the bottom toolbar (docs/plans/document.md step 10).
+  const isDocument = useStore((s) => s.draft?.format === 'document');
+  const navPane = useStore((s) => !!s.navPane); // View > Navigation pane, beside the editor area
   return (
     <TooltipProvider delayDuration={300}>
       <div className={cn('grid h-screen grid-rows-[auto_1fr_auto]', collapsed ? 'grid-cols-[0_1fr]' : 'grid-cols-[290px_1fr]')}>
@@ -119,7 +130,10 @@ export function App() {
         {!collapsed && <Sidebar />}
         <main className="col-start-2 flex min-h-0 min-w-0 flex-col">
           <div className="relative flex min-h-0 flex-1 flex-col">
-            <EditorPage inert={!editor} />
+            <div className="flex min-h-0 flex-1">
+              {editor && isDocument && navPane && <NavPane />}
+              <EditorPage inert={!editor} />
+            </div>
             {/* §7i Background drafts: the hidden editors of the assistant's background sessions mount here (assistant/sessions.js) */}
             <div id="sessions" aria-hidden inert />
             {/* §7j: the browser page stays mounted too, so its tabs keep running behind the other pages */}
@@ -130,7 +144,7 @@ export function App() {
             <Rail ui={ui} />
             <BrowserTabs ui={ui} />
             {editor && <FindBar />}
-            {editor && <Toolbar />}
+            {editor && !isDocument && <Toolbar />}
             {editor && <SidebarToggle />}
             {/* §7h: the bottom column over the toolbar: the transcript pane with the §7c notice stack resting on it */}
             <Dictation><Notices /></Dictation>

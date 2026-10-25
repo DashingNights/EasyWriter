@@ -1,9 +1,10 @@
-import { formatOf } from '../../formats.mjs';
+import { loadable } from '../../editors.js';
+import { pageOf } from '../../formats.mjs';
 import { makeEditor, NEWER_FORMAT, saveOther } from '../actions.js';
 import { fail } from '../commands/define.mjs';
 import * as history from '../history.js';
 import { revs } from '../rev.js';
-import { getState, setState } from '../store.js';
+import { getState, setState, subscribe } from '../store.js';
 
 // Background sessions (SPEC §7i Background drafts; docs/plans/assistant-reliability.md §7 Tier B): the assistant works on a draft
 // other than the open one in a hidden editor of its own, made as the open draft's (actions.js makeEditor: the same extensions and
@@ -20,8 +21,25 @@ const HOST = 'position:absolute;left:-20000px;top:0;visibility:hidden;pointer-ev
 const live = new Map(); // draftId → {draftId, draft, editor, log, host, rev, revs, dirty, saveTimer, idleTimer, pending, ending}
 const loading = new Map(); // draftId → the promise of start()
 
+/** Its own draft's format and width on a session's host, not the open draft's (the root's), as actions.js applyPage sets them on
+ * the open page. `sect` is the session editor's live page setup (a Document's doc.attrs.sect, newer than the draft file's). */
+function paint(host, draft, sect) {
+  const { format, width, padding } = pageOf(draft, getState().settings, sect);
+  host.dataset.format = format;
+  host.style.setProperty('--page-width', `${width}px`);
+  host.style.setProperty('--page-pad', `${padding}px`);
+}
+
+// A live host follows the settings (Settings > Page width), as the open page does through actions.js applySettings.
+let painted = getState().settings;
+subscribe(() => {
+  if (getState().settings === painted) return;
+  painted = getState().settings;
+  for (const s of live.values()) paint(s.host, s.draft, s.editor.state.doc.attrs.sect ?? undefined);
+});
+
 /** The session of draft `draftId` (started on first use), or null when it is the open draft. Throws not_found when the draft
- * cannot be loaded, refused when its format is unknown here (as openDraft). */
+ * cannot be loaded, refused when it cannot load here (editors.js loadable, as openDraft). */
 export async function sessionFor(draftId) {
   for (;;) {
     if (getState().draft?.id === draftId) return null;
@@ -43,11 +61,12 @@ async function start(draftId) {
   if (getState().worker?.draftId === draftId) fail('busy', 'The background window has that draft. Use computer_act with target background, or background_close first.');
   const [draft, file] = await Promise.all([api.drafts.load(draftId), api.drafts.loadHistory(draftId).catch(() => null)]);
   if (!draft) fail('not_found', `The draft ${draftId} could not be loaded`);
-  if (!formatOf(draft, getState().settings)) fail('refused', NEWER_FORMAT);
+  if (!loadable(draft, getState().settings)) fail('refused', NEWER_FORMAT);
   if (getState().draft?.id === draftId) return; // the user opened it meanwhile
   const host = document.createElement('div');
   host.className = 'page'; // the page's width and typography
   host.style.cssText = HOST;
+  paint(host, draft);
   (document.getElementById('sessions') ?? document.body).append(host);
   const s = { draftId, draft, host, rev: getState().rev, dirty: false, saveTimer: 0, idleTimer: 0, pending: null, ending: null };
   Object.assign(s, makeEditor(host, draft.doc, file, getState().settings.historyLimit, () => {
@@ -57,7 +76,13 @@ async function start(draftId) {
   }, draft));
   s.revs = revs(s);
   s.revs.clear(); // its first rev, above the open draft's revs so far
-  s.editor.on('transaction', ({ transaction, appendedTransactions }) => s.revs.record(transaction, appendedTransactions));
+  s.editor.on('transaction', ({ transaction, appendedTransactions }) => {
+    s.revs.record(transaction, appendedTransactions);
+    // A doc.pageSetup with draftId: the host takes the new text width, as actions.js does for the open editor, so pictures and
+    // canvases inserted after it are sized to the new column (contentWidth reads the host).
+    const sect = s.editor.state.doc.attrs.sect;
+    if (transaction.before.attrs.sect !== sect) paint(host, draft, sect ?? undefined);
+  });
   live.set(draftId, s);
 }
 

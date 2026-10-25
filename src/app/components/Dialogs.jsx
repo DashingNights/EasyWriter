@@ -6,11 +6,14 @@ import {
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Spinner } from '@/components/ui/spinner';
+import { Textarea } from '@/components/ui/textarea';
+import { PageSetupDialog } from '../../document/PageSetupDialog.jsx';
 import { all } from '../../integrations/ui.js';
 import { refocusEditor } from '../actions.js';
 import { setState, useStore } from '../store.js';
 import { FLOW_FORMS } from './flows/forms.jsx';
 import { FormDialog } from './FormDialog.jsx';
+import { NewDraftDialog } from './NewDraftDialog.jsx';
 import { PLAN_FORMS } from './plan/forms.jsx';
 import { SettingsDialog } from './SettingsDialog.jsx';
 
@@ -19,6 +22,17 @@ function LinkDialog({ href, onClose }) {
   return (
     <FormDialog title="Link" okText="Apply" result={() => value} onClose={onClose}>
       <Input className="h-8" value={value} placeholder="https://..." onChange={(e) => setValue(e.target.value)} />
+    </FormDialog>
+  );
+}
+
+/** A Document picture's alt text (document/tools.js editAltText): the text, empty for none. */
+function AltTextDialog({ alt, onClose }) {
+  const [value, setValue] = useState(alt);
+  return (
+    <FormDialog title="Alt text" okText="Apply" result={() => value} onClose={onClose}>
+      <Textarea aria-label="Alt text" maxLength={2000} value={value} placeholder="Describe the picture for people who cannot see it"
+        onChange={(e) => setValue(e.target.value)} />
     </FormDialog>
   );
 }
@@ -33,7 +47,7 @@ function AddThreadDialog({ validate, onClose }) {
   );
 }
 
-const CORE = { link: LinkDialog, addThread: AddThreadDialog, settings: SettingsDialog };
+const CORE = { newDraft: NewDraftDialog, link: LinkDialog, altText: AltTextDialog, pageSetup: PageSetupDialog, addThread: AddThreadDialog, settings: SettingsDialog };
 // Object.assign: all('FORMS') is one object per integration.
 const FORMS = Object.assign({ ...CORE, ...PLAN_FORMS, ...FLOW_FORMS }, ...all('FORMS'));
 

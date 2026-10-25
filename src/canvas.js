@@ -119,7 +119,7 @@ function emitCanvas() {
   const view = session ? null : selected;
   const f = view?.flow();
   canvasSnap = view && {
-    view, dw: view.dw, w: view.artSize.w, h: view.artSize.h,
+    view, dw: Math.min(view.dw, view.pageCap()), w: view.artSize.w, h: view.artSize.h,
     flow: f && { id: f.id, title: flowSource.title(f.id), missing: flowSource.isMissing(f.id) },
   };
   for (const fn of canvasListeners) fn();
@@ -221,7 +221,9 @@ class CanvasView {
     const { w, h, bg, items } = liveBoard(this);
     this.dw = this.node.attrs.dw;
     this.artSize = { w, h };
+    // --sc-ratio: a Document caps the width so the canvas fits one page (document.css); other formats ignore it.
     Object.assign(this.dom.style, { width: `min(${this.dw}px, 100%)`, aspectRatio: `${w} / ${h}` });
+    this.dom.style.setProperty('--sc-ratio', String(w / h));
     this.art?.remove();
     this.art = drawCanvas(this.dom, { aw: w, ah: h, bg, items });
     this.dom.classList.toggle('sc-empty', !items.length);
@@ -260,8 +262,15 @@ class CanvasView {
     this.dom.style.setProperty('--wb-inv', String(1 / scaleOf(this.dom)));
   }
 
+  // The widest a Document draws the canvas so it fits one page's text area (document.css max-width); elsewhere none.
+  pageCap() {
+    const m = parseFloat(getComputedStyle(this.dom).maxWidth);
+    return Number.isFinite(m) ? Math.floor(m) : Infinity;
+  }
+
+  // The widest dw that changes what is drawn: the text width, and in a Document the page cap.
   maxWidth() {
-    return contentWidth(this.view);
+    return Math.min(contentWidth(this.view), this.pageCap());
   }
 
   setDw(dw) {

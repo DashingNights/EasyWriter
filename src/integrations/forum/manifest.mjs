@@ -5,10 +5,11 @@ import { hasForum, siteOf, topicOf } from './topic.mjs';
 
 const defaults = { forumUrl: '', forumWidth: 1454 };
 
-/** The forum post format (src/formats.mjs), the default and only editor format until Document and Slides, with the forum switch
- * on or off: the core page width (forumWidth is a legacy key, kept for older builds) and the titled box, whose HTML is
- * Invision's ipsRichTextBox. 1454 is formats.mjs DEFAULT_PAGE_WIDTH, which this file cannot import (formats.mjs imports it). */
-const FORUM_POST = { id: 'forum-post', label: 'Forum post', default: true, width: (s) => s?.pageWidth ?? 1454, padding: 22, blocks: ['box'] };
+/** The forum post format (src/formats.mjs), with the forum switch on or off: the core page width (forumWidth is a legacy key,
+ * kept for older builds) and the titled box, whose HTML is Invision's ipsRichTextBox. default: true only makes it the format of
+ * a draft without format (every draft from before format was written), never the format a new draft picks. 1454 is formats.mjs
+ * DEFAULT_PAGE_WIDTH, which this file cannot import (formats.mjs imports it). */
+const FORUM_POST = { id: 'forum-post', label: 'Forum post', default: true, version: 1, width: (s) => s?.pageWidth ?? 1454, padding: 22, blocks: ['box'] };
 
 const gate = (subject, test, message, fix) => ({ subject, test, message, fix });
 
@@ -26,7 +27,7 @@ export default {
   defaults,
   formats: [FORUM_POST],
   // Gates of app/gates.mjs (its subjects), listed there only while the forum is on (index.mjs integrationGates). The draft
-  // subject is {id, threadUrl, pushedAt, threads (settings.threads)}.
+  // subject is {id, format, threadUrl, pushedAt, threads (settings.threads)}.
   gates: {
     'draft.hasThread': gate('draft', (d) => !!topicOf(d?.threads, d?.threadUrl), "The draft's project has no forum thread",
       "Put the draft in a project with a forum thread (drafts.setThread, or Move to... on its sidebar row), or link one to its project (the link button on its row)"),
@@ -39,14 +40,17 @@ export default {
   // Plan step 9: switching the forum off hides its services, never a forum draft's own controls. With it off, the open draft of a
   // project with a forum thread keeps the `wakes` slots (its row's Pushed tick, Push to forum or Unpush) and the palette's Push
   // to forum, and using one asks to turn the forum back on. `wake` is that draft test on the gates' draft subject (index.mjs:
-  // gate wake.forum, never hidden while off).
+  // gate wake.forum, never hidden while off). DraftMenuItems: the same Push to forum or Unpush in the row's right-click menu.
   wake: gate('draft', (d) => !!topicOf(d?.threads, d?.threadUrl), "The open draft's project has no forum thread", 'Open a draft of a project with a forum thread'),
-  wakes: ['DraftRowBadge', 'DraftRowActions'],
+  wakes: ['DraftRowBadge', 'DraftRowActions', 'DraftMenuItems'],
   turnOn: 'The user turns it on in Settings > Integrations, or from Push to forum on a draft of a project with a forum thread',
+  // formats.mjs defaultFormat while the forum is on: a new draft in a project linking a forum thread is a forum post.
+  prefers: (settings, threadUrl) => (topicOf(settings?.threads, threadUrl) ? 'forum-post' : null),
   // The assistant's situation note adds it after the open draft's project while the forum is on (index.mjs situationNotes).
   situation: (draft, settings) => (topicOf(settings?.threads, draft?.threadUrl) ? ', linked to a forum thread' : ''),
   // Appended to the MCP instructions while the forum is on (agent-server.js).
-  agentNote: ' Pushes to the forum ask the user, and the user presses Submit on the forum.',
+  agentNote: ' A forum post (format forum-post) takes the forum keys of doc_format instead. Pushes to the forum ask the user, and '
+    + 'the user presses Submit on the forum.',
 
   /** settings.json's `stored` object as read, on every read and whether the forum is on or not. Threads with no forum site
    * (from before the site was a setting) get the site of the first one. A profile from before integrations gets the forum on

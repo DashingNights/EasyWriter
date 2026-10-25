@@ -122,7 +122,8 @@ export function ToolButton({ title, onClick, active, disabled, children }) {
   );
 }
 
-export function ToolSelect({ title, value, onChange, placeholder, size = 'sm', className, disabled, children }) {
+/** A select with its tooltip; `contentProps` go to the list (its placement). */
+export function ToolSelect({ title, value, onChange, placeholder, size = 'sm', className, disabled, contentProps, children }) {
   return (
     <Select value={value} onValueChange={onChange} disabled={disabled}>
       <Tip title={title}>
@@ -130,7 +131,7 @@ export function ToolSelect({ title, value, onChange, placeholder, size = 'sm', c
           <SelectValue placeholder={placeholder} />
         </SelectTrigger>
       </Tip>
-      <SelectContent onCloseAutoFocus={refocusEditor}>{children}</SelectContent>
+      <SelectContent onCloseAutoFocus={refocusEditor} {...contentProps}>{children}</SelectContent>
     </Select>
   );
 }

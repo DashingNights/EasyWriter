@@ -106,7 +106,10 @@ export function rebuild(state, file, keep) {
     const log = trim(decode(file, state.schema), keep);
     if (!log.events.length) return null;
     // Recorded transactions apply as they are (applyInner: plugins do not append to them again); undo runs as it did.
-    let st = state.applyInner(state.tr.replaceWith(0, state.doc.content.size, log.base.content).setMeta('addToHistory', false));
+    const start = state.tr.replaceWith(0, state.doc.content.size, log.base.content).setMeta('addToHistory', false);
+    // The base's doc attrs too (a Document's sect and styles): an undone setDocAttribute step goes back to them.
+    for (const [k, v] of Object.entries(log.base.attrs)) if (v !== state.doc.attrs[k]) start.setDocAttribute(k, v);
+    let st = state.applyInner(start);
     for (const { sel, trs } of log.events) {
       st = st.applyInner(st.tr.setSelection(Selection.fromJSON(st.doc, sel)));
       let first = null;

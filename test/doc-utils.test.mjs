@@ -1,14 +1,14 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { draftTitle, wordCount, flowRefs, chartRefs } from '../src/doc-utils.mjs';
+import { chartRefs, cleanTitle, copyTitle, draftTitle, flowRefs, wordCount } from '../src/doc-utils.mjs';
 
 const text = (t, marks) => (marks ? { type: 'text', text: t, marks } : { type: 'text', text: t });
 const para = (...content) => ({ type: 'paragraph', content });
 const doc = (...content) => ({ type: 'doc', content });
 
 test('draftTitle', () => {
-  assert.equal(draftTitle(doc()), 'Untitled draft');
-  assert.equal(draftTitle(doc({ type: 'paragraph' }, para(text('   ')))), 'Untitled draft');
+  assert.equal(draftTitle(doc()), 'Untitled');
+  assert.equal(draftTitle(doc({ type: 'paragraph' }, para(text('   ')))), 'Untitled');
   assert.equal(draftTitle(doc(para(text('  Hello world  ')))), 'Hello world');
   const long = 'x'.repeat(100);
   const t = draftTitle(doc(para(text(long))));
@@ -17,6 +17,17 @@ test('draftTitle', () => {
   assert.equal(draftTitle(doc(para(text('y'.repeat(60))))), 'y'.repeat(60));
   const wbFirst = doc({ type: 'canvas', attrs: { w: 800, h: 400, bg: 'post', items: [] } }, para(text('After board')));
   assert.equal(draftTitle(wbFirst), 'After board');
+});
+
+test('cleanTitle and copyTitle', () => {
+  assert.equal(cleanTitle('  a\n b '), 'a b');
+  assert.equal(cleanTitle(''), 'Untitled');
+  assert.equal(cleanTitle('   '), 'Untitled');
+  assert.equal(cleanTitle('z'.repeat(250)), 'z'.repeat(200));
+  const copy = copyTitle('w'.repeat(200));
+  assert.equal(copy.length, 200);
+  assert.ok(copy.endsWith(' (copy)'));
+  assert.equal(copyTitle('Notes'), 'Notes (copy)');
 });
 
 test('wordCount', () => {

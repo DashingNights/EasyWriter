@@ -9,7 +9,7 @@
   { "id": "push.prepare", "args": {}, "expect": { "ok": false, "code": "denied", "error": { "data": { "reason": "policy" } } } },
   { "id": "drafts.unpush", "args": { "draftId": "$steps[3].result.draftId" },
     "expect": { "ok": false, "code": "precondition_failed", "error": { "data": { "failed": [{ "gate": "draft.pushed" }] } } } },
-  { "id": "drafts.create", "args": { "threadUrl": null }, "expect": { "ok": true } },
+  { "id": "drafts.create", "args": { "threadUrl": null, "format": "forum-post" }, "expect": { "ok": true } },
   { "id": "push.prepare", "args": {},
     "expect": { "ok": false, "code": "precondition_failed", "error": { "data": { "failed": [{ "gate": "draft.hasThread" }] } } } }
 ]

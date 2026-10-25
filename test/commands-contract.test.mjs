@@ -80,7 +80,7 @@ test('removals are destructive (links excepted), destructive titles name the obj
 });
 
 test('$defs hold the shared schemas', () => {
-  assert.deepEqual(Object.keys($defs).sort(), ['ID', 'ITEM', 'PATH', 'TAG_ID', 'URL']);
+  assert.deepEqual(Object.keys($defs).sort(), ['ID', 'ITEM', 'PARA', 'PATH', 'RUN', 'TAG_ID', 'URL']);
   assert.deepEqual(validate($defs.PATH, [0, 2]), []);
   assert.deepEqual(validate($defs.URL, 'https://example.com/topic/1'), []); // a topic of any forum
   assert.deepEqual(validate($defs.URL, 'project:0b2c8f0e-1c4e-4f8a-9d6a-2b7f3c9e1a55'), []); // a project key
@@ -89,6 +89,19 @@ test('$defs hold the shared schemas', () => {
 
 test('every command the palette runs is in the catalogue', () => {
   for (const id of PALETTE_COMMANDS) assert.ok(byId(id), id);
+  assert.deepEqual(PALETTE_COMMANDS, ['drafts.create', 'drafts.setTag', 'drafts.move', 'threads.select', 'drafts.rename', 'drafts.duplicate', 'folders.create']);
+});
+
+test('drafts.duplicate: examples beside the source and at the top level (docs/plans/sidebar-menu.md decision 7)', () => {
+  assert.deepEqual(byId('drafts.duplicate').examples.map((e) => Object.keys(e.args).join()), ['draftId', 'draftId,folderId']);
+  assert.equal(byId('drafts.duplicate').examples[1].args.folderId, null);
+});
+
+test('drafts.create: format document or forum-post, no fixed default, and an example making a Document', () => {
+  const d = byId('drafts.create');
+  assert.deepEqual(d.args.properties.format.enum, ['forum-post', 'document']);
+  assert.equal(d.args.properties.format.default, undefined); // formats.mjs defaultFormat picks it
+  assert.ok(d.examples.some((e) => e.args.format === 'document' && e.args.content?.markdown));
 });
 
 test('ITEM: board items take #/$defs/ITEM; it accepts what parseBoard keeps and refuses a canvas item', () => {
@@ -148,7 +161,7 @@ test('argsMessage: the validator line, the nearest description up the path and t
   // A union names its alternatives (wave 1c): its own words, else each branch's.
   assert.match(msg('doc.insert', { at: '[3]', content: { markdown: 'x' } }), /^args\/at must match exactly one of 2 forms\. at: A block path such as \[3\], or one of start, end, cursor\. Example: /);
   assert.match(msg('drafts.setThread', { draftId: '0b2c8f0e-1c4e-4f8a-9d6a-2b7f3c9e1a55', threadUrl: 5 }), /^args\/threadUrl must match one of 2 forms\. threadUrl: Text, or null\. Example: /);
-  assert.match(msg('doc.format', { path: [1] }), /^args must match one of 3 forms\. With marks, or with block, or with presetId\. Example: /);
+  assert.match(msg('doc.format', { path: [1] }), /^args must match one of 5 forms\. With marks, or with block, or with presetId, or with run, or with paragraph\. Example: /);
 });
 
 test('a batch step id may be a tool name', () => {
@@ -267,4 +280,36 @@ test('integration commands need their integration gate first; define() checks in
   assert.throws(() => define({ ...base, integrationArgs: { b: 'forum' } }), /not an argument/);
   assert.throws(() => define({ ...base, integrationArgs: { a: 'nope' } }), /not an integration/);
   assert.deepEqual(define({ ...base, integration: 'forum', needs: ['doc.open'] }).needs, ['integration.forum', 'doc.open']);
+});
+
+test("doc.command: a Document's page break, table and picture commands need format.document; its table ones the caret in a table", () => {
+  const d = byId('doc.command');
+  const doc = { format: 'document' };
+  const post = { format: 'forum-post' };
+  for (const name of ['setPageBreak', 'mergeCells', 'splitCell', 'toggleHeaderRow', 'setCellAttribute', 'setCellSelection', 'setAltText']) {
+    assert.deepEqual(d.check({ name, args: [] }, doc), [], name);
+    assert.deepEqual(d.check({ name, args: [] }, post), ['format.document'], name);
+  }
+  const inTable = d.needs.find((n) => n.gate === 'doc.inTable');
+  assert.deepEqual(['mergeCells', 'setCellAttribute', 'setPageBreak', 'setCellSelection'].map((name) => inTable.if({ name })), [true, true, false, false]);
+});
+
+test('doc.pageSetup: needs format.document; its examples cover a preset, custom margins, a custom size and a page number', () => {
+  const d = byId('doc.pageSetup');
+  assert.deepEqual(d.check({ margins: 'narrow' }, { format: 'document' }), []);
+  assert.deepEqual(d.check({ margins: 'narrow' }, { format: 'forum-post' }), ['format.document']);
+  assert.deepEqual(d.examples.map((e) => Object.keys(e.args).join()), ['size,orientation,margins', 'margins', 'size', 'pageNumber']);
+  assert.deepEqual(validate(d.args, { pageNumber: null }, $defs), []);
+  assert.notDeepEqual(validate(d.args, { pageNumber: { at: 'middle', align: 'left' } }, $defs), []);
+  assert.notDeepEqual(validate(d.args, {}, $defs), []); // one of size, orientation, margins
+  assert.notDeepEqual(validate(d.args, { margins: 'huge' }, $defs), []);
+});
+
+test('doc.format: its examples, a theme colour and null pass the model form of its run (RUN_BRIEF), for every family', () => {
+  const caps = [byId('doc.format')].map(({ id, title, args }) => ({ id, title, args, needs: [] }));
+  for (const family of ['qwen', 'gemma']) {
+    const params = toolsFor(caps, { $defs: MODEL_DEFS, form: 'model', family })[0].function.parameters;
+    for (const ex of byId('doc.format').examples) assert.deepEqual(validate(params, ex.args), [], `${family}: ${JSON.stringify(ex.args)}`);
+    assert.deepEqual(validate(params, { path: [0], run: { color: null, highlight: null } }), [], family);
+  }
 });

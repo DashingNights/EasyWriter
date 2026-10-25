@@ -3,7 +3,7 @@
 // integrations/index.mjs, whose gates (each manifest's, and integration.<id>) are spread in and tagged with their integration.
 //
 // A gate reads one subject: `ui` {view, editor} (the store's state fits), `board` (Board.getSnapshot(), null without a
-// board), `doc` {inTable}, `history` {canUndo, canRedo} (a board snapshot fits), `draft` {id, threadUrl, pushedAt, threads (settings.threads)}, `node`
+// board), `doc` {inTable}, `history` {canUndo, canRedo} (a board snapshot fits), `draft` {id, threadUrl, pushedAt, format, threads (settings.threads)}, `node`
 // (a TipTap JSON block), `flow` (a library record; null when not loaded or missing), `window` {visible}
 // (document.visibilityState is 'visible': shown and not minimized) or `settings` (settings.json as loaded).
 
@@ -37,9 +37,15 @@ export const GATES = {
   'doc.inTable': gate('doc', (d) => !!d?.inTable, 'The caret is not in a table', 'Put the caret in a table cell first'),
   'history.canUndo': gate('history', (h) => !!h?.canUndo, 'There is nothing to undo', 'Make a change first'),
   'history.canRedo': gate('history', (h) => !!h?.canRedo, 'There is nothing to redo', 'Undo a change first'),
-  // The app's default page format inserts titled boxes (formats.mjs; the forum post's ipsRichTextBox). doc.command checks
-  // insertBox against the draft's own format in its plan.
-  'format.box': gate('settings', (s) => !!formatOf(null, s)?.blocks.includes('box'), 'The page format has no titled box',
+  // The draft's format (formats.mjs formatOf: no draft or no format is the forum post). Forum services, typography and tools
+  // need format.post (the forum post or the core page); the Document's own need format.document (docs/plans/document.md).
+  'format.post': gate('draft', (d) => ['forum-post', 'page'].includes(formatOf(d)?.id), 'The draft is not a forum post',
+    'Use doc_format run and paragraph on a document'),
+  'format.document': gate('draft', (d) => formatOf(d)?.id === 'document', 'The draft is not a document',
+    'Open a document, or create one with drafts_create format document'),
+  // The forum post inserts titled boxes (its ipsRichTextBox); the core page does not. doc.command checks insertBox against the
+  // addressed draft in its check.
+  'format.box': gate('draft', (d) => !!formatOf(d)?.blocks.includes('box'), 'The page format has no titled box',
     'Use a table or a quote instead'),
   'flow.open': gate('flow', (f) => !!f, 'No library flowchart is open', 'Open one in the flowchart library'),
   'flow.synced': gate('node', (n) => n?.type === 'canvas' && !!n.attrs?.flow, 'The canvas is not linked to the flowchart library',
