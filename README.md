@@ -1,3 +1,7 @@
+# Download
+Download installer: ![EasyWriter-Setup-x.x.x.exe](https://github.com/DashingNights/EasyWriter/releases/latest)
+Download Portable (school computers): ![EasyWriter-x.x.x-win.zip](https://github.com/DashingNights/EasyWriter/releases/latest)
+
 # EasyWriter
 
 EasyWriter is a Windows desktop editor for project writing, with canvases, flowcharts and plans built in. Drafts belong to projects, or in forum mode to the threads of an Invision Community forum.
