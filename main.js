@@ -613,7 +613,7 @@ function popupEditMenu(wc, params, win, extra = []) {
     { label: 'Cut', enabled: params.editFlags.canCut, click: () => wc.cut() },
     { label: 'Copy', enabled: params.editFlags.canCopy, click: () => wc.copy() },
     { label: 'Paste', enabled: params.editFlags.canPaste, click: () => wc.paste() },
-    { label: 'Select All', click: () => wc.selectAll() },
+    { label: 'Select all', click: () => wc.selectAll() },
   );
   Menu.buildFromTemplate(template).popup({ window: win });
 }

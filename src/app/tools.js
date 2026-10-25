@@ -170,7 +170,7 @@ const CORE = [
   { id: 'layers', label: 'Layers', group: 'Board', icon: h(Layers), needs: BOARD, toggle: true, active: () => getState().settings?.layersPanel ?? true, run: toggleLayers,
     keywords: ['layers panel', 'layer list', 'layer', 'outline', 'tree', 'objects', 'item list', 'z order', 'order', 'reorder', 'stack',
       'hide', 'lock', 'show', 'unlock', 'groups', 'layres', 'layrs'] },
-  { id: 'add-text', label: 'Add text', group: 'Insert', icon: h(Type), key: 'board.text', needs: BOARD, run: tool('text'), notice: 'Text: click to place',
+  { id: 'add-text', label: 'Add text', group: 'Insert', icon: h(Type), key: 'board.text', needs: BOARD, run: tool('text'), notice: 'Click to place text',
     keywords: ['text', 'type', 'write', 'label', 'caption', 'text box', 'textbox', 'words', 'sticky note', 'note', 'title'] },
   { id: 'add-image', label: 'Add image', group: 'Insert', icon: h(ImagePlus), key: 'board.image', needs: BOARD, run: (c) => c.board.pickImages(), headless: false,
     keywords: ['image', 'picture', 'photo', 'img', 'pic', 'upload', 'file', 'png', 'jpg', 'screenshot', 'insert image', 'imgae'] },

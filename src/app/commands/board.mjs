@@ -11,6 +11,7 @@ import {
   contentWidth, groupBox, injectStyle, itemElement, make, parseBoard, rasterizeWhiteboard, smartArtboard, topLevelPos, WB_BG,
 } from '../../whiteboard.js';
 import { endSide } from '../assistant/attach.mjs';
+import { keyLabel } from '../keybinds.js';
 import { validate } from '../schema.mjs';
 import { define, fail, failGates } from './define.mjs';
 import { boardStyles, matchStyle, pageItems } from './item-style.mjs';
@@ -572,7 +573,7 @@ export const defs = [
       const items = itemsOf(target(ctx, a.path));
       const n = a.ids.length;
       return {
-        title: `remove ${n === 1 ? 'an item' : `${n} items`} from the board at [${a.path}] (Ctrl+Z restores ${n === 1 ? 'it' : 'them'})`,
+        title: `remove ${n === 1 ? 'an item' : `${n} items`} from the board at [${a.path}] (${keyLabel('edit.undo') || 'Undo'} restores ${n === 1 ? 'it' : 'them'})`,
         description: a.ids.map((id) => {
           const i = items.find((x) => x.id === id);
           const text = i && plain(i).slice(0, 60);

@@ -1087,7 +1087,7 @@ export class Board {
     this.layer = make('div', 'wb-layer');
     this.guides = make('div', 'wb-guides');
     this.groupEl = make('div', 'wb-group', { hidden: true }); // the group box of several selected items
-    this.groupEl.append(...CORNERS.map((c) => make('div', `wb-rot wb-rot-${c}`, { title: 'Drag to rotate the selection (Shift: 15 degree steps)' }))); // §6d group turn
+    this.groupEl.append(...CORNERS.map((c) => make('div', `wb-rot wb-rot-${c}`, { title: 'Drag to rotate the selection, with Shift in 15 degree steps' }))); // §6d group turn
     this.fileInput = make('input', '', { type: 'file', accept: 'image/*', multiple: true }); // detached: pickImages() clicks it
     // Picked images wait for a click that places them ('image' mode); picking nothing ends that mode.
     const picked = () => {
@@ -1354,7 +1354,7 @@ export class Board {
       return;
     }
     const title = item.type === 'image' ? 'Drag to resize, Ctrl + drag to crop' : 'Drag to resize';
-    const turn = `Drag to rotate (Shift: 15 degree steps)${keyLabel('board.rotate') ? `, ${keyLabel('board.rotate')}: 90 degrees` : ''}`;
+    const turn = `Drag to rotate, with Shift in 15 degree steps${keyLabel('board.rotate') ? `. ${keyLabel('board.rotate')} turns it 90 degrees` : ''}`;
     if (turns(item)) el.append(...CORNERS.map((c) => make('div', `wb-rot wb-rot-${c}`, { title: turn })));
     el.append(...[...CORNERS, ...(item.type === 'text' ? ['e', 'w'] : EDGES)].map((c) => make('div', `wb-handle wb-h-${c}`, { title })));
     if (item.type === 'stroke') return;
@@ -1600,7 +1600,7 @@ export class Board {
     let capped;
     // Groups made whole (§6 Layer fields), then routed before autoSize: arrows count.
     ({ items: this.items, geo: this.geo, capped } = resolveConnectors(normalizeGroups(this.items), this.measure));
-    if (capped) toast('Too many crossing lines: some line jumps are not drawn', { id: 'wb-jump-cap' });
+    if (capped) toast('Some line jumps are not drawn. Too many lines cross.', { id: 'wb-jump-cap' });
     // A text item fitted to its text (`fit`) stores its rendered width.
     for (const i of this.items) {
       const el = i.type === 'text' && i.fit && this.itemEl(i.id);
@@ -2213,7 +2213,7 @@ export class Board {
     this.startEdit(id, slot);
   }
 
-  // The Labels popover's switch: on adds the slot's label and edits it, off removes it. One commit each.
+  // The Labels popover's checkbox: on adds the slot's label and edits it, off removes it. One commit each.
   toggleLabel(slot, on) {
     const c = this.selected();
     if (c?.type !== 'connector') return;

@@ -1,5 +1,6 @@
 import { BOARD_TYPES, find, nodeAt, outline, pathOfPos, posOfPath } from '../../doc-path.mjs';
 import { FONT_SIZES, FONTS, HIGHLIGHTS, presetChain, TEXT_COLORS } from '../../format.mjs';
+import { keyLabel } from '../keybinds.js';
 import { blockKind } from '../tool-rank.mjs';
 import { define, fail } from './define.mjs';
 import { CONTENT, DRAFT_ID, ref } from './schema-defs.mjs';
@@ -282,7 +283,7 @@ export const defs = [
       const { doc } = ctx.editor.state;
       const n = a.paths.length;
       return {
-        title: `delete ${n === 1 ? 'a block' : `${n} blocks`} of the draft "${ctx.state.draft?.title || 'Untitled draft'}" (Ctrl+Z restores ${n === 1 ? 'it' : 'them'})`,
+        title: `delete ${n === 1 ? 'a block' : `${n} blocks`} of the draft "${ctx.state.draft?.title || 'Untitled draft'}" (${keyLabel('edit.undo') || 'Undo'} restores ${n === 1 ? 'it' : 'them'})`,
         description: a.paths.map((p) => blockLabel(doc, p)).join('\n'),
       };
     },
