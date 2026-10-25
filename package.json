@@ -1,7 +1,7 @@
 {
   "name": "easywriter",
   "productName": "EasyWriter",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "private": true,
   "description": "Desktop editor for projects and forum threads, with canvases, flowcharts and plans",
   "author": "DashingNights",
