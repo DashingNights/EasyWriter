@@ -4,6 +4,7 @@ import { invoke } from '../commands.js';
 import { byId, MODEL_DEFS } from '../commands/catalogue.mjs';
 import { assistantMode, COMPUTER, CORE, DESCRIBED_CHARS, refusal, VIEW_SETS, viewOf } from '../commands/tool-sets.mjs';
 import { commandIdOf, toolName, toolsFor } from '../commands/tools-schema.mjs';
+import { keyLabel } from '../keybinds.js';
 import { getState, setState } from '../store.js';
 import { addMessage, assistantSettings, cliRun, complete, editMessages, history, patchMessage, stop, wantsThinking, writingGuide } from './assistant.js';
 import { situation } from './capture.js';
@@ -32,7 +33,7 @@ const MAX_CALLS = 20; // the small models, unless Advanced sets one (user decisi
 const TOOL_TEXT = /<tool_call>|<function=/; // a tool call the model wrote into its text (§13.2: re-asked once)
 // The system prompt (the procedure the model follows) is the model family's (prompts.mjs, wave 1c).
 const REPEAT_STOP = 'Stopped a repeated call.';
-const CIRCLE_STOP = 'Stopped: the assistant kept repeating itself.';
+const CIRCLE_STOP = 'Stopped because the assistant kept repeating itself.';
 const LOOP_STOP = 'The reply started repeating itself and was stopped.';
 const TOOL_ASK = 'Make that tool call as a real tool call, not as text.';
 const REPLY_ASK = 'Reply to the user now, in plain text.'; // an empty reply (thinking used it all), asked once without thinking
@@ -454,7 +455,7 @@ function step(def, name, res, call, line, label = null) {
     undo: async () => {
       const st = getState();
       if (st.rev !== rev || st.draft?.id !== draftId) {
-        toast('The draft changed after this step: use Ctrl+Z');
+        toast(`The draft changed after this step. Use ${keyLabel('edit.undo') || 'Undo'} in the draft instead.`);
         return;
       }
       setStep({ undo: null });

@@ -1,23 +1,24 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { cn } from 'cn';
-import { ArrowUp, Ban, Bot, Brain, Check, ChevronDown, CircleAlert, ImagePlus, MessageSquare, MessageSquarePlus, Mic, Square, X } from 'lucide-react';
+import { ArrowUp, Ban, Bot, Brain, Check, CircleAlert, ImagePlus, MessageSquare, MessageSquarePlus, Mic, Square, X } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 // import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'; // LOCAL LLM (commented out 2026-10-07): the install dialog
 import { Dot } from '@/components/ui/dot';
 import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { SelectButton } from '@/components/ui/select';
 import { Spinner } from '@/components/ui/spinner';
 import { canvasEditor } from '../../canvas.js';
 import { activeBoard } from '../../whiteboard.js';
 import { openSettings, refocusEditor } from '../actions.js';
 import { assistantMode } from '../commands/tool-sets.mjs';
 import { AgentAsk } from '../components/AgentAsk.jsx';
-import { Tip } from '../components/Tip.jsx';
+import { IconButton, Tip } from '../components/Tip.jsx';
 import { joinText } from '../dictation/core.mjs';
 import { DictationButton, hold } from '../dictation/Dictation.jsx';
 import { dictationReady, pttDown, pttUp, warm as warmDictation } from '../dictation/dictation.js';
 import { can } from '../gates.mjs';
-import { keyIs, withKey } from '../keybinds.js';
+import { keyIs } from '../keybinds.js';
 import { motion } from '../motion.js';
 import { getState, setState, useStore, WORKER } from '../store.js';
 import { viewportRect } from '../viewport.js';
@@ -52,7 +53,7 @@ function RightIsland({ islandRef, chat }) {
   const workspace = !can('view.editor', { view: useStore((s) => s.view) });
   const dictation = useStore((s) => dictationReady(s.settings?.dictation));
   const Icon = a.turn ? Bot : MessageSquare;
-  const size = workspace ? 'icon-xs' : 'icon-sm';
+  const size = workspace ? 'compact' : 'regular';
   const icon = workspace ? 'size-3.5' : undefined;
   return (
     <div ref={islandRef} data-chat-island data-right-island
@@ -60,12 +61,10 @@ function RightIsland({ islandRef, chat }) {
         !chat && !dictation && 'invisible')}>
       <DictationButton size={size} icon={icon} side={workspace ? 'top' : 'left'} />
       {chat && (
-        <Tip title={withKey('Assistant', 'app.assistant')} side={workspace ? 'top' : 'left'}>
-          <Button variant="ghost" size={size} aria-label="Assistant" aria-expanded={a.open} aria-controls="assistant-panel" data-chat-button
-            onMouseDown={keep} onClick={() => toggleChat()}>
-            <Icon className={icon} />
-          </Button>
-        </Tip>
+        <IconButton label="Assistant" keybind="app.assistant" size={size} tip={{ side: workspace ? 'top' : 'left' }} aria-expanded={a.open}
+          aria-controls="assistant-panel" data-chat-button onMouseDown={keep} onClick={() => toggleChat()}>
+          <Icon className={icon} />
+        </IconButton>
       )}
     </div>
   );
@@ -199,10 +198,9 @@ function ModelMenu({ edRef, name, cli }) {
   return (
     <DropdownMenu modal={false}>
       <DropdownMenuTrigger asChild>
-        <button type="button" data-model-name aria-label="Model" onMouseDown={keep}
-          className="flex min-w-0 items-center gap-0.5 rounded px-1 text-xs text-muted-foreground hover:bg-accent hover:text-accent-foreground">
-          <span className="truncate">{label}</span><ChevronDown className="size-3 shrink-0" />
-        </button>
+        <SelectButton size="xs" data-model-name aria-label="Model" onMouseDown={keep} className="min-w-0">
+          <span className="truncate">{label}</span>
+        </SelectButton>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-64" data-model-menu
         onCloseAutoFocus={(e) => { if (edRef.current) { e.preventDefault(); edRef.current.commands.focus(); } }}
@@ -236,14 +234,10 @@ function ThinkingMenu({ edRef, cli }) {
   };
   return (
     <DropdownMenu modal={false}>
-      <Tip title="Thinking" side="top">
-        <DropdownMenuTrigger asChild>
-          <Button variant="ghost" size="icon-sm" aria-label="Thinking" data-thinking={effort} onMouseDown={keep}
-            className={cn('size-7', effort !== auto && 'bg-accent text-accent-foreground')}>
-            <Brain />
-          </Button>
-        </DropdownMenuTrigger>
-      </Tip>
+      <IconButton label="Thinking" slot={DropdownMenuTrigger} tip={{ side: 'top' }} data-thinking={effort} onMouseDown={keep}
+        className={effort !== auto ? 'bg-accent hover:bg-accent' : undefined}>
+        <Brain />
+      </IconButton>
       <DropdownMenuContent align="end" className="w-72" data-thinking-menu onCloseAutoFocus={refocus}
         onKeyDown={(e) => e.key === 'Escape' && e.stopPropagation()}>
         {items.map(([id, label, line]) => (
@@ -513,28 +507,24 @@ function ChatPanel({ islandRef, closing, onClosed }) {
         addImages(files);
       }}
       onKeyDown={(e) => e.key === 'Escape' && (e.preventDefault(), e.stopPropagation(), closeChat())}>
-      <div data-grip className="flex shrink-0 items-center gap-1.5 py-0.5 pr-0.5 pl-2 select-none">
-        <span className="font-medium">Assistant</span>
+      <div data-grip className="flex shrink-0 items-center gap-1.5 py-1 pr-0.5 pl-2 select-none">
+        <span className="font-semibold">Assistant</span>
         <StatusDot server={ready ? srv : null} />
         {ready && <ModelMenu edRef={edRef} name={modelName(s)} cli={s.cli} />}
         {badge && (
           <Tip title="Permissions. Change them in Settings." side="top">
             <Badge asChild variant="outline">
-              <button type="button" data-permission-badge className="cursor-pointer font-normal text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+              <button type="button" data-permission-badge className="cursor-pointer font-normal text-muted-foreground hover:bg-accent/60 hover:text-accent-foreground"
                 onMouseDown={keep} onClick={() => openSettings('assistant')}>{badge}</button>
             </Badge>
           </Tip>
         )}
         <span className="flex-1" />
         {ready && (
-          <Tip title="New chat" side="top">
-            <Button variant="ghost" size="icon-sm" aria-label="New chat" className="size-7" onMouseDown={keep} onClick={startNewChat}><MessageSquarePlus /></Button>
-          </Tip>
+          <IconButton label="New chat" tip={{ side: 'top' }} onMouseDown={keep} onClick={startNewChat}><MessageSquarePlus /></IconButton>
         )}
         <ThinkingMenu edRef={edRef} cli={s?.cli} />
-        <Tip title="Close (Esc)" side="top">
-          <Button variant="ghost" size="icon-sm" aria-label="Close" className="size-7" onMouseDown={keep} onClick={closeChat}><X /></Button>
-        </Tip>
+        <IconButton label="Close (Esc)" tip={{ side: 'top' }} onMouseDown={keep} onClick={closeChat}><X /></IconButton>
       </div>
       {!s ? (
         <>
@@ -584,7 +574,7 @@ function ChatPanel({ islandRef, closing, onClosed }) {
                   <button type="button" aria-label={`Remove ${t.label}`} onMouseDown={keep} onClick={() => removeAtt(t)}
                     className={cn('absolute flex size-4 items-center justify-center rounded-full',
                       t.thumb ? '-top-1.5 -right-1.5 bg-foreground/80 text-background hover:bg-foreground'
-                        : 'top-1 right-0.5 text-muted-foreground hover:bg-accent hover:text-accent-foreground')}>
+                        : 'top-1 right-0.5 text-muted-foreground hover:bg-accent/60 hover:text-accent-foreground')}>
                     <X className="size-3" />
                   </button>
                 </div>
@@ -592,19 +582,15 @@ function ChatPanel({ islandRef, closing, onClosed }) {
             </div>
           )}
           <form className="flex shrink-0 items-end gap-1 p-1" onSubmit={(e) => { e.preventDefault(); submit(); }}>
-            <Tip title="Hold to dictate" side="top">
-              <Button type="button" variant="ghost" size="icon-sm" aria-label="Hold to dictate into the message" aria-pressed={!!mic?.recording}
-                disabled={locked} onPointerEnter={warmDictation} {...hold(micDown, micUp)}
-                className={cn(mic?.recording && 'bg-destructive/20 text-destructive hover:bg-destructive/25 hover:text-destructive')}>
-                <Mic />
-              </Button>
-            </Tip>
-            <Tip title="Attach an image" side="top">
-              <Button type="button" variant="ghost" size="icon-sm" aria-label="Attach an image" disabled={locked} onMouseDown={keep}
-                onClick={() => fileRef.current?.click()}>
-                <ImagePlus />
-              </Button>
-            </Tip>
+            <IconButton size="regular" label="Hold to dictate into the message" tip={{ side: 'top' }} pressed={!!mic?.recording}
+              disabled={locked} onPointerEnter={warmDictation} {...hold(micDown, micUp)}
+              className={cn(mic?.recording && 'bg-destructive/20 text-destructive hover:bg-destructive/25 hover:text-destructive')}>
+              <Mic />
+            </IconButton>
+            <IconButton size="regular" label="Attach an image" tip={{ side: 'top' }} disabled={locked} onMouseDown={keep}
+              onClick={() => fileRef.current?.click()}>
+              <ImagePlus />
+            </IconButton>
             <input ref={fileRef} type="file" accept="image/*" multiple hidden onChange={(e) => { addImages(e.target.files); e.target.value = ''; }} />
             <div className="relative min-w-0 flex-1">
               <div ref={boxRef} />
@@ -612,13 +598,10 @@ function ChatPanel({ islandRef, closing, onClosed }) {
             </div>
             {!s?.cli && <ContextRing usage={a.usage} window={s?.ctx} />}
             {a.turn ? (
-              <Tip title="Stop" side="top">
-                <Button type="button" variant="secondary" size="icon-sm" aria-label="Stop" onMouseDown={keep} onClick={stop}><Square className="fill-current" /></Button>
-              </Tip>
+              <IconButton size="regular" variant="secondary" label="Stop" tip={{ side: 'top' }} onMouseDown={keep} onClick={stop}><Square className="fill-current" /></IconButton>
             ) : (
-              <Tip title="Send (Enter)" side="top">
-                <Button type="submit" size="icon-sm" aria-label="Send" disabled={(empty && !atts.length) || locked || !!mic?.recording} onMouseDown={keep}><ArrowUp /></Button>
-              </Tip>
+              <IconButton size="regular" variant="default" type="submit" label="Send (Enter)" tip={{ side: 'top' }}
+                disabled={(empty && !atts.length) || locked || !!mic?.recording} onMouseDown={keep}><ArrowUp /></IconButton>
             )}
           </form>
         </>

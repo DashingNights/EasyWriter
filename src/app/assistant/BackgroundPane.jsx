@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import { X } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Tip } from '../components/Tip.jsx';
+import { IconButton } from '../components/Tip.jsx';
 import { setState, useStore } from '../store.js';
 
 /** The background window's live view (SPEC §7i Background window): a floating panel at the top left of the main column,
@@ -21,14 +20,11 @@ export function BackgroundPane() {
   return (
     <div data-background-pane role="region" aria-label="Background window"
       className="absolute top-2 left-14 z-[44] flex h-80 min-h-40 w-[30rem] min-w-64 resize flex-col overflow-hidden rounded-island border bg-island p-1 text-sm shadow-xl">
-      <div className="flex shrink-0 items-center gap-1.5 py-0.5 pr-0.5 pl-2 select-none">
-        <span className="shrink-0 font-medium">Background window</span>
+      <div className="flex shrink-0 items-center gap-1.5 py-1 pr-0.5 pl-2 select-none">
+        <span className="shrink-0 font-semibold">Background window</span>
         <span className="min-w-0 truncate text-xs text-muted-foreground" title={title}>{title}</span>
         <span className="flex-1" />
-        <Tip title="Hide" side="top">
-          <Button variant="ghost" size="icon-sm" aria-label="Hide" className="size-7" onMouseDown={(e) => e.preventDefault()}
-            onClick={() => setState({ workerPane: false })}><X /></Button>
-        </Tip>
+        <IconButton label="Hide" tip={{ side: 'top' }} onMouseDown={(e) => e.preventDefault()} onClick={() => setState({ workerPane: false })}><X /></IconButton>
       </div>
       {src ? <img src={src} alt="The background window" draggable={false} className="min-h-0 flex-1 rounded-md object-contain" />
         : <p className="flex-1 px-2 py-1 text-muted-foreground">Waiting for the first picture</p>}

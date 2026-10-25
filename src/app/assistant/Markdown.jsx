@@ -2,6 +2,8 @@ import { Check, Copy } from 'lucide-react';
 import { lexer } from 'marked';
 import { useState } from 'react';
 import { cn } from 'cn';
+import { Checkbox } from '@/components/ui/checkbox';
+import { IconButton } from '../components/Tip.jsx';
 
 // The assistant's replies as Markdown (SPEC §7i Messages, 2026-10-07): marked's lexer (already installed with @tiptap/markdown)
 // turns the text into tokens, rendered here as React elements, so no HTML string is ever injected. Raw HTML in a reply shows as
@@ -18,10 +20,9 @@ function CodeBlock({ text, lang }) {
     <div data-code-block className="group relative rounded-md border bg-muted/60">
       <div className="flex h-6 items-center justify-between pr-1 pl-2 text-xs text-muted-foreground select-none">
         <span>{lang || 'code'}</span>
-        <button type="button" aria-label="Copy code" onMouseDown={(e) => e.preventDefault()} onClick={copy}
-          className="flex size-5 items-center justify-center rounded hover:bg-accent hover:text-accent-foreground">
+        <IconButton label="Copy code" onMouseDown={(e) => e.preventDefault()} onClick={copy}>
           {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
-        </button>
+        </IconButton>
       </div>
       <pre className="overflow-x-auto px-2 pb-2 font-mono text-xs leading-5 whitespace-pre"><code>{text}</code></pre>
     </div>
@@ -43,6 +44,7 @@ function inline(tokens = [], key = 'i') {
           ? <a key={k} href={t.href} target="_blank" rel="noreferrer" title={t.href} className="text-primary underline underline-offset-2">{inline(t.tokens, k)}</a>
           : <span key={k}>{inline(t.tokens, k)}</span>;
       case 'image': return <span key={k}>{t.text || t.href}</span>;
+      case 'checkbox': return null;
       case 'text': return t.tokens ? <span key={k}>{inline(t.tokens, k)}</span> : unescape(t.text);
       default: return unescape(t.raw ?? t.text ?? ''); // escape, html and anything else as its text
     }
@@ -58,7 +60,7 @@ function blocks(tokens = [], key = 'b') {
   return tokens.map((t, i) => {
     const k = `${key}.${i}`;
     switch (t.type) {
-      case 'space': case 'def': return null;
+      case 'space': case 'def': case 'checkbox': return null; // a task item's checkbox: the list draws it
       case 'paragraph': return <p key={k}>{inline(t.tokens, k)}</p>;
       case 'heading': {
         const H = `h${Math.min(6, Math.max(1, t.depth))}`;
@@ -73,7 +75,7 @@ function blocks(tokens = [], key = 'b') {
           <L key={k} start={t.ordered && t.start !== 1 ? t.start : undefined} className={cn('grid gap-0.5 pl-5', t.ordered ? 'list-decimal' : 'list-disc')}>
             {t.items.map((it, j) => (
               <li key={`${k}.${j}`} className={cn(it.task && 'list-none -ml-5')}>
-                {it.task && <input type="checkbox" checked={!!it.checked} readOnly disabled className="mr-1.5 align-middle" />}
+                {it.task && <Checkbox checked={!!it.checked} disabled className="mr-1.5 align-middle" />}
                 {it.loose ? <div className="grid gap-1.5">{blocks(it.tokens, `${k}.${j}`)}</div> : tight(it.tokens, `${k}.${j}`)}
               </li>
             ))}

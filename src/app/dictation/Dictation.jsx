@@ -9,7 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { refocusEditor } from '../actions.js';
-import { Tip } from '../components/Tip.jsx';
+import { IconButton, Tip } from '../components/Tip.jsx';
 import { keyIs, withKey } from '../keybinds.js';
 import { motion } from '../motion.js';
 import { getState, useStore } from '../store.js';
@@ -88,13 +88,11 @@ export function DictationButton({ size, icon, side }) {
   if (!ready) return null;
   const open = d.shown && !d.minimized && !d.closing;
   return (
-    <Tip title="Dictation" side={side}>
-      <Button variant="ghost" size={size} aria-label="Dictation" aria-pressed={open} data-dictation-button data-agent-deny onPointerEnter={warm}
-        onMouseDown={keep} onClick={toggleDictation}
-        className={cn(open && 'bg-accent', d.recording && 'bg-destructive/20 text-destructive hover:bg-destructive/25 hover:text-destructive')}>
-        <Mic className={icon} />
-      </Button>
-    </Tip>
+    <IconButton label="Dictation" size={size} tip={{ side }} pressed={open} data-dictation-button data-agent-deny onPointerEnter={warm}
+      onMouseDown={keep} onClick={toggleDictation}
+      className={cn(d.recording && 'bg-destructive/20 text-destructive hover:bg-destructive/25 hover:text-destructive')}>
+      <Mic className={icon} />
+    </IconButton>
   );
 }
 
@@ -197,11 +195,9 @@ function Pane({ geo }) {
       <div ref={podRef} data-pod className={cn('relative z-10 flex h-10 w-[24rem] max-w-full shrink-0 justify-center overflow-hidden rounded-full border bg-island shadow-xl',
         !moving && 'pointer-events-auto')}>
         <div className="flex w-[calc(24rem-2px)] shrink-0 items-center gap-1 px-1">
-          <Tip title="Minimize" side="top">
-            <Button variant="ghost" size="icon-sm" aria-label="Minimize" className="rounded-full" onMouseDown={keep} onClick={() => minimize(true)}>
-              <Minimize2 />
-            </Button>
-          </Tip>
+          <IconButton size="regular" label="Minimize" tip={{ side: 'top' }} className="rounded-full" onMouseDown={keep} onClick={() => minimize(true)}>
+            <Minimize2 />
+          </IconButton>
           <Tip title={withKey('Hold to dictate', 'app.dictate')} side="top" wrap="min-w-0 flex-1">
             <Button variant="ghost" size="sm" aria-label="Hold to dictate" aria-pressed={d.recording} data-agent-deny onPointerEnter={warm}
               className={cn('h-8 min-w-0 flex-1 justify-start rounded-full px-2.5 text-muted-foreground',
@@ -231,7 +227,7 @@ function Pane({ geo }) {
 }
 
 const Radio = ({ name, value, checked, onChange, children }) => (
-  <label className="flex cursor-pointer items-start gap-2 rounded-md p-1 hover:bg-accent/50">
+  <label className="flex cursor-pointer items-start gap-2 rounded-md p-1 hover:bg-accent/60">
     <input type="radio" name={name} value={value} checked={checked} onChange={() => onChange(value)} className="mt-0.5 accent-primary" />
     <span className="grid gap-0.5">{children}</span>
   </label>
@@ -288,7 +284,7 @@ function InstallForm({ open }) {
           <li>Voice activity model ggml-silero-v5.1.2.bin: Hugging Face, ggml-org/whisper-vad (1 MB)</li>
         </ul>
         <fieldset disabled={busy} className="grid gap-0.5">
-          <legend className="mb-0.5 font-semibold">Model</legend>
+          <legend className="mb-0.5 text-xs font-medium text-muted-foreground">Model</legend>
           {(status?.models ?? []).map((m, i) => (
             <Radio key={m.id} name="dictation-model" value={m.id} checked={model === m.id} onChange={setModel}>
               <span>{m.label} ({mb(m.bytes)}){i === 0 && ', the default'}{m.downloaded && ', downloaded'}</span>
@@ -301,7 +297,7 @@ function InstallForm({ open }) {
           </p>
         </fieldset>
         <fieldset disabled={busy} className="grid gap-0.5">
-          <legend className="mb-0.5 font-semibold">Language</legend>
+          <legend className="mb-0.5 text-xs font-medium text-muted-foreground">Language</legend>
           <Radio name="dictation-language" value="en" checked={language === 'en'} onChange={setLanguage}><span>English</span></Radio>
           {other && <Radio name="dictation-language" value={other[0]} checked={language === other[0]} onChange={setLanguage}><span>{other[1]}</span></Radio>}
           <Radio name="dictation-language" value="auto" checked={language === 'auto'} onChange={setLanguage}>
@@ -374,7 +370,7 @@ export function ModelFiles({ selected, version, onChange }) {
           <span>{f.label}</span>
           <span className="text-muted-foreground">{f.file}, {mb(f.bytes)}</span>
           {modelInUse(f.id) && <Badge variant="secondary">In use</Badge>}
-          <Button type="button" variant="outline" size="xs" aria-label={`Delete ${f.file}`} onClick={() => ask(f)}>Delete</Button>
+          <Button type="button" variant="destructive-ghost" size="xs" aria-label={`Delete ${f.file}`} onClick={() => ask(f)}>Delete</Button>
         </div>
       ))}
       {error && <p className="text-destructive">{error}</p>}
@@ -386,7 +382,7 @@ export function ModelFiles({ selected, version, onChange }) {
               <AlertDialogDescription>
                 {!inUse ? `${m.file} is removed from this computer. It can be downloaded again later.`
                   : asking.others.length ? 'Dictation uses it. Switch dictation to:'
-                    : 'Dictation uses it and no other model is downloaded: dictation turns off until you install a model again.'}
+                    : 'Dictation uses it and no other model is downloaded, so dictation turns off until you install a model again.'}
               </AlertDialogDescription>
             </AlertDialogHeader>
             {inUse && asking.others.map((o) => (
