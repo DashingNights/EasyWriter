@@ -115,6 +115,9 @@ export const PALETTE = [
   ['foreground', 'Text', 'Text and icons', ['foreground', 'card-foreground', 'popover-foreground', 'secondary-foreground', 'accent-foreground']],
   ['muted-foreground', 'Soft text', 'Labels, hints and shortcuts', ['muted-foreground']],
   ['primary', 'Buttons', 'Main buttons and ticked boxes', ['primary']],
+  // The canvas (the editor's and flowcharts' area around the page) apart from the page itself: unset, it follows the page
+  // theme (page.css --pg-bg); the palette's style element comes after app.css, so a pick wins at equal specificity.
+  ['pg-bg', 'Canvas', 'The area around the page in the editor and flowcharts', ['pg-bg']],
 ];
 export const PALETTE_KEY = 'daf-writer.palette';
 const lightFill = (hex) => { // a fill that takes dark text

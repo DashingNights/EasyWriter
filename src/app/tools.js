@@ -326,6 +326,9 @@ const APP = [
     keywords: ['save', 'save now', 'save draft', 'store', 'keep', 'write'] },
   { id: 'settings', label: 'Settings', group: 'App', icon: h(Settings), run: openSettings, headless: false,
     keywords: ['settings', 'preferences', 'options', 'config', 'configure', 'theme', 'dark mode', 'light mode', 'page width', 'tags'] },
+  // Settings > General, where the palette's Canvas swatch sets the canvas colour apart from the page.
+  { id: 'canvas-colour', label: 'Canvas colour', group: 'App', icon: h(PaintBucket), run: () => openSettings('general'), headless: false,
+    keywords: ['canvas colour', 'canvas color', 'canvas background', 'background colour', 'background color', 'palette', 'theme'] },
   // Settings > Integrations, where an integration is turned on: no integration's own words, so an off one is never named here.
   { id: 'integrations', label: 'Integrations', group: 'App', icon: h(Puzzle), run: () => openSettings('integrations'), headless: false,
     keywords: ['integrations', 'plugins', 'extensions', 'add-ons', 'connect'] },
