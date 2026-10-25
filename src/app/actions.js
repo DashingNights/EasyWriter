@@ -147,6 +147,15 @@ function applySettings() {
   root.style.setProperty('--base-font', s.baseFont ? `${cssFamily(s.baseFont)}, ${SYSTEM_FONT}` : SYSTEM_FONT);
   root.style.setProperty('--base-scale', String((s.baseSize || 100) / 100));
   applyZoom();
+  primeBlockSizes(); // the width or font may have changed every block's height
+}
+
+/** Lays out every block of the page once (page.css .cv-prime) so the off-screen ones keep their real heights while skipped. */
+function primeBlockSizes() {
+  const page = $('#editor')?.closest('.page');
+  if (!page) return;
+  page.classList.add('cv-prime');
+  requestAnimationFrame(() => requestAnimationFrame(() => page.classList.remove('cv-prime'))); // after one frame's layout
 }
 
 export function cssFamily(name) {
@@ -385,6 +394,7 @@ function mountEditor(doc, historyFile = null, keep = state.settings.historyLimit
   updateWordCount();
   renderSaveStatus(); // also re-renders the toolbar, which follows the new editor (useEditor)
   homeView(); // every draft opens with its page in the home view
+  primeBlockSizes();
 }
 
 function updateWordCount() {

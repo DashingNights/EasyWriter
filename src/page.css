@@ -67,6 +67,15 @@
   word-wrap: break-word;
 }
 .page .ProseMirror > :first-child { margin-top: 0; }
+/* Top-level blocks out of view skip style, layout and paint: each zoom step restyled and relaid out the whole draft (25 ms a
+   notch on a 300-paragraph draft, 2026-10-25). Paint containment clips overflow, so a selected node (its handles) is exempt. */
+.page .ProseMirror > :is(p, h1, h2, h3, h4, h5, h6, ul, ol, blockquote, pre, hr, .tableWrapper, .sc):not(.ProseMirror-selectednode, .sc-selected) {
+  content-visibility: auto;
+  contain-intrinsic-block-size: auto 3lh;
+}
+/* For one frame after a draft opens or the page settings change, every block is laid out, so each has its height on record
+   before it is skipped and scrolling to a block not yet seen (find, ui.scrollTo) lands on it (actions.js primeBlockSizes). */
+.page.cv-prime .ProseMirror > * { content-visibility: visible !important; }
 /* Base size scales only paragraph text, like applyBaseStyles (not headings, code or sized runs); margins stay 16px-based. */
 .page .ProseMirror p { font-size: calc(1em * var(--base-scale)); margin: calc(1em / var(--base-scale)) 0; }
 .page .ProseMirror p code { font-size: calc(1em / var(--base-scale)); }
