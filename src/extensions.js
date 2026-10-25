@@ -245,7 +245,8 @@ class MediaView {
   }
 }
 
-// A video or GIF: pushed to the forum as its own file (export.js buildPayload), since a canvas would flatten it to one frame.
+// A video or GIF: pushed to the forum as its own file (integrations/forum/export.js buildPayload), since a canvas would flatten
+// it to one frame.
 export const Media = Node.create({
   name: 'media',
   group: 'block',

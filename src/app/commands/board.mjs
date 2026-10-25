@@ -1,6 +1,7 @@
 import { closeHistory } from '@tiptap/pm/history';
 import { commitSynced, liveBoard } from '../../canvas.js';
 import { pathOfPos, posOfPath } from '../../doc-path.mjs';
+import { pageOf } from '../../formats.mjs';
 import { validFlow } from '../../flow/library.mjs';
 import {
   arrangeItems, cleanConnector, groupItems, moveItem, normalizeGroups, repairEnds, unbindFrom, ungroupItems, validConnector,
@@ -401,7 +402,7 @@ export const defs = [
         if (a.position === 'after') pos += doc.nodeAt(pos).nodeSize;
       }
       pos = topLevelPos(doc.resolve(pos));
-      const size = a.kind === 'whiteboard' ? { w: ctx.state.settings.forumWidth, h: 400 } : CANVAS_DEFAULT;
+      const size = a.kind === 'whiteboard' ? { w: pageOf(ctx.state.draft, ctx.state.settings).width, h: 400 } : CANVAS_DEFAULT;
       const { w = size.w, h = size.h, dw = w, bg = 'post' } = a.attrs ?? {};
       const attrs = { w, h, dw: Math.min(dw, contentWidth(view)), frame: { x: 0, y: 0, w, h }, bg, items: [] };
       const tr = state.tr.insert(pos, state.schema.nodes.canvas.create(attrs));
@@ -702,7 +703,7 @@ export const defs = [
   }),
   define({
     id: 'board.render',
-    title: 'Draw a canvas as a PNG (base64), as Push renders it',
+    title: 'Draw a canvas as a PNG (base64)',
     brief: 'draftId: another draft to work on without opening it (drafts_list gives it); leave it out for the open draft.',
     group: 'board',
     risk: 'read',
@@ -717,7 +718,7 @@ export const defs = [
     run: async (ctx, a) => {
       const { pos, node, board: b } = target(ctx, a.path);
       // export.js: the artboard at its own size, at the pixel ratio giving 2× its drawn size.
-      const shown = ctx.editor.view.nodeDOM(pos)?.offsetWidth || Math.min(node.attrs.dw, ctx.state.settings.forumWidth);
+      const shown = ctx.editor.view.nodeDOM(pos)?.offsetWidth || Math.min(node.attrs.dw, pageOf(ctx.state.draft, ctx.state.settings).width);
       const scale = a.scale ?? Math.min(4, Math.max(0.25, (2 * shown) / b.w));
       const { blob } = await rasterizeWhiteboard({ height: b.h, bg: b.bg, items: b.items }, { width: b.w, theme: ctx.state.settings.theme, scale });
       const ihdr = new DataView(await blob.slice(16, 24).arrayBuffer()); // the PNG's own pixel size

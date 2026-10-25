@@ -5,8 +5,10 @@ import { createElement as h } from 'react';
 import { toast as sonner } from 'sonner';
 import { canvasEditor, openCanvasEditor } from '../canvas.js';
 import { buildExtensions, applyPreset } from '../extensions.js';
-import { buildPayload, draftTitle, wordCount } from '../export.js';
-import { hasForum, normalizeThread as normalizeTopic, siteOf, slugTitle, topicId, topicOf } from '../thread-url.mjs';
+import { draftTitle, wordCount } from '../export.js';
+import { formatOf, pageOf } from '../formats.mjs';
+import { each, first, UI } from '../integrations/ui.js';
+import { legacyTopic } from '../thread-url.mjs';
 import { activeBoard, finishBoardEdits, migrateBoards } from '../whiteboard.js';
 import { captureSelection } from './assistant/capture.js';
 import { backgroundDraft, dropSession, flushSessions, handOver } from './assistant/sessions.js';
@@ -32,16 +34,11 @@ import { closeWorkspace, restoreView, showPage } from './views.js';
 import { backgroundClick, viewportRect } from './viewport.js';
 
 export { notify }; // ui.notice (§8) reaches it through ctx.actions
-export { hasForum }; // the sidebar, status bar and tour show the forum's sign-in by it
-/** `url` → the canonical topic URL on the set forum (none set yet: on its own site), or ''. threads.add (§8) reaches it through
- * ctx.actions. */
-export const normalizeThread = (url) => normalizeTopic(url, state.settings.forumUrl || siteOf(url));
-/** The forum thread (topic URL) of the project keyed `key`, or ''. */
-export const projectTopic = (key) => topicOf(state.settings.threads, key);
 
 const api = window.api;
-export const DEFAULT_WIDTH = 1454;
 const SYSTEM_FONT = 'system-ui, Helvetica, Arial, sans-serif';
+/** The refusal of a draft whose format this build does not know (openDraft, assistant/sessions.js). */
+export const NEWER_FORMAT = 'This draft was saved by a newer EasyWriter. Update EasyWriter to open it.';
 
 const state = getState();
 const $ = (sel) => document.querySelector(sel);
@@ -50,21 +47,21 @@ const refresh = () => setState({}); // after an in-place change of state.draft
 // ---------------------------------------------------------------------------------------------
 // Toasts, overlay, dialogs
 
-function toast(message, isError = false) {
+export function toast(message, isError = false) {
   if (isError) sonner.error(message);
   else sonner(message);
 }
 
-function showOverlay(text) {
+export function showOverlay(text) {
   setState({ overlay: text });
 }
 
-function hideOverlay() {
+export function hideOverlay() {
   setState({ overlay: null });
 }
 
 /** Opens a form dialog (DialogHost renders it by type). Resolves with its result, or null on Cancel/Escape. */
-function openDialog(type, props = {}) {
+export function openDialog(type, props = {}) {
   return new Promise((resolve) => setState({ dialog: { type, props, resolve } }));
 }
 
@@ -80,21 +77,22 @@ export async function confirming(fn) {
   }
 }
 
-/** AlertDialog confirmation. Resolves true on confirm, false on Cancel/Escape. `alert: true` shows only the OK button. */
-export function confirmDialog({ title, description = '', confirmText = 'OK', destructive = false, alert = false }) {
+/** AlertDialog confirmation. Resolves true on confirm, false on Cancel/Escape. `alert: true` shows only the OK button.
+ * `human: true` always shows it and the assistant cannot press its confirm (data-agent-deny): a choice only the user makes. */
+export function confirmDialog({ title, description = '', confirmText = 'OK', destructive = false, alert = false, human = false }) {
   // A confirm opened by the user's own click or key (a trusted event) shows even while the assistant presses a control.
-  if (autoConfirm && !alert && !window.event?.isTrusted) return Promise.resolve(true);
+  if (autoConfirm && !alert && !human && !window.event?.isTrusted) return Promise.resolve(true);
   state.confirm?.resolve(false);
-  return new Promise((resolve) => setState({ confirm: { title, description, confirmText, destructive, alert, resolve } }));
+  return new Promise((resolve) => setState({ confirm: { title, description, confirmText, destructive, alert, human, resolve } }));
 }
 
-const alertDialog = (title, description) => confirmDialog({ title, description, alert: true });
+export const alertDialog = (title, description) => confirmDialog({ title, description, alert: true });
 
 // ---------------------------------------------------------------------------------------------
 // Settings, theme, zoom
 
 // The app's own colours (settings.uiTheme: dark | light | system) are the class "dark" on <html> (app.css); system follows the
-// system's light or dark mode, live. The page preview keeps the forum's (data-theme, settings.theme). The background window
+// system's light or dark mode, live. The page preview keeps the page theme (data-theme, settings.theme). The background window
 // (§7i) keeps the settings it started with, so it follows prefers-color-scheme, which main sets from uiTheme (applyNativeTheme).
 const systemDark = matchMedia('(prefers-color-scheme: dark)');
 systemDark.addEventListener('change', () => state.settings && applyUiTheme());
@@ -143,9 +141,18 @@ function applySettings() {
   applyMotion(s);
   const root = document.documentElement;
   root.dataset.theme = s.theme === 'light' ? 'light' : 'dark';
-  root.style.setProperty('--forum-width', `${s.forumWidth}px`);
   root.style.setProperty('--base-font', s.baseFont ? `${cssFamily(s.baseFont)}, ${SYSTEM_FONT}` : SYSTEM_FONT);
   root.style.setProperty('--base-scale', String((s.baseSize || 100) / 100));
+  applyPage();
+}
+
+/** The open draft's page (formats.mjs pageOf): its width, padding and format on the root, then the zoom, which fits it. */
+function applyPage() {
+  const { format, width, padding } = pageOf(state.draft, state.settings);
+  const root = document.documentElement;
+  root.style.setProperty('--page-width', `${width}px`);
+  root.style.setProperty('--page-pad', `${padding}px`);
+  root.dataset.format = format;
   applyZoom();
 }
 
@@ -163,7 +170,10 @@ export async function saveSettings(partial) {
 function applyZoom(anchor) {
   const area = $('#editor-area');
   let zoom = state.zoom / 100;
-  if (state.zoom === 'fit') zoom = Math.min(1, (area.clientWidth - VIEW_LEFT - VIEW_RIGHT) / (state.settings.forumWidth + 44));
+  if (state.zoom === 'fit') {
+    const { width, padding } = pageOf(state.draft, state.settings);
+    zoom = Math.min(1, (area.clientWidth - VIEW_LEFT - VIEW_RIGHT) / (width + 2 * padding));
+  }
   zoom = Math.max(0.1, zoom);
   zoomAround(area, $('#page-wrap'), zoom, anchor);
   setState({ zoomPct: Math.round(zoom * 100) });
@@ -330,12 +340,6 @@ export function toggleQuickTools() {
 
 export const closeQuickTools = () => setState({ quickTools: null });
 
-export function setDraftThread(url) {
-  if (!state.draft) return;
-  state.draft.threadUrl = url || null;
-  markDirty();
-}
-
 // ---------------------------------------------------------------------------------------------
 // Editor + autosave
 
@@ -344,13 +348,15 @@ const ISLAND_CLEARANCE = { top: 8, right: 8, bottom: 96, left: 8 };
 let undoLog = null; // the open draft's undo steps, saved with it (§7e, history.js)
 
 /** A TipTap editor on `doc` in `element` with the open draft's extensions and node views; with `historyFile` its undo history
- * rebuilt from it, keeping `keep` undo steps; `onUpdate` after each change. → {editor, log (its undo steps, §7e)}. The open
- * draft's (mountEditor) and the assistant's background sessions' (assistant/sessions.js). */
-export function makeEditor(element, doc, historyFile, keep, onUpdate) {
-  // Whiteboards become canvases before `new Editor`, which blanks a doc with an unknown node; the history file the same way, so
-  // its replay reaches the converted doc (§6b Converted whiteboards).
-  doc = migrateBoards(doc, state.settings.forumWidth);
-  historyFile = migrateBoards(historyFile, state.settings.forumWidth);
+ * rebuilt from it, keeping `keep` undo steps; `onUpdate` after each change. `draft`: the draft `doc` is from, for its page width.
+ * → {editor, log (its undo steps, §7e)}. The open draft's (mountEditor) and the assistant's background sessions'
+ * (assistant/sessions.js). */
+export function makeEditor(element, doc, historyFile, keep, onUpdate, draft) {
+  // Whiteboards become canvases before `new Editor`, which blanks a doc with an unknown node; the history file the same way and
+  // at the same width, so its replay reaches the converted doc (§6b Converted whiteboards).
+  const { width } = pageOf(draft, state.settings);
+  doc = migrateBoards(doc, width);
+  historyFile = migrateBoards(historyFile, width);
   const editor = new Editor({
     element,
     extensions: [...buildExtensions(state.settings.historyLimit || 50), PasteNotice], // 0 keeps none after closing, still 50 while open
@@ -374,10 +380,11 @@ function mountEditor(doc, historyFile = null, keep = state.settings.historyLimit
   state.editor?.destroy();
   state.editor = null;
   $('#editor').replaceChildren();
+  applyPage(); // before the editor: node views measure the page
   const { editor: ed, log } = makeEditor($('#editor'), doc, historyFile, keep, () => {
     updateWordCount();
     if (!state.smoke) markDirty();
-  });
+  }, state.draft);
   state.editor = ed;
   undoLog = log;
   clearRevLog(); // a new doc: the next rev, and no older one maps onto it (§8 Revisions)
@@ -400,7 +407,7 @@ function renderSaveStatus(error) {
   setState({ saveLabel: label, saveError: !!error });
 }
 
-function markDirty() {
+export function markDirty() {
   state.dirty = true;
   renderSaveStatus();
   clearTimeout(state.saveTimer);
@@ -497,12 +504,13 @@ export async function createDraft({ threadUrl, folderId = null, tagId = null, do
 }
 
 /** Opens the draft `id` and shows the editor page (§7g: from a workspace too); `show: false` keeps the page shown.
- * `remember: false` leaves settings.lastDraftId alone (agents: the draft the app reopens stays the user's choice). */
+ * `remember: false` leaves settings.lastDraftId alone (agents: the draft the app reopens stays the user's choice). Resolves true
+ * when it opened. */
 export async function openDraft(id, { show = true, remember = true } = {}) {
   if (WORKER && id !== WORKER_DRAFT) return toast('This window works on one draft only.');
   flushPlans();
   flushFlows();
-  if (!(await saveNow())) return;
+  if (!(await saveNow())) return false;
   // The background window of computer use saves and closes this draft first (§7i Background window): it is never open twice.
   if (!WORKER && state.worker?.draftId === id) await api.computer.close();
   // The assistant's background session of this draft hands over (§7i Background drafts): its document and undo steps after its
@@ -512,7 +520,13 @@ export async function openDraft(id, { show = true, remember = true } = {}) {
   if (!draft) {
     toast('That draft could not be loaded.', true);
     setState({ drafts: await api.drafts.list() });
-    return;
+    return false;
+  }
+  // A format this build does not know (formats.mjs formatOf): its nodes may be unknown here, and the editor would load them as
+  // empty and autosave the loss.
+  if (!formatOf(draft, state.settings)) {
+    toast(NEWER_FORMAT, true);
+    return false;
   }
   state.draft = draft;
   state.lastSaved = draft.updated;
@@ -520,6 +534,7 @@ export async function openDraft(id, { show = true, remember = true } = {}) {
   else mountEditor(draft.doc, historyFile);
   if (show) await showPage('editor');
   if (remember) await saveSettings({ lastDraftId: id });
+  return true;
 }
 
 export async function startNewDraft() {
@@ -529,22 +544,9 @@ export async function startNewDraft() {
   await showPage('editor');
 }
 
-export async function unpushDraft(entry) {
-  if (!(await confirmDialog({
-    title: `Mark "${entry.title}" as not pushed?`,
-    description: 'Use this only if you did not press Submit in the forum.',
-    confirmText: 'Unpush',
-  }))) return;
-  try {
-    await doUnpushDraft(entry.id);
-  } catch (e) {
-    toast(`Could not update the draft: ${e.message || e}`, true);
-  }
-}
-
 // Writes a draft that may not be the open one: the open one through the editor and autosave, another by load → save.
 // Resolves false when it could not be saved or loaded.
-async function updateDraft(id, patch) {
+export async function updateDraft(id, patch) {
   if (state.draft?.id === id) {
     Object.assign(state.draft, patch);
     state.dirty = true;
@@ -558,9 +560,6 @@ async function updateDraft(id, patch) {
   upsertDraftEntry(draft);
   return true;
 }
-
-/** Unpush without the dialog (§8 drafts.unpush). */
-export const doUnpushDraft = (id) => updateDraft(id, { pushedAt: null });
 
 /** The draft `id` → its thread `url` (as draftThreadUrl; null: none), without a dialog. Another draft is rewritten, which bumps
  * its `updated` (it moves up the sidebar when the list follows it). */
@@ -591,50 +590,33 @@ export async function doDeleteDraft(id) {
   setState({ drafts: state.drafts.filter((d) => d.id !== id) });
   if (!isCurrent) return;
   const next = visibleDrafts()[0];
-  if (next) await openDraft(next.id, { show: false }); // a delete from a workspace page stays on it
-  else newDraft();
+  // A delete from a workspace page stays on it; a refused open (unknown format) falls back like init.
+  if (!next || !(await openDraft(next.id, { show: false }))) newDraft();
 }
 
 // ---------------------------------------------------------------------------------------------
 // Sidebar
 
+/** A project's label: an integration's (the forum's names the thread's subject), else its title, else its key. */
 export function threadLabel(t) {
-  return t.subject ? `${t.subject} / ${t.title}` : t.title || t.url;
+  return first('projectLabel', t) ?? (t.title || t.url);
 }
 
-/** The listed project of `url` (its key, or a form normalizeThread takes of its forum thread, matched by topic id), or undefined. */
-function findThread(url) {
-  const id = topicId(url);
-  return state.settings.threads.find((t) => t.url === url || (id && topicId(projectTopic(t.url)) === id));
-}
-
-// A draft's project key for `url`: the listed project's (a forum thread's key may predate the canonical form, and its drafts
-// must match it), else the canonical URL; null for none or neither.
-const draftThreadUrl = (url) => (url ? findThread(url)?.url ?? (normalizeThread(url) || null) : null);
-
-async function refreshStatus() {
-  let status = { loggedIn: false };
-  if (!hasForum(state.settings)) return setState({ status }); // no project links a forum thread: no forum to ask
-  try {
-    status = await api.forum.status();
-  } catch {
-    status = { loggedIn: false };
-  }
-  setState({ status });
-  if (status.loggedIn) describeUnnamed();
-}
-
-/** Projects whose forum thread the forum has not described yet get its names (after a status check or a login). */
-const describeUnnamed = () => describeThreads(state.settings.threads.filter((t) => !t.year && !t.subject).map((t) => projectTopic(t.url)).filter(Boolean).slice(0, 50));
+// A draft's project key for `url`: the listed project's, else an integration's (the forum maps a topic URL to the project that
+// links it, '' for one it rejects), else for a key of no project (a forum thread added before projects) the listed key of the
+// same topic (thread-url.mjs legacyTopic), else the key as it is; null for none or neither.
+const draftThreadUrl = (url) => {
+  if (!url) return null;
+  const { threads } = state.settings;
+  const topic = legacyTopic(url);
+  return (threads.find((t) => t.url === url)?.url ?? first('resolveProject', url)
+    ?? (topic ? threads.find((t) => legacyTopic(t.url) === topic)?.url ?? url : null)) || null;
+};
 
 /** A thread row (or All drafts): filters the drafts and shows the editor page (§7g). */
 export async function selectThread(url) {
   await showPage('editor');
   await saveSettings({ selectedThread: url });
-}
-
-export function openInForum(url) {
-  api.forum.open(url).catch((e) => toast(`Could not open the forum: ${e.message || e}`, true));
 }
 
 export async function removeThread(t) {
@@ -654,92 +636,18 @@ export function doRemoveThread(url) {
   return saveSettings({ threads, selectedThread });
 }
 
-/** `value` → why it cannot be the forum thread of the project keyed `key` (null: a new one), or '' when it can. */
-function threadProblem(value, key = null) {
-  const site = state.settings.forumUrl;
-  const topic = normalizeThread(value);
-  if (!topic) return `Enter a forum topic URL, like ${site || 'https://forum.example.com'}/topic/12345-name/`;
-  const other = findThread(topic);
-  return other && other.url !== key ? `That thread is already linked to "${threadLabel(other)}".` : '';
-}
-
-/** New project: a name, a forum thread, or both (no name: the thread's title, from the forum). */
+/** New project: an integration's own form (the forum's takes a thread too), else a name. */
 export async function addThreadUrl() {
-  const value = await openDialog('addThread', {
-    validate: ({ name, thread }) => (thread.trim() ? threadProblem(thread) : name.trim() ? '' : 'Enter a name or a forum thread.'),
-  });
-  if (value) await selectThread(await addProject(value.name, value.thread));
+  if (await first('newProject')) return;
+  const name = await openDialog('addThread', { validate: (v) => (v.trim() ? '' : 'Enter a name.') });
+  if (name) await selectThread(await addProject(name));
 }
 
-/** Adds a project titled `title` (a settings.threads entry keyed project:<uuid>), linked to the forum thread `thread` when given
- * (the first one sets the forum site), whose title, subject, year and forum are then looked up. Resolves its key. */
-export async function addProject(title, thread = '') {
+/** Adds a project titled `title` (a settings.threads entry keyed project:<uuid>). Resolves its key. */
+export async function addProject(title) {
   const url = `project:${crypto.randomUUID()}`;
-  const topic = thread.trim() ? normalizeThread(thread) : '';
-  const entry = { url, title: title.trim().slice(0, 200) || slugTitle(topic), ...(topic && { thread: topic }), subject: '', year: '', forum: '' };
-  await linked(topic, { threads: [...state.settings.threads, entry] });
+  await saveSettings({ threads: [...state.settings.threads, { url, title: title.trim().slice(0, 200) }] });
   return url;
-}
-
-/** The row's Forum thread action: links a forum thread to the project `t`, changes it, or (an empty field) unlinks it. */
-export async function editProjectThread(t) {
-  const value = await openDialog('projectThread', { value: t.thread ?? '', validate: (v) => (v.trim() ? threadProblem(v, t.url) : '') });
-  if (value != null) await setProjectThread(t.url, value);
-}
-
-/** Links the forum thread `thread` to the project keyed `key` ('' unlinks it, and the forum's names go with it). */
-export async function setProjectThread(key, thread) {
-  const topic = thread.trim() ? normalizeThread(thread) : '';
-  await linked(topic, { threads: state.settings.threads.map((t) => {
-    if (t.url !== key) return t;
-    const { thread: old, ...rest } = t;
-    const title = autoTitle(t) ? slugTitle(topic) || t.title : t.title;
-    return topic ? { ...rest, title, thread: topic, ...(topic !== old && { subject: '', year: '', forum: '' }) } : { ...rest, subject: '', year: '', forum: '' };
-  }) });
-}
-
-/** Saves `patch` (settings.threads after a link), setting the forum site from `topic` when none is set yet, then looks the topic
- * up on the forum. */
-async function linked(topic, patch) {
-  const first = topic && !hasForum(state.settings);
-  await saveSettings({ ...patch, ...(topic && !state.settings.forumUrl && { forumUrl: siteOf(topic) }) });
-  if (first) refreshStatus(); // the sidebar's forum sign-in shows now
-  if (topic) describeThreads([topic]);
-}
-
-// A title the user did not choose: none, the key (threads added before the forum lookup) or the forum thread's slug.
-const autoTitle = (t) => !t.title || t.title === t.url || t.title === slugTitle(projectTopic(t.url));
-
-/** Looks the listed threads `urls` up on their topic pages and fills in subject, year and forum, and the title unless the user
- * chose it. Never throws: a thread the forum does not describe (offline, no access, removed) stays as it is. */
-async function describeThreads(urls) {
-  if (!urls.length) return;
-  try {
-    const found = new Map((await api.forum.describe(urls)).threads.map((f) => [f.url, f]));
-    if (!found.size) return;
-    await saveSettings({ threads: state.settings.threads.map((t) => {
-      const f = found.get(projectTopic(t.url));
-      return f ? { ...t, title: autoTitle(t) ? f.title : t.title, subject: f.subject, year: f.year, forum: f.forum } : t;
-    }) });
-  } catch {
-    // the thread keeps its title from the URL until the next lookup
-  }
-}
-
-export async function login() {
-  if (state.status.loggedIn) {
-    openInForum(`${state.settings.forumUrl}/`);
-    return;
-  }
-  setState({ loggingIn: true });
-  try {
-    state.status = await api.forum.login();
-    if (state.status.loggedIn) describeUnnamed();
-  } catch (e) {
-    await alertDialog('Login failed', String(e.message || e));
-  } finally {
-    setState({ loggingIn: false });
-  }
 }
 
 export function visibleDrafts() {
@@ -849,71 +757,13 @@ export async function changeSettings(values) {
   const remount = ('theme' in values && values.theme !== s.theme) || ('historyLimit' in values && values.historyLimit !== s.historyLimit);
   await saveSettings(values);
   applySettings();
-  if (!WORKER && state.settings.forumUrl !== s.forumUrl) refreshStatus(); // the forum site changed
+  if (!WORKER) each('onSettings', s, state.settings); // the background window never asks an integration
   // Canvas NodeViews read the theme when they render and the history depth is set when the editor is built: remount
   // the editor, its history rebuilt (all the steps the open draft keeps in memory), so they pick the change up.
   if (remount && state.editor && await saveNow()) {
     const keep = state.settings.historyLimit || 50;
     mountEditor(state.editor.getJSON(), history.encode(undoLog, keep), keep);
   }
-}
-
-// ---------------------------------------------------------------------------------------------
-// Push
-
-/** The project with a forum thread a draft in no project pushes to: the one picked in the dialog, or null. */
-async function chooseThread() {
-  const threads = state.settings.threads.filter((t) => projectTopic(t.url));
-  if (!threads.length) {
-    await alertDialog('Link a forum thread first', 'Add one to a project with the link button on its row, or with New project.');
-    return null;
-  }
-  return openDialog('chooseThread', { threads, selected: state.settings.selectedThread });
-}
-
-/** Fills the forum reply box of the open draft's project's forum thread after the human confirm (never submits). A draft in no
- * project asks for a project with one; a project without one says to link it; with `requireThread` both resolve
- * {code: 'no_thread'} (agents get no dialog). */
-export async function push({ requireThread = false } = {}) {
-  if (!state.editor || !state.draft) return;
-  let key = state.draft.threadUrl;
-  if (!projectTopic(key)) {
-    if (requireThread) return { code: 'no_thread' };
-    const project = key && findThread(key);
-    if (project) return alertDialog(`Link a forum thread to "${threadLabel(project)}" first`, 'Use the link button on its row in the sidebar.');
-    key = await chooseThread();
-    if (!key) return;
-    state.draft.threadUrl = key;
-    markDirty();
-  }
-  const url = projectTopic(key);
-  const thread = findThread(key);
-  const label = thread ? threadLabel(thread) : url;
-  if (!(await confirmDialog({
-    title: `Fill the reply box of "${label}" with this draft?`,
-    description: 'You review and press Submit in the forum window.',
-    confirmText: 'Push',
-  }))) return;
-
-  let error = null;
-  showOverlay('Rendering canvases...');
-  try {
-    commitBoardEdit();
-    await saveNow();
-    const payload = await buildPayload(state.editor, state.settings);
-    showOverlay('Uploading images in the forum window...');
-    const result = await api.forum.push({ threadUrl: url, ...payload });
-    if (!result?.ok) throw new Error(result?.error || 'Unknown error');
-    state.draft.pushedAt = Date.now();
-    state.dirty = true;
-    refresh();
-    await saveNow();
-  } catch (e) {
-    error = e;
-  }
-  hideOverlay();
-  if (error) await alertDialog('Push failed', String(error.message || error));
-  else toast('Content placed in the forum reply box. Review it there and press Submit.');
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -1088,7 +938,7 @@ async function init() {
   setState({ settings: await api.settings.get() });
   bindStatic();
   applySettings();
-  if (!WORKER) refreshStatus(); // the background window never asks the forum
+  if (!WORKER) each('init'); // the background window never asks an integration
   setState({ drafts: await api.drafts.list() });
   await saveDraftOrder(); // the first time: the drafts keep their `updated` order
   await initPlans();
@@ -1103,8 +953,7 @@ async function init() {
   }
   const { lastDraftId } = state.settings;
   const id = state.drafts.some((d) => d.id === lastDraftId) ? lastDraftId : state.drafts[0]?.id;
-  if (id) await openDraft(id);
-  else newDraft();
+  if (!id || !(await openDraft(id))) newDraft();
   await restoreView(state.settings.lastView); // last: a workspace opens over the open draft
   installAgent(); // window.__agent and the command events (§8)
   startGitHub();
@@ -1243,10 +1092,10 @@ window.__smoke = async () => {
   await ready;
   if (!can('view.editor', state)) await closeWorkspace({ remember: false }); // a restored lastView would hide the sample
   state.smoke = true; // never persist the sample over a real draft
-  state.editor.commands.setContent(migrateBoards(sampleDoc(), state.settings.forumWidth)); // its whiteboard: the converter's end-to-end check
+  state.editor.commands.setContent(migrateBoards(sampleDoc(), pageOf(null, state.settings).width)); // its whiteboard: the converter's end-to-end check
   await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
   await new Promise((resolve) => setTimeout(resolve, 300));
-  const payload = await buildPayload(state.editor, state.settings); // waits for the synced canvases' library records
+  const payload = await UI.forum.actions.buildPayload(state.editor, state.settings, state.draft); // waits for the synced canvases' library records
   const badge = document.querySelector('.sc-flow-missing'); // the sample's synced canvas without a record (samples/flow.js)
   if (badge) { // in view for smoke-ui.png (scrolled by hand: the page's CSS zoom misleads scrollIntoView)
     const area = $('#editor-area');

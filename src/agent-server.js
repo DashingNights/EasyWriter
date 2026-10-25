@@ -32,11 +32,14 @@ const MCP_VERSIONS = ['2025-11-25', '2025-06-18', '2025-03-26', '2024-11-05']; /
 const MAX_BODY = 64 * 1024 * 1024;
 const IDLE_MS = 30 * 60 * 1000; // an HTTP session unused this long is dropped; its client starts a new one on the 404
 const RPC = '2.0';
-const INSTRUCTIONS = 'EasyWriter is a desktop editor for forum post drafts with canvases, plans and flowcharts. '
+// The MCP instructions: HEAD and the outside clients' tail plus what each enabled integration adds (manifest agentNote), built
+// at initialize; the in-app assistant's session gets its own tail (its permission mode decides: Allow all asks nothing; the
+// situation note names the mode).
+const HEAD = 'EasyWriter is a desktop editor for drafts with canvases, plans and flowcharts. '
   + 'Start with ui_state or drafts_list; commands_index and commands_describe explain the commands. Blocks are addressed by path '
-  + '(indices from doc_get or doc_find). Writes run at once and the user can undo them; deletes and pushes ask the user in the app.';
-// The in-app assistant's session: its permission mode decides (Allow all asks nothing; the situation note names the mode).
-const ASSISTANT_INSTRUCTIONS = INSTRUCTIONS.replace('deletes and pushes ask the user in the app.', 'the app asks the user before a delete when the permission mode needs it, so never ask in text.');
+  + '(indices from doc_get or doc_find). Writes run at once and the user can undo them; ';
+const INSTRUCTIONS = `${HEAD}deletes ask the user in the app.`;
+const ASSISTANT_INSTRUCTIONS = `${HEAD}the app asks the user before a delete when the permission mode needs it, so never ask in text.`;
 // The stdio relay, outside the asar archive in a packaged app (package.json build.asarUnpack).
 const BRIDGE = path.join(__dirname, '..', 'bin', 'easywriter-agent.js').replace(`app.asar${path.sep}`, `app.asar.unpacked${path.sep}`);
 
@@ -141,22 +144,34 @@ function run(session, id, req) {
 // ---------------------------------------------------------------------------------------------
 // MCP
 
-let catalogue = null; // Promise of {tools, idOf(name), assistant(settings)}
+let catalogue = null; // Promise of {lists(settings) → {tools, assistant}, idOf(name), agentNotes(settings)}
 
+/** The tool lists, per call: an off integration's commands and arguments are not listed (integrations/index.mjs listed); one
+ * list per set of enabled integrations is kept. An outside client keeps the list it read (no listChanged), so the executor
+ * refuses a call to an off integration's tool with its integration.<id> gate. */
 function tools() {
   catalogue ??= (async () => {
-    const mod = (f) => import(pathToFileURL(path.join(__dirname, 'app', 'commands', f)).href);
-    const [{ CATALOGUE, MODEL_DEFS }, { toolsFor, commandIdOf }, { assistantMode, refusal }] = await Promise.all([mod('catalogue.mjs'), mod('tools-schema.mjs'), mod('tool-sets.mjs')]);
+    const mod = (f) => import(pathToFileURL(path.join(__dirname, f)).href);
+    const [{ CATALOGUE, MODEL_DEFS }, { toolsFor, commandIdOf }, { assistantMode, refusal }, { INTEGRATIONS, enabled, listed, agentNotes }] = await Promise.all([
+      mod('app/commands/catalogue.mjs'), mod('app/commands/tools-schema.mjs'), mod('app/commands/tool-sets.mjs'), mod('integrations/index.mjs')]);
     const mcpTools = (defs) => toolsFor(defs.map((d) => ({ id: d.id, title: d.title, args: d.args })), { $defs: MODEL_DEFS, form: 'model' })
       .map(({ function: f }, i) => ({ name: f.name, description: f.description, inputSchema: f.parameters, def: defs[i] }));
     const strip = ({ def: _def, ...t }) => t;
-    const every = mcpTools(CATALOGUE);
-    const all = every.filter((t) => !NEVER.includes(t.def.id));
+    const cache = new Map(); // the enabled integration ids, joined → {tools, all}
+    const listsOf = (s) => {
+      const key = INTEGRATIONS.filter((i) => enabled(s, i.id)).map((i) => i.id).join(',');
+      if (!cache.has(key)) {
+        const every = mcpTools(CATALOGUE.map((d) => listed(d, s)).filter(Boolean));
+        cache.set(key, { tools: every.map(strip), all: every.filter((t) => !NEVER.includes(t.def.id)) });
+      }
+      return cache.get(key);
+    };
     return {
-      tools: every.map(strip),
+      tools: (s) => listsOf(s).tools,
       idOf: (name) => commandIdOf(name),
-      // The assistant's: every command but NEVER, less those its permission mode refuses (the executor refuses them again).
-      assistant: (s) => all.filter((t) => !refusal(t.def, assistantMode(s?.assistant))),
+      // The assistant's: every listed command but NEVER, less those its permission mode refuses (the executor refuses them again).
+      assistant: (s) => listsOf(s).all.filter((t) => !refusal(t.def, assistantMode(s?.assistant))),
+      agentNotes,
     };
   })();
   return catalogue;
@@ -188,12 +203,12 @@ async function method(session, id, name, params) {
         protocolVersion: MCP_VERSIONS.includes(params.protocolVersion) ? params.protocolVersion : MCP_VERSIONS[0],
         capabilities: { tools: {} },
         serverInfo: { name: 'easywriter', version: app.getVersion() },
-        instructions: session.assistant ? ASSISTANT_INSTRUCTIONS : INSTRUCTIONS,
+        instructions: session.assistant ? ASSISTANT_INSTRUCTIONS : INSTRUCTIONS + (await tools()).agentNotes(await getSettings()),
       };
     case 'ping':
       return {};
     case 'tools/list':
-      return { tools: session.assistant ? (await tools()).assistant(await getSettings()).map(({ def: _def, ...t }) => t) : (await tools()).tools };
+      return { tools: session.assistant ? (await tools()).assistant(await getSettings()).map(({ def: _def, ...t }) => t) : (await tools()).tools(await getSettings()) };
     case 'tools/call': {
       if (!session.name) join(session, 'mcp'); // a stdio client whose initialize reached an earlier connection
       const mine = session.assistant ? (await tools()).assistant(await getSettings()) : null;

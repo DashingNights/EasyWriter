@@ -274,7 +274,7 @@ export async function invokeControl(ctx, a) {
   if (why) fail('denied', `"${r.name}" is ${why}`, { reason: 'policy' });
   if (!shown(el)) fail('refused', `"${r.name}" is not shown now (a dialog may cover it); take a new ui_snapshot`, { code: 'hidden' });
   if (!document.hasFocus()) {
-    fail('refused', 'EasyWriter does not have the focus: a system dialog, the forum window or another program has it', { code: 'not_focused' });
+    fail('refused', 'EasyWriter does not have the focus: a system dialog, another window or another program has it', { code: 'not_focused' });
   }
   if (r.state.includes('disabled')) fail('refused', `"${r.name}" is disabled`, { code: 'disabled' });
   const facts = { tag: el.localName, type: el.type, editable: el.isContentEditable };

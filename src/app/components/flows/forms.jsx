@@ -42,8 +42,8 @@ function InsertFlowDialog({ flowId, threadUrl, onClose }) {
             <CommandGroup>
               <CommandItem value={NEW} keywords={['new flowchart']} onSelect={setValue}><Plus />New flowchart</CommandItem>
             </CommandGroup>
-            {own.length > 0 && <CommandGroup heading="This thread">{own.map(item)}</CommandGroup>}
-            {loose.length > 0 && <CommandGroup heading="No thread">{loose.map(item)}</CommandGroup>}
+            {own.length > 0 && <CommandGroup heading="This project">{own.map(item)}</CommandGroup>}
+            {loose.length > 0 && <CommandGroup heading="No project">{loose.map(item)}</CommandGroup>}
           </CommandList>
         </Command>
       )}

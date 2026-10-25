@@ -105,7 +105,7 @@ export const PROMISE_ASK = 'Do it now with a tool call, or say what stops you.';
 /** Whether `usage` ({used, ctx} tokens) is at or above 80 % of the context: the next send compacts first. */
 export const shouldCompact = (usage) => !!usage?.ctx && usage.used >= COMPACT_AT * usage.ctx;
 
-export const COMPACT_SYSTEM = 'You summarize a chat between a student and the assistant in EasyWriter, a desktop app for drafting forum posts.';
+export const COMPACT_SYSTEM = 'You summarize a chat between a student and the assistant in EasyWriter, a desktop app for writing drafts.';
 export const COMPACT_ASK = 'Summarize our conversation so far in at most 300 words of plain text. Keep my goals, the decisions, the open items and '
   + 'the drafts we touched, with their titles.';
 
@@ -126,7 +126,8 @@ const MODE_LINES = {
 /** The situation note the app puts before the user's message at send time; `s` = {page: 'editor' | 'plan' | 'flows', plan?,
  * flow? (the workspace's title), draft: {title, tag?} | null, thread?, selection: {label, summary, attached} | null, canvas? (the
  * canvas being edited, e.g. "the canvas at block [4]"), background?: [title] (the drafts with a background session, sessions.js),
- * drafts: [{title, tag?}], total, scope: 'thread' | 'all', forum? (the open draft's project has a forum thread: Push works), permission?:
+ * drafts: [{title, tag?}], total, scope: 'thread' | 'all', projectNote? (what the enabled integrations add after the project,
+ * integrations/index.mjs situationNotes), permission?:
  * 'standard' | 'ask' | 'readonly' | 'all', playbooks?: [{id?, title, text}] (playbooks.mjs pickPlaybooks, under "How to do this:")}. Never
  * stored. */
 export function situationNote(s) {
@@ -139,7 +140,7 @@ export function situationNote(s) {
     `Page: ${page}${where}`,
     `Open draft: ${s.draft ? `${tagged(s.draft)}${s.draftId ? ` (id ${s.draftId})` : ''}${s.page === 'editor' ? '' : ' (behind this page)'}` : 'none'}`,
   ];
-  if (s.draft) lines.push(`Project: ${s.thread ? `${q(s.thread)}${s.forum ? ', linked to a forum thread' : ''}` : 'none'}`);
+  if (s.draft) lines.push(`Project: ${s.thread ? `${q(s.thread)}${s.projectNote ?? ''}` : 'none'}`);
   if (s.background?.length) lines.push(`Working in the background on: ${s.background.map(q).join(', ')}`);
   const sel = s.selection;
   lines.push(`Selected: ${sel ? `${clip(sel.summary, 140)}${sel.attached ? `. It is attached as [${sel.label}].` : ''}` : 'nothing'}`);

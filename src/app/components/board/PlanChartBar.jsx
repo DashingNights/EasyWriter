@@ -16,6 +16,7 @@ import { VIEW_TITLES } from '../plan/ChartView.jsx';
 import { columnsOf, FIELDS, OPTION_DEFAULTS, ZOOMS } from '../../../plan/plan-model.mjs';
 import { refocusEditor } from '../../actions.js';
 import { can } from '../../gates.mjs';
+import { enabled } from '../../../integrations/index.mjs';
 import { useStore } from '../../store.js';
 import { planList, usePlans } from '../../plans.js';
 import { DateField } from '../DateField.jsx';
@@ -104,7 +105,10 @@ function ChartOptions({ chart, ctx, error, set }) {
   const o = { ...OPTION_DEFAULTS, ...chart.options };
   const put = (patch) => set({ options: { ...chart.options, ...patch } });
   const plan = ctx?.plan;
-  const shownCols = ctx ? columnsOf(ctx, { ...o, columns: null }).map((c) => c.id) : [];
+  // While the forum integration is off the stored unpushedOnly and 'pushed' stay, unshown and unused (planSource.pushShown).
+  const push = useStore((s) => enabled(s.settings, 'forum'));
+  // The columns as drawn: a frozen ctx carries no push, so it is set here as drawn() sets it.
+  const shownCols = ctx ? columnsOf({ ...ctx, push }, { ...o, columns: null }).map((c) => c.id) : [];
   // Columns: null shows all; unticking one lists the rest; none is [] (an empty board), all of them null again.
   const toggleColumn = (v, on) => {
     const cur = o.columns ?? shownCols;
@@ -119,7 +123,7 @@ function ChartOptions({ chart, ctx, error, set }) {
   const gantt = chart.view === 'gantt';
   return (
     <div className="grid grid-cols-[auto_minmax(0,1fr)] items-start gap-x-2 gap-y-1">
-      {error && <p className="col-span-2 rounded-md border border-dashed border-warning/70 px-1.5 py-1 text-xs text-warning">Push refuses this chart: {error}.</p>}
+      {error && <p className="col-span-2 rounded-md border border-dashed border-warning/70 px-1.5 py-1 text-xs text-warning">This chart cannot export as a picture: {error}.</p>}
       <Row label="Title">
         <Chip tip="Title bar" icon pressed={o.title !== ''} onChange={(on) => put({ title: on ? null : '' })}><Heading /></Chip>
         <TextOption aria-label="Chart title" className="min-w-0 flex-1" disabled={o.title === ''} value={o.title ?? ''} placeholder={VIEW_TITLES[chart.view]}
@@ -152,8 +156,8 @@ function ChartOptions({ chart, ctx, error, set }) {
       <Row label="Tickets">
         <TextOption aria-label="Filter text" placeholder="Filter text (title, #num)" className="w-full" value={o.search} onCommit={(t) => put({ search: t.slice(0, 100) })} />
         <Chip pressed={o.hideDone} onChange={(on) => put({ hideDone: on })}>Hide done</Chip>
-        {!gantt && <Chip tip="Draft cards (the thread's drafts that no ticket links)" pressed={o.showDrafts} onChange={(on) => put({ showDrafts: on })}>Drafts</Chip>}
-        {!gantt && <Chip pressed={o.unpushedOnly} onChange={(on) => put({ unpushedOnly: on })}>Unpushed only</Chip>}
+        {!gantt && <Chip tip="Draft cards (the project's drafts that no ticket links)" pressed={o.showDrafts} onChange={(on) => put({ showDrafts: on })}>Drafts</Chip>}
+        {!gantt && push && <Chip pressed={o.unpushedOnly} onChange={(on) => put({ unpushedOnly: on })}>Unpushed only</Chip>}
         <label className="flex h-6 items-center gap-1 px-1 text-xs text-muted-foreground">
           Done within
           <TextOption type="number" min={1} aria-label="Done within days" className="w-12 px-1.5" value={o.doneWithinDays == null ? '' : String(o.doneWithinDays)}
@@ -178,8 +182,8 @@ function ChartOptions({ chart, ctx, error, set }) {
             </Select>
             <Chip tip={`Week numbers${plan && !plan.calendar.weekOne ? ' (set week 1 in the plan\'s Calendar... first)' : ''}`} pressed={o.weekLabels === 'number'}
               onChange={(on) => put({ weekLabels: on ? 'number' : 'date' })}>Week no.</Chip>
-            <Tip title="Push draws at most 60 rows. A zoom too wide for the post falls back to a smaller one, and the footer says so.">
-              <Info aria-label="On push" className="mx-1 size-3.5 text-muted-foreground" />
+            <Tip title="The picture draws at most 60 rows. A zoom too wide for the page falls back to a smaller one, and the footer says so.">
+              <Info aria-label="Picture limits" className="mx-1 size-3.5 text-muted-foreground" />
             </Tip>
           </Row>
           <Row label="Show">
@@ -188,7 +192,7 @@ function ChartOptions({ chart, ctx, error, set }) {
         </>
       ) : (
         <Row label={chart.view === 'backlog' ? 'Columns' : 'Fields'} tip={chart.view === 'backlog' ? 'Backlog columns shown' : 'Card fields shown'}>
-          {FIELDS.map((f) => {
+          {FIELDS.filter((f) => push || f !== 'pushed').map((f) => {
             const [name, Icon] = FIELD_INFO[f];
             return (
               <Chip key={f} tip={name} icon pressed={o.fields.includes(f)} onChange={(on) => put({ fields: on ? [...o.fields, f] : o.fields.filter((x) => x !== f) })}><Icon /></Chip>

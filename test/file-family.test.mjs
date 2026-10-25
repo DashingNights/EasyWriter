@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { fileFamily } from '../src/file-family.js';
+import fsp from 'node:fs/promises';
+import { fileFamily, writeFileAtomic } from '../src/file-family.js';
 
 const tempDir = () => fs.mkdtempSync(path.join(os.tmpdir(), 'dw-family-'));
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -116,4 +117,21 @@ test('images: base64 pictures are saved once as files and loaded back as data UR
   // A record from before keeps its data URL; a missing picture keeps its reference.
   fs.writeFileSync(path.join(dir, `${ID}.json`), JSON.stringify({ id: ID, a: png, b: `data:image/png;sha256,${'0'.repeat(64)}` }));
   assert.deepEqual(await fam.load(ID), { id: ID, a: png, b: `data:image/png;sha256,${'0'.repeat(64)}` });
+});
+
+test('writeFileAtomic retries a rename that another process blocks for a moment (Windows EPERM)', async () => {
+  const file = path.join(tempDir(), 's.json');
+  const rename = fsp.rename;
+  let calls = 0;
+  fsp.rename = async (...a) => {
+    if (++calls < 3) throw Object.assign(new Error('EPERM: operation not permitted, rename'), { code: 'EPERM' });
+    return rename(...a);
+  };
+  try {
+    await writeFileAtomic(file, '{"a":1}');
+  } finally {
+    fsp.rename = rename;
+  }
+  assert.equal(calls, 3);
+  assert.equal(fs.readFileSync(file, 'utf8'), '{"a":1}');
 });

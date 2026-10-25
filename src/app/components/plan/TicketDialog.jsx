@@ -11,8 +11,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Slider } from '@/components/ui/slider';
 import { Textarea } from '@/components/ui/textarea';
 import { doneColumnOf, statusOf, unitOf } from '../../../plan/plan-model.mjs';
-import { openInForum, refocusEditor } from '../../actions.js';
-import { getState } from '../../store.js';
+import { refocusEditor } from '../../actions.js';
+import { first } from '../../../integrations/ui.js';
 import { deleteTickets, dispatch, moveCards, planContext, usePlans } from '../../plans.js';
 import { openDraftFromPlan, PRIORITIES } from './Card.jsx';
 import { DateField } from '../DateField.jsx';
@@ -165,10 +165,7 @@ export function TicketDialog({ planId, ticketId, init = {}, onClose }) {
     ? set({ urls: t.urls.map((u) => (u.id === urlId ? { ...u, ...patch } : u)) })
     : dispatch('plan.urls.update', { planId, ticketId, urlId, patch }));
   const removeUrl = (urlId) => (isNew ? set({ urls: t.urls.filter((u) => u.id !== urlId) }) : dispatch('plan.urls.remove', { planId, ticketId, urlId }));
-  const openUrl = (url) => {
-    const { settings } = getState(); // a link to the forum site opens in the forum window (its sign-in), any other outside
-    return settings.forumUrl && url.startsWith(`${settings.forumUrl}/`) ? openInForum(url) : window.open(url);
-  };
+  const openUrl = (url) => first('opensUrl', url) || window.open(url); // an integration's link (the forum's site) opens in its window
   const setDraft = (draftId) => {
     if (isNew) return set({ draftId });
     const r = dispatch('plan.tickets.update', { planId, ticketIds, patch: { draftId } });

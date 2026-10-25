@@ -1,9 +1,10 @@
+import { bare, enabled } from '../../integrations/index.mjs';
 import { define, fail } from './define.mjs';
 import { ref } from './schema-defs.mjs';
-import { topicId, topicOf } from '../../thread-url.mjs';
 
 // threads.* (SPEC §8 Catalogue): the sidebar's projects (settings.threads, keyed project:<uuid>, or by the topic URL for a forum
-// thread added before projects), one entry per call, through actions.js. A project may link a forum thread (its Push target).
+// thread added before projects), one entry per call, through actions.js. While the forum integration is on, a project may link a
+// forum thread (its Push target); while it is off, results leave out the keys it owns (integrations/index.mjs bare).
 
 const THREAD = 'project:3a7c9e1b-5d2f-4b8a-9c6e-1f0d2b4a6c8e';
 const TOPIC = 'https://forum.example.com/topic/88136-level-design/';
@@ -15,7 +16,7 @@ const threadOf = (ctx, url) => threads(ctx).find((t) => t.url === url) ?? fail('
 export const defs = [
   define({
     id: 'threads.list',
-    title: 'List the projects of the sidebar, with the forum thread each one links (if any)',
+    title: 'List the projects of the sidebar',
     brief: 'Use it to get the URL of a project by its title.',
     group: 'threads',
     risk: 'read',
@@ -23,26 +24,37 @@ export const defs = [
     args: { type: 'object', additionalProperties: false, properties: {} },
     result: { type: 'array' },
     examples: [{ args: {} }],
-    run: (ctx) => threads(ctx).map((t) => ({ ...t, thread: topicOf(threads(ctx), t.url) || null, selected: t.url === ctx.state.settings.selectedThread })),
+    run: (ctx) => threads(ctx).map((t) => ({
+      ...bare('project', t, ctx.state.settings),
+      ...(enabled(ctx.state.settings, 'forum') && { thread: ctx.integrations.forum.projectTopic(t.url) || null }),
+      selected: t.url === ctx.state.settings.selectedThread,
+    })),
   }),
   define({
     id: 'threads.add',
-    title: 'Add a project by its title, a forum thread, or both',
-    brief: "thread: the forum topic URL its drafts push to. Without a title the project takes the thread's title.",
+    title: 'Add a project',
+    brief: 'Use it to start a project for drafts.',
     group: 'threads',
     risk: 'write',
     undo: 'none',
-    args: { type: 'object', additionalProperties: false, properties: { title: { type: 'string', maxLength: 200 }, thread: ref('URL', 'A forum topic URL') } },
+    args: {
+      type: 'object', additionalProperties: false,
+      properties: {
+        title: { type: 'string', maxLength: 200 },
+        thread: ref('URL', "A forum topic URL, the thread its drafts push to. Without a title the project takes the thread's title."),
+      },
+    },
+    integrationArgs: { thread: 'forum' },
     result: { type: 'object', required: ['url'] },
     examples: [{ args: { title: 'Level design' } }, { args: { thread: TOPIC } }, { args: { title: 'Level design', thread: TOPIC } }],
     run: async (ctx, a) => {
-      if (!a.title?.trim() && !a.thread) fail('invalid_args', 'A project needs a title or a forum thread', { path: '', message: 'needs title or thread', expected: { required: ['title'] } });
-      if (a.thread) {
-        const u = ctx.actions.normalizeThread(a.thread);
-        if (!u) fail('invalid_args', `Not a topic URL of the forum (${ctx.state.settings.forumUrl || 'any forum while none is set'})`, { path: '/thread', message: 'is not a topic URL of the forum', expected: { $ref: '#/$defs/URL' } });
-        if (threads(ctx).some((t) => topicId(ctx.actions.projectTopic(t.url)) === topicId(u))) fail('already_exists', `A project already links ${u}`);
+      if (!a.title?.trim() && !a.thread) {
+        const forum = enabled(ctx.state.settings, 'forum');
+        fail('invalid_args', forum ? 'A project needs a title or a forum thread' : 'A project needs a title', { path: '', message: forum ? 'needs title or thread' : 'needs title', expected: { required: ['title'] } });
       }
-      return { url: await ctx.actions.addProject(a.title ?? '', a.thread ?? '') };
+      // `thread` reaches run only while the forum is on (commands.js refuses an off integration's argument).
+      if (a.thread) return { url: await ctx.integrations.forum.addLinkedProject(a.title ?? '', a.thread) };
+      return { url: await ctx.actions.addProject(a.title) };
     },
   }),
   define({
@@ -59,7 +71,7 @@ export const defs = [
       const thread = threadOf(ctx, a.url);
       const selected = ctx.state.settings.selectedThread === a.url;
       await ctx.actions.doRemoveThread(a.url);
-      return { thread, selected };
+      return { thread: bare('project', thread, ctx.state.settings), selected };
     },
   }),
   define({
@@ -76,24 +88,6 @@ export const defs = [
       const previous = ctx.state.settings.selectedThread ?? null;
       await ctx.actions.saveSettings({ selectedThread: a.url });
       return { url: a.url, previous };
-    },
-  }),
-  define({
-    id: 'threads.openInForum',
-    title: "Open a project's forum thread in the forum window",
-    group: 'threads',
-    risk: 'approval', // outward-facing: it loads the forum site
-    undo: 'none',
-    headless: false,
-    needs: ['app.forum'],
-    args: URL_ARG,
-    result: { type: 'object', required: ['url'] },
-    examples: [{ args: { url: THREAD } }],
-    ask: (ctx, a) => ({ title: 'open a forum thread in the forum window', description: ctx.actions.projectTopic(a.url) || a.url }),
-    run: async (ctx, a) => {
-      const url = ctx.actions.projectTopic(a.url) || fail('precondition_failed', 'That project links no forum thread', { failed: [{ gate: null, message: 'no forum thread', fix: 'Link one to the project first' }] });
-      await ctx.api.forum.open(url);
-      return { url };
     },
   }),
 ];

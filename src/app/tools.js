@@ -2,15 +2,16 @@ import { createElement as h } from 'react';
 import { NodeSelection } from '@tiptap/pm/state';
 import {
   ALargeSmall, AppWindow, BringToFront, CaseSensitive, Copy, Crop, Eraser, Eye, EyeOff, FilePlus, FolderInput, Group, Heading1,
-  Heading2, Heading3, Globe, Heading4, Heading5, Heading6, ImagePlus, Layers, Lock, LockOpen, Magnet, MessagesSquare, MousePointer2, MoveHorizontal, PaintBucket, Palette, Pen, Pilcrow, Pin, Redo2, Save,
-  Replace, Scaling, Search, MessageSquare, Send, SendToBack, Settings, Shapes, SlidersHorizontal, SpellCheck, SquarePen, TableColumnsSplit, TableRowsSplit, Tag, Trash2,
+  Heading2, Heading3, Globe, Heading4, Heading5, Heading6, ImagePlus, Layers, Lock, LockOpen, Magnet, MessagesSquare, MousePointer2, MoveHorizontal, PaintBucket, Palette, Pen, Pilcrow, Pin, Puzzle, Redo2, Save,
+  Replace, Scaling, Search, MessageSquare, SendToBack, Settings, Shapes, SlidersHorizontal, SpellCheck, SquarePen, TableColumnsSplit, TableRowsSplit, Tag, Trash2,
   Type, Undo2, Ungroup, Workflow, X, PenLine,
 } from 'lucide-react';
 import { SelectItem } from '@/components/ui/select';
 import { canvasEditor, flowSource } from '../canvas.js';
 import { FONTS, TEXT_COLORS } from '../extensions.js';
 import { KINDS } from '../flow/shapes.mjs';
-import { applyPresetAt, commitBoardEdit, openSettings, push, saveNow, threadLabel } from './actions.js';
+import { all } from '../integrations/ui.js';
+import { applyPresetAt, commitBoardEdit, openSettings, saveNow, threadLabel } from './actions.js';
 import { assistantSettings, saveAssistant, toggleChat } from './assistant/assistant.js';
 import { closePanes, HOME, newTab, openPane, openPanes } from './browser.js';
 import { invoke } from './commands.js';
@@ -28,7 +29,6 @@ import { BlockSelect, FontSelect, NONE, SizeSelect, Swatches, textTools, ToolBut
 import { draftTag, tagList } from './drafts-meta.js';
 import { openFlows } from './flows.js';
 import { can, GATES } from './gates.mjs';
-import { topicOf } from '../thread-url.mjs';
 import { getState, useStore } from './store.js';
 import { blockKind, flowchartMode } from './tool-rank.mjs';
 import { showPage } from './views.js';
@@ -78,7 +78,7 @@ function subjectOf(kind, c) {
     case 'history': return c.snap ?? (c.ed && { canUndo: c.ed.can().undo(), canRedo: c.ed.can().redo() });
     case 'draft': {
       const d = getState().draft;
-      return d && { ...d, topic: topicOf(getState().settings?.threads, d.threadUrl) };
+      return d && { ...d, threads: getState().settings?.threads };
     }
     case 'settings': return getState().settings;
     case 'node': return c.block;
@@ -93,11 +93,14 @@ function subjectOf(kind, c) {
 /** An entry's gates: its `needs` and its command's, so the palette and the command cannot disagree. */
 const needsOf = (t) => [...(t.needs ?? []), ...(t.command ? byId(t.command).needs : [])].map((n) => (typeof n === 'string' ? { gate: n } : n));
 
-/** [{gate, message, fix}] of the entry `t`'s gates that do not hold in `c` (tool.run reports them). */
+/** [{gate, message, fix}] of the entry `t`'s gates that do not hold in `c` (tool.run reports them). An integration that is off
+ * is the only one reported, as the executor does (commands.js failedGates), so its other gates never name it. */
 function failedNeeds(t, c) {
   const args = t.args?.(c) ?? {};
-  return needsOf(t).filter((n) => (!n.if || n.if(args)) && !can(n.gate, subjectOf(GATES[n.gate].subject, c), args, n.with))
+  const failed = needsOf(t).filter((n) => (!n.if || n.if(args)) && !can(n.gate, subjectOf(GATES[n.gate].subject, c), args, n.with))
     .map(({ gate }) => ({ gate, message: GATES[gate].message, fix: GATES[gate].fix }));
+  const off = failed.filter((f) => f.gate.startsWith('integration.'));
+  return off.length ? off : failed;
 }
 
 const withWhen = (t) => (t.when ? t : { ...t, when: (c) => !failedNeeds(t, c).length && (t.also?.(c) ?? true) });
@@ -166,7 +169,7 @@ const CORE = [
   { id: 'background', label: 'Background', group: 'Board', icon: h(PaintBucket), needs: BOARD,
     options: (c) => h(BgSelect, { board: c.board, bg: c.snap.bg }),
     keywords: ['bg', 'board colour', 'board color', 'background colour', 'background color', 'backdrop', 'transparent',
-      'white', 'black', 'post', 'backround', 'backgroud'] },
+      'white', 'black', 'page', 'backround', 'backgroud'] },
   { id: 'layers', label: 'Layers', group: 'Board', icon: h(Layers), needs: BOARD, toggle: true, active: () => getState().settings?.layersPanel ?? true, run: toggleLayers,
     keywords: ['layers panel', 'layer list', 'layer', 'outline', 'tree', 'objects', 'item list', 'z order', 'order', 'reorder', 'stack',
       'hide', 'lock', 'show', 'unlock', 'groups', 'layres', 'layrs'] },
@@ -266,7 +269,7 @@ const CORE = [
   text('deleteRow', 'Delete row', 'Insert', ['remove row', 'row'], { icon: h(TableRowsSplit), needs: [...TEXT, 'doc.inTable'] }),
   text('deleteColumn', 'Delete column', 'Insert', ['remove column', 'column', 'col'], { icon: h(TableColumnsSplit), needs: [...TEXT, 'doc.inTable'] }),
   text('deleteTable', 'Delete table', 'Insert', ['remove table', 'table'], { needs: [...TEXT, 'doc.inTable'], risk: 'destructive' }),
-  text('box', 'Insert titled box', 'Insert', ['box', 'titled box', 'panel', 'callout', 'container', 'card', 'section', 'spoiler']),
+  text('box', 'Insert titled box', 'Insert', ['box', 'titled box', 'panel', 'callout', 'container', 'card', 'section', 'spoiler'], { needs: [...TEXT, 'format.box'] }),
   text('rule', 'Horizontal rule', 'Insert', ['divider', 'separator', 'line', 'hr', 'rule', 'horizontal line', 'break', 'section break']),
 
   // Both modes: history; text mode: formatting and presets.
@@ -314,18 +317,18 @@ function FolderPick() {
 
 const APP = [
   { id: 'new-draft', label: 'New draft', group: 'App', icon: h(FilePlus), command: PALETTE.newDraft,
-    keywords: ['new', 'create', 'add draft', 'new post', 'blank', 'start', 'new document', 'new file', 'draft'] },
+    keywords: ['new', 'create', 'add draft', 'blank', 'start', 'new document', 'new file', 'draft'] },
   { id: 'save', label: 'Save', group: 'App', icon: h(Save), key: 'app.save', needs: ['doc.open'], notice: 'Saved',
     run: () => {
       commitBoardEdit();
       saveNow();
     },
     keywords: ['save', 'save now', 'save draft', 'store', 'keep', 'write'] },
-  // ponytail: runs push() until push.prepare joins the catalogue (board-commands); then `command: 'push.prepare'`.
-  { id: 'push', label: 'Push to forum', group: 'App', icon: h(Send), needs: ['app.forum', 'doc.open', 'draft.hasThread', 'draft.unpushed'], risk: 'approval',
-    run: () => push(), keywords: ['push', 'post', 'publish', 'send', 'forum', 'reply', 'upload', 'submit', 'share'] },
   { id: 'settings', label: 'Settings', group: 'App', icon: h(Settings), run: openSettings, headless: false,
-    keywords: ['settings', 'preferences', 'options', 'config', 'configure', 'theme', 'dark mode', 'light mode', 'forum width', 'tags'] },
+    keywords: ['settings', 'preferences', 'options', 'config', 'configure', 'theme', 'dark mode', 'light mode', 'page width', 'tags'] },
+  // Settings > Integrations, where an integration is turned on: no integration's own words, so an off one is never named here.
+  { id: 'integrations', label: 'Integrations', group: 'App', icon: h(Puzzle), run: () => openSettings('integrations'), headless: false,
+    keywords: ['integrations', 'plugins', 'extensions', 'add-ons', 'connect'] },
   { id: 'assistant', label: 'Assistant', group: 'App', icon: h(MessageSquare), key: 'app.assistant', run: () => toggleChat(), headless: false,
     keywords: ['assistant', 'chat', 'ai', 'ask', 'help', 'bot', 'model', 'llm', 'local ai', 'agent', 'copilot', 'assistent', 'asistant'] },
   { id: 'spell-check', label: 'Spell check', group: 'App', icon: h(SpellCheck), toggle: true, active: () => getState().settings?.spellCheck ?? true,
@@ -335,7 +338,7 @@ const APP = [
     active: () => assistantSettings().humanWriting, run: () => saveAssistant({ humanWriting: !assistantSettings().humanWriting }),
     keywords: ['writing guide', 'human writing', 'writing style', 'style guide', 'prose', 'tone', 'em dash', 'ai writing', 'sound human', 'HUMAN-WRITING'] },
   { id: 'select-thread', label: 'Select project...', group: 'App', icon: h(MessagesSquare), options: () => h(ThreadPick),
-    keywords: ['project', 'select project', 'thread', 'select thread', 'filter', 'topic', 'show thread', 'switch thread', 'all drafts', 'subject'] },
+    keywords: ['project', 'select project', 'filter', 'switch project', 'all drafts'] },
   { id: 'tag-draft', label: 'Tag draft...', group: 'App', icon: h(Tag), also: saved, options: () => h(TagPick),
     keywords: ['tag', 'status', 'label', 'to do', 'todo', 'in progress', 'done', 'mark as', 'workflow'] },
   // The browser (§7j): a new tab in the pane over this page (on the browser page, a new tab there), the browser page, the pane.
@@ -353,7 +356,7 @@ const APP = [
 ];
 
 const TEXT_IDS = ['add-text', 'connector-label']; // flowchart mode's Text section (the shape kinds have their category)
-const TOOLS = [...CORE, ...APP, ...PLAN_TOOLS, ...FLOW_TOOLS].map(withWhen).map((t) => (TEXT_IDS.includes(t.id) ? { ...t, category: 'text' } : t));
+const TOOLS = [...CORE, ...APP, ...PLAN_TOOLS, ...FLOW_TOOLS, ...all('TOOLS')].map(withWhen).map((t) => (TEXT_IDS.includes(t.id) ? { ...t, category: 'text' } : t));
 
 /** Every entry in registry order, with one entry per font preset. */
 const allTools = (c) => [...TOOLS, ...c.presets.map((p, i) => withWhen({

@@ -67,6 +67,9 @@ const cmd = (id, title, risk, props, required, build, more = {}) => ({
 
 const numOf = (plan, id) => `#${plan.tickets.find((t) => t.id === id).num}`;
 
+// A card without pushedAt, its own and its draft's: while the forum is off its field stays in the app (integrations/index.mjs bare).
+const unpushed = ({ pushedAt, ...c }) => (c.draft ? { ...c, draft: (({ pushedAt: _, ...d }) => d)(c.draft) } : c);
+
 export const PLAN_COMMANDS = [
   // plans
   cmd('plan.list', 'List the plans', 'read', {}, [], null, {
@@ -88,13 +91,13 @@ export const PLAN_COMMANDS = [
     read: (ctx, a) => ({
       plan: ctx.plan,
       ...(a.include?.includes('schedule') && { schedule: schedule(ctx) }),
-      ...(a.include?.includes('cards') && { cards: cards(ctx) }),
+      ...(a.include?.includes('cards') && { cards: ctx.push === false ? cards(ctx).map(unpushed) : cards(ctx) }),
       ...(a.include?.includes('tree') && { tree: tree(ctx.plan) }),
     }),
   }),
-  cmd('plan.create', "Create the plan of a thread or project", 'write', {}, [], (ctx, a) => {
+  cmd('plan.create', "Create the plan of a project", 'write', {}, [], (ctx, a) => {
     const url = String(a.threadUrl).replace(/[?#].*$/, '');
-    if (!isThreadKey(url)) return { error: { code: 'invalid_args', message: 'threadUrl is a forum topic url or a project key' } };
+    if (!isThreadKey(url)) return { error: { code: 'invalid_args', message: 'threadUrl is a project key or an older topic URL' } };
     if (ctx.plans?.some((p) => p.threadUrl === url)) return { error: { code: 'already_exists', message: 'The thread already has a plan (one plan per thread)' } };
     const plan = newPlan(url, a.title ?? '', ctx.tags);
     return { plan, result: { planId: plan.id } };

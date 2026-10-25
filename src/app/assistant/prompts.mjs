@@ -3,8 +3,8 @@
 // Defiant Fable 9B and any custom model file or server, 'gemma' for Gemma 4 12B agentic. Plain keyboard characters, short
 // literal sentences. Pure: loop.js builds each turn's system message with systemPrompt, test/assistant-context.test.mjs tests it.
 
-export const SYSTEM_PROMPT = 'You are the assistant in EasyWriter, a desktop app where the user writes drafts for their projects '
-  + 'or forum threads. You run on their computer. Answer briefly and plainly.';
+export const SYSTEM_PROMPT = 'You are the assistant in EasyWriter, a desktop app where the user writes drafts for their projects. '
+  + 'You run on their computer. Answer briefly and plainly.';
 // The situation note (capture.js situation) opens the message being answered in every request of the turn.
 export const NOTE_RULE = 'The situation note is current. Earlier replies may be out of date because the user can change things between '
   + 'messages. Check it before acting.';
@@ -50,7 +50,7 @@ const QWEN = [
 // for a question the situation note answered. Shorter imperative steps, the note first, an end condition, no read after a write.
 const GEMMA = [
   'Steps:',
-  '1. Read the situation note first. It names the page, the open draft, its thread, the open flowchart and what is selected. Answer questions about these from it, with no tool call.',
+  '1. Read the situation note first. It names the page, the open draft, its project, the open flowchart and what is selected. Answer questions about these from it, with no tool call.',
   '2. If the note has How to do this, follow those steps.',
   '3. Take ids and paths from the attachment or the note. Read the board or the draft only when they are not there.',
   '4. Make one tool call at a time. Use only the tools you have. If none fits, commands_index lists more.',

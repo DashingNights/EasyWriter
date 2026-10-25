@@ -1,5 +1,6 @@
 import { BOARD_TYPES, find, nodeAt, outline, pathOfPos, posOfPath } from '../../doc-path.mjs';
 import { FONT_SIZES, FONTS, HIGHLIGHTS, presetChain, TEXT_COLORS } from '../../format.mjs';
+import { formatOf } from '../../formats.mjs';
 import { keyLabel } from '../keybinds.js';
 import { blockKind } from '../tool-rank.mjs';
 import { define, fail } from './define.mjs';
@@ -392,6 +393,9 @@ export const defs = [
     risk: 'write',
     undo: 'doc',
     needs: ['doc.open', { gate: 'doc.inTable', if: (a) => TABLE_COMMANDS.includes(a.name) }],
+    // A check, not a need: capabilities() drops a need's `if`, which would hide doc.command (docs/plans/integrations.md Titled
+    // box). The executor runs it with the gates, before any ask.
+    check: (a, draft, settings) => (a.name === 'insertBox' && !formatOf(draft, settings)?.blocks.includes('box') ? ['format.box'] : []),
     args: {
       type: 'object', required: ['name'], additionalProperties: false,
       properties: {

@@ -349,7 +349,7 @@ function CalendarDialog({ planId, onClose }) {
 }
 
 /** The plan picker (Plans with no thread selected and no open draft's thread; Insert plan chart without a plan for the
- * draft's thread: `action` 'Insert', no Delete, and "Create a plan for this thread" when `createFor` names the thread):
+ * draft's thread: `action` 'Insert', no Delete, and "Create a plan for this project" when `createFor` names the project):
  * every plan by thread, then the plans of threads no longer in the list. → the plan id, 'create', or null. */
 function PlanPickDialog({ title = 'Plans', action = 'Open', createFor = null, onClose }) {
   usePlans();
@@ -357,14 +357,14 @@ function PlanPickDialog({ title = 'Plans', action = 'Open', createFor = null, on
   const list = planList();
   const groups = [
     ...threads.map((t) => [threadLabel(t), list.filter((p) => p.threadUrl === t.url)]),
-    ['Without a thread', list.filter((p) => !threads.some((t) => t.url === p.threadUrl))],
+    ['Without a project', list.filter((p) => !threads.some((t) => t.url === p.threadUrl))],
   ].filter(([, plans]) => plans.length);
   return (
     <ListDialog title={title} onClose={onClose} className="sm:max-w-[min(520px,92vw)]">
       {createFor && (
-        <div><Button type="button" variant="ghost" size="xs" onClick={() => onClose('create')}><Plus />Create a plan for this thread</Button></div>
+        <div><Button type="button" variant="ghost" size="xs" onClick={() => onClose('create')}><Plus />Create a plan for this project</Button></div>
       )}
-      {!groups.length && !createFor && <p className="text-xs text-muted-foreground">No plans yet. Select a thread in the sidebar, then open Plans to create its plan.</p>}
+      {!groups.length && !createFor && <p className="text-xs text-muted-foreground">No plans yet. Select a project in the sidebar, then open Plans to create its plan.</p>}
       {groups.map(([heading, plans]) => (
         <div key={heading} className="grid gap-0.5">
           <div className="truncate text-xs text-muted-foreground">{heading}</div>

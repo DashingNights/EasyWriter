@@ -6,7 +6,7 @@ import { toMermaid } from '../../flow/mermaid.mjs';
 import { flowPreset } from '../../flow/shapes.mjs';
 import { statusOf } from '../../plan/plan-model.mjs';
 import { planSource } from '../../plan-chart.js';
-import { topicOf } from '../../thread-url.mjs';
+import { situationNotes } from '../../integrations/index.mjs';
 import { activeBoard } from '../../whiteboard.js';
 import { selection } from '../commands.js';
 import { assistantMode } from '../commands/tool-sets.mjs';
@@ -129,7 +129,7 @@ export function situation(parts = [], viewKey = '') {
     ...(google && { draftId: draft?.id ?? '', outline: st.editor && draft ? outlineLines(st.editor.state.doc) : [] }),
     total: list.length,
     scope,
-    forum: !!topicOf(settings.threads, draft?.threadUrl),
+    projectNote: situationNotes(draft, settings),
     permission,
     playbooks: google ? [] : pickPlaybooks({ parts, view: viewKey, permission }),
   });

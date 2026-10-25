@@ -112,7 +112,7 @@ export function FlowLibrary({ inScope, filter, view }) {
   if (!rows.length) {
     return (
       <p className="m-auto px-4 text-center text-sm text-muted-foreground">
-        {q ? 'No flowchart matches the filter.' : 'No flowcharts for this thread. New flowchart, or Insert flowchart in the editor.'}
+        {q ? 'No flowchart matches the filter.' : 'No flowcharts for this project. New flowchart, or Insert flowchart in the editor.'}
       </p>
     );
   }

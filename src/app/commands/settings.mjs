@@ -1,6 +1,7 @@
 import { moveBeside } from '../draft-order.mjs';
 import { draftsWithTag, pruneMap, tagList } from '../drafts-meta.js';
 import { FONT_SIZES, FONTS } from '../../format.mjs';
+import { bare } from '../../integrations/index.mjs';
 import { define, fail } from './define.mjs';
 import { ref, TAG_ID } from './schema-defs.mjs';
 
@@ -13,9 +14,12 @@ const FOLDER_ID = { type: 'string', minLength: 1, maxLength: 64 };
 const EXAMPLE_FOLDER = '3f6c2a1e-8b7d-4e5f-9a0b-1c2d3e4f5a6b';
 
 // The keys settings.patch may change (agent-automation plan §7): the lists have their own commands, `presets` is a whole
-// list (Settings only), `agent` / `lastDraftId` / `lastView` stay the user's.
+// list (Settings only), `agent` / `lastDraftId` / `lastView` / `integrations` stay the user's. forumWidth is the forum
+// integration's (integrationArgs), listed and taken only while it is on: an alias of pageWidth that external agents used
+// before the one page width (plan step 9), and it writes both keys so they stay equal.
 const PATCH = {
-  forumWidth: { type: 'integer', minimum: 320, maximum: 4000 },
+  pageWidth: { type: 'integer', minimum: 320, maximum: 4000, description: 'Page width in px of every draft' },
+  forumWidth: { type: 'integer', minimum: 320, maximum: 4000, description: 'Same as pageWidth (an older name for it)' },
   theme: { enum: ['dark', 'light'] },
   uiTheme: { enum: ['dark', 'light', 'system'] },
   reduceMotion: { enum: ['off', 'system', 'on', 'custom'] },
@@ -49,16 +53,17 @@ export const defs = [
     undo: 'none',
     args: { type: 'object', additionalProperties: false, properties: { keys: { type: 'array', items: { type: 'string', maxLength: 40 }, maxItems: 50 } } },
     result: { type: 'object' },
-    examples: [{ args: {} }, { args: { keys: ['theme', 'forumWidth'] } }],
+    examples: [{ args: {} }, { args: { keys: ['theme', 'pageWidth'] } }],
     run: (ctx, a) => {
       const { apiKey, googleKey, deepseekKey, qwenKey, ...assistant } = ctx.state.settings.assistant ?? {}; // a provider's key never leaves the app
-      const s = { ...ctx.state.settings, ...(ctx.state.settings.assistant && { assistant }) };
+      // An off integration's keys are left out (integrations/index.mjs bare); the file keeps them.
+      const s = bare('settings', { ...ctx.state.settings, ...(ctx.state.settings.assistant && { assistant }) }, ctx.state.settings);
       return a.keys ? Object.fromEntries(a.keys.filter((k) => Object.hasOwn(s, k)).map((k) => [k, s[k]])) : s;
     },
   }),
   define({
     id: 'settings.patch',
-    title: 'Change display settings such as app theme (uiTheme), forum width and undo history',
+    title: 'Change display settings such as app theme (uiTheme), page width and undo history',
     group: 'settings',
     risk: 'write',
     undo: 'none',
@@ -66,15 +71,19 @@ export const defs = [
       type: 'object', required: ['patch'], additionalProperties: false,
       properties: { patch: { type: 'object', additionalProperties: false, minProperties: 1, properties: PATCH } },
     },
+    integrationArgs: { 'patch.forumWidth': 'forum' },
     result: { type: 'object', required: ['keys', 'previous'] },
-    examples: [{ args: { patch: { forumWidth: 1200 } } }, { args: { patch: { theme: 'light', baseSize: 125 } } }, { args: { patch: { uiTheme: 'system' } } }],
+    examples: [{ args: { patch: { pageWidth: 1200 } } }, { args: { patch: { theme: 'light', baseSize: 125 } } }, { args: { patch: { uiTheme: 'system' } } }],
     run: async (ctx, a) => {
       const s = ctx.state.settings;
       const url = a.patch.selectedThread;
       if (url && !s.threads.some((t) => t.url === url)) fail('not_found', `The thread ${url} is not in the list (threads.add adds it)`);
       const keys = Object.keys(a.patch);
-      const previous = Object.fromEntries(keys.map((k) => [k, s[k] ?? null]));
-      await ctx.actions.changeSettings(a.patch); // theme / historyLimit remount the editor, as the Settings dialog does
+      // forumWidth's previous value is the page width it changed, so the inverse patch restores the page.
+      const previous = Object.fromEntries(keys.map((k) => [k, (k === 'forumWidth' ? s.pageWidth : s[k]) ?? null]));
+      const width = a.patch.pageWidth ?? a.patch.forumWidth;
+      const patch = a.patch.forumWidth === undefined ? a.patch : { ...a.patch, pageWidth: width, forumWidth: width };
+      await ctx.actions.changeSettings(patch); // theme / historyLimit remount the editor, as the Settings dialog does
       return { keys, previous };
     },
   }),

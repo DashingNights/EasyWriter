@@ -125,6 +125,10 @@ test('situationNote: page, open draft, thread, selection, canvas and the thread\
   assert.equal(lines[8], '- "Week 2", tag Done');
   assert.equal(lines.at(-1), '[End of situation note]');
   assert.ok(!/[–—]/.test(note)); // keyboard characters only
+  // An enabled integration's clause follows the project (integrations/index.mjs situationNotes); none, no clause.
+  const linked = situationNote({ page: 'editor', draft: { title: 'A' }, thread: 'P', projectNote: ', linked to a forum thread', selection: null, drafts: [], total: 0, scope: 'thread' });
+  assert.ok(linked.split('\n').includes('Project: "P", linked to a forum thread'));
+  assert.ok(situationNote({ page: 'editor', draft: { title: 'A' }, thread: 'P', selection: null, drafts: [], total: 0, scope: 'thread' }).split('\n').includes('Project: "P"'));
   const plans = situationNote({ page: 'plan', plan: 'Sprint 1', draft: null, selection: null, drafts: [], total: 0, scope: 'all' });
   assert.deepEqual(plans.split('\n').slice(1, -1), ['Page: Plans, plan "Sprint 1"', 'Open draft: none', 'Selected: nothing', 'Drafts (0): none']);
   assert.match(situationNote({ page: 'flows', draft: { title: '' }, selection: null, drafts: [], total: 0, scope: 'all' }), /Open draft: "Untitled draft" \(behind this page\)/);

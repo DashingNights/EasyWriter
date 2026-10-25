@@ -151,7 +151,7 @@ export const PLAYBOOKS = [
     triggers: SITUATION_WORDS,
     when: { permission: 'any' },
     text: [
-      'The situation note names the page, the open draft, its thread, the open flowchart or plan, what is selected and the drafts.',
+      'The situation note names the page, the open draft, its project, the open flowchart or plan, what is selected and the drafts.',
       '1. Answer from the situation note. Call no tool.',
       '2. Name drafts and flowcharts by their titles.',
       'Only for what the draft or a board says inside, read it with doc_get or board_get.',

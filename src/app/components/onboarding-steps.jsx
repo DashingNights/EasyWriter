@@ -1,7 +1,8 @@
 import { useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Kbd } from '@/components/ui/kbd';
-import { hasForum, login, openSettings } from '../actions.js';
+import { openSettings } from '../actions.js';
+import { Slot } from '../../integrations/ui.js';
 import { refreshStatus, usable, useAssistant } from '../assistant/assistant.js';
 import { dictationReady, openInstall } from '../dictation/dictation.js';
 import { keyLabel, withKey } from '../keybinds.js';
@@ -37,17 +38,6 @@ function AssistantActions({ next }) {
   );
 }
 
-// A project with a forum thread sets the forum (settings.forumUrl): its sign-in shows then.
-function ThreadActions() {
-  const forum = useStore((s) => hasForum(s.settings));
-  const status = useStore((s) => s.status);
-  const loggingIn = useStore((s) => s.loggingIn);
-  if (!forum) return null;
-  return status.loggedIn
-    ? <Note>{`Logged in as ${status.name || `member ${status.memberId}`}`}</Note>
-    : <Button size="sm" variant="outline" disabled={loggingIn} onClick={login}>Log in...</Button>;
-}
-
 const toolbar = (label) => `[data-agent-area="toolbar"] [aria-label^="${label}"]`; // its title carries the key: "Insert canvas (Ctrl+Alt+C)"
 const tab = (n) => `nav[aria-label="Workspaces"] > button:nth-child(${n})`; // Plans, Flowcharts, Browser
 
@@ -67,7 +57,7 @@ export const STEPS = [
   {
     id: 'canvas',
     title: 'Smart canvas',
-    body: () => <p>{withKey('Insert canvas', 'insert.canvas')} adds a smart canvas, a drawing area that goes into the post as one picture. It opens for editing at once and Done closes it. Double-click it later to edit it again.</p>,
+    body: () => <p>{withKey('Insert canvas', 'insert.canvas')} adds a smart canvas, a drawing area that goes into the draft as one picture. It opens for editing at once and Done closes it. Double-click it later to edit it again.</p>,
     target: toolbar('Insert canvas'), view: 'editor', Actions: null,
   },
   {
@@ -115,8 +105,8 @@ export const STEPS = [
   {
     id: 'threads',
     title: 'Projects',
-    body: () => <p>New project, under the project list, adds a project. Move to... on a draft's row sets its project, and clicking a project shows only its drafts. A project can link a forum thread, and Push on its row then fills that thread's reply box with the open draft.</p>,
-    target: '[data-agent-area="sidebar"] [data-add-thread]', view: null, Actions: ThreadActions,
+    body: () => <p>New project, under the project list, adds a project. Move to... on a draft's row sets its project, and clicking a project shows only its drafts.</p>,
+    target: '[data-agent-area="sidebar"] [data-add-thread]', view: null, Actions: (props) => <Slot name="TourProjects" {...props} />,
   },
   {
     id: 'done',

@@ -1,4 +1,5 @@
-import { makeEditor, saveOther } from '../actions.js';
+import { formatOf } from '../../formats.mjs';
+import { makeEditor, NEWER_FORMAT, saveOther } from '../actions.js';
 import { fail } from '../commands/define.mjs';
 import * as history from '../history.js';
 import { revs } from '../rev.js';
@@ -20,7 +21,7 @@ const live = new Map(); // draftId → {draftId, draft, editor, log, host, rev, 
 const loading = new Map(); // draftId → the promise of start()
 
 /** The session of draft `draftId` (started on first use), or null when it is the open draft. Throws not_found when the draft
- * cannot be loaded. */
+ * cannot be loaded, refused when its format is unknown here (as openDraft). */
 export async function sessionFor(draftId) {
   for (;;) {
     if (getState().draft?.id === draftId) return null;
@@ -42,6 +43,7 @@ async function start(draftId) {
   if (getState().worker?.draftId === draftId) fail('busy', 'The background window has that draft. Use computer_act with target background, or background_close first.');
   const [draft, file] = await Promise.all([api.drafts.load(draftId), api.drafts.loadHistory(draftId).catch(() => null)]);
   if (!draft) fail('not_found', `The draft ${draftId} could not be loaded`);
+  if (!formatOf(draft, getState().settings)) fail('refused', NEWER_FORMAT);
   if (getState().draft?.id === draftId) return; // the user opened it meanwhile
   const host = document.createElement('div');
   host.className = 'page'; // the page's width and typography
@@ -52,7 +54,7 @@ async function start(draftId) {
     s.dirty = true;
     clearTimeout(s.saveTimer);
     s.saveTimer = setTimeout(() => save(s), SAVE_MS);
-  }));
+  }, draft));
   s.revs = revs(s);
   s.revs.clear(); // its first rev, above the open draft's revs so far
   s.editor.on('transaction', ({ transaction, appendedTransactions }) => s.revs.record(transaction, appendedTransactions));

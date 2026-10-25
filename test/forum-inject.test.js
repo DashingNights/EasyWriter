@@ -2,7 +2,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const vm = require('node:vm');
-const { buildPushScript, describeThreadsScript, STATUS_SCRIPT } = require('../src/forum-inject.js');
+const { buildPushScript, describeThreadsScript, STATUS_SCRIPT } = require('../src/integrations/forum/inject.js');
 
 // ---- Minimal ProseMirror-like document: paragraphs of text / ipsAttachment leaves ----
 

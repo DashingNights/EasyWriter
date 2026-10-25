@@ -8,7 +8,7 @@ import { THREAD_KEY } from '../../thread-url.mjs';
 
 export const ID = { type: 'string', pattern: '^[a-f0-9-]{36}$' };
 export const PATH = { type: 'array', items: { type: 'integer', minimum: 0 }, minItems: 1, maxItems: 16 };
-export const URL = { type: 'string', pattern: THREAD_KEY }; // a forum topic URL or a project key
+export const URL = { type: 'string', pattern: THREAD_KEY }; // a project key, or a topic URL (a forum thread added before projects)
 export const TAG_ID = { type: 'string', minLength: 1, maxLength: 64 };
 
 // `description`: kept beside the $ref; the model form (tools-schema.mjs rewrite) and invalid_args messages show it.

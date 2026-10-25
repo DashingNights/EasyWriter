@@ -713,10 +713,10 @@ export const Canvas = Node.create({
 
   parseHTML() {
     // Old whiteboard HTML (a copy from an older build) becomes a canvas at the page width, as a loaded draft does (§6b Converted whiteboards).
-    const forumWidth = () => parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--forum-width')) || DEFAULT_WIDTH;
+    const pageWidth = () => parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--page-width')) || DEFAULT_WIDTH;
     return [
       { tag: 'div[data-canvas]', getAttrs: (el) => parseCanvas(el.getAttribute('data-json')) },
-      { tag: 'div[data-whiteboard]', getAttrs: (el) => whiteboardToCanvas(parseBoard(el.getAttribute('data-json')), forumWidth()) },
+      { tag: 'div[data-whiteboard]', getAttrs: (el) => whiteboardToCanvas(parseBoard(el.getAttribute('data-json')), pageWidth()) },
     ];
   },
 

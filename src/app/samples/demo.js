@@ -1,6 +1,6 @@
 // The demo draft (actions.js init seeds it once, on the first start with no drafts) and the doc helpers it shares with the
 // smoke sample (actions.js sampleDoc). Its flowchart and plan charts are the smoke sample's (samples/flow.js, samples/plan.js).
-// The annotated whiteboard and the smart canvas are copied from the author's own dev thread posts. Their pictures are WebP
+// The annotated whiteboard and the smart canvas are copied from the author's own dev log posts. Their pictures are WebP
 // data URLs (at most 1024 px on the long side) in demo-images.json, keyed by item id; the items keep their original boxes.
 import IMAGES from './demo-images.json';
 import { flowSample } from './flow.js';
@@ -53,7 +53,7 @@ export const demoDoc = () => ({
   content: [
     { type: 'heading', attrs: { level: 1, textAlign: 'center' }, content: [text('Welcome to EasyWriter')] },
     para(text('EasyWriter is a desktop editor for project writing, with canvases, flowcharts and plans built in. You keep each '
-      + 'draft in a project, or write posts for the threads of a forum. This draft shows what a draft can hold.')),
+      + 'draft in a project. This draft shows what a draft can hold.')),
     h2('Text and presets'),
     para(text('Presets apply a saved text style in one click. Select some text and pick one from the toolbar. The app comes '
       + 'with four of them.')),
@@ -65,11 +65,11 @@ export const demoDoc = () => ({
     list(
       'Headings, bold, italic, underline, colours and font sizes',
       'Bullet and numbered lists, quotes and code blocks',
-      'Tables, boxes, canvases, flowcharts and plan charts',
+      'Tables, canvases, flowcharts and plan charts',
       'Undo history that is still there after a restart',
     ),
-    h2('Tables and boxes'),
-    para(text('Tables suit schedules and feedback. A box sets a note apart under its own title.')),
+    h2('Tables and quotes'),
+    para(text('Tables suit schedules and feedback. A quote sets a note apart from the text around it.')),
     {
       type: 'table',
       content: [
@@ -79,16 +79,10 @@ export const demoDoc = () => ({
         row('tableCell', '3', 'First playtest', 'To do'),
       ],
     },
-    {
-      type: 'box',
-      content: [
-        { type: 'boxTitle', content: [text('Tip')] },
-        { type: 'boxContent', content: [para(text('Use a box for the summary at the top of a long post, or for a link to your latest build.'))] },
-      ],
-    },
+    { type: 'blockquote', content: [para(text('Put the summary at the top of a long draft, or a link to your latest build.'))] },
     h2('Annotated screenshots'),
-    para(text('Drop a screenshot into the post and it becomes a canvas. Double-click the canvas to draw and write over it. The '
-      + 'forum gets the whole canvas as one picture. This canvas comes from a real dev thread post.')),
+    para(text('Drop a screenshot into the draft and it becomes a canvas. Double-click the canvas to draw and write over it. '
+      + 'This canvas comes from a real dev log.')),
     para(text('It was inspired by the map '), text('"', [{ type: 'italic' }]),
       text('Imperial Dueling Grounds', [{ type: 'italic' }, { type: 'underline' }]), text('" ', [{ type: 'italic' }]), text('of Marvel Rivals.')),
     {
@@ -119,7 +113,7 @@ export const demoDoc = () => ({
       },
     },
     h2('Smart canvas'),
-    para(text('A smart canvas has a set size and shows in the post as one picture. Double-click it to edit it in place in '
+    para(text('A smart canvas has a set size and shows in the draft as one picture. Double-click it to edit it in place in '
       + 'Canvas Mode.')),
     {
       type: 'canvas',
@@ -152,13 +146,13 @@ export const demoDoc = () => ({
     para(text('Connectors stay attached to their shapes, so the lines follow when you move a box. Keep flowcharts in the library '
       + 'to reuse them in other drafts.')),
     demoFlow(),
-    h2('Boards in a post'),
-    para(text('Each project can have a plan with a Kanban board and a Gantt chart. Put either one in a post with Insert into draft '
+    h2('Plans in a draft'),
+    para(text('Each project can have a plan with a Kanban board and a Gantt chart. Put either one in a draft with Insert into draft '
       + 'in the plan\'s menu. The chart follows the plan as it changes until you freeze it. The two below are frozen.')),
     ...planSample(),
-    h2('Posting to a forum'),
-    para(text('Settings, General can switch the projects to the threads of an Invision Community forum. Then Push to forum opens '
-      + 'the draft\'s thread with your post in the reply box, and you press Submit on the forum when it looks right.')),
+    h2('Projects'),
+    para(text('The sidebar lists your projects. Click one to show only its drafts, and use Move to... on a draft\'s row to put '
+      + 'it in another project.')),
     para(text('This draft is only an example. Delete it from the sidebar when you no longer need it.', CAPTION)),
   ],
 });

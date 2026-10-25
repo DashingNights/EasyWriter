@@ -1,5 +1,6 @@
-// The character formatting the forum keeps (SPEC §5) and the font preset chain: pure and import-free, so the command
-// catalogue (src/app/commands/*.mjs, node --test) shares them with extensions.js, which re-exports the values.
+// The character formatting values the shared schema holds (SPEC §5; the forum's, §1) and the font preset chain: pure and
+// import-free, so the command catalogue (src/app/commands/*.mjs, node --test) shares them with extensions.js, which re-exports
+// the values.
 
 export const FONT_SIZES = [80, 90, 100, 125, 150, 175, 200];
 export const TEXT_COLORS = { root: 'Default', soft: 'Faint', hard: 'Prominent', red: 'Red', orange: 'Orange', yellow: 'Yellow', green: 'Green', blue: 'Blue', indigo: 'Indigo', violet: 'Violet' };

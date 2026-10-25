@@ -1,16 +1,16 @@
 'use strict';
-const { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeTheme, net, session, shell } = require('electron');
+const { app, BrowserWindow, clipboard, ipcMain, Menu, nativeTheme, net, session, shell } = require('electron');
 const path = require('path');
 const fs = require('fs/promises');
 const { pathToFileURL } = require('url');
 const { externalize, fileFamily, inline, isPlainObject, readJson, serialized, setAside, writeJsonAtomic } = require('./src/file-family.js');
-const { buildPushScript, describeThreadsScript, STATUS_SCRIPT } = require('./src/forum-inject.js');
 const dictation = require('./src/dictation-main.js');
 const assistant = require('./src/assistant-main.js');
 const computer = require('./src/computer-main.js');
 const chromeSignIn = require('./src/chrome-signin.js');
 const agentServer = require('./src/agent-server.js');
 const github = require('./src/github-sync.js');
+const forum = require('./src/integrations/forum/main.js');
 const { autoUpdater } = require('electron-updater');
 const fsSync = require('fs');
 const crypto = require('crypto');
@@ -20,7 +20,7 @@ const { pipeline } = require('stream/promises');
 
 // What drafts, plans and flowcharts link to (src/thread-url.mjs): a topic URL of any forum (the forum site can change) or a project.
 const THREAD_KEY_RE = /^(?:https:\/\/[^/\s]+\/topic\/\d+\S*|project:[0-9a-f-]{36})$/;
-const threadUrl = import('./src/thread-url.mjs');
+const integrations = import('./src/integrations/index.mjs');
 const SMOKE = process.argv.includes('--smoke');
 const argValue = (name) => process.argv.find((a) => a.startsWith(`--${name}=`))?.slice(name.length + 3);
 const SCRIPT = argValue('script'); // smoke: run this command script (SPEC §8) instead of the sample
@@ -65,11 +65,11 @@ if (DATA_DIR) {
 const INDEX_FILE = path.join(__dirname, 'index.html');
 const INDEX_URL = pathToFileURL(INDEX_FILE).href;
 const ICON = app.isPackaged ? undefined : path.join(__dirname, 'build', 'icon.ico'); // packaged: Windows takes the exe's icon; an .ico inside app.asar does not load
-const LOGGED_OUT = { loggedIn: false, memberId: 0, name: null, profileUrl: null };
 
+// The integrations add theirs (src/integrations/index.mjs DEFAULTS: the forum's forumUrl and forumWidth, all switched off).
 const DEFAULT_SETTINGS = {
-  forumWidth: 1454,
-  theme: 'light', // the page preview's forum colours (Settings > Forum Page theme)
+  theme: 'light', // the core page theme (Settings > General Page theme)
+  pageWidth: 1454, // the core page's content width, 320-4000 (src/formats.mjs PAGE; Settings > General Page width)
   uiTheme: 'dark', // the app's own colours (Settings > General Theme): dark | light | system (actions.js applyUiTheme)
   palette: {}, // {dark, light}: the user's colours over each theme's (Settings > General Palette, actions.js PALETTE)
   reduceMotion: 'system', // Settings > Motion: off | system | on | custom (src/app/motion.js)
@@ -86,7 +86,6 @@ const DEFAULT_SETTINGS = {
     { id: 'p3', name: 'Highlight', fontFamily: '', size: 100, color: 'root', highlight: 'yellow', bold: false, italic: false, underline: false },
     { id: 'p4', name: 'Statement', fontFamily: '', size: 150, color: 'hard', highlight: '', bold: true, italic: false, underline: false },
   ],
-  forumUrl: '', // the Invision Community site (https origin) of the projects' forum threads: its sign-in and Push; '' = none
   threads: [],
   selectedThread: null,
   lastDraftId: null,
@@ -113,7 +112,6 @@ const DEFAULT_SETTINGS = {
 app.userAgentFallback = app.userAgentFallback.replace(/ (?:Electron|daf-writer|EasyWriter)\/\S+/g, '');
 
 let mainWin = null;
-let forumWin = null;
 
 // ---------------------------------------------------------------------------------------------
 // Storage
@@ -132,18 +130,24 @@ async function getSettings() {
     await setAside(settingsFile());
     stored = null;
   }
-  const { migrateSettings } = await threadUrl;
-  return { ...structuredClone(DEFAULT_SETTINGS), ...(isPlainObject(stored) ? migrateSettings(stored) : {}) };
+  // A missing file is not migrated: a new install starts with every integration off.
+  const { DEFAULTS, migrateSettings } = await integrations;
+  return { ...structuredClone(DEFAULT_SETTINGS), ...structuredClone(DEFAULTS), ...(isPlainObject(stored) ? migrateSettings(stored) : {}) };
 }
 
 function setSettings(partial) {
   if (!isPlainObject(partial)) throw new Error('settings must be an object');
   return serialized(async () => {
-    const { forumOrigin } = await threadUrl;
-    if ('forumUrl' in partial && partial.forumUrl !== '' && forumOrigin(partial.forumUrl) !== partial.forumUrl) throw new Error('forumUrl must be an https origin or empty');
+    const { checkIntegrations, enabled } = await integrations;
+    if ('integrations' in partial) checkIntegrations(partial.integrations);
+    await forum.checkSettings(partial);
     if ('uiScale' in partial) partial = { ...partial, uiScale: zoomLevel(partial.uiScale) };
-    const merged = { ...(await getSettings()), ...partial };
+    const current = await getSettings();
+    // integrations merges by id, so a flag stored by a newer build (an id this one rejects on write) is kept.
+    if ('integrations' in partial) partial = { ...partial, integrations: { ...current.integrations, ...partial.integrations } };
+    const merged = { ...current, ...partial };
     await writeJsonAtomic(settingsFile(), merged);
+    if ('integrations' in partial && !enabled(merged, 'forum')) forum.stop();
     if ('uiScale' in partial) applyUiScale(mainWin, merged.uiScale);
     if ('spellCheck' in partial && mainWin && !mainWin.isDestroyed()) mainWin.webContents.session.setSpellCheckerEnabled(merged.spellCheck !== false);
     if ('uiTheme' in partial) applyNativeTheme(merged.uiTheme);
@@ -190,7 +194,7 @@ const plans = fileFamily(userDir('plans'), {
   maxBytes: 8 * MB,
   images,
   validate: (p) => {
-    if (!isThread(p.threadUrl)) throw new Error('plan threadUrl must be a forum topic URL or a project key');
+    if (!isThread(p.threadUrl)) throw new Error('plan threadUrl must be a project key or an older topic URL');
   },
 });
 
@@ -204,7 +208,7 @@ const flows = fileFamily(userDir('flowcharts'), {
   }),
   validate: (f) => {
     if (typeof f.title !== 'string' || f.title.length > 120) throw new Error('flowchart title must be a string of at most 120 characters');
-    if (f.threadUrl != null && !isThread(f.threadUrl)) throw new Error('flowchart threadUrl must be null, a forum topic URL or a project key');
+    if (f.threadUrl != null && !isThread(f.threadUrl)) throw new Error('flowchart threadUrl must be null, a project key or an older topic URL');
     if (!isPlainObject(f.board)) throw new Error('flowchart board must be an object');
     if (!Number.isInteger(f.rev) || f.rev < 1) throw new Error('flowchart rev must be an integer of at least 1');
   },
@@ -225,214 +229,6 @@ const prefabs = fileFamily(userDir('prefabs'), {
     if (!Number.isFinite(p.w) || !Number.isFinite(p.h)) throw new Error('prefab w and h must be numbers');
   },
 });
-
-// ---------------------------------------------------------------------------------------------
-// Forum
-
-const forumWebPreferences = () => ({
-  partition: 'persist:daf',
-  contextIsolation: true,
-  nodeIntegration: false,
-  sandbox: true,
-});
-
-function getForumWindow() {
-  if (forumWin && !forumWin.isDestroyed()) return forumWin;
-  const win = new BrowserWindow({ width: 1500, height: 1000, title: 'Forum', icon: ICON, webPreferences: forumWebPreferences() });
-  // SSO popups open as child windows; they inherit the opener's session (persist:daf).
-  win.webContents.setWindowOpenHandler(() => ({ action: 'allow', overrideBrowserWindowOptions: { parent: win } }));
-  // A forum beforeunload handler would otherwise silently cancel loadURL and window close (and app.quit).
-  win.webContents.on('will-prevent-unload', (e) => {
-    const choice = dialog.showMessageBoxSync(win, {
-      type: 'question',
-      buttons: ['Leave', 'Stay'],
-      defaultId: 1,
-      cancelId: 1,
-      message: 'The forum page has unsaved changes. Leave anyway?',
-    });
-    if (choice === 0) e.preventDefault();
-  });
-  win.on('closed', () => {
-    if (forumWin === win) forumWin = null;
-  });
-  forumWin = win;
-  return win;
-}
-
-// Loads url and resolves on the main frame's did-finish-load (aborted loads, e.g. redirects, keep waiting).
-function loadAndWait(win, url, timeoutMs = 60000) {
-  const wc = win.webContents;
-  return new Promise((resolve, reject) => {
-    const cleanup = () => {
-      clearTimeout(timer);
-      wc.off('did-finish-load', onLoad);
-      wc.off('did-fail-load', onFail);
-      wc.off('destroyed', onDestroyed);
-    };
-    const onLoad = () => {
-      cleanup();
-      resolve();
-    };
-    const onFail = (_e, code, description, _url, isMainFrame) => {
-      if (!isMainFrame || code === -3) return;
-      cleanup();
-      reject(new Error(`could not load ${url}: ${description}`));
-    };
-    const onDestroyed = () => {
-      cleanup();
-      reject(new Error('forum window was closed'));
-    };
-    const timer = setTimeout(() => {
-      cleanup();
-      reject(new Error(`timed out loading ${url}`));
-    }, timeoutMs);
-    wc.on('did-finish-load', onLoad);
-    wc.on('did-fail-load', onFail);
-    wc.once('destroyed', onDestroyed);
-    wc.loadURL(url).catch(() => {});
-  });
-}
-
-// The forum's origin (settings.forumUrl, set by the first linked forum thread); without one no forum page is ever loaded.
-async function forumSite() {
-  const s = await getSettings();
-  if (!s.forumUrl) throw new Error('No forum is set. Link a forum thread to a project first.');
-  return s.forumUrl;
-}
-// A page of the forum at origin `site`, with or without www. (a forum may redirect to either, and its links are of that one).
-const hostOf = (url) => new URL(url).host.toLowerCase().replace(/^www\./, '');
-const onForum = (site, url) => typeof url === 'string' && url.startsWith('https://') && URL.canParse(url) && hostOf(url) === hostOf(site);
-const isTopicOf = (site, url) => onForum(site, url) && THREAD_KEY_RE.test(url);
-
-// Runs script in a hidden window on the forum home page, then destroys the window.
-async function runInWorker(script, timeoutMs) {
-  const site = await forumSite();
-  const win = new BrowserWindow({ show: false, webPreferences: forumWebPreferences() });
-  let timer;
-  try {
-    const work = loadAndWait(win, `${site}/`, timeoutMs).then(() => win.webContents.executeJavaScript(script, true));
-    const timeout = new Promise((_, reject) => {
-      timer = setTimeout(() => reject(new Error('forum request timed out')), timeoutMs);
-    });
-    return await Promise.race([work, timeout]);
-  } finally {
-    clearTimeout(timer);
-    if (!win.isDestroyed()) win.destroy();
-  }
-}
-
-async function forumStatus() {
-  try {
-    return await runInWorker(STATUS_SCRIPT, 20000);
-  } catch (e) {
-    return { ...LOGGED_OUT, error: String(e.message || e) };
-  }
-}
-
-// Title, subject, year and forum of up to 50 topic URLs; topics whose page could not be read are left out.
-async function forumDescribe(urls) {
-  const site = await forumSite();
-  if (!Array.isArray(urls) || urls.length > 50 || !urls.every((u) => isTopicOf(site, u))) throw new Error('urls must be at most 50 forum topic URLs');
-  const result = await runInWorker(describeThreadsScript(urls), 45000);
-  if (result && result.error) throw new Error(result.error);
-  return { threads: (result && result.threads) || [] };
-}
-
-async function forumLogin() {
-  const site = await forumSite();
-  const win = getForumWindow();
-  const wc = win.webContents;
-  return new Promise((resolve) => {
-    let done = false;
-    const finish = (status) => {
-      if (done) return;
-      done = true;
-      clearInterval(interval);
-      win.off('closed', onClosed);
-      if (!wc.isDestroyed()) {
-        wc.off('did-finish-load', check);
-        wc.off('did-navigate', check);
-      }
-      resolve(status);
-    };
-    const check = async () => {
-      if (done || wc.isDestroyed()) return;
-      try {
-        const status = await wc.executeJavaScript(STATUS_SCRIPT, true);
-        if (status && status.loggedIn && !done) {
-          finish(status);
-          wc.loadURL(`${site}/`).catch(() => {});
-        }
-      } catch {
-        // Page mid-navigation; the next tick or load event retries.
-      }
-    };
-    const onClosed = () => {
-      forumStatus().then(finish);
-    };
-    const interval = setInterval(check, 2000);
-    win.on('closed', onClosed);
-    wc.on('did-finish-load', check);
-    wc.on('did-navigate', check);
-    win.show();
-    win.focus();
-    wc.loadURL(`${site}/login/`).catch(() => {});
-  });
-}
-
-async function forumPush(payload) {
-  try {
-    const site = await forumSite();
-    if (!payload || !isTopicOf(site, payload.threadUrl)) {
-      return { ok: false, error: 'invalid thread URL' };
-    }
-    const win = getForumWindow();
-    win.show();
-    await loadAndWait(win, payload.threadUrl);
-    const wc = win.webContents;
-    // Logged out → redirected to SSO (never run the draft there) or the guest view.
-    if (!onForum(site, wc.getURL()) || !(await wc.executeJavaScript(STATUS_SCRIPT)).loggedIn) {
-      return { ok: false, error: 'Not logged in to the forum. Use Log in, then push again.' };
-    }
-    const script = buildPushScript({ html: String(payload.html ?? ''), images: Array.isArray(payload.images) ? payload.images : [] });
-    // executeJavaScript never settles if the page navigates or crashes, so race it against those events.
-    let onClosed, onNav, onGone;
-    const aborted = new Promise((_, reject) => {
-      onClosed = () => reject(new Error('forum window was closed'));
-      onNav = (d) => {
-        if (d.isMainFrame && !d.isSameDocument) reject(new Error('forum page navigated away during push'));
-      };
-      onGone = () => reject(new Error('forum page crashed during push'));
-      win.once('closed', onClosed);
-      wc.on('did-start-navigation', onNav);
-      wc.on('render-process-gone', onGone);
-    });
-    let result;
-    try {
-      result = await Promise.race([wc.executeJavaScript(script, true), aborted]);
-    } finally {
-      win.off('closed', onClosed);
-      if (!wc.isDestroyed()) {
-        wc.off('did-start-navigation', onNav);
-        wc.off('render-process-gone', onGone);
-      }
-    }
-    if (!win.isDestroyed()) win.focus();
-    return result;
-  } catch (e) {
-    return { ok: false, error: String(e.message || e) };
-  }
-}
-
-async function forumOpen(url) {
-  const site = await forumSite();
-  if (!onForum(site, url)) throw new Error('not a URL of the forum site');
-  const win = getForumWindow();
-  win.show();
-  win.focus();
-  await loadAndWait(win, url);
-  return true;
-}
 
 // ---------------------------------------------------------------------------------------------
 // IPC (only the main window may call; the background window of computer use only reads and saves its own draft)
@@ -476,11 +272,13 @@ handle('prefabs.list', prefabs.list);
 handle('prefabs.load', prefabs.load);
 handle('prefabs.save', prefabs.save);
 handle('prefabs.remove', prefabs.remove);
-handle('forum.status', forumStatus);
-handle('forum.login', forumLogin);
-handle('forum.describe', forumDescribe);
-handle('forum.push', forumPush);
-handle('forum.open', forumOpen);
+// An integration's channels refuse every call while it is off (Settings > Integrations). The check is here in main because
+// window.api is fixed at preload time, so the renderer cannot be trusted to hide them.
+const onlyIf = (id) => (channel, fn) => handle(channel, async (...args) => {
+  if (!(await integrations).enabled(await getSettings(), id)) throw new Error(`The ${id} integration is off. Turn it on in Settings > Integrations.`);
+  return fn(...args);
+});
+forum.register(onlyIf('forum'), { getSettings, icon: ICON });
 // Window zoom (settings.uiScale): a Chromium zoom level in Electron's old View menu steps of 0.5, -3…5 (0 = 100 %). The window
 // controls scale with the title strip.
 const zoomLevel = (v) => Math.max(-3, Math.min(5, Math.round(Number(v) * 2) / 2 || 0));
@@ -945,7 +743,7 @@ if (!SMOKE && !app.requestSingleInstanceLock()) {
     // Electron grants every permission by default; forum pages and their popups get none beyond these.
     const allowed = (p) => ['clipboard-sanitized-write', 'fullscreen'].includes(p);
     // The in-app browser's pages (§7j, persist:browser) get the same.
-    for (const s of [session.fromPartition('persist:daf'), session.fromPartition('persist:browser')]) {
+    for (const s of [session.fromPartition(forum.PARTITION), session.fromPartition('persist:browser')]) {
       s.setPermissionRequestHandler((_wc, p, cb) => cb(allowed(p)));
       s.setPermissionCheckHandler((_wc, p) => allowed(p));
     }

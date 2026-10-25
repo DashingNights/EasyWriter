@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import { cn } from 'cn';
 import {
-  ChevronRight, CircleAlert, CircleCheck, Cloud, CloudAlert, CloudCheck, CloudOff, CloudUpload, ExternalLink, Folder, FolderInput, FolderOpen,
-  FolderPlus, Globe, Link2, PanelLeftClose, PanelLeftOpen, Plus, Send, Settings, SquareKanban, Trash2, Undo2, Workflow, X,
+  ChevronRight, CircleAlert, Cloud, CloudAlert, CloudCheck, CloudOff, CloudUpload, Folder, FolderInput, FolderOpen,
+  FolderPlus, Globe, PanelLeftClose, PanelLeftOpen, Plus, Settings, SquareKanban, Trash2, Workflow, X,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -16,11 +16,11 @@ import {
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Spinner } from '@/components/ui/spinner';
 import {
-  addThreadUrl, deleteDraft, deleteFolder, draftGroups, editProjectThread, moveDraft, moveFolder, newFolder, openDraft, openInForum,
-  openSettings, placeDraft, push, refocusEditor, removeThread, renameFolder, saveSettings, selectThread, setDraftTag, setDraftThreadFor,
-  startNewDraft, threadLabel, toggleFolder, toggleSidebar, unpushDraft,
+  addThreadUrl, deleteDraft, deleteFolder, draftGroups, moveDraft, moveFolder, newFolder, openDraft, openSettings, placeDraft,
+  refocusEditor, removeThread, renameFolder, saveSettings, selectThread, setDraftTag, setDraftThreadFor, startNewDraft, threadLabel,
+  toggleFolder, toggleSidebar,
 } from '../actions.js';
-import { isProject, topicOf } from '../../thread-url.mjs';
+import { first, Slot } from '../../integrations/ui.js';
 import { draftTag, tagList } from '../drafts-meta.js';
 import { keyLabel } from '../keybinds.js';
 import { openCount, openPlan, planFor, usePlans } from '../plans.js';
@@ -61,12 +61,11 @@ function Threads() {
   if (!settings) return null;
   const { threads, selectedThread } = settings;
 
-  // Projects whose forum thread names a year and subject group under them, indented: a year's subjects along a guide line,
-  // a subject's projects under it. The rest come first, with no headings.
+  // Projects an integration groups (the forum: the year and subject of the thread) go under their two headings, indented: an
+  // outer group's inner groups along a guide line, an inner group's projects under it. The rest come first, with no headings.
   const years = new Map();
   for (const t of threads) {
-    const year = t.year || '';
-    const subject = t.subject || '';
+    const [year, subject] = first('projectGroup', t) ?? ['', ''];
     if (!years.has(year)) years.set(year, new Map());
     const subjects = years.get(year);
     if (!subjects.has(subject)) subjects.set(subject, []);
@@ -90,22 +89,18 @@ function Threads() {
             {[...years.get(year).keys()].sort(byName).map((subject) => (
               <div key={subject}>
                 {subject && <div className="mt-1 truncate px-1.5 text-xs font-medium text-muted-foreground" title={subject}>{subject}</div>}
-                {years.get(year).get(subject).map((t) => {
-                  const topic = topicOf(threads, t.url);
-                  return (
-                  <Row key={t.url} active={t.url === selectedThread} title={t.forum ? `${t.forum}\n${topic}` : topic || t.title}
+                {years.get(year).get(subject).map((t) => (
+                  <Row key={t.url} active={t.url === selectedThread} title={first('projectHint', t) ?? t.title}
                     className={cn(subject && 'pl-4')} onClick={() => selectThread(t.url)}>
                     <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground group-hover:text-foreground">{t.title || t.url}</span>
                     {planFor(t.url) && (
                       <Tip title="Open tickets in its plan"><span className="shrink-0 text-xs text-muted-foreground tabular-nums">{openCount(planFor(t.url).id)}</span></Tip>
                     )}
                     <IconButton reveal label="Plan board" onClick={() => openPlan(t.url)}><SquareKanban /></IconButton>
-                    {topic && <IconButton reveal label="Open in forum" data-agent-risk="approval" onClick={() => openInForum(topic)}><ExternalLink /></IconButton>}
-                    {isProject(t.url) && <IconButton reveal label={topic ? 'Change or unlink the forum thread' : 'Link a forum thread'} onClick={() => editProjectThread(t)}><Link2 /></IconButton>}
+                    <Slot name="ProjectRowActions" t={t} />
                     <IconButton reveal label="Remove project from list" data-agent-risk="destructive" onClick={() => removeThread(t)}><X /></IconButton>
                   </Row>
-                  );
-                })}
+                ))}
               </div>
             ))}
             </div>
@@ -189,12 +184,6 @@ function TagMenu({ id, tag, tags, open, setOpen }) {
   );
 }
 
-/** Push to forum for draft `id`: the open one at once, another once it is open (push fills the reply box with the open draft). */
-async function pushDraft(id) {
-  if (getState().draft?.id !== id) await openDraft(id);
-  if (getState().draft?.id === id) push();
-}
-
 function DraftRow({ d, folderId, folders, threads, tag, tags, active, dragging, after, onDrag }) {
   const [tagging, setTagging] = useState(false); // the tag menu is open
   const working = useStore((s) => s.bgWrites.includes(d.id)); // the assistant wrote to it in the background this turn (§7i)
@@ -209,11 +198,9 @@ function DraftRow({ d, folderId, folders, threads, tag, tags, active, dragging, 
         {(working || background) && (
           <Badge variant="secondary" data-draft-assistant className="shrink-0 gap-1 px-1.5 py-0">{working && <Spinner className="size-3" />}Assistant</Badge>
         )}
-        {d.pushedAt && <Tip title="Pushed to the forum"><CircleCheck className="size-3.5 shrink-0 text-success" aria-label="Pushed" /></Tip>}
+        <Slot name="DraftRowBadge" d={d} />
         <HoverActions>
-          {d.pushedAt
-            ? <IconButton label="Unpush" data-agent-risk="destructive" onClick={() => unpushDraft(d)}><Undo2 /></IconButton>
-            : topicOf(threads, d.threadUrl) && <IconButton label="Push to forum" data-agent-risk="approval" onClick={() => pushDraft(d.id)}><Send /></IconButton>}
+          <Slot name="DraftRowActions" d={d} />
           <IconButton label="Move to..." slot={DropdownMenuTrigger}><FolderInput /></IconButton>
           <IconButton label="Delete draft" variant="destructive-ghost" data-agent-risk="destructive" onClick={() => deleteDraft(d)}><Trash2 /></IconButton>
         </HoverActions>

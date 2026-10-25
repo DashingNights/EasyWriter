@@ -34,7 +34,15 @@ async function writeFileAtomic(file, data) {
   } finally {
     await fh.close();
   }
-  await fs.rename(tmp, file);
+  // Windows: a virus scanner or the indexer holding `file` open fails the rename with EPERM / EBUSY / EACCES for a moment.
+  for (let i = 1; ; i++) {
+    try {
+      return await fs.rename(tmp, file);
+    } catch (e) {
+      if (i === 6 || !['EPERM', 'EBUSY', 'EACCES'].includes(e.code)) throw e;
+      await new Promise((r) => setTimeout(r, 50 * i));
+    }
+  }
 }
 
 const writeJsonAtomic = (file, data) => writeFileAtomic(file, JSON.stringify(data));

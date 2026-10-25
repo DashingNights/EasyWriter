@@ -1,7 +1,8 @@
-/* Page preview: forum typography (SPEC §1 / §7) under .page .ProseMirror. Unlayered, so it wins over Tailwind's layers. */
+/* Page preview: the core page typography (the forum's, SPEC §1 / §7) under .page .ProseMirror. Unlayered, so it wins over Tailwind's layers. */
 :root {
   /* set from settings by applySettings() */
-  --forum-width: 1454px;
+  --page-width: 1454px;
+  --page-pad: 22px;
   --base-font: system-ui, Helvetica, Arial, sans-serif;
   --base-scale: 1;
 }
@@ -14,7 +15,7 @@
   .page { tab-size: 8; }
 }
 
-/* ---------- Forum page themes (SPEC §1) ---------- */
+/* ---------- Page themes (SPEC §1) ---------- */
 :root[data-theme="dark"] {
   --pg-bg: #21212a;
   --post-bg: #303039;
@@ -47,16 +48,16 @@
 }
 
 .page {
-  box-sizing: content-box; /* content width = forumWidth exactly (SPEC §7) */
-  width: var(--forum-width);
-  padding: 22px;
+  box-sizing: content-box; /* content width = the format's width exactly (SPEC §7; formats.mjs pageOf) */
+  width: var(--page-width);
+  padding: var(--page-pad, 22px);
   background: var(--post-bg);
   color: var(--text);
   border-radius: 6px;
   font-family: var(--base-font);
 }
 
-/* ---------- Forum typography (SPEC §1) ---------- */
+/* ---------- Page typography (the forum's, SPEC §1) ---------- */
 .page .ProseMirror {
   font-size: 16px;
   line-height: 1.8;

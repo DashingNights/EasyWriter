@@ -43,8 +43,10 @@ test('board gates read a snapshot; no board fails them all', () => {
 });
 
 test('draft, doc, node and flow gates', () => {
-  const pushed = { id: 'x', threadUrl: 'project:0b2c8f0e-1c4e-4f8a-9d6a-2b7f3c9e1a55', pushedAt: 5, topic: 'https://forum.example.com/topic/1-a/' };
-  const fresh = { id: 'y', threadUrl: 'project:0b2c8f0e-1c4e-4f8a-9d6a-2b7f3c9e1a55', pushedAt: null, topic: '' };
+  const PROJECT = 'project:0b2c8f0e-1c4e-4f8a-9d6a-2b7f3c9e1a55';
+  const threads = [{ url: PROJECT, title: 'P', thread: 'https://forum.example.com/topic/1-a/' }];
+  const pushed = { id: 'x', threadUrl: PROJECT, pushedAt: 5, threads };
+  const fresh = { id: 'y', threadUrl: PROJECT, pushedAt: null, threads: [{ url: PROJECT, title: 'P' }] };
   assert.deepEqual([can('draft.pushed', pushed), can('draft.unpushed', pushed), can('draft.hasThread', pushed)], [true, false, true]);
   assert.deepEqual([can('draft.pushed', fresh), can('draft.unpushed', fresh), can('draft.hasThread', fresh)], [false, true, false]);
   assert.equal(can('draft.unpushed', null), false);
@@ -70,4 +72,40 @@ test('node.none and node.is read the node-selected block (node.is: the kind the 
   assert.equal(can('node.is', flow, null, ['planChart']), false);
   assert.equal(can('node.is', { type: 'canvas', attrs: {} }, null, ['canvas']), false); // no kind: a command's subject
   assert.equal(can('node.is', null, null, ['canvas']), false);
+});
+
+test('format.box holds while the default format is the forum post, with the forum on or off', () => {
+  assert.equal(can('format.box', { integrations: { forum: { enabled: true } } }), true);
+  assert.equal(can('format.box', { integrations: { forum: { enabled: false } } }), true);
+});
+
+test("doc.command checks insertBox against the draft's format (before the ask, commands.js failedGates)", async () => {
+  const { defs } = await import('../src/app/commands/doc.mjs');
+  const { check } = defs.find((d) => d.id === 'doc.command');
+  const on = { integrations: { forum: { enabled: true } }, forumWidth: 1454 };
+  const off = { integrations: { forum: { enabled: false } } };
+  assert.deepEqual(check({ name: 'insertBox' }, {}, off), []);
+  assert.deepEqual(check({ name: 'insertBox' }, { format: 'forum-post' }, off), []);
+  assert.deepEqual(check({ name: 'insertBox' }, {}, on), []);
+  assert.deepEqual(check({ name: 'insertBox' }, { format: 'page' }, on), ['format.box']);
+  assert.deepEqual(check({ name: 'toggleBold' }, {}, off), []);
+});
+
+test('integration gates follow the settings and carry their integration', () => {
+  assert.equal(can('integration.forum', { integrations: { forum: { enabled: true } } }), true);
+  assert.equal(can('integration.forum', { integrations: { forum: { enabled: false } } }), false);
+  assert.equal(can('integration.forum', {}), false);
+  for (const id of ['integration.forum', 'app.forum', 'draft.hasThread', 'draft.pushed', 'draft.unpushed']) assert.equal(GATES[id].integration, 'forum', id);
+  assert.equal(GATES['doc.open'].integration, undefined);
+});
+
+test("wake.forum: the open draft's project links a forum thread, untagged so it holds while the forum is off", () => {
+  const [P1, P2] = ['project:0b2c8f0e-1c4e-4f8a-9d6a-2b7f3c9e1a55', 'project:1b2c8f0e-1c4e-4f8a-9d6a-2b7f3c9e1a55'];
+  const threads = [{ url: P1, title: 'P', thread: 'https://forum.example.com/topic/1-a/' }, { url: P2, title: 'Q' }];
+  assert.equal(GATES['wake.forum'].integration, undefined);
+  assert.equal(GATES['wake.forum'].wake, 'forum'); // commands.js gatesNow leaves it out of ui.state
+  assert.equal(can('wake.forum', { id: 'd', threadUrl: P1, threads }), true);
+  assert.equal(can('wake.forum', { id: 'd', threadUrl: P2, threads }), false);
+  assert.equal(can('wake.forum', null), false);
+  assert.match(GATES['integration.forum'].fix, /Push to forum/);
 });

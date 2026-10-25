@@ -1,4 +1,4 @@
-// Draft status tags (SPEC §7): each draft's local work status, kept in settings, never in the draft file or the forum.
+// Draft status tags (SPEC §7): each draft's local work status, kept in settings, never in the draft file.
 // `settings.tags` = [{id, name, color}] in workflow order (a later Kanban board shows one column per tag in this order),
 // `settings.draftTags` = {draftId: tagId}. Later views read tags through these functions. No imports; inputs are never mutated.
 

@@ -8,7 +8,7 @@
 @custom-variant dark (&:is(.dark *));
 
 /* App chrome: neutral greys, light on :root and dark (the default) under the class "dark" on <html> (settings.uiTheme,
-   actions.js applyUiTheme), independent of the page theme (the page preview keeps the forum's colours, page.css). Surfaces step
+   actions.js applyUiTheme), independent of the page preview's page theme (page.css). Surfaces step
    up from background (sidebar, status bar, dialogs) to card / popover (title strip, islands, menus); accent tints whatever
    is under it: hover at 60 %, on and selected at full. The dark set is the user's own palette of 2026-10-24 (#1a1a1a
    panels, #262626 bars and cards, #5c5c5c fills, #e6e6e6 text). */

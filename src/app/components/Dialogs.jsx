@@ -5,9 +5,9 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Spinner } from '@/components/ui/spinner';
-import { refocusEditor, threadLabel } from '../actions.js';
+import { all } from '../../integrations/ui.js';
+import { refocusEditor } from '../actions.js';
 import { setState, useStore } from '../store.js';
 import { FLOW_FORMS } from './flows/forms.jsx';
 import { FormDialog } from './FormDialog.jsx';
@@ -23,47 +23,19 @@ function LinkDialog({ href, onClose }) {
   );
 }
 
-const THREAD_HINT = 'https://forum.example.com/topic/12345-.../';
-
-/** New project: a name, a forum thread (optional), or both → {name, thread}. */
+/** New project: a name → the name. */
 function AddThreadDialog({ validate, onClose }) {
   const [name, setName] = useState('');
-  const [thread, setThread] = useState('');
   return (
-    <FormDialog title="New project" okText="Create" validate={() => validate({ name, thread })} result={() => ({ name, thread })} onClose={onClose}>
+    <FormDialog title="New project" okText="Create" validate={() => validate(name)} result={() => name} onClose={onClose}>
       <Input aria-label="Project name" className="h-8" maxLength={200} value={name} placeholder="Project name" onChange={(e) => setName(e.target.value)} />
-      <Input aria-label="Forum thread" spellCheck={false} className="h-8" value={thread} placeholder="Forum thread link (optional)"
-        onChange={(e) => setThread(e.target.value)} />
     </FormDialog>
   );
 }
 
-/** A project's forum thread: its topic URL, or empty to unlink it. */
-function ProjectThreadDialog({ value: start, validate, onClose }) {
-  const [value, setValue] = useState(start);
-  return (
-    <FormDialog title="Forum thread" okText={value.trim() || !start ? 'Link' : 'Unlink'} validate={() => validate(value)} result={() => value} onClose={onClose}>
-      <Input aria-label="Forum thread" spellCheck={false} className="h-8" value={value} placeholder={THREAD_HINT} onChange={(e) => setValue(e.target.value)} />
-    </FormDialog>
-  );
-}
-
-function ChooseThreadDialog({ threads, selected, onClose }) {
-  const [value, setValue] = useState(threads.some((t) => t.url === selected) ? selected : threads[0].url);
-  return (
-    <FormDialog title="Choose the project to push this draft to" okText="Use project" result={() => value} onClose={onClose}>
-      <Select value={value} onValueChange={setValue}>
-        <SelectTrigger size="sm" className="w-full"><SelectValue /></SelectTrigger>
-        <SelectContent>
-          {threads.map((t) => <SelectItem key={t.url} value={t.url}>{threadLabel(t)}</SelectItem>)}
-        </SelectContent>
-      </Select>
-    </FormDialog>
-  );
-}
-
-const CORE = { link: LinkDialog, addThread: AddThreadDialog, projectThread: ProjectThreadDialog, chooseThread: ChooseThreadDialog, settings: SettingsDialog };
-const FORMS = { ...CORE, ...PLAN_FORMS, ...FLOW_FORMS };
+const CORE = { link: LinkDialog, addThread: AddThreadDialog, settings: SettingsDialog };
+// Object.assign: all('FORMS') is one object per integration.
+const FORMS = Object.assign({ ...CORE, ...PLAN_FORMS, ...FLOW_FORMS }, ...all('FORMS'));
 
 /** confirmDialog(): AlertDialog with Cancel and a confirm button (only OK for an alert). */
 function ConfirmDialog() {
@@ -83,7 +55,7 @@ function ConfirmDialog() {
         <AlertDialogFooter>
           {!confirm.alert && <AlertDialogCancel size="sm">Cancel</AlertDialogCancel>}
           <AlertDialogAction size="sm" variant={confirm.destructive ? 'destructive' : 'default'} onClick={() => close(true)}
-            data-agent-risk={confirm.destructive && !confirm.alert ? 'destructive' : undefined}>
+            data-agent-risk={confirm.destructive && !confirm.alert ? 'destructive' : undefined} data-agent-deny={confirm.human || undefined}>
             {confirm.alert ? 'OK' : confirm.confirmText}
           </AlertDialogAction>
         </AlertDialogFooter>

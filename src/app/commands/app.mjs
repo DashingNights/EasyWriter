@@ -1,3 +1,4 @@
+import { enabled } from '../../integrations/index.mjs';
 import { define } from './define.mjs';
 import { NO_ARGS } from './schema-defs.mjs';
 
@@ -20,7 +21,7 @@ export const defs = [
       userData: null, // reported once main exposes it (agent transport, automation Phase 3)
       draftId: ctx.state.draft?.id ?? null,
       rev: ctx.state.rev,
-      loggedIn: !!ctx.state.status?.loggedIn,
+      ...(enabled(ctx.state.settings, 'forum') && { loggedIn: !!ctx.state.status?.loggedIn }), // the forum window's sign-in
       agent: {
         enabled: !!ctx.state.settings?.agent?.enabled,
         hidden: ctx.state.agent.hidden,

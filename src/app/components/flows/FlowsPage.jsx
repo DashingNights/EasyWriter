@@ -38,7 +38,7 @@ function threadItems(threads, extra) {
 }
 
 /** The open flowchart's controls (board chrome, so focus in W / H keeps the board active): W / H, Fit to content, Insert
- * into draft…, Undo / Redo on the record's stack, and Duplicate, Move to thread, Delete. */
+ * into draft…, Undo / Redo on the record's stack, and Duplicate, Move to project, Delete. */
 function EditorControls({ record, board }) {
   const threads = useStore((s) => s.settings?.threads) ?? [];
   const { id, board: { w, h } } = record;
@@ -55,10 +55,10 @@ function EditorControls({ record, board }) {
         <DropdownMenuContent align="end" onCloseAutoFocus={refocusEditor}>
           <DropdownMenuItem onSelect={() => duplicateFlow(id).then((r) => r && openFlows(r.id))}><Copy />Duplicate</DropdownMenuItem>
           <DropdownMenuSub>
-            <DropdownMenuSubTrigger><FolderInput />Move to thread</DropdownMenuSubTrigger>
+            <DropdownMenuSubTrigger><FolderInput />Move to project</DropdownMenuSubTrigger>
             <DropdownMenuSubContent className="max-w-80">
               <DropdownMenuRadioGroup value={record.threadUrl ?? NONE} onValueChange={(v) => updateFlow(id, { threadUrl: v === NONE ? null : v })}>
-                <DropdownMenuRadioItem value={NONE}>No thread</DropdownMenuRadioItem>
+                <DropdownMenuRadioItem value={NONE}>No project</DropdownMenuRadioItem>
                 {threads.map((t) => <DropdownMenuRadioItem key={t.url} value={t.url}><span className="truncate">{threadLabel(t)}</span></DropdownMenuRadioItem>)}
               </DropdownMenuRadioGroup>
             </DropdownMenuSubContent>
@@ -116,7 +116,7 @@ export function FlowsPage() {
     <div data-viewport className="flex h-full flex-col">
       <header className="flex h-9 shrink-0 items-center gap-1 border-b px-1 text-xs">
         <SidebarButton />
-        <Tip title="All flowcharts of the thread">
+        <Tip title="All flowcharts of the project">
           <Button variant="ghost" size="xs" className="font-medium" disabled={!flowId} onMouseDown={keepFocus} onClick={() => openFlows(null)}>Flowcharts</Button>
         </Tip>
         {record && <ChevronRight className="size-3.5 shrink-0 text-muted-foreground" />}
@@ -125,9 +125,9 @@ export function FlowsPage() {
           : <Tip title="Double-click to rename" wrap="min-w-0"><span className="min-w-0 truncate px-1 font-medium" onDoubleClick={() => setRenaming(true)}>{record.title}</span></Tip>)}
         {!flowId && (
           <>
-            <ToolSelect title="Thread" size="xs" className="ml-1 max-w-64 min-w-0" value={scope} onChange={setScope}>
+            <ToolSelect title="Project" size="xs" className="ml-1 max-w-64 min-w-0" value={scope} onChange={setScope}>
               {threadItems(threads, scope)}
-              <SelectItem value={NONE}>No thread</SelectItem>
+              <SelectItem value={NONE}>No project</SelectItem>
               <SelectItem value={ALL}>All flowcharts</SelectItem>
             </ToolSelect>
             <Input ref={filterRef} value={filter} size="xs" placeholder={withKey('Filter...', 'flows.find')} aria-label="Filter flowcharts" className="w-44"
@@ -151,7 +151,7 @@ export function FlowsPage() {
           </ToggleGroup>
         )}
         {!flowId && (
-          <Tip title={withKey('New flowchart in this thread', 'flows.new')}>
+          <Tip title={withKey('New flowchart in this project', 'flows.new')}>
             <Button variant="ghost" size="xs" onMouseDown={keepFocus} onClick={() => newFlow(scopeThread)}><Plus />New flowchart</Button>
           </Tip>
         )}

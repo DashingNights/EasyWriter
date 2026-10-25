@@ -1,0 +1,15 @@
+[
+  { "id": "settings.patch", "args": { "patch": { "forumWidth": 1200 } }, "expect": { "ok": true, "result": { "keys": ["forumWidth"] } } },
+  { "id": "settings.get", "args": { "keys": ["pageWidth", "forumWidth"] }, "expect": { "ok": true, "result": { "pageWidth": 1200, "forumWidth": 1200 } } },
+  { "id": "threads.add", "args": { "title": "Forum project", "thread": "https://forum.test/topic/1-smoke/" }, "expect": { "ok": true } },
+  { "id": "drafts.create", "args": { "threadUrl": "$prev.result.url" }, "expect": { "ok": true } },
+  { "id": "doc.insert", "args": { "at": "end", "content": { "markdown": "Forum smoke paragraph." } }, "expect": { "ok": true, "undoSteps": 1 } },
+  { "id": "board.insert", "args": { "kind": "whiteboard", "at": "end" }, "expect": { "ok": true, "undoSteps": 1 } },
+  { "id": "export.preview", "args": {}, "expect": { "ok": true, "result": { "html": { "$contains": "Forum smoke paragraph." }, "images": { "$length": 1 } } } },
+  { "id": "push.prepare", "args": {}, "expect": { "ok": false, "code": "denied", "error": { "data": { "reason": "policy" } } } },
+  { "id": "drafts.unpush", "args": { "draftId": "$steps[3].result.draftId" },
+    "expect": { "ok": false, "code": "precondition_failed", "error": { "data": { "failed": [{ "gate": "draft.pushed" }] } } } },
+  { "id": "drafts.create", "args": { "threadUrl": null }, "expect": { "ok": true } },
+  { "id": "push.prepare", "args": {},
+    "expect": { "ok": false, "code": "precondition_failed", "error": { "data": { "failed": [{ "gate": "draft.hasThread" }] } } } }
+]

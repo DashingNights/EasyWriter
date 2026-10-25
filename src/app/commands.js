@@ -6,6 +6,7 @@ import { NodeSelection } from '@tiptap/pm/state';
 import { version as appVersion } from '../../package.json';
 import { canvasEditor } from '../canvas.js';
 import { BOARD_TYPES, pathOfPos, posOfPath } from '../doc-path.mjs';
+import { pageOf } from '../formats.mjs';
 import { activeBoard, contentWidth, migrateBoards } from '../whiteboard.js';
 import * as actions from './actions.js';
 import { familyOf } from './assistant/prompts.mjs';
@@ -18,7 +19,8 @@ import { commandIdOf, toolsFor } from './commands/tools-schema.mjs';
 import { argsDigest, cyrb53 } from './digest.mjs';
 import * as flows from './flows.js';
 import { can, GATES } from './gates.mjs';
-import { topicOf } from '../thread-url.mjs';
+import { enabled, listed, offArg } from '../integrations/index.mjs';
+import { integrationsCtx } from '../integrations/ui.js';
 import * as plans from './plans.js';
 import { mapPath } from './rev.js';
 import { deref, validate, withDefaults } from './schema.mjs';
@@ -278,7 +280,7 @@ function subjectOf(kind, args = {}, sess = null) {
     case 'ui': return sess ? { editor: sess.editor, view: { type: 'editor' } } : state;
     case 'draft': {
       const d = args.draftId ? draftById(args.draftId) : state.draft;
-      return d && { id: d.id, threadUrl: d.threadUrl ?? null, pushedAt: d.pushedAt ?? null, topic: topicOf(state.settings?.threads, d.threadUrl) };
+      return d && { id: d.id, threadUrl: d.threadUrl ?? null, pushedAt: d.pushedAt ?? null, threads: state.settings?.threads };
     }
     case 'doc': return ed && { inTable: ed.isActive('table') };
     case 'history': return ed && { canUndo: undoDepth(ed.state) > 0, canRedo: redoDepth(ed.state) > 0 };
@@ -298,8 +300,15 @@ function subjectOf(kind, args = {}, sess = null) {
 const needOf = (n) => (typeof n === 'string' ? { gate: n } : n);
 
 /** [{gate, message, fix}] of every applicable gate of `def.needs` (plus window.visible for a headless: false command from an
- * agent, with `def.hidden` as its fix when set) that does not hold; `sess`: the background session the command works in. */
+ * agent, with `def.hidden` as its fix when set) that does not hold; `sess`: the background session the command works in.
+ * An off integration's command, or an argument it owns (integrationArgs), fails its integration.<id> gate alone: the other
+ * gates would only name parts of the integration (an outside client's tool list may be from before it was turned off). */
 function failedGates(def, args, source, sess = null) {
+  const off = def.integration && !enabled(state.settings, def.integration) ? def.integration : offArg(def, args, state.settings);
+  if (off) {
+    const g = GATES[`integration.${off}`];
+    return [{ gate: `integration.${off}`, message: g.message, fix: g.fix }];
+  }
   const failed = [];
   for (const n of !def.headless && isAgent(source) ? [...def.needs, { gate: 'window.visible', fix: def.hidden }] : def.needs) {
     const { gate, if: when, with: param, fix } = needOf(n);
@@ -307,6 +316,9 @@ function failedGates(def, args, source, sess = null) {
     const g = GATES[gate];
     if (!can(gate, subjectOf(g.subject, args, sess), args, param)) failed.push({ gate, message: g.message, fix: fix ?? g.fix });
   }
+  // def.check (define.mjs): gates that depend on the arguments and the addressed draft, here so they also come before any ask.
+  const draft = sess?.draft ?? (args.draftId ? draftById(args.draftId) : state.draft);
+  for (const gate of def.check?.(args, draft, state.settings) ?? []) failed.push({ gate, message: GATES[gate].message, fix: GATES[gate].fix });
   return failed;
 }
 
@@ -498,6 +510,7 @@ function makeCtx(source, signal, sess = null) {
     session: sess,
     api,
     actions,
+    integrations: integrationsCtx(), // each integration's actions (integrations/ui.js), for its commands
     board: sess ? null : liveBoard(),
     plans,
     flows,
@@ -506,13 +519,13 @@ function makeCtx(source, signal, sess = null) {
     signal,
     ask: (title, description = '', { risk = 'destructive', steps } = {}) => askRaw(source, title, description, risk, steps, signal).then((a) => a === 'allow'),
     emit,
-    lib: sess ? sessionLib(sess.editor) : lib,
+    lib: sess ? sessionLib(sess) : lib,
   };
 }
 
 // The helpers that read the editor, on a session's (its schema: nodes of another editor's schema do not insert); a hidden board is
 // never busy.
-const sessionLib = (ed) => ({ ...lib, toNodes: (c) => toNodes(c, ed), toHtml: (p, i) => toHtml(p, i, ed), selection: () => selection(ed), boardBusy: () => false });
+const sessionLib = ({ editor: ed, draft }) => ({ ...lib, toNodes: (c) => toNodes(c, ed, draft), toHtml: (p, i) => toHtml(p, i, ed), selection: () => selection(ed), boardBusy: () => false });
 
 // One manager for the app's life: every editor has the same extensions (only the history depth differs), and the manager
 // works on JSON, so it never needs a particular editor's schema.
@@ -553,12 +566,12 @@ async function imageNode({ dataUrl, w: want }, i, ed) {
 }
 
 /** SPEC §8 Content: {json | html | markdown | images} → {nodes: ProseMirror block nodes of editor `ed`, dropped: [construct]}. */
-async function toNodes(content, ed = state.editor) {
+async function toNodes(content, ed = state.editor, draft = state.draft) {
   const dropped = new Set();
   const [key] = Object.keys(content);
   let json;
   if (key === 'json') {
-    const j = migrateBoards(content.json, state.settings.forumWidth); // an old whiteboard becomes a canvas (§6b Converted whiteboards)
+    const j = migrateBoards(content.json, pageOf(draft, state.settings).width); // an old whiteboard becomes a canvas (§6b Converted whiteboards)
     json = Array.isArray(j) ? j : j?.type === 'doc' ? j.content ?? [] : [j];
   } else if (key === 'html') {
     if (/<img\b/i.test(content.html)) dropped.add('img'); // no image node: pictures go in as `images`
@@ -685,9 +698,10 @@ function selectionBrief() {
   return { kind: sel instanceof NodeSelection ? 'node' : 'text', path: pathOfPos(ed.state.doc, sel.from) };
 }
 
-/** Every gate on the current subjects (a gate that needs a parameter, board.itemIs, reads false). */
+/** Every gate on the current subjects (a gate that needs a parameter, board.itemIs, reads false), less those of off
+ * integrations and the wake.<id> gates (integrations/index.mjs integrationGates), which only the palette reads. */
 function gatesNow() {
-  return Object.fromEntries(Object.entries(GATES).map(([id, g]) => {
+  return Object.fromEntries(Object.entries(GATES).filter(([, g]) => !g.wake && (!g.integration || enabled(state.settings, g.integration))).map(([id, g]) => {
     try {
       return [id, !!can(id, subjectOf(g.subject), {})];
     } catch {
@@ -696,11 +710,12 @@ function gatesNow() {
   }));
 }
 
-/** app.capabilities: every command with its gates; `available` keeps those whose UI-read gates hold now (a gate read
- * from the arguments is marked byArgs and checked when called). */
+/** app.capabilities: every command listed with the settings (integrations/index.mjs listed: none of an off integration's
+ * commands or arguments) with its gates; `available` keeps those whose UI-read gates hold now (a gate read from the arguments
+ * is marked byArgs and checked when called). commands.index, commands.describe and the assistant's tools read it too. */
 function capabilities(available) {
   const fromArgs = (def, subject) => (subject === 'draft' && !!def.args.properties?.draftId) || (subject === 'node' && !!def.args.properties?.path);
-  return CATALOGUE.map((def) => ({
+  return CATALOGUE.map((def) => listed(def, state.settings)).filter(Boolean).map((def) => ({
     id: def.id, title: def.title, group: def.group, risk: def.risk, undo: def.undo, headless: def.headless, slow: def.slow,
     args: def.args, result: def.result ?? {},
     needs: def.needs.map(needOf).map(({ gate }) => ({ gate, message: GATES[gate].message, fix: GATES[gate].fix, byArgs: fromArgs(def, GATES[gate].subject) })),

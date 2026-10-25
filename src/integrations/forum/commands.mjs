@@ -1,11 +1,21 @@
+import { define, fail } from '../../app/commands/define.mjs';
+import { ref } from '../../app/commands/schema-defs.mjs';
+import { GATES } from '../../app/gates.mjs';
 import { BOARD_TYPES } from '../../doc-path.mjs';
-import { buildPayload } from '../../export.js';
-import { GATES } from '../gates.mjs';
-import { define, fail } from './define.mjs';
-import { ref } from './schema-defs.mjs';
 
-// export.preview, push.prepare, forum.* (SPEC §8 Catalogue; agent-automation plan §6.4). Push stays the existing flow
-// (actions.js push): its human confirm, then the forum window's reply box is filled; Submit is always the human's click.
+// The forum integration's commands (SPEC §8 Catalogue; agent-automation plan §6.4), spread by app/commands/catalogue.mjs:
+// export.preview, push.prepare, forum.*, threads.openInForum and drafts.unpush. Each has integration: 'forum', so agents see
+// them only while the forum is on. They reach the forum only through ctx.integrations.forum (forum/actions.js), so this
+// file imports no renderer code. Push stays the existing flow (forum/actions.js push): its human confirm, then the forum window's
+// reply box is filled; Submit is always the human's click.
+
+// Copies of app/commands/drafts.mjs's, which imports renderer code (whiteboard.js).
+const EXAMPLE_ID = '0b2c8f0e-1c4e-4f8a-9d6a-2b7f3c9e1a55';
+const THREAD = 'project:3a7c9e1b-5d2f-4b8a-9c6e-1f0d2b4a6c8e';
+const DRAFT = { type: 'object', required: ['draftId'], additionalProperties: false, properties: { draftId: ref('ID', 'The draft id from drafts_list') } };
+
+/** The draft `id` (the open one carries the live fields), or null. */
+const draftOf = (ctx, id) => (ctx.state.draft?.id === id ? ctx.state.draft : ctx.state.drafts.find((d) => d.id === id) ?? null);
 
 /** The number of files a push attaches: one per canvas, plan chart and media node of the open draft. */
 function pictures(doc) {
@@ -25,6 +35,7 @@ export const defs = [
     id: 'export.preview',
     title: 'Build the post HTML and pictures that Push would send for the open draft',
     group: 'export',
+    integration: 'forum',
     risk: 'read',
     undo: 'none',
     slow: true,
@@ -33,7 +44,7 @@ export const defs = [
     result: { type: 'object', required: ['html', 'images'] },
     examples: [{ args: {} }, { args: { images: true } }],
     run: async (ctx, a) => {
-      const { html, images } = await buildPayload(ctx.editor, ctx.state.settings);
+      const { html, images } = await ctx.integrations.forum.buildPayload(ctx.editor, ctx.state.settings, ctx.state.draft);
       return { html, images: images.map(({ base64, ...m }) => ({ ...m, bytes: bytesOf(base64), ...(a.images && { base64 }) })) };
     },
   }),
@@ -41,6 +52,7 @@ export const defs = [
     id: 'push.prepare',
     title: 'Fill the forum reply box with a draft (the user confirms and submits it)',
     group: 'push',
+    integration: 'forum',
     risk: 'approval',
     undo: 'none',
     slow: true,
@@ -65,7 +77,7 @@ export const defs = [
       }
       const before = ctx.state.draft.pushedAt ?? null;
       const attachments = pictures(ctx.editor.state.doc);
-      const r = await ctx.actions.push({ requireThread: true });
+      const r = await ctx.integrations.forum.push({ requireThread: true });
       if (r?.code === 'no_thread') {
         const { message, fix } = GATES['draft.hasThread'];
         fail('precondition_failed', message, { failed: [{ gate: 'draft.hasThread', message, fix }] });
@@ -78,6 +90,7 @@ export const defs = [
   }),
   define({
     id: 'forum.status',
+    integration: 'forum',
     needs: ['app.forum'],
     title: 'Whether the forum window is logged in',
     group: 'forum',
@@ -86,10 +99,11 @@ export const defs = [
     args: { type: 'object', additionalProperties: false, properties: {} },
     result: { type: 'object', required: ['loggedIn'] },
     examples: [{ args: {} }],
-    run: async (ctx) => ({ loggedIn: !!(await ctx.api.forum.status())?.loggedIn }),
+    run: async (ctx) => ({ loggedIn: !!(await ctx.integrations.forum.status())?.loggedIn }),
   }),
   define({
     id: 'forum.login',
+    integration: 'forum',
     needs: ['app.forum'],
     title: 'Open the forum login window: the user signs in there (never automatic)',
     group: 'forum',
@@ -100,8 +114,45 @@ export const defs = [
     result: { type: 'object', required: ['loggedIn'] },
     examples: [{ args: {} }],
     run: async (ctx) => {
-      await ctx.actions.login();
+      await ctx.integrations.forum.login();
       return { loggedIn: !!ctx.state.status?.loggedIn };
+    },
+  }),
+  define({
+    id: 'threads.openInForum',
+    integration: 'forum',
+    title: "Open a project's forum thread in the forum window",
+    group: 'threads',
+    risk: 'approval', // outward-facing: it loads the forum site
+    undo: 'none',
+    headless: false,
+    needs: ['app.forum'],
+    args: { type: 'object', required: ['url'], additionalProperties: false, properties: { url: ref('URL') } },
+    result: { type: 'object', required: ['url'] },
+    examples: [{ args: { url: THREAD } }],
+    ask: (ctx, a) => ({ title: 'open a forum thread in the forum window', description: ctx.integrations.forum.projectTopic(a.url) || a.url }),
+    run: async (ctx, a) => {
+      const url = ctx.integrations.forum.projectTopic(a.url) || fail('precondition_failed', 'That project links no forum thread', { failed: [{ gate: null, message: 'no forum thread', fix: 'Link one to the project first' }] });
+      await ctx.integrations.forum.open(url);
+      return { url };
+    },
+  }),
+  define({
+    id: 'drafts.unpush',
+    integration: 'forum',
+    title: 'Mark a draft as not pushed',
+    group: 'drafts',
+    risk: 'destructive',
+    undo: 'none',
+    needs: ['draft.pushed'],
+    args: DRAFT,
+    result: { type: 'object', required: ['draftId', 'previous'] },
+    examples: [{ args: { draftId: EXAMPLE_ID } }],
+    ask: (ctx, a) => `mark the draft "${draftOf(ctx, a.draftId)?.title || 'Untitled draft'}" as not pushed`,
+    run: async (ctx, a) => {
+      const previous = draftOf(ctx, a.draftId).pushedAt;
+      if (!(await ctx.integrations.forum.doUnpushDraft(a.draftId))) fail('failed', 'The draft could not be saved');
+      return { draftId: a.draftId, previous };
     },
   }),
 ];

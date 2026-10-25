@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { fromThousandths, grouped, patched, placeAt, ungrouped } from '../src/app/commands/board.mjs';
 import { $defs, byId, CATALOGUE, MODEL_DEFS } from '../src/app/commands/catalogue.mjs';
 import { endBoxes, facing, straightPatch } from '../src/app/commands/connectors.mjs';
-import { argsMessage, ID_RE, RISKS, UNDOS } from '../src/app/commands/define.mjs';
+import { argsMessage, define, ID_RE, RISKS, UNDOS } from '../src/app/commands/define.mjs';
 import { PALETTE_COMMANDS } from '../src/app/commands/palette.mjs';
 import { CATEGORIES, categoryOf, CORE, VIEW_SETS } from '../src/app/commands/tool-sets.mjs';
 import { toolsFor } from '../src/app/commands/tools-schema.mjs';
@@ -49,6 +49,14 @@ test('every example validates against its command\'s args', () => {
   for (const d of CATALOGUE) {
     assert.ok(d.examples.length >= 1, d.id);
     for (const ex of d.examples) assert.deepEqual(validate(d.args, ex.args, $defs), [], `${d.id} ${JSON.stringify(ex.args)}`);
+  }
+});
+
+test('a first example uses no integration argument (the model sees it while that integration is off)', () => {
+  for (const d of CATALOGUE) {
+    for (const path of Object.keys(d.integrationArgs ?? {})) {
+      assert.equal(path.split('.').reduce((v, k) => v?.[k], d.examples[0].args), undefined, `${d.id} examples[0] uses ${path}`);
+    }
   }
 });
 
@@ -248,4 +256,15 @@ test('board.items.add and .update with coords thousandths: x and w scale by the 
   // A connector's free ends and waypoints scale too; a bound end stays.
   assert.deepEqual(fromThousandths({ type: 'connector', from: { item: 'a', anchor: 's' }, to: { x: 500, y: 500 }, points: [{ x: 1000, y: 0 }] }, { w: 1454, h: 730 }),
     { type: 'connector', from: { item: 'a', anchor: 's' }, to: { x: 727, y: 365 }, points: [{ x: 1454, y: 0 }] });
+});
+
+test('integration commands need their integration gate first; define() checks integration and integrationArgs', () => {
+  const tagged = CATALOGUE.filter((d) => d.integration);
+  assert.ok(tagged.length >= 6);
+  for (const d of tagged) assert.equal(d.needs[0], `integration.${d.integration}`, d.id);
+  const base = { id: 'x.y', title: 'X', group: 'app', risk: 'read', undo: 'none', args: { type: 'object', properties: { a: { type: 'string' } } }, examples: [{ args: {} }], run: () => {} };
+  assert.throws(() => define({ ...base, integration: 'nope' }), /integration nope/);
+  assert.throws(() => define({ ...base, integrationArgs: { b: 'forum' } }), /not an argument/);
+  assert.throws(() => define({ ...base, integrationArgs: { a: 'nope' } }), /not an integration/);
+  assert.deepEqual(define({ ...base, integration: 'forum', needs: ['doc.open'] }).needs, ['integration.forum', 'doc.open']);
 });

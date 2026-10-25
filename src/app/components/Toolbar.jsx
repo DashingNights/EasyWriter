@@ -14,6 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Separator } from '@/components/ui/separator';
 import { FONT_SIZES, TEXT_COLORS, HIGHLIGHTS, FONTS } from '../../extensions.js';
 import { canvasEditor } from '../../canvas.js';
+import { formatOf } from '../../formats.mjs';
 import { addImageFilesToEditor } from '../../whiteboard.js';
 import {
   afterNodeSel, applyPresetAt, cssFamily, insertCanvas, openLinkDialog, openSettings, refocusEditor, run,
@@ -107,6 +108,9 @@ export function textTools(ed) {
     clear: { title: 'Clear formatting', onClick: () => run((c) => c.unsetAllMarks().clearNodes()), children: <RemoveFormatting /> },
   };
 }
+
+/** Whether the open draft's format inserts titled boxes (formats.mjs blocks): the toolbar, quick tools and Insert menu show Box. */
+export const useBox = () => useStore((s) => !!formatOf(s.draft, s.settings)?.blocks.includes('box'));
 
 /** Icon button (26 px high, 24 px wide: the whole bar fits one row); a toggle with pressed state when `active` is given. */
 export function ToolButton({ title, onClick, active, disabled, children }) {
@@ -280,6 +284,7 @@ const readMore = () => {
  * it is. */
 export function Toolbar() {
   const [more, setMore] = useState(readMore);
+  const box = useBox();
   const toggleMore = () => setMore((m) => {
     try {
       localStorage.setItem(MORE_KEY, m ? '0' : '1');
@@ -321,7 +326,7 @@ export function Toolbar() {
                 <TableTools T={T} ed={ed} all />
               </Group>
               <Group>
-                <ToolButton {...T.box} />
+                {box && <ToolButton {...T.box} />}
                 <ToolButton {...T.planChart} />
               </Group>
               <RailLayout.Provider value={BAR}>

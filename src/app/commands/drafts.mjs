@@ -1,3 +1,5 @@
+import { pageOf } from '../../formats.mjs';
+import { bare } from '../../integrations/index.mjs';
 import { migrateBoards } from '../../whiteboard.js';
 import { sortDrafts } from '../draft-order.mjs';
 import { draftTag, tagList } from '../drafts-meta.js';
@@ -43,10 +45,10 @@ export const defs = [
     examples: [{ args: {} }, { args: { threadUrl: THREAD } }],
     run: (ctx, a) => sortDrafts(ctx.state.drafts, ctx.state.settings.draftOrder)
       .filter((d) => !a.threadUrl || d.threadUrl === a.threadUrl)
-      .map((d) => ({
+      .map((d) => bare('draft', {
         id: d.id, title: d.title, threadUrl: d.threadUrl, updated: d.updated, pushedAt: d.pushedAt,
         tag: draftTag(ctx.state.settings, d.id)?.id ?? null, folder: folderOf(ctx, d.id),
-      })),
+      }, ctx.state.settings)),
   }),
   define({
     id: 'drafts.get',
@@ -63,8 +65,8 @@ export const defs = [
       const loaded = open ? { ...ctx.state.draft, doc: ctx.editor.getJSON() } : await ctx.api.drafts.load(a.draftId);
       if (!loaded) fail('not_found', `The draft ${a.draftId} could not be loaded`);
       // A draft not opened since the merge still holds whiteboards on disk: shown as the canvases it opens as (§6b Converted whiteboards).
-      const draft = open ? loaded : { ...loaded, doc: migrateBoards(loaded.doc, ctx.state.settings.forumWidth) };
-      const out = a.images ? draft : ctx.lib.stripImages(draft);
+      const draft = open ? loaded : { ...loaded, doc: migrateBoards(loaded.doc, pageOf(loaded, ctx.state.settings).width) };
+      const out = bare('draft', a.images ? draft : ctx.lib.stripImages(draft), ctx.state.settings);
       return open ? { draft: out, rev: ctx.state.rev } : { draft: out };
     },
   }),
@@ -130,25 +132,8 @@ export const defs = [
     },
   }),
   define({
-    id: 'drafts.unpush',
-    title: 'Mark a draft as not pushed',
-    group: 'drafts',
-    risk: 'destructive',
-    undo: 'none',
-    needs: ['draft.pushed'],
-    args: DRAFT,
-    result: { type: 'object', required: ['draftId', 'previous'] },
-    examples: [{ args: { draftId: EXAMPLE_ID } }],
-    ask: (ctx, a) => `mark the draft "${titleOf(ctx, a.draftId)}" as not pushed`,
-    run: async (ctx, a) => {
-      const previous = draftOf(ctx, a.draftId).pushedAt;
-      if (!(await ctx.actions.doUnpushDraft(a.draftId))) fail('failed', 'The draft could not be saved');
-      return { draftId: a.draftId, previous };
-    },
-  }),
-  define({
     id: 'drafts.setThread',
-    title: 'Set the forum thread of a draft',
+    title: 'Set the project of a draft',
     group: 'drafts',
     risk: 'write',
     undo: 'none',

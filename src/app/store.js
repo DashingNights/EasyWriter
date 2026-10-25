@@ -23,7 +23,7 @@ const state = {
   zoom: 78,          // 'fit' or a percent; opens at 78 %
   zoomPct: 100,      // the page zoom applied, in percent (the computed one while zoom is 'fit')
   overlay: null,     // push overlay text, null = hidden
-  loggingIn: false,
+  loggingIn: false,  // status and loggingIn: the forum integration's sign-in (forum/actions.js); overlay stays core (GitHub busy())
   dialog: null,      // { type, props, resolve } — the open form dialog
   confirm: null,     // { title, description, confirmText, destructive, alert, resolve } — the open AlertDialog
   toolSearch: null,  // { board, focus, at, attach } — the open tool search (§7c): the board it serves (null: the document), the focus to return to, the selection as an assistant attachment

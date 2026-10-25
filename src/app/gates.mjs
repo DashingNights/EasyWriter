@@ -1,12 +1,14 @@
 // Preconditions shared by the UI and (roadmap C4) the agent commands: one named gate per requirement, so neither side has
-// its own copy of a check (agent-automation plan §3.7, flowchart plan §7.2). Pure; imports only the pure thread-url.mjs.
+// its own copy of a check (agent-automation plan §3.7, flowchart plan §7.2). Pure; imports only the pure formats.mjs and
+// integrations/index.mjs, whose gates (each manifest's, and integration.<id>) are spread in and tagged with their integration.
 //
 // A gate reads one subject: `ui` {view, editor} (the store's state fits), `board` (Board.getSnapshot(), null without a
-// board), `doc` {inTable}, `history` {canUndo, canRedo} (a board snapshot fits), `draft` {id, threadUrl, pushedAt, topic (its project's forum thread, thread-url.mjs topicOf)}, `node`
+// board), `doc` {inTable}, `history` {canUndo, canRedo} (a board snapshot fits), `draft` {id, threadUrl, pushedAt, threads (settings.threads)}, `node`
 // (a TipTap JSON block), `flow` (a library record; null when not loaded or missing), `window` {visible}
 // (document.visibilityState is 'visible': shown and not minimized) or `settings` (settings.json as loaded).
 
-import { hasForum } from '../thread-url.mjs';
+import { formatOf } from '../formats.mjs';
+import { integrationGates } from '../integrations/index.mjs';
 
 const gate = (subject, test, message, fix) => ({ subject, test, message, fix });
 
@@ -35,12 +37,10 @@ export const GATES = {
   'doc.inTable': gate('doc', (d) => !!d?.inTable, 'The caret is not in a table', 'Put the caret in a table cell first'),
   'history.canUndo': gate('history', (h) => !!h?.canUndo, 'There is nothing to undo', 'Make a change first'),
   'history.canRedo': gate('history', (h) => !!h?.canRedo, 'There is nothing to redo', 'Undo a change first'),
-  'draft.hasThread': gate('draft', (d) => !!d?.topic, "The draft's project has no forum thread",
-    "Put the draft in a project with a forum thread (drafts.setThread, or Move to... on its sidebar row), or link one to its project (the link button on its row)"),
-  'draft.unpushed': gate('draft', (d) => !!d && d.pushedAt == null, 'The draft is already marked as pushed', 'Unpush it first'),
-  'draft.pushed': gate('draft', (d) => d?.pushedAt != null, 'The draft is not marked as pushed', 'Nothing to unpush; push it instead'),
-  // A forum is in use (thread-url.mjs hasForum: a forum site and a project linking one of its threads): sign-in, push, the forum window.
-  'app.forum': gate('settings', hasForum, 'No project links a forum thread', 'Link a forum thread to a project'),
+  // The app's default page format inserts titled boxes (formats.mjs; the forum post's ipsRichTextBox). doc.command checks
+  // insertBox against the draft's own format in its plan.
+  'format.box': gate('settings', (s) => !!formatOf(null, s)?.blocks.includes('box'), 'The page format has no titled box',
+    'Use a table or a quote instead'),
   'flow.open': gate('flow', (f) => !!f, 'No library flowchart is open', 'Open one in the flowchart library'),
   'flow.synced': gate('node', (n) => n?.type === 'canvas' && !!n.attrs?.flow, 'The canvas is not linked to the flowchart library',
     'Save it to the library first'),
@@ -49,6 +49,7 @@ export const GATES = {
   'flow.present': gate('flow', (f) => !!f, 'The linked flowchart is missing from the library', 'Unlink the canvas to keep its picture'),
   // Every headless: false command needs it when an agent calls it (SPEC §8 Policy).
   'window.visible': gate('window', (w) => !!w?.visible, 'The window is not visible', 'Bring EasyWriter to the front'),
+  ...integrationGates(),
 };
 
 /** Whether gate `id` holds for `subject`; `args` are a command's arguments, `param` the gate's parameter (board.itemIs: types,

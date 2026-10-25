@@ -1,4 +1,5 @@
 import { checkSchema, deref } from '../schema.mjs';
+import { INTEGRATIONS } from '../../integrations/index.mjs';
 import { GATES } from '../gates.mjs';
 
 // define(def) checks a command definition when its module loads (SPEC §8 Command definition) and fills its defaults:
@@ -7,7 +8,12 @@ import { GATES } from '../gates.mjs';
 // a model wrongly reaches for it to do and what to use instead, and `guide` (optional, wave 1c, after OpenCode's one text per
 // tool): {before?, args?, errors?, playbook?}, short sentences on what to do before calling, the argument rules and what its errors
 // mean, and the id of its playbook (wave 2b); all for the model form of the tools (tools-schema.mjs: "Not for: <notFor>", a line
-// "Before: …", "Args: …", "Errors: …", "Playbook: …" each).
+// "Before: …", "Args: …", "Errors: …", "Playbook: …" each). `integration` (optional): the id of the integration the command
+// belongs to; its gate integration.<id> goes first in needs, and agents see the command only while it is on (integrations/
+// index.mjs listed). `integrationArgs` (optional): {'<dotted path under args.properties>': id}, arguments only that
+// integration's command form takes (hidden and refused while it is off). `check` (optional): (args, draft, settings) -> the ids of
+// gates that fail for these arguments (the executor reports them with the needs, before any ask); for a rule that depends on an
+// argument and that capabilities() must not see.
 // Pure: catalogue modules stay importable by node --test.
 
 // ids are `<namespace>.<name>[.<name>…]`; `batch` and `calls` are the top-level ids.
@@ -49,7 +55,15 @@ export function define(def) {
   if (def.result) checkSchema(def.result);
   if (!Array.isArray(def.examples) || !def.examples.length) bad('at least one example');
   if (typeof def.plan !== 'function' && typeof def.run !== 'function') bad('plan or run');
+  if (def.check !== undefined && typeof def.check !== 'function') bad('check must be a function');
+  const known = (id) => INTEGRATIONS.some((i) => i.id === id);
+  if (def.integration !== undefined && !known(def.integration)) bad(`integration ${def.integration} is not one of ${INTEGRATIONS.map((i) => i.id)}`);
+  for (const [path, id] of Object.entries(def.integrationArgs ?? {})) {
+    if (!known(id)) bad(`integrationArgs ${path}: ${id} is not an integration`);
+    if (!path.split('.').reduce((s, k) => s?.properties?.[k], def.args)) bad(`integrationArgs ${path} is not an argument`);
+  }
   const out = { headless: true, slow: false, needs: [], ...def };
+  if (def.integration) out.needs = [`integration.${def.integration}`, ...out.needs];
   for (const n of out.needs) {
     const gate = typeof n === 'string' ? n : n?.gate;
     if (!Object.hasOwn(GATES, gate)) bad(`needs an unknown gate ${gate}`);

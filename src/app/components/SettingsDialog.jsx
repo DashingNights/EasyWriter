@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { ArrowDown, ArrowUp, Bot, Check, CloudUpload, Globe, RefreshCw, Keyboard, MessageSquare, MessagesSquare, Mic, Monitor, Moon, Plus, SlidersHorizontal, Sparkles, Sun, Tags, Trash2, Type } from 'lucide-react';
+import { startTransition, useCallback, useEffect, useRef, useState } from 'react';
+import { flushSync } from 'react-dom';
+import { ArrowDown, ArrowUp, Bot, Check, CloudUpload, Globe, RefreshCw, Keyboard, MessageSquare, Mic, Monitor, Moon, Plus, Puzzle, SlidersHorizontal, Sparkles, Sun, Tags, Trash2, Type } from 'lucide-react';
 import { toast } from 'sonner';
 // import { Badge } from '@/components/ui/badge'; // LOCAL LLM (commented out 2026-10-07): the model file row's state
 import { Button } from '@/components/ui/button';
@@ -15,7 +16,7 @@ import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { FONT_SIZES, TEXT_COLORS, HIGHLIGHTS, FONTS } from '../../extensions.js';
 import { keyLabel, withKey } from '../keybinds.js';
 import { motion, MOTION } from '../motion.js';
-import { applyPalette, changeSettings, confirmDialog, DEFAULT_WIDTH, PALETTE, saveSettings } from '../actions.js';
+import { applyPalette, changeSettings, confirmDialog, PALETTE, saveSettings } from '../actions.js';
 // LOCAL LLM (commented out 2026-10-07): BACKENDS, deleteAssistant, deleteLeftover, openInstall as openAssistantInstall, size, wake.
 import { ASSISTANT_DEFAULTS, saveAssistant } from '../assistant/assistant.js';
 import QWEN_MODELS from '../../assistant/qwen-models.json';
@@ -24,7 +25,9 @@ import { DICTATION_DEFAULTS, LANGUAGES } from '../dictation/core.mjs';
 import { mb, ModelFiles } from '../dictation/Dictation.jsx';
 import { openInstall } from '../dictation/dictation.js';
 import { defaultTag, draftsWithTag, pruneMap, tagList } from '../drafts-meta.js';
-import { forumOrigin } from '../../thread-url.mjs';
+import { DEFAULT_PAGE_WIDTH } from '../../formats.mjs';
+import { INTEGRATIONS } from '../../integrations/index.mjs';
+import { settingsSections } from '../../integrations/ui.js';
 import { columnsFollowing } from '../plans.js';
 import { getState, useStore } from '../store.js';
 import { DEFS, effective, overridesOf } from '../keys.mjs';
@@ -447,10 +450,10 @@ function AdvancedFields({ value: a, edit }) {
 }
 
 const PERMISSION_HINT = {
-  standard: 'Standard. Makes changes you can undo. Asks before deleting, pushing or logging in.',
+  standard: 'Standard. Makes changes you can undo. Asks before deleting.',
   ask: 'Ask first. Asks before every change.',
   readonly: 'Read only. Reads and answers. Changes nothing.',
-  all: 'Allow all. Does everything without asking, deleting included. You still submit posts on the forum yourself.',
+  all: 'Allow all. Does everything without asking, deleting included.',
 };
 
 /** settings.assistant's Qwen Cloud fields as saved: the key trimmed, the enabled models (at least the default), the chat panel's
@@ -803,8 +806,8 @@ function AgentsSection({ enabled, setEnabled, port, setPort }) {
         <div className="grid gap-0.5">
           <Label htmlFor="set-agents">Allow MCP clients</Label>
           <span className="max-w-[36rem] text-xs text-muted-foreground">
-            Lets MCP clients work in this app. Any program on this computer can connect while this is on. Deleting and pushing
-            ask you every time, and the forum is never submitted.
+            Lets MCP clients work in this app. Any program on this computer can connect while this is on. Deleting asks you
+            every time.
           </span>
         </div>
       </div>
@@ -839,7 +842,30 @@ function AgentsSection({ enabled, setEnabled, port, setPort }) {
 
 const SECTIONS = [['general', 'General', SlidersHorizontal], ['motion', 'Motion', Sparkles], ['presets', 'Presets', Type], ['tags', 'Tags', Tags], ['dictation', 'Dictation', Mic],
   ['assistant', 'Assistant', MessageSquare], ['agents', 'MCP', Bot], ['browser', 'Browser', Globe], ['keybinds', 'Keybinds', Keyboard],
-  ['github', 'GitHub backup', CloudUpload], ['forum', 'Forum', MessagesSquare]];
+  ['integrations', 'Integrations', Puzzle], ['github', 'GitHub backup', CloudUpload]];
+
+/** Settings > Integrations: one card per integration with what it does, what it may do, and its switch (saved with Save).
+ * The one place an integration that is off is named. `value` is {<id>: {enabled}}.
+ * data-agent-deny: agents never turn an integration on or off (Settings switch only, like agent.enabled). */
+function IntegrationsSection({ value, onChange }) {
+  return (
+    <div className="grid gap-3" data-agent-deny>
+      {INTEGRATIONS.map((i) => (
+        <div key={i.id} className="flex items-start gap-3 rounded-md border p-3" data-integration={i.id}>
+          <Switch id={`set-int-${i.id}`} className="mt-0.5" checked={value[i.id].enabled}
+            onCheckedChange={(on) => onChange({ ...value, [i.id]: { ...value[i.id], enabled: on } })} />
+          <div className="grid gap-1">
+            <Label htmlFor={`set-int-${i.id}`}>{i.name}</Label>
+            <span className="max-w-[36rem] text-xs text-muted-foreground">{i.description}</span>
+            <ul className="list-disc pl-4 text-xs text-muted-foreground">
+              {i.permissions.map((line) => <li key={line}>{line}</li>)}
+            </ul>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 // An IPC rejection's own message, without Electron's "Error invoking remote method ..." prefix.
 const ipcMessage = (e) => String(e?.message ?? e).replace(/^Error invoking remote method '[^']+': (?:Error: )?/, '');
@@ -925,7 +951,7 @@ function GitHubSection({ value: g, onChange, setProblem }) {
           <div className="grid gap-0.5">
             <Label htmlFor="set-github">Back up to GitHub</Label>
             <span className="max-w-[36rem] text-xs text-muted-foreground">
-              Drafts with their undo history, plans, flowcharts, prefabs, threads and tags go to a private repository of yours.
+              Drafts with their undo history, plans, flowcharts, prefabs, projects and tags go to a private repository of yours.
             </span>
           </div>
         </div>
@@ -995,8 +1021,14 @@ function Section({ id, title, hint, children }) {
 
 /** Settings + presets manager, scrolled to `section` (a SECTIONS id) when given. Closes with the settings patch, or null. */
 export function SettingsDialog({ settings: s, section, onClose }) {
-  const [forumUrl, setForumUrl] = useState(s.forumUrl ?? '');
-  const [width, setWidth] = useState(String(s.forumWidth));
+  // Known ids only: settings.set refuses others, and main keeps a stored flag this build does not know.
+  const [ints, setInts] = useState(() => Object.fromEntries(INTEGRATIONS.map((i) => [i.id, { ...s.integrations?.[i.id], enabled: s.integrations?.[i.id]?.enabled === true }])));
+  // Integrations' own sections (integrations/ui.js), after GitHub: each shows, checks and saves only while its integration is
+  // switched on here. `extra` holds each one's value, keyed by section id.
+  const [extra, setExtra] = useState(() => Object.fromEntries(settingsSections().map((x) => [x.id, x.read(s)])));
+  const shown = settingsSections().filter((x) => ints[x.integration]?.enabled);
+  const sections = [...SECTIONS, ...shown.map((x) => [x.id, x.title, x.icon])];
+  const [pageWidth, setPageWidth] = useState(String(s.pageWidth ?? DEFAULT_PAGE_WIDTH));
   const [theme, setTheme] = useState(s.theme !== 'light' ? 'dark' : 'light');
   const [baseFont, setBaseFont] = useState(fontValue(s.baseFont));
   const [baseSize, setBaseSize] = useState(sizeValue(s.baseSize));
@@ -1043,17 +1075,39 @@ export function SettingsDialog({ settings: s, section, onClose }) {
   // Section nav: a click scrolls the column to the section; scrolling highlights the section at the column's top (the last
   // one once the end is reached).
   const pane = useRef(null);
-  const [active, setActive] = useState(section ?? SECTIONS[0][0]);
+  const [active, setActive] = useState(sections.some(([id]) => id === section) ? section : sections[0][0]);
+  // Opening draws only the sections up to the one it opens at (General and Motion at least): all of them at once took one
+  // 100-160 ms task. The rest mount one frame later in a transition, and Keybinds (2,100 of the 3,200 nodes) one frame after
+  // that, so no task runs past 50 ms; Keybinds comes first only when Settings opens at it. A nav jump past `first` or to or
+  // past Keybinds mounts everything first, so the offsets it reads are final. Opened past Keybinds, the column scrolls to the
+  // section again once Keybinds has mounted above it, unless a nav click came first (`moved`).
+  const first = Math.max(1, sections.findIndex(([id]) => id === section));
+  const at = (id) => sections.findIndex(([x]) => x === id);
+  const kb = at('keybinds');
+  const moved = useRef(false);
+  const [stage, setStage] = useState(0); // 0: up to `first`; 1: the rest but Keybinds; 2: every section
+  useEffect(() => {
+    // Monotonic: a nav jump's flushSync to 2 is never undone by this frame's older callback.
+    if (stage < 2) requestAnimationFrame(() => setTimeout(() => startTransition(() => setStage((n) => Math.max(n, stage + 1)))));
+    else if (!moved.current && at(section) > kb) jump(section, true);
+  }, [stage]);
+  const show = (id) => stage === 2 || (id === 'keybinds' ? at(id) === first : at(id) <= first || stage === 1);
   const spy = () => {
     const el = pane.current;
     const secs = [...el.children];
     const end = el.scrollTop + el.clientHeight >= el.scrollHeight - 2;
     setActive((end ? secs.at(-1) : secs.findLast((x) => x.offsetTop <= el.scrollTop + 4)).dataset.section);
   };
-  const jump = (id, instant = false) => {
-    const sec = pane.current.querySelector(`:scope > [data-section="${id}"]`);
+  // `opening`: the jump to the section Settings opens at (instant, and no flushSync while React commits).
+  const jump = (id, opening = false) => {
+    if (!opening) {
+      moved.current = true;
+      if (stage < 2 && (at(id) > first || at(id) >= kb)) flushSync(() => setStage(2));
+    }
+    // A section that is not rendered (an integration that is off): the first one.
+    const sec = pane.current.querySelector(`:scope > [data-section="${id}"]`) ?? pane.current.firstElementChild;
     // Just below the section's top border: its heading lands 1.5rem (its padding) below the column's top.
-    pane.current.scrollTo({ top: sec.offsetTop + sec.clientTop, behavior: instant || !motion('scroll') ? 'auto' : 'smooth' });
+    pane.current.scrollTo({ top: sec.offsetTop + sec.clientTop, behavior: opening || !motion('scroll') ? 'auto' : 'smooth' });
   };
   // Opened at a section: the column scrolls there as it mounts (the dialog's portal mounts after this component's first commit).
   // The column takes the focus as it mounts, so the dialog opens with no field focused and the keys scroll it.
@@ -1068,9 +1122,10 @@ export function SettingsDialog({ settings: s, section, onClose }) {
   // the click's own submit (dispatched synchronously); one the browser blocks (a number field out of range) must not leave it set.
   const tour = useRef(false);
   const validate = () => {
-    if (forumUrl.trim() && !forumOrigin(forumUrl)) return 'Enter the forum site address, like https://forum.example.com, or leave it empty.';
-    const w = Number(width);
-    if (!(Number.isInteger(w) && w >= 320 && w <= 4000)) return 'Forum width must be a whole number between 320 and 4000.';
+    const problem = shown.map((x) => x.check(extra[x.id])).find(Boolean);
+    if (problem) return problem;
+    const pw = Number(pageWidth);
+    if (!(Number.isInteger(pw) && pw >= 320 && pw <= 4000)) return 'Page width must be a whole number between 320 and 4000.';
     if (dictation.serverUrl.trim() && !URL_RE.test(dictation.serverUrl.trim())) return 'The dictation server URL must start with http:// or https://.';
     // LOCAL LLM (commented out 2026-10-07): the server URL and idle unload checks.
     // if (assistant.serverUrl.trim() && !URL_RE.test(assistant.serverUrl.trim())) return 'The assistant server URL must start with http:// or https://.';
@@ -1081,8 +1136,10 @@ export function SettingsDialog({ settings: s, section, onClose }) {
     return /^\d+$/.test(historyLimit) && Number(historyLimit) <= 500 ? '' : 'Undo history must be a whole number between 0 and 500.';
   };
   const result = () => ({
-    forumUrl: forumOrigin(forumUrl),
-    forumWidth: Number(width),
+    integrations: ints,
+    // An integration's keys only while it is on: with it off, Save leaves them as stored.
+    ...Object.assign({}, ...shown.map((x) => x.write(extra[x.id]))),
+    pageWidth: Number(pageWidth),
     theme,
     baseFont,
     baseSize: Number(baseSize),
@@ -1118,7 +1175,7 @@ export function SettingsDialog({ settings: s, section, onClose }) {
       className="top-[calc(50%_+_17px)] h-[min(60rem,calc(100vh_-_34px_-_2rem))] p-6 sm:max-w-[min(68rem,calc(100vw_-_2rem))] *:data-[slot=dialog-close]:top-5 *:data-[slot=dialog-close]:right-5 [&>form]:gap-4">
       <div className="grid min-h-0 grid-cols-[11rem_minmax(0,1fr)] gap-6">
         <nav aria-label="Settings sections" className="flex flex-col gap-1">
-          {SECTIONS.map(([id, label, Icon]) => (
+          {sections.map(([id, label, Icon]) => (
             <Button key={id} type="button" variant="ghost" size="sm" aria-current={active === id || undefined} onClick={() => jump(id)}
               className="justify-start text-muted-foreground aria-[current=true]:bg-accent aria-[current=true]:text-accent-foreground">
               <Icon />{label}
@@ -1132,6 +1189,15 @@ export function SettingsDialog({ settings: s, section, onClose }) {
               <UiTheme />
               <UiPalette />
               <UiScale />
+              <Label className="text-muted-foreground">Page theme</Label>
+              <Pick label="Page theme" value={theme} onChange={setTheme} options={[['dark', 'Dark'], ['light', 'Light']]} />
+              <Label htmlFor="set-page-width" className="text-muted-foreground">Page width</Label>
+              <div className="flex items-center gap-2">
+                <Input id="set-page-width" type="number" min={320} max={4000} step={1} className="h-8 w-28" value={pageWidth}
+                  onChange={(e) => setPageWidth(e.target.value)} />
+                px
+                <Button type="button" variant="outline" size="sm" onClick={() => setPageWidth(String(DEFAULT_PAGE_WIDTH))}>Reset</Button>
+              </div>
               <Label className="text-muted-foreground">Base font</Label>
               <Pick label="Base font" value={baseFont} onChange={setBaseFont} options={fontOptions('Default')} className="w-44" />
               <Label className="text-muted-foreground">Base size</Label>
@@ -1193,7 +1259,7 @@ export function SettingsDialog({ settings: s, section, onClose }) {
             </div>
           </Section>
 
-          <Section id="tags" title="Tags" hint="Draft status, in workflow order">
+          {show('tags') && <Section id="tags" title="Tags" hint="Draft status, in workflow order">
             <div className="grid gap-1">
               {tagRows.map((r, i) => (
                 <div key={r.key} className="flex items-center gap-1">
@@ -1217,21 +1283,21 @@ export function SettingsDialog({ settings: s, section, onClose }) {
               <Pick label="New drafts get" value={tagRows.some((r) => r.id === newTag) ? newTag : ''} onChange={setNewTag} className="w-44"
                 options={[['', 'No tag'], ...tagRows.map((r, i) => [r.id, r.name.trim() || `Tag ${i + 1}`])]} />
             </div>
-          </Section>
+          </Section>}
 
-          <Section id="dictation" title="Dictation" hint="The mic button at the bottom right opens it">
+          {show('dictation') && <Section id="dictation" title="Dictation" hint="The mic button at the bottom right opens it">
             <DictationSection value={dictation} onChange={setDictation} />
-          </Section>
+          </Section>}
 
-          <Section id="assistant" title="Assistant" hint={withKey('The chat button', 'app.assistant')}>
+          {show('assistant') && <Section id="assistant" title="Assistant" hint={withKey('The chat button', 'app.assistant')}>
             <AssistantSection value={assistant} onChange={setAssistant} />
-          </Section>
+          </Section>}
 
-          <Section id="agents" title="MCP">
+          {show('agents') && <Section id="agents" title="MCP">
             <AgentsSection enabled={agents} setEnabled={setAgents} port={agentPort} setPort={setAgentPort} />
-          </Section>
+          </Section>}
 
-          <Section id="browser" title="Browser" hint="The Browser page, and the pane a tab opens in over the editor, plans and flowcharts">
+          {show('browser') && <Section id="browser" title="Browser" hint="The Browser page, and the pane a tab opens in over the editor, plans and flowcharts">
             <div className={FIELDS}>
               <Label className="text-muted-foreground">Unfocused opacity</Label>
               <div className="flex items-center gap-3">
@@ -1253,35 +1319,25 @@ export function SettingsDialog({ settings: s, section, onClose }) {
                 <span className="text-xs text-muted-foreground">Going to the Browser page with no tabs open starts one on Google.</span>
               </div>
             </div>
-          </Section>
+          </Section>}
 
-          <Section id="keybinds" title="Keybinds" hint="Click a key to change it, + to add one. Warnings never stop a keybind from saving.">
+          {show('keybinds') && <Section id="keybinds" title="Keybinds" hint="Click a key to change it, + to add one. Warnings never stop a keybind from saving.">
             <KeybindsSection value={keybinds} onChange={setKeybinds} />
-          </Section>
+          </Section>}
 
-          <Section id="github" title="GitHub backup">
+          {show('integrations') && <Section id="integrations" title="Integrations">
+            <IntegrationsSection value={ints} onChange={setInts} />
+          </Section>}
+
+          {show('github') && <Section id="github" title="GitHub backup">
             <GitHubSection value={github} onChange={setGithub} setProblem={setGithubProblem} />
-          </Section>
+          </Section>}
 
-          <Section id="forum" title="Forum" hint="The forum the drafts are pushed to, and how the page shows its posts">
-            <div className={FIELDS}>
-              <Label htmlFor="set-forum" className="text-muted-foreground">Forum site</Label>
-              <div className="flex items-center gap-2">
-                <Input id="set-forum" type="url" className="h-8 w-72" spellCheck={false} placeholder="None yet" value={forumUrl}
-                  onChange={(e) => setForumUrl(e.target.value)} />
-                <span className="text-xs text-muted-foreground">The first forum thread you link to a project sets it</span>
-              </div>
-              <Label htmlFor="set-width" className="text-muted-foreground">Forum width</Label>
-              <div className="flex items-center gap-2">
-                <Input id="set-width" type="number" min={320} max={4000} step={1} className="h-8 w-28" value={width}
-                  onChange={(e) => setWidth(e.target.value)} />
-                px
-                <Button type="button" variant="outline" size="sm" onClick={() => setWidth(String(DEFAULT_WIDTH))}>Reset</Button>
-              </div>
-              <Label className="text-muted-foreground">Page theme</Label>
-              <Pick label="Page theme" value={theme} onChange={setTheme} options={[['dark', 'Dark'], ['light', 'Light']]} />
-            </div>
-          </Section>
+          {shown.map((x) => show(x.id) && (
+            <Section key={x.id} id={x.id} title={x.title} hint={x.hint}>
+              <x.Section value={extra[x.id]} onChange={(v) => setExtra((e) => ({ ...e, [x.id]: v }))} />
+            </Section>
+          ))}
         </div>
       </div>
     </FormDialog>

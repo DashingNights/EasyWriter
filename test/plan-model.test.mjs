@@ -162,6 +162,10 @@ test('derived status: linked tickets and draft cards follow their draft\'s tag t
   assert.deepEqual(columnsOf(ctx).map((c) => c.id), [null, 'todo', 'progress', 'r7k2m9q', 'done']);
   assert.deepEqual(columnsOf(ctx, { showDrafts: false }).map((c) => c.id), ['todo', 'progress', 'r7k2m9q', 'done']);
   assert.deepEqual(wipState(ctx).progress, { count: 3, limit: null, over: false });
+  // unpushedOnly applies only while the forum integration is on (plans.js planContext push); the option itself is kept.
+  const ids = (c) => cards(c, { unpushedOnly: true }).filter((x) => x.kind === 'draft').map((x) => x.id);
+  assert.deepEqual(ids({ ...ctx, push: true }), [D1]);
+  assert.deepEqual(ids({ ...ctx, push: false }), [D1, D2]);
 });
 
 test('moveTicket: linked cards change draftTags only; an unmapped column asks for createTag', () => {

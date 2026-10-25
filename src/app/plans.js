@@ -2,9 +2,11 @@ import { useSyncExternalStore } from 'react';
 import { toast } from 'sonner';
 import { chartRefs } from '../doc-utils.mjs';
 import { addWorkDays, fromDay, nextWorkday, toDay, todayStr } from '../plan/dates.mjs';
+import { enabled } from '../integrations/index.mjs';
 import { PLAN_COMMANDS, PLAN_GATES } from '../plan/plan-commands.mjs';
 import { describe, doneColumnOf, estimateDays, parseOptions, parsePlan, pruneDrafts, statusOf, syncCompleted, unmapTag } from '../plan/plan-model.mjs';
 import { autoScheduled } from '../plan/schedule.mjs';
+import { isThreadKey } from '../thread-url.mjs';
 import { planSource, tabOf } from '../plan-chart.js';
 import { afterNodeSel, confirmDialog, saveSettings, threadLabel } from './actions.js';
 import { ChartView } from './components/plan/ChartView.jsx';
@@ -57,11 +59,12 @@ export const planList = () => [...plans.values()];
 /** The thread's plan (the newest when a hand copy made two). */
 export const planFor = (threadUrl) => planList().filter((p) => p.threadUrl === threadUrl).sort((a, b) => (b.updated ?? 0) - (a.updated ?? 0))[0] ?? null;
 
-/** What the selectors and reducers read (§3.3): the plan, the global tags, the thread's drafts, their tags, today. */
+/** What the selectors and reducers read (§3.3): the plan, the global tags, the thread's drafts, their tags, today, and
+ * `push`: whether the forum integration is on (cards() ignores unpushedOnly while it is off). */
 export function planContext(id, plan = plans.get(id)) {
   if (!plan) return null;
   const s = state.settings;
-  return { plan, tags: tagList(s), drafts: state.drafts.filter((d) => d.threadUrl === plan.threadUrl), draftTags: s.draftTags ?? {}, today: todayStr() };
+  return { plan, tags: tagList(s), drafts: state.drafts.filter((d) => d.threadUrl === plan.threadUrl), draftTags: s.draftTags ?? {}, today: todayStr(), push: enabled(s, 'forum') };
 }
 
 // The plan charts in drafts (src/plan-chart.js) read the plans through planSource: live charts redraw after any plan,
@@ -83,6 +86,7 @@ Object.assign(planSource, {
   },
   Chart: ChartView,
   open: (id, view) => openPlan(id, tabOf(view)),
+  pushShown: () => enabled(state.settings, 'forum'),
 });
 
 /** Tickets of the plan that are not in its done column (the sidebar's thread row count). */
@@ -304,12 +308,12 @@ export const canRedoPlan = (id) => !!stacks.get(id)?.future.length;
 
 // --- workspace ---
 
-/** Shows the plan workspace: the plan `planId` (an id, or a thread URL), else the plan of the selected thread, else of the
+/** Shows the plan workspace: the plan `planId` (an id, or a project key or thread URL), else the plan of the selected thread, else of the
  * open draft's thread (created after a confirm), else the plan picker. At startup a missing plan opens nothing. `tab`
  * defaults to the last one shown (`settings.planTab`). `opts` as for openWorkspace. */
 export async function openPlan(planId = null, tab = state.settings.planTab ?? 'board', opts = {}) {
   const ref = typeof planId === 'string' ? planId : null; // not a click event
-  const url = ref?.startsWith('https://') ? ref : null;
+  const url = isThreadKey(ref) ? ref : null; // a project key (the sidebar's Plan board) or an older topic URL
   let plan = ref && !url ? plans.get(ref) : null;
   if (ref && !url && !plan) {
     if (!opts.startup) toast.error('That plan no longer exists.');
@@ -509,7 +513,7 @@ export function importPlan(planId) {
 }
 
 /** Insert plan chart (toolbar, quick tools, palette): the plan of the open draft's thread; without one the plan picker (with
- * "Create a plan for this thread" when the draft has a thread). */
+ * "Create a plan for this project" when the draft has a project). */
 export async function insertPlanChartDialog() {
   if (!can('doc.open', state)) return;
   const thread = state.draft?.threadUrl ?? null;

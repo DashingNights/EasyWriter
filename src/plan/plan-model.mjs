@@ -1028,7 +1028,8 @@ export function filterTickets(ctx, options = {}) {
 }
 
 /** Board cards: the filtered tickets, then (showDrafts, and no label or priority filter) the thread's drafts that no ticket
- * links; `unpushedOnly` drops cards whose draft is pushed. [{kind, id, status, title, pushedAt, ticket?, draft?}] */
+ * links; `unpushedOnly` drops cards whose draft is pushed, unless ctx.push is false (the forum integration is off; the
+ * stored option is kept). [{kind, id, status, title, pushedAt, ticket?, draft?}] */
 export function cards(ctx, options = {}) {
   const o = optionsOf(ctx.plan, options);
   const draftOf = (id) => ctx.drafts?.find((d) => d.id === id);
@@ -1044,7 +1045,7 @@ export function cards(ctx, options = {}) {
       out.push({ kind: 'draft', id: draft.id, status, title: draft.title ?? '', pushedAt: draft.pushedAt ?? null, draft });
     }
   }
-  return o.unpushedOnly ? out.filter((c) => c.pushedAt == null) : out;
+  return o.unpushedOnly && ctx.push !== false ? out.filter((c) => c.pushedAt == null) : out;
 }
 
 /** Board columns: "No status" (id null) first when it has cards or options.columns names it, then the plan's columns

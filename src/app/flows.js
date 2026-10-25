@@ -165,7 +165,7 @@ export function createFlow({ title, threadUrl = null, board = FLOW_SIZE, source 
 /** Library New flowchart: a new record in `threadUrl`, opened in the library editor. */
 export const newFlow = (threadUrl = draftThread()) => openFlows(createFlow({ threadUrl }).id);
 
-/** Rename (`title`) and Move to thread (`threadUrl`): the record only, no rev (the board is unchanged). */
+/** Rename (`title`) and Move to project (`threadUrl`): the record only, no rev (the board is unchanged). */
 export async function updateFlow(id, patch) {
   const r = await loadFlow(id);
   if (!r) return;

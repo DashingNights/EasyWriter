@@ -1,9 +1,9 @@
 import { Ban, ChevronDown, ChevronsUp, ChevronUp, CircleCheck, FileText, Flame, Milestone } from 'lucide-react';
 import { fmt, fromWork, toDay } from '../../../plan/dates.mjs';
 import { ganttLayout } from '../../../plan/gantt-layout.mjs';
-import { blockers, cards as cardsOf, columnsOf, doneColumnOf, estimateDays, filterTickets, OPTION_DEFAULTS, statusOf, summary, unitOf } from '../../../plan/plan-model.mjs';
+import { blockers, cards as cardsOf, columnsOf, doneColumnOf, estimateDays, filterTickets, statusOf, summary, unitOf } from '../../../plan/plan-model.mjs';
 import { schedule } from '../../../plan/schedule.mjs';
-import { backlogColumns, backlogRows, chartGantt, KANBAN_COL, KANBAN_GAP, PAD } from '../../../plan-chart.js';
+import { backlogColumns, backlogRows, chartGantt, drawn, KANBAN_COL, KANBAN_GAP, PAD } from '../../../plan-chart.js';
 
 // The plan chart renderer (Gantt plan §7.2): the document NodeView and the rasterizer of src/plan-chart.js draw a plan view
 // with it, read-only, in the post colours (`palette`, pagePalette). Inline styles only, so the export looks like the page and
@@ -311,8 +311,8 @@ function GanttChart({ ctx, o, p, L }) {
  * the label legend and the footer as the options say (a Gantt whose zoom fell back says so in the footer). */
 export const VIEW_TITLES = { kanban: 'Kanban Board', backlog: 'Backlog', gantt: 'Gantt Chart' };
 
-export function ChartView({ ctx, view, options, palette: p, width }) {
-  const o = { ...OPTION_DEFAULTS, ...options };
+export function ChartView({ ctx: raw, view, options, palette: p, width }) {
+  const { ctx, o } = drawn(raw, options); // the Pushed tick only while the forum integration is on
   const { plan } = ctx;
   // Gantt: the export layout; a refused one is still drawn (the editor's pill says why).
   let gantt = view === 'gantt' ? chartGantt(ctx, o, width ?? 800) : null;

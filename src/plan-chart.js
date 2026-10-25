@@ -60,8 +60,8 @@ export const chartGantt = (ctx, options, width) => ganttLayout(ctx, schedule(ctx
 
 /** The width the chart is laid out at for the display width `width` (§7.4), and `error` when an export would refuse it
  * (Gantt: `note` when the zoom fell back). */
-export function chartLayout(view, ctx, options, width) {
-  const o = { ...OPTION_DEFAULTS, ...options };
+export function chartLayout(view, raw, options, width) {
+  const { ctx, o } = drawn(raw, options);
   const scaled = (min, many, narrow) => {
     const layoutWidth = Math.max(width, min);
     if (many) return { layoutWidth, error: many };
@@ -70,15 +70,15 @@ export function chartLayout(view, ctx, options, width) {
   if (view === 'kanban') {
     const n = columnsOf(ctx, o).length;
     return scaled(n * KANBAN_COL + (n - 1) * KANBAN_GAP + 2 * PAD, cards(ctx, o).length > MAX_CARDS && `more than ${MAX_CARDS} cards; filter it in Options`,
-      'too many columns for the post width; hide columns in Options');
+      'too many columns for the page width; hide columns in Options');
   }
   if (view === 'backlog') {
     return scaled(backlogColumns(o.fields).reduce((s, c) => s + c[2], 0) + 2 * PAD, backlogRows(ctx, o).length > MAX_ROWS && `more than ${MAX_ROWS} rows; filter it in Options`,
-      'too many fields for the post width; hide fields in Options');
+      'too many fields for the page width; hide fields in Options');
   }
   const g = chartGantt(ctx, o, width); // the Gantt fits the drawn width by its zoom, never scaled
   if (g.error) {
-    return { layoutWidth: width, error: g.error.code === 'too_many_rows' ? `more than ${GANTT_MAX_ROWS} rows; filter it in Options` : 'the date range is too long for the post width; shorten it in Options' };
+    return { layoutWidth: width, error: g.error.code === 'too_many_rows' ? `more than ${GANTT_MAX_ROWS} rows; filter it in Options` : 'the date range is too long for the page width; shorten it in Options' };
   }
   return { layoutWidth: width, ...(g.note && { note: g.note }) };
 }
@@ -129,7 +129,7 @@ export function freezeCtx(ctx, view) {
   return { plan: { ...ctx.plan, tickets }, tags: ctx.tags, drafts, draftTags, today: ctx.today };
 }
 
-/** The forum post colours of SPEC §1 the chart is drawn in (page theme 'dark' | 'light'). */
+/** The page colours (page.css, from SPEC §1) the chart is drawn in (page theme 'dark' | 'light'). */
 export function pagePalette(theme) {
   const shared = { accent: '#3d99f5', critical: '#e05252', conflict: '#e09952', done: '#62d926' };
   return theme === 'light'
@@ -149,7 +149,16 @@ export const planSource = {
   subscribe: () => () => {}, // (fn) → unsubscribe: fn() after any plan, draft or tag change
   Chart: null, // the React renderer: ({ctx, view, options, palette, width}) → element
   open: () => {}, // (planId, view) → the plan workspace at that view's tab
+  pushShown: () => true, // () → whether the forum integration is on: the Pushed tick and unpushedOnly apply
 };
+
+/** The context and options a chart is drawn with: while planSource.pushShown() is false the Pushed tick and unpushedOnly
+ * are ignored. The stored options and a frozen ctx (its pushedAt) are never changed. */
+export function drawn(ctx, options) {
+  const push = planSource.pushShown();
+  const o = { ...OPTION_DEFAULTS, ...options };
+  return { ctx: { ...ctx, push }, o: push ? o : { ...o, fields: o.fields.filter((f) => f !== 'pushed') } };
+}
 
 // ---------------------------------------------------------------------------------------------
 // The chart the bar serves: the node-selected one only (hovering never shows it). Snapshot {view, attrs, w, h, missing,
@@ -241,7 +250,7 @@ class PlanChartView {
     this.error = lay?.error ?? null;
     this.layoutWidth = lay?.layoutWidth ?? this.width;
     this.inner.style.width = `${this.layoutWidth}px`;
-    this.warn.textContent = `Refused on push: ${this.error}`;
+    this.warn.textContent = `Cannot export as a picture: ${this.error}`;
     if (this.error) this.dom.append(this.warn);
     else this.warn.remove();
     this.root.render(this.ctx && planSource.Chart

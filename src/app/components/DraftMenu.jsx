@@ -15,7 +15,7 @@ import { getState, useEditor } from '../store.js';
 import { BLOCK_SECTIONS } from '../tool-rank.mjs';
 import { entryKey, listTools, toolContext } from '../tools.js';
 import { PointerMenu } from './board/BoardMenu.jsx';
-import { textTools } from './Toolbar.jsx';
+import { textTools, useBox } from './Toolbar.jsx';
 
 /** A right-click outside the selection moves it to the pointer first, as in a word processor: a block preview (canvas, plan
  * chart) is selected whole, text gets the caret. Inside the selection, or on a misspelling (Chromium selected it), it stays. */
@@ -47,6 +47,7 @@ export function DraftMenu() {
   const [menu, setMenu] = useState(null); // {at, misspelledWord, suggestions, linkURL, editFlags, n} while open
   const picked = useRef(null);
   const ed = useEditor();
+  const box = useBox();
   useEffect(() => {
     const api = window.api.editMenu;
     let last = null; // the last right-click: {at, target, draft}
@@ -164,7 +165,7 @@ export function DraftMenu() {
             {tool('planChart', 'Plan chart')}
             {tool('image', 'Images or videos')}
             {tool('table', 'Table')}
-            {tool('box', 'Titled box')}
+            {box && tool('box', 'Titled box')}
             {tool('rule', 'Horizontal rule')}
           </DropdownMenuSubContent>
         </DropdownMenuSub>

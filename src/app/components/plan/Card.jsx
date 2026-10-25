@@ -153,7 +153,7 @@ export function Card({ card, ctx, fields, ids, selected, focused, dragging, line
             </button>
           </Tip>
         )}
-        {card.pushedAt != null && has('pushed') && <Tip title="Pushed to the forum"><CircleCheck className="size-3.5 text-success" aria-label="Pushed" /></Tip>}
+        {card.pushedAt != null && ctx.push && has('pushed') && <Tip title="Pushed to the forum"><CircleCheck className="size-3.5 text-success" aria-label="Pushed" /></Tip>}
         {tag && (
           <Tip title={`Its draft's tag "${tag.name}" is followed by no column`}>
             <Badge variant="outline" className="h-4 gap-1 px-1 text-muted-foreground"><Dot color={tag.color} />{tag.name}</Badge>

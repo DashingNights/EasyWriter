@@ -6,7 +6,8 @@ import { Button } from '@/components/ui/button';
 import { Combobox } from '@/components/ui/combobox';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Slider } from '@/components/ui/slider';
-import { hasForum, login, openSettings, refocusEditor, saveSettings, setZoom } from '../actions.js';
+import { openSettings, refocusEditor, saveSettings, setZoom } from '../actions.js';
+import { Slot } from '../../integrations/ui.js';
 import { on } from '../commands.js';
 import { getState, useStore } from '../store.js';
 import { Tip } from './Tip.jsx';
@@ -69,9 +70,6 @@ export function StatusBar() {
   const saveLabel = useStore((s) => s.saveLabel);
   const saveError = useStore((s) => s.saveError);
   const words = useStore((s) => s.words);
-  const status = useStore((s) => s.status);
-  const loggingIn = useStore((s) => s.loggingIn);
-  const forum = useStore((s) => hasForum(s.settings));
   const zoom = useStore((s) => s.zoom);
   const zoomPct = useStore((s) => s.zoomPct);
   const spell = useStore((s) => s.settings?.spellCheck ?? true);
@@ -86,15 +84,7 @@ export function StatusBar() {
       </Tip>
       <span className={cn(saveError && 'text-destructive')}>{saveLabel}</span>
       <span>{`${words} ${words === 1 ? 'word' : 'words'}`}</span>
-      {/* The forum's sign-in (once a project has a forum thread): opens the forum window, to log in or to see the forum. */}
-      {forum && (
-        <Tip title={status.loggedIn ? 'Open the forum window' : 'Log in to the forum in the forum window'} side="top">
-          <Button variant="ghost" size="xs" aria-label={status.loggedIn ? 'Forum window' : 'Log in'} data-agent-risk="approval" disabled={loggingIn}
-            className="-mx-2 font-normal text-muted-foreground" onClick={login}>
-            {status.loggedIn ? `Forum: logged in as ${status.name || status.memberId}` : 'Forum: not logged in'}
-          </Button>
-        </Tip>
-      )}
+      <Slot name="StatusBarItem" />
       <Model />
       <Agents />
       <div className="ml-auto flex items-center gap-2">

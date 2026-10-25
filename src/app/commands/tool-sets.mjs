@@ -17,10 +17,10 @@ export const CATEGORY_OF_GROUP = {
 // One line per category, shown by commands.index (a new namespace adds its line here; the contract test checks).
 export const CATEGORIES = {
   app: 'What is shown and selected, settings, palette tools, tool lists, batch, and the controls on screen',
-  drafts: 'Drafts, their tags and folders, and forum threads',
+  drafts: 'Drafts, their tags and folders, and projects',
   doc: 'Read and edit the blocks of the open draft',
   board: 'Canvases, their items and Canvas Mode',
-  export: 'Forum preview, push and login',
+  export: 'Forum preview, push and login', // the forum integration's: commands.index leaves it out while no command is listed
   history: 'Undo and redo in the open draft',
   flow: 'The flowchart library: its flowcharts, their items, layout and insertion into a draft',
 };

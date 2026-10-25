@@ -13,6 +13,7 @@ import { headPath, LABEL_PAD, nearestT, polylineHitsRect, polylinePoint, resolve
 import { isMermaid } from './flow/mermaid.mjs';
 import { cleanPoints, dragSegment, labelSlotAt, midHandles, OPPOSITE, pickInDirection, reverseConnector, SIDES, sideToward } from './flow/edit.mjs';
 import { keyAmong, keyLabel } from './app/keybinds.js';
+import { DEFAULT_PAGE_WIDTH as DEFAULT_WIDTH } from './formats.mjs';
 import { SHAPE_KEYS } from './app/keys.mjs';
 
 export const WB_BG = { post: { dark: '#303039', light: '#ffffff' }, transparent: null, white: '#ffffff', black: '#000000' };
@@ -21,7 +22,7 @@ const FONT = 'system-ui, Helvetica, Arial, sans-serif';
 // Option lists of the board chrome (src/app/components/board).
 export const TEXT_SIZES = [2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 24, 28, 32, 40, 48, 64, 72];
 export const NOTE_COLORS = [['', 'No note'], ['#fff59d', 'Yellow note'], ['#c8e6c9', 'Green note'], ['#bbdefb', 'Blue note'], ['#f8bbd0', 'Pink note']];
-export const BG_OPTIONS = [['post', 'Post'], ['transparent', 'Transparent'], ['white', 'White'], ['black', 'Black']];
+export const BG_OPTIONS = [['post', 'Page'], ['transparent', 'Transparent'], ['white', 'White'], ['black', 'Black']];
 const MIN_ITEM = 20;
 const ARTBOARD_PAD = 32; // a canvas artboard reaches this far past content beyond its frame (§6b)
 const CORNERS = ['nw', 'ne', 'sw', 'se'];
@@ -31,7 +32,7 @@ const SNAP_PX = 6; // snap threshold in screen px
 const EDGE = 48; // auto-scroll zone in screen px from the scrolling area's edge
 const MAX_SCROLL = 24; // auto-scroll px per frame
 const FULL = { x: 0, y: 0, w: 1, h: 1 }; // uncropped
-export const DEFAULT_WIDTH = 1454;
+export { DEFAULT_PAGE_WIDTH as DEFAULT_WIDTH } from './formats.mjs';
 const DEFAULT_ATTRS = { height: 400, base: null, bg: 'post', items: [] };
 export const PEN_WIDTHS = [1, 2, 3, 4, 6, 8, 12, 16, 24];
 export const PEN_STYLES = [[1, 'Pen'], [0.7, 'Marker'], [0.35, 'Highlighter']]; // [opacity, label]
@@ -259,7 +260,7 @@ export function parseBoard(json) {
 
 const isObject = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
 
-// A whiteboard's attrs {height, base, bg, items} → canvas attrs, shown at 1:1. `width`: settings.forumWidth.
+// A whiteboard's attrs {height, base, bg, items} → canvas attrs, shown at 1:1. `width`: the page's (formats.mjs pageOf).
 export function whiteboardToCanvas(a, width) {
   const h0 = Number.isFinite(a?.height) ? a.height : DEFAULT_ATTRS.height;
   const raw = (Array.isArray(a?.items) ? a.items : []).filter(isObject);
@@ -326,7 +327,7 @@ export function flattenCanvases(items) {
 
 // A doc, node or history file with every whiteboard node → a canvas node and every canvas node's canvas items flattened;
 // the same object when there is nothing to change (only the changed path is copied). Board items never match: none has type
-// whiteboard, and a canvas item has no attrs. `width`: settings.forumWidth.
+// whiteboard, and a canvas item has no attrs. `width`: the page's (formats.mjs pageOf).
 export function migrateBoards(v, width) {
   if (!v || typeof v !== 'object') return v;
   if (v.type === 'whiteboard') return { ...v, type: 'canvas', attrs: whiteboardToCanvas(v.attrs, width) };
@@ -766,8 +767,8 @@ function imageFiles(data) {
   return [...(data?.files ?? [])].filter((f) => f.type.startsWith('image/'));
 }
 
-// A video or GIF goes into the post as a media node (extensions.js Media), uploaded as it is, so it is capped at the forum's
-// attachment limit (SPEC §1).
+// A video or GIF goes into the page as a media node (extensions.js Media), kept as it is, so it is capped at one core limit
+// (the forum's attachment limit, SPEC §1, is the same).
 const MAX_MEDIA_BYTES = 100 * 1024 * 1024;
 const isMedia = (f) => f.type.startsWith('video/') || f.type === 'image/gif';
 const postFiles = (data) => [...(data?.files ?? [])].filter((f) => f.type.startsWith('image/') || f.type.startsWith('video/'));
@@ -781,7 +782,7 @@ const dataUrlOf = (file) => new Promise((resolve, reject) => {
 
 async function readMedia(file) {
   if (file.size > MAX_MEDIA_BYTES) {
-    toast(`${file.name} is too large for the forum (over 100 MB)`);
+    toast(`${file.name} is over 100 MB`);
     return null;
   }
   return { media: true, src: await dataUrlOf(file), name: file.name };

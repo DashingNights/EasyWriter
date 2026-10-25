@@ -6,7 +6,7 @@ import { closeQuickTools } from '../actions.js';
 import { getState, useEditor, useStore } from '../store.js';
 import { AlignMenu, BoardTools, RailLayout } from './board/BoardRail.jsx';
 import { CHROME, keepFocus } from './board/controls.jsx';
-import { BlockSelect, Group, GroupRows, PresetsMenu, SelectRow, SizeSelect, SwatchMenu, TableTools, textTools, ToolButton } from './Toolbar.jsx';
+import { BlockSelect, Group, GroupRows, PresetsMenu, SelectRow, SizeSelect, SwatchMenu, TableTools, textTools, ToolButton, useBox } from './Toolbar.jsx';
 
 // §7d quick tools (Ctrl+Tab): the bottom toolbar island and the §6c rail merged into one island at the pointer, built
 // from their own controls. It never takes the focus. Escape, a pointer-down outside it, Ctrl+Tab again and the end of
@@ -20,6 +20,7 @@ const SWATCH_MID = 17; // px from a tool options card's left edge to the centre 
 function TextTools({ anchor }) {
   const ed = useEditor();
   const T = textTools(ed);
+  const box = useBox();
   return (
     <GroupRows>
       <Group>
@@ -53,7 +54,7 @@ function TextTools({ anchor }) {
       </Group>
       <Group>
         <TableTools T={T} ed={ed} />
-        <ToolButton {...T.box} />
+        {box && <ToolButton {...T.box} />}
         <ToolButton {...T.link} />
         <ToolButton {...T.canvas} />
         <ToolButton {...T.flowchart} />
