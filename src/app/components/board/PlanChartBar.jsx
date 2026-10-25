@@ -19,14 +19,14 @@ import { can } from '../../gates.mjs';
 import { useStore } from '../../store.js';
 import { planList, usePlans } from '../../plans.js';
 import { DateField } from '../DateField.jsx';
-import { Tip } from '../Tip.jsx';
+import { IconButton, Tip } from '../Tip.jsx';
 import { PRIORITIES } from '../plan/Card.jsx';
 
 const keepFocus = (e) => e.preventDefault(); // buttons never take focus: the document keeps its selection
 const VIEWS = [['kanban', 'Board', SquareKanban], ['backlog', 'Backlog', ListTodo], ['gantt', 'Gantt', ChartGantt]];
 // Gantt toggles: key, chip text, tooltip (when it says more).
 const GANTT_SHOW = [['showDeps', 'Deps', 'Dependencies'], ['showCritical', 'Critical', 'Critical path'], ['showBaseline', 'Baseline'],
-  ['showToday', 'Today', 'Today line'], ['showWeekends', 'Weekends', 'Weekends (off: working days only)'], ['showTaskList', 'Task list']];
+  ['showToday', 'Today', 'Today line'], ['showWeekends', 'Weekends', 'Weekends (off shows working days only)'], ['showTaskList', 'Task list']];
 // Card fields / Backlog columns: name (tooltip) and icon.
 const FIELD_INFO = {
   num: ['Number', Hash], labels: ['Labels', Tag], due: ['Due date', CalendarDays], checklist: ['Checklist', ListChecks], priority: ['Priority', Signal],
@@ -50,17 +50,17 @@ function useFollow(ref, key, place) {
   }, [key]);
 }
 
-const CHIP = "h-6 min-w-6 gap-1 px-1.5 text-xs font-normal text-muted-foreground data-[state=on]:text-foreground [&_svg:not([class*='size-'])]:size-3.5";
+const CHIP = "font-normal text-muted-foreground data-[state=on]:text-foreground [&_svg:not([class*='size-'])]:size-3.5";
 
 /** A small toggle of the Options panel (as the board tool options); `tip`: its tooltip (and name, for an `icon` chip). */
 function Chip({ tip, icon, pressed, onChange, children }) {
-  const toggle = <Toggle size="sm" aria-label={tip} pressed={pressed} onPressedChange={onChange} className={cn(CHIP, icon && 'px-1')}>{children}</Toggle>;
+  const toggle = <Toggle size="xs" aria-label={tip} pressed={pressed} onPressedChange={onChange} className={cn(CHIP, icon && 'px-1')}>{children}</Toggle>;
   return tip ? <Tip title={tip}>{toggle}</Tip> : toggle;
 }
 
 /** One row of the Options panel: a short muted label (`tip`: what the row means), then its controls, wrapping. */
 function Row({ label, tip, children }) {
-  const name = <span className="flex h-6 items-center text-[11px] text-muted-foreground">{label}</span>;
+  const name = <span className="flex h-6 items-center text-xs text-muted-foreground">{label}</span>;
   return (
     <>
       {tip ? <Tip title={tip}>{name}</Tip> : name}
@@ -77,7 +77,7 @@ function TextOption({ value, onCommit, className, ...props }) {
     setText(null);
   };
   return (
-    <Input {...props} className={cn('h-6 px-2 text-xs md:text-xs', className)} value={text ?? value} onChange={(e) => setText(e.target.value)} onBlur={commit}
+    <Input size="xs" {...props} className={className} value={text ?? value} onChange={(e) => setText(e.target.value)} onBlur={commit}
       onKeyDown={(e) => {
         if (e.key === 'Enter') commit();
         else if (e.key === 'Escape' && text !== null) {
@@ -92,7 +92,7 @@ function TextOption({ value, onCommit, className, ...props }) {
 function DateOption({ value, onCommit, ...props }) {
   const commit = (v) => (v || null) !== (value ?? null) && onCommit(v || null);
   return (
-    <DateField defaultValue={value ?? ''} className="h-6 w-[7.5rem] px-2 text-xs md:text-xs" {...props} onPick={commit} onBlur={(e) => commit(e.target.value)}
+    <DateField defaultValue={value ?? ''} size="xs" className="w-[7.5rem]" {...props} onPick={commit} onBlur={(e) => commit(e.target.value)}
       onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()} />
   );
 }
@@ -136,7 +136,7 @@ function ChartOptions({ chart, ctx, error, set }) {
         </Row>
       )}
       {plan?.labels.length > 0 && (
-        <Row label="Labels" tip="Only tickets with a ticked label (none ticked: all)">
+        <Row label="Labels" tip="Only tickets with a ticked label, or all when none is ticked">
           {plan.labels.map((l) => (
             <Chip key={l.id} pressed={!!o.labels?.includes(l.id)} onChange={(on) => pick('labels', l.id, on)}>
               <Dot color={l.color} /><span className="max-w-28 truncate">{l.name}</span>
@@ -144,7 +144,7 @@ function ChartOptions({ chart, ctx, error, set }) {
           ))}
         </Row>
       )}
-      <Row label="Priority" tip="Only tickets with a ticked priority (none ticked: all)">
+      <Row label="Priority" tip="Only tickets with a ticked priority, or all when none is ticked">
         {PRIORITIES.map(([v, name, Icon]) => (
           <Chip key={v} tip={name} icon pressed={!!o.priority?.includes(v)} onChange={(on) => pick('priority', v, on)}>{Icon ? <Icon /> : <Minus />}</Chip>
         ))}
@@ -167,20 +167,18 @@ function ChartOptions({ chart, ctx, error, set }) {
           <Row label="Range" tip="The dates shown (an empty end follows the plan)">
             <DateOption aria-label="Range start" calendar={plan?.calendar} value={o.range?.start ?? null} onCommit={(start) => put({ range: start || o.range?.end ? { start, end: o.range?.end ?? null } : null })} />
             <DateOption aria-label="Range end" calendar={plan?.calendar} value={o.range?.end ?? null} onCommit={(end) => put({ range: end || o.range?.start ? { start: o.range?.start ?? null, end } : null })} />
-            <Tip title="Whole plan (clear the range)">
-              <Button variant="ghost" size="icon-xs" aria-label="Whole plan" className="text-muted-foreground" disabled={!o.range} onClick={() => put({ range: null })}><X /></Button>
-            </Tip>
+            <IconButton label="Whole plan (clear the range)" className="text-muted-foreground" disabled={!o.range} onClick={() => put({ range: null })}><X /></IconButton>
           </Row>
           <Row label="Zoom">
             <Select value={o.zoom} onValueChange={(zoom) => put({ zoom })}>
-              <SelectTrigger size="sm" aria-label="Zoom" className="h-6! w-24 px-2 text-xs"><SelectValue /></SelectTrigger>
+              <SelectTrigger size="xs" aria-label="Zoom" className="w-24"><SelectValue /></SelectTrigger>
               <SelectContent onCloseAutoFocus={refocusEditor}>
                 {ZOOMS.map((z) => <SelectItem key={z} value={z} className="text-xs">{z[0].toUpperCase() + z.slice(1)}</SelectItem>)}
               </SelectContent>
             </Select>
             <Chip tip={`Week numbers${plan && !plan.calendar.weekOne ? ' (set week 1 in the plan\'s Calendar... first)' : ''}`} pressed={o.weekLabels === 'number'}
               onChange={(on) => put({ weekLabels: on ? 'number' : 'date' })}>Week no.</Chip>
-            <Tip title="On push: at most 60 rows; a zoom too wide for the post falls back to a smaller one (the footer says so).">
+            <Tip title="Push draws at most 60 rows. A zoom too wide for the post falls back to a smaller one, and the footer says so.">
               <Info aria-label="On push" className="mx-1 size-3.5 text-muted-foreground" />
             </Tip>
           </Row>
@@ -238,13 +236,12 @@ export function PlanChartBar() {
   const set = (patch) => view.set(patch);
   const freeze = () => freezeChart(view);
   const plans = planList();
-  const tip = (title, button) => <Tip title={title}>{button}</Tip>;
   return (
     <div ref={ref} role="toolbar" aria-label="Plan chart" onMouseDown={keepFocus}
       className="fixed top-0 left-0 z-30 flex flex-wrap items-center gap-0.5 rounded-island border bg-island p-0.5 text-xs shadow-xl">
-      <ToggleGroup type="single" size="sm" aria-label="Chart view" value={chart.view} onValueChange={(v) => v && set({ view: v })}>
+      <ToggleGroup type="single" size="xs" aria-label="Chart view" value={chart.view} onValueChange={(v) => v && set({ view: v })}>
         {VIEWS.map(([v, name, Icon]) => (
-          <ToggleGroupItem key={v} value={v} aria-label={name} className="h-6 gap-1 px-1.5 text-xs" onMouseDown={keepFocus}><Icon />{name}</ToggleGroupItem>
+          <ToggleGroupItem key={v} value={v} aria-label={name} className="px-1.5" onMouseDown={keepFocus}><Icon />{name}</ToggleGroupItem>
         ))}
       </ToggleGroup>
       <Popover>
@@ -260,28 +257,33 @@ export function PlanChartBar() {
         </PopoverContent>
       </Popover>
       <Select value={plans.some((p) => p.id === chart.planId) ? chart.planId : ''} onValueChange={(planId) => set({ planId, frozen: null })}>
-        <SelectTrigger size="sm" aria-label="Plan" className="h-6! max-w-44 gap-1 px-1.5 text-xs" onMouseDown={keepFocus}>
+        <SelectTrigger size="xs" aria-label="Plan" className="max-w-44 px-1.5" onMouseDown={keepFocus}>
           <SelectValue placeholder="Plan not found" />
         </SelectTrigger>
         <SelectContent onCloseAutoFocus={refocusEditor}>
           {plans.map((p) => <SelectItem key={p.id} value={p.id} className="text-xs">{p.title || p.threadUrl}</SelectItem>)}
         </SelectContent>
       </Select>
-      {tip(chart.frozen ? 'Frozen: shows the plan as it was. Click to show it live' : 'Live: follows the plan. Click to freeze this moment',
-        <Toggle size="sm" aria-label="Frozen" className="h-6 min-w-6 gap-1 px-1.5 text-xs" pressed={!!chart.frozen} disabled={!chart.frozen && !ctx}
+      <Tip title={chart.frozen ? 'Shows the plan as it was. Click to show it live' : 'Follows the plan. Click to freeze this moment'}>
+        <Toggle size="xs" aria-label="Frozen" pressed={!!chart.frozen} disabled={!chart.frozen && !ctx}
           onMouseDown={keepFocus} onPressedChange={(on) => (on ? freeze() : set({ frozen: null }))}>
           <Snowflake />{chart.frozen ? 'Frozen' : 'Live'}
-        </Toggle>)}
+        </Toggle>
+      </Tip>
       {chart.frozen && (
         <>
           <span className="px-1 text-muted-foreground">{stamp(chart.frozen.at)}</span>
-          {tip('Freeze it again with the plan as it is now', <Button variant="ghost" size="icon-xs" aria-label="Refresh" disabled={!ctx} onClick={freeze}><RefreshCw /></Button>)}
+          <IconButton label="Freeze it again with the plan as it is now" disabled={!ctx} onClick={freeze}><RefreshCw /></IconButton>
         </>
       )}
       <span className="px-1.5 text-muted-foreground tabular-nums">{`${snap.w} x ${snap.h}`}</span>
-      {tip('Page width', <Button variant="ghost" size="xs" disabled={chart.dw == null} onClick={() => set({ dw: null })}><MoveHorizontal />Full width</Button>)}
-      {tip('Open the plan at this view (double-click, Enter)', <Button variant="ghost" size="xs" disabled={!ctx} onClick={() => view.openPlan()}><ExternalLink />Open plan</Button>)}
-      {tip('Delete chart', <Button variant="ghost" size="icon-xs" aria-label="Delete chart" onClick={() => view.remove()}><Trash2 /></Button>)}
+      <Tip title="Page width">
+        <Button variant="ghost" size="xs" disabled={chart.dw == null} onClick={() => set({ dw: null })}><MoveHorizontal />Full width</Button>
+      </Tip>
+      <Tip title="Open the plan at this view (double-click, Enter)">
+        <Button variant="ghost" size="xs" disabled={!ctx} onClick={() => view.openPlan()}><ExternalLink />Open plan</Button>
+      </Tip>
+      <IconButton label="Delete chart" variant="destructive-ghost" onClick={() => view.remove()}><Trash2 /></IconButton>
     </div>
   );
 }

@@ -8,7 +8,7 @@ import { validFlow } from '../../../flow/library.mjs';
 import { openFlows, saveToLibrary } from '../../flows.js';
 import { can } from '../../gates.mjs';
 import { useStore } from '../../store.js';
-import { Tip } from '../Tip.jsx';
+import { IconButton, Tip } from '../Tip.jsx';
 import { CHROME, keepFocus as keepBoardFocus } from './controls.jsx';
 
 const keepFocus = (e) => e.preventDefault(); // buttons never take focus: the document keeps its selection
@@ -54,25 +54,32 @@ export function CanvasBar() {
 
   if (!snap || !editorShown) return null;
   const { dw, w, h, flow } = snap;
-  const tip = (title, button) => <Tip title={title}>{button}</Tip>;
   const node = { type: 'canvas', attrs: view.node.attrs };
   return (
     <div ref={ref} role="toolbar" aria-label="Canvas" onMouseDown={keepFocus}
       className="fixed top-0 left-0 z-30 flex items-center gap-0.5 rounded-island border bg-island p-0.5 text-xs shadow-xl">
-      {tip('Edit the canvas (double-click, Enter)', <Button variant="ghost" size="xs" onClick={() => view.open()}><SquarePen />Edit</Button>)}
+      <Tip title="Edit the canvas (double-click, Enter)"><Button variant="ghost" size="xs" onClick={() => view.open()}><SquarePen />Edit</Button></Tip>
       <span className="px-1.5 text-muted-foreground tabular-nums">{`${dw} x ${Math.round((dw * h) / w)}`}</span>
-      {tip('Artboard size (at most the page width)', <Button variant="ghost" size="xs" onClick={() => view.setDw(Math.min(w, view.maxWidth()))}>Actual size</Button>)}
-      {tip('Page width', <Button variant="ghost" size="xs" onClick={() => view.setDw(view.maxWidth())}>Full width</Button>)}
+      <Tip title="Artboard size (at most the page width)">
+        <Button variant="ghost" size="xs" onClick={() => view.setDw(Math.min(w, view.maxWidth()))}>Actual size</Button>
+      </Tip>
+      <Tip title="Page width"><Button variant="ghost" size="xs" onClick={() => view.setDw(view.maxWidth())}>Full width</Button></Tip>
       {flow && can('flow.synced', node) && (
         <>
-          {tip(flow.missing ? 'Flowchart missing from the library, unlinked view' : `Open "${flow.title ?? 'Flowchart'}" in the flowchart library`,
-            <Button variant="ghost" size="xs" disabled={!can('flow.present', flowSource.get(flow.id))} onClick={() => openFlows(flow.id)}><Workflow />Open in library</Button>)}
-          {tip('Make it an independent canvas holding this picture', <Button variant="ghost" size="xs" onClick={() => view.unlink()}><Unlink />Unlink</Button>)}
+          <Tip title={flow.missing ? 'Flowchart missing from the library, unlinked view' : `Open "${flow.title ?? 'Flowchart'}" in the flowchart library`}>
+            <Button variant="ghost" size="xs" disabled={!can('flow.present', flowSource.get(flow.id))} onClick={() => openFlows(flow.id)}><Workflow />Open in library</Button>
+          </Tip>
+          <Tip title="Make it an independent canvas holding this picture">
+            <Button variant="ghost" size="xs" onClick={() => view.unlink()}><Unlink />Unlink</Button>
+          </Tip>
         </>
       )}
-      {can('flow.unsynced', node) && tip('Make it a library flowchart this canvas shows synced',
-        <Button variant="ghost" size="xs" onClick={() => saveToLibrary(view)}><BookPlus />Save to library...</Button>)}
-      {tip('Delete canvas', <Button variant="ghost" size="icon-xs" aria-label="Delete canvas" onClick={() => view.remove()}><Trash2 /></Button>)}
+      {can('flow.unsynced', node) && (
+        <Tip title="Make it a library flowchart this canvas shows synced">
+          <Button variant="ghost" size="xs" onClick={() => saveToLibrary(view)}><BookPlus />Save to library...</Button>
+        </Tip>
+      )}
+      <IconButton label="Delete canvas" variant="destructive-ghost" onClick={() => view.remove()}><Trash2 /></IconButton>
     </div>
   );
 }
@@ -90,7 +97,7 @@ export function SizeInput({ board, label, value, onCommit }) {
     <Label className="gap-1 pl-1 text-xs text-muted-foreground">
       {label}
       <Input type="number" min={40} max={8000} step={1} aria-label={`Artboard ${label === 'W' ? 'width' : 'height'}`}
-        className="h-6 w-16 px-1.5 text-xs text-foreground md:text-xs" value={draft ?? value}
+        size="xs" className="w-16 px-1.5 text-foreground" value={draft ?? value}
         onChange={(e) => setDraft(e.target.value)} onBlur={commit}
         onKeyDown={(e) => {
           if (e.key === 'Enter') {
@@ -117,7 +124,6 @@ function EditBar({ session }) {
     el.style.transform = `translate(${Math.round(x)}px, ${Math.round(y)}px)`;
     el.style.visibility = r.bottom > a.top + 8 && r.top < a.bottom - 8 ? '' : 'hidden';
   });
-  const tip = (title, button) => <Tip title={title} {...CHROME}>{button}</Tip>;
   return (
     <div ref={ref} {...CHROME} data-ribbon-avoid="" role="toolbar" aria-label="Canvas editing" onMouseDown={keepBoardFocus}
       className="fixed top-0 left-0 z-30 flex items-center gap-1 rounded-island border bg-island p-0.5 text-xs shadow-xl">
@@ -130,8 +136,10 @@ function EditBar({ session }) {
       )}
       <SizeInput board={session.board} label="W" value={w} onCommit={(v) => session.setSize(v, h)} />
       <SizeInput board={session.board} label="H" value={h} onCommit={(v) => session.setSize(w, v)} />
-      {tip('Shrink the artboard to the items', <Button variant="ghost" size="xs" onClick={() => session.fitContent()}><Shrink />Fit to content</Button>)}
-      {tip('Back to the document (Escape)', <Button size="xs" onClick={() => session.close(true)}><Check />Done</Button>)}
+      <Tip title="Shrink the artboard to the items" {...CHROME}>
+        <Button variant="ghost" size="xs" onClick={() => session.fitContent()}><Shrink />Fit to content</Button>
+      </Tip>
+      <Tip title="Back to the document (Escape)" {...CHROME}><Button size="xs" onClick={() => session.close(true)}><Check />Done</Button></Tip>
     </div>
   );
 }

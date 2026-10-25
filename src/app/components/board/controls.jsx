@@ -2,14 +2,15 @@ import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from '
 import { cn } from 'cn';
 import {
   AlignCenter, AlignLeft, AlignRight, AlignVerticalJustifyCenter, AlignVerticalJustifyEnd, AlignVerticalJustifyStart, ArrowLeft, ArrowRight, Bold,
-  ChevronDown, ChevronRight, CopyPlus, Package, Pencil, RotateCcw, RotateCw, Star, Trash2, Type,
+  ChevronRight, CopyPlus, Package, Pencil, RotateCcw, RotateCw, Star, Trash2, Type,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Combobox } from '@/components/ui/combobox';
 import { DropdownMenuItem, DropdownMenuSeparator, DropdownMenuShortcut } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
-import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Switch } from '@/components/ui/switch';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Select, SelectButton, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Toggle } from '@/components/ui/toggle';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { HEADS } from '../../../flow/model.mjs';
@@ -20,10 +21,10 @@ import {
   armPrefab, createPrefab, customOrder, dropShape, duplicatePrefab, prefabList, prefabTile, removePrefab, renamePrefab, resetShapeSection,
   shapeLayout, toggleShapeFavourite, usePrefabs,
 } from '../../prefabs.js';
-import { keyLabel, withKey } from '../../keybinds.js';
+import { withKey } from '../../keybinds.js';
 import { getState, useStore } from '../../store.js';
 import { rankTool } from '../../tool-rank.mjs';
-import { Tip } from '../Tip.jsx';
+import { IconButton, Tip } from '../Tip.jsx';
 import { PointerMenu } from './BoardMenu.jsx';
 
 // Shared pieces of the board chrome (§6c): the rail, its flyouts and the item ribbon.
@@ -126,7 +127,7 @@ function Field({ label, value, parse, done, className }) {
     if (document.activeElement !== ref.current) setText(value);
   }, [value]);
   return (
-    <Input ref={ref} aria-label={label} value={text} spellCheck={false} className={cn('h-7 px-1.5 text-xs', className)}
+    <Input ref={ref} size="xs" aria-label={label} value={text} spellCheck={false} className={cn('px-1.5', className)}
       onBlur={() => setText(value)}
       onChange={(e) => { setText(e.target.value); parse(e.target.value.trim()); }}
       onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); done(); } }} />
@@ -193,8 +194,10 @@ export function ColorSwatch({ board, title, value, live = false, onChange }) {
         onCloseAutoFocus={refocus(board)} onEscapeKeyDown={(e) => { e.preventDefault(); close(false); }}>
         <div className="grid grid-cols-6 gap-1">
           {Array.from({ length: RECENT }, (_, k) => recentColors[k]).map((x, k) => (x ? (
-            <button key={k} type="button" aria-label={`Recent colour ${x}`} title={x} onClick={() => recent(x)}
-              className="h-6 cursor-pointer rounded-sm border border-input" style={{ background: `linear-gradient(${x}, ${x}), ${CHECKS}` }} />
+            <Tip key={k} title={x} {...CHROME}>
+              <button type="button" aria-label={`Recent colour ${x}`} onClick={() => recent(x)}
+                className="h-6 flex-1 cursor-pointer rounded-sm border border-input" style={{ background: `linear-gradient(${x}, ${x}), ${CHECKS}` }} />
+            </Tip>
           ) : <span key={k} className="h-6 rounded-sm border border-dashed border-input" />))}
         </div>
         <Pick label="Saturation and brightness" at={[c.s, 1 - c.v]} onPick={(s, y) => set({ s, v: 1 - y })} className="h-32"
@@ -205,7 +208,7 @@ export function ColorSwatch({ board, title, value, live = false, onChange }) {
           style={{ background: `linear-gradient(to right, transparent, rgb(${r} ${g} ${b})), ${CHECKS}` }} />
         <Field label="Hex" value={hex} done={done}
           parse={(t) => /^#?([0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i.test(t) && set(toHsva(t.startsWith('#') ? t : `#${t}`))} />
-        <div className="grid grid-cols-4 gap-1 text-center text-[10px] text-muted-foreground">
+        <div className="grid grid-cols-4 gap-1 text-center text-xs text-muted-foreground">
           {['R', 'G', 'B'].map((l, k) => <Field key={l} label={l} value={String([r, g, b][k])} parse={channel(k)} done={done} />)}
           <Field label="A (opacity %)" value={String(Math.round(c.a * 100))} done={done}
             parse={(t) => /^\d{1,3}$/.test(t) && Number(t) <= 100 && set({ a: Number(t) / 100 })} />
@@ -281,45 +284,15 @@ export function OptionSelect({ board, title, value, options, onChange, className
 /** A text or label size in px: a field that takes any whole size from 1 to 999 as it is typed, with TEXT_SIZES in a list that
  * opens when the field or its chevron is clicked. Enter, Escape or a picked size hands the focus back to the board. */
 export function SizeSelect({ board, title, value, onChange, className }) {
-  const [open, setOpen] = useState(false);
-  const [text, setText] = useState(String(value));
-  const field = useRef(null);
-  const anchor = useRef(null);
-  useEffect(() => {
-    if (document.activeElement !== field.current) setText(String(value)); // not while typed in
-  }, [value]);
   const type = (v) => {
-    setText(v);
     const n = Number(v);
     if (v.trim() !== '' && Number.isInteger(n) && n >= 1 && n <= 999) onChange(n);
   };
-  const done = () => {
-    setOpen(false);
-    board.focus();
-  };
   return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverAnchor asChild>
-        <div ref={anchor} className={cn('relative', className)}>
-          <Tip title={title} {...CHROME}>
-            <Input ref={field} inputMode="numeric" aria-label={title} value={text} className="h-8 w-full pr-11 pl-2 text-sm"
-              onMouseDown={() => setOpen(true)} onBlur={() => setText(String(value))} onChange={(e) => type(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === 'Escape') { e.preventDefault(); done(); } }} />
-          </Tip>
-          <span className="pointer-events-none absolute inset-y-0 right-7 flex items-center text-sm text-muted-foreground">px</span>
-          <button type="button" tabIndex={-1} aria-label={`${title} list`} onMouseDown={keepFocus} onClick={() => setOpen(!open)}
-            className="absolute inset-y-0 right-0 grid w-7 place-items-center"><ChevronDown className="size-4 opacity-50" /></button>
-        </div>
-      </PopoverAnchor>
-      <PopoverContent {...CHROME} align="start" className="max-h-72 w-auto min-w-24 overflow-y-auto p-1" onMouseDown={keepFocus}
-        onOpenAutoFocus={(e) => e.preventDefault()} onCloseAutoFocus={(e) => e.preventDefault()}
-        onInteractOutside={(e) => { if (anchor.current?.contains(e.target)) e.preventDefault(); }}>
-        {TEXT_SIZES.map((s) => (
-          <button key={s} type="button" onClick={() => { setText(String(s)); onChange(s); done(); }}
-            className={cn('flex w-full rounded-sm px-2 py-1 text-left text-sm hover:bg-accent', s === value && 'bg-accent')}>{s} px</button>
-        ))}
-      </PopoverContent>
-    </Popover>
+    <Tip title={title} {...CHROME}>
+      <Combobox aria-label={title} inputMode="numeric" unit="px" className={className} value={value} text={String(value)}
+        options={TEXT_SIZES.map((s) => [s, `${s} px`])} onType={type} onPick={onChange} onDone={() => board.focus()} contentProps={CHROME} />
+    </Tip>
   );
 }
 
@@ -368,7 +341,7 @@ const TEXT_TILES = [
   { ref: 'text:', label: 'Text', keywords: ['text', 'label', 'type', 'words'], what: { note: null }, icon: <Type className="size-5" /> },
   ...NOTE_COLORS.filter(([c]) => c).map(([c, label]) => ({
     ref: `text:${c}`, label, keywords: ['note', 'sticky', 'post-it', 'comment', 'text'], what: { note: c },
-    icon: <span className="grid size-5 place-items-center rounded-sm border text-[0.6rem] font-semibold text-black" style={{ background: c }}>T</span>,
+    icon: <span className="grid size-5 place-items-center rounded-sm border text-xs font-semibold text-black" style={{ background: c }}>T</span>,
   })),
 ];
 
@@ -413,10 +386,12 @@ export function ShapePicker({ board, value, onChange, prefabs = false, openAt = 
     <Popover open={open} onOpenChange={setOpen}>
       <Tip title="Shape" {...CHROME}>
         <PopoverTrigger asChild>
-          <Button variant="outline" size="sm" aria-label="Shape" className="w-42 justify-start gap-1.5 px-2.5 font-normal">
-            {prefab ? <PrefabThumb prefab={prefab} className="size-4" /> : <ShapeIcon shape={value} />}
-            <span className="truncate">{prefab ? prefab.name : current?.label}</span><ChevronDown className="ml-auto opacity-50" />
-          </Button>
+          <SelectButton aria-label="Shape" className="w-42">
+            <span className="flex min-w-0 items-center gap-1.5">
+              {prefab ? <PrefabThumb prefab={prefab} className="size-4" /> : <ShapeIcon shape={value} />}
+              <span className="truncate">{prefab ? prefab.name : current?.label}</span>
+            </span>
+          </SelectButton>
         </PopoverTrigger>
       </Tip>
       <PopoverContent {...CHROME} align="start" className="w-auto p-1.5" onCloseAutoFocus={refocus(board)}>
@@ -612,7 +587,7 @@ export function ShapeList({ board, current, withPrefabs, openAt, pick, close, pa
         {x.prefab ? (
           <Toggle {...props} className="h-auto w-full flex-col gap-0.5 p-1">
             <PrefabThumb prefab={x.prefab} />
-            <span className="w-full truncate text-[0.7rem] leading-tight font-normal">{x.label}</span>
+            <span className="w-full truncate text-xs leading-tight font-normal">{x.label}</span>
           </Toggle>
         ) : (
           <Tip title={x.label} {...CHROME}>
@@ -634,8 +609,8 @@ export function ShapeList({ board, current, withPrefabs, openAt, pick, close, pa
   const m = menu && sections.find((s) => s.id === menu.section)?.entries.map((x) => x.ref);
   return (
     <div onKeyDown={onKeyDown} onKeyUp={onKeyUp} className={cn(panel && 'flex min-h-0 flex-1 flex-col')}>
-      <Input ref={search} value={query} onChange={(e) => setQuery(e.target.value)} placeholder={panel && keyLabel('flows.find') ? `Search shapes... ( ${keyLabel('flows.find')} )` : 'Search shapes...'}
-        aria-label="Search shapes" className={cn('h-7 px-2 text-sm', panel ? 'mx-1.5 mb-1 w-auto' : 'mb-1')} />
+      <Input ref={search} value={query} onChange={(e) => setQuery(e.target.value)} placeholder={panel ? withKey('Search shapes...', 'flows.find') : 'Search shapes...'}
+        aria-label="Search shapes" className={cn('px-2', panel ? 'mx-1.5 mb-1 w-auto' : 'mb-1')} />
       <div ref={list} className={cn('flex flex-col gap-1 overflow-x-hidden overflow-y-auto select-none', panel
         ? 'min-h-0 flex-1 px-1.5 pb-2'
         : 'max-h-[min(30rem,calc(var(--radix-popover-content-available-height)-3rem))] w-[16.5rem] pr-1')}>
@@ -644,7 +619,7 @@ export function ShapeList({ board, current, withPrefabs, openAt, pick, close, pa
           return (
             <section key={s.id} aria-label={s.title} data-drop={s.id} {...(panel && s.id === 'prefabs' && { 'data-board-drop': '' })}
               className={cn('rounded-md', drag?.section === s.id && !drag.target && 'bg-accent/60')}>
-              <div className="flex h-5 items-center px-1 text-xs text-muted-foreground">
+              <div className="flex h-5 items-center px-1 text-xs font-medium text-muted-foreground">
                 {panel && !q ? (
                   <button type="button" aria-expanded={!!open} onMouseDown={noFocus} onClick={() => toggle(s.id)}
                     className="flex flex-1 items-center gap-0.5 text-left hover:text-foreground">
@@ -740,9 +715,9 @@ export function RotateControls({ board, value = 0 }) {
   };
   return (
     <div className={PAIR}>
-      <Tip title={withKey('Rotate 90 degrees', 'board.rotate')} {...CHROME}>
-        <Button variant="ghost" size="icon-sm" aria-label="Rotate 90 degrees" onClick={() => { board.rotate(90); board.focus(); }}><RotateCw /></Button>
-      </Tip>
+      <IconButton size="regular" label="Rotate 90 degrees" keybind="board.rotate" tip={CHROME} onClick={() => { board.rotate(90); board.focus(); }}>
+        <RotateCw />
+      </IconButton>
       <Tip title="Angle in degrees" {...CHROME}>
         <Input type="number" min={0} max={359} step={1} aria-label="Angle" value={text} className="h-8 w-16 px-2 text-sm"
           onFocus={() => { typing.current = true; }} onBlur={() => { typing.current = false; setText(String(Math.round(value))); }}
@@ -812,7 +787,7 @@ export function HeadSelect({ board, title, end, value, onChange }) {
     <Popover open={open} onOpenChange={setOpen}>
       <Tip title={title} {...CHROME}>
         <PopoverTrigger asChild>
-          <Button variant="outline" size="sm" aria-label={title} className="px-1.5"><HeadPreview kind={value} end={end} /></Button>
+          <SelectButton aria-label={title} className="gap-1 px-1.5"><HeadPreview kind={value} end={end} /></SelectButton>
         </PopoverTrigger>
       </Tip>
       <PopoverContent {...CHROME} className="grid w-auto grid-cols-4 gap-0.5 p-1" onOpenAutoFocus={(e) => e.preventDefault()} onCloseAutoFocus={refocus(board)}>
@@ -874,9 +849,7 @@ export function LabelControls({ board, value, set, align }) {
     <>
       <SizeSelect board={board} title="Label size" className="w-22" value={value.size} onChange={(size) => set({ size })} />
       <ColorSwatch board={board} title="Label colour" value={value.textColor} onChange={(textColor) => set({ textColor })} />
-      <Tip title="Bold" {...CHROME}>
-        <Toggle size="sm" aria-label="Bold label" pressed={!!value.bold} onPressedChange={() => set({ bold: !value.bold })}><Bold /></Toggle>
-      </Tip>
+      <IconButton size="regular" label="Bold label" pressed={!!value.bold} tip={CHROME} onClick={() => set({ bold: !value.bold })}><Bold /></IconButton>
       {align && <IconGroup value={value.align} items={ALIGNS} onChange={(a) => set({ align: a })} />}
       {align && <IconGroup value={value.valign} items={VALIGNS} onChange={(valign) => set({ valign })} />}
     </>
@@ -887,9 +860,7 @@ export function LabelControls({ board, value, set, align }) {
 export function PopoverButton({ board, title, icon, children }) {
   return (
     <Popover>
-      <Tip title={title} {...CHROME}>
-        <PopoverTrigger asChild><Button variant="ghost" size="icon-sm" aria-label={title}>{icon}</Button></PopoverTrigger>
-      </Tip>
+      <IconButton size="regular" label={title} slot={PopoverTrigger} tip={CHROME}>{icon}</IconButton>
       <PopoverContent {...CHROME} className="flex w-auto flex-wrap items-center gap-1 p-2" onOpenAutoFocus={(e) => e.preventDefault()}
         onCloseAutoFocus={refocus(board)}>
         {children}
@@ -907,8 +878,8 @@ export function LabelsPanel({ board, item }) {
   return (
     <div className="flex w-60 flex-col gap-1">
       {SLOTS.map(([s, name]) => (
-        <div key={s} className={cn('flex items-center gap-2 rounded-md px-1.5 py-1', s === slot && 'bg-accent')} onClick={() => setSlot(s)}>
-          <Switch checked={!!labels[s]} aria-label={`${name} label`} onCheckedChange={(on) => { setSlot(s); board.toggleLabel(s, on); }} />
+        <div key={s} className={cn('flex items-center gap-2 rounded-md px-1.5 py-1 hover:bg-accent/60', s === slot && 'bg-accent hover:bg-accent')} onClick={() => setSlot(s)}>
+          <Checkbox checked={!!labels[s]} aria-label={`${name} label`} onCheckedChange={(v) => { setSlot(s); board.toggleLabel(s, v === true); }} />
           <span className="flex-1 text-sm">{name}</span>
           <Button variant="ghost" size="xs" onClick={() => board.editLabel(item.id, s)}>Edit</Button>
         </div>

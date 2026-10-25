@@ -1,11 +1,10 @@
 import { useLayoutEffect, useRef } from 'react';
 import { AlignCenter, AlignLeft, AlignRight, ArrowLeftRight, Bold, Captions, Crop, MoveHorizontal, Palette, RouteOff, Scaling } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Toggle } from '@/components/ui/toggle';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { turns } from '../../../flow/shapes.mjs';
 import { fillable, NOTE_COLORS } from '../../../whiteboard.js';
-import { Tip } from '../Tip.jsx';
+import { IconButton, Tip } from '../Tip.jsx';
 import {
   CHROME, ColorSwatch, ConnectorControls, FillSelect, keepFocus, LabelControls, LabelsPanel, OptionSelect, PopoverButton, PresetRow, RotateControls,
   ShapePicker, SizeSelect, StrokeControls, useBoard, useSnapshot,
@@ -100,9 +99,7 @@ export function ItemControls({ board, item, group, mixed = [] }) {
       <>
         <ColorSwatch board={board} title="Text colour" value={item.color} onChange={(color) => set({ color })} />
         <SizeSelect board={board} title="Text size" className="w-22" value={item.size} onChange={(size) => set({ size })} />
-        <Tip title="Bold" {...CHROME}>
-          <Toggle size="sm" aria-label="Bold" pressed={!!item.bold} onPressedChange={() => set({ bold: !item.bold })}><Bold /></Toggle>
-        </Tip>
+        <IconButton size="regular" label="Bold" pressed={!!item.bold} tip={CHROME} onClick={() => set({ bold: !item.bold })}><Bold /></IconButton>
         <ToggleGroup type="single" size="sm" value={item.align} onValueChange={(align) => align && set({ align })}>
           {ALIGNS.map(([value, title, Icon]) => (
             <Tip key={value} title={title} {...CHROME}>
@@ -110,9 +107,9 @@ export function ItemControls({ board, item, group, mixed = [] }) {
             </Tip>
           ))}
         </ToggleGroup>
-        <Tip title="Fit the width to the text" {...CHROME}>
-          <Toggle size="sm" aria-label="Fit the width to the text" pressed={!!item.fit} onPressedChange={() => set({ fit: !item.fit })}><MoveHorizontal /></Toggle>
-        </Tip>
+        <IconButton size="regular" label="Fit the width to the text" pressed={!!item.fit} tip={CHROME} onClick={() => set({ fit: !item.fit })}>
+          <MoveHorizontal />
+        </IconButton>
         <OptionSelect board={board} title="Note colour" className="w-36" value={item.bg || 'none'}
           options={NOTE_COLORS.map(([v, label]) => [v || 'none', label, v])} onChange={(v) => set({ bg: v === 'none' ? null : v })} />
       </>
@@ -148,12 +145,10 @@ export function ItemControls({ board, item, group, mixed = [] }) {
         <PopoverButton board={board} title="Style presets" icon={<Palette />}><PresetRow set={set} connector /></PopoverButton>
         {one && (
           <>
-            <Tip title="Reverse" {...CHROME}>
-              <Button variant="ghost" size="icon-sm" aria-label="Reverse" onClick={act(() => board.reverseConnector())}><ArrowLeftRight /></Button>
-            </Tip>
-            <Tip title="Straighten (remove the bends)" {...CHROME}>
-              <Button variant="ghost" size="icon-sm" aria-label="Straighten" disabled={!item.points?.length} onClick={act(() => board.straighten())}><RouteOff /></Button>
-            </Tip>
+            <IconButton size="regular" label="Reverse" tip={CHROME} onClick={act(() => board.reverseConnector())}><ArrowLeftRight /></IconButton>
+            <IconButton size="regular" label="Straighten (remove the bends)" tip={CHROME} disabled={!item.points?.length} onClick={act(() => board.straighten())}>
+              <RouteOff />
+            </IconButton>
           </>
         )}
       </>
