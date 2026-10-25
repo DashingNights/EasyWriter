@@ -470,8 +470,6 @@ function AssistantSection({ value: a, onChange }) {
   const f = CLI[provider];
   const [keyField, modelField] = f ? [f.path, f.model] : [p.key, p.model];
   const [fresh, setFresh] = useState(0); // Check again: the CLI is asked again
-  const [guide, setGuide] = useState(null); // the writing guide's {path, home} (assistant-main.js writingGuide)
-  useEffect(() => { window.api.assistant.writingGuide().then(setGuide, () => setGuide(null)); }, []);
   useEffect(() => {
     if (!keyField) return undefined; // None: nothing to check
     let live = true;
@@ -558,9 +556,8 @@ function AssistantSection({ value: a, onChange }) {
         <Checkbox id="set-asst-guide" className="mt-0.5" checked={a.humanWriting !== false} onCheckedChange={(v) => savePermission({ humanWriting: v === true })} />
         <div className="grid gap-0.5">
           <Label htmlFor="set-asst-guide">Follow the human writing guide</Label>
-          <span className="max-w-[36rem] break-all text-xs text-muted-foreground">
-            {!guide ? 'The guide could not be read.' : guide.path === guide.home ? `Reads ${guide.path} at every message.`
-              : `${guide.home} is missing, so it uses the copy at ${guide.path}.`} The guide adds about 2,000 tokens to each request.
+          <span className="max-w-[36rem] text-xs text-muted-foreground">
+            Sends EasyWriter's writing guide with every message, on every provider. It adds about 2,000 tokens to each request.
           </span>
         </div>
       </div>

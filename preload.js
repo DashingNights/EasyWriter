@@ -68,7 +68,7 @@ contextBridge.exposeInMainWorld('api', {
     cancelChat: call('assistant.cancelChat'),
     cliRun: call('assistant.cliRun'), // {rid, prompt, system, session}: one Claude Code or Codex turn (SPEC §7i Coding CLIs)
     cliTest: call('assistant.cliTest'), // the dialog's fields → {ok, tools, reply, code, message}
-    writingGuide: call('assistant.writingGuide'), // {text, path, home}: HUMAN-WRITING.md, or the bundled copy while it is missing
+    writingGuide: call('assistant.writingGuide'), // the text of EasyWriter's writing guide (src/assistant/human-writing.md)
     /** Install progress, server status and chat stream events (`assistant.event`); returns the unsubscribe function. */
     onEvent: (fn) => {
       const listener = (_e, p) => fn(p);

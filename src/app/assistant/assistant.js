@@ -59,8 +59,8 @@ export async function saveAssistant(patch) {
 /** Whether the chat can run: installed (or a server URL, or a Claude Code or Codex that is ready) and nothing missing. */
 export const usable = (status) => !!status?.ready && (!!status.url || !!status.cli || assistantSettings().installed);
 /** The writing guide's text for the turn's system prompt (prompts.mjs GUIDE_RULE), read at every turn; '' while Settings turns it
- * off or neither file can be read. */
-export const writingGuide = () => (assistantSettings().humanWriting ? api.assistant.writingGuide().then((g) => g.text, () => '') : Promise.resolve(''));
+ * off or the file cannot be read. */
+export const writingGuide = () => (assistantSettings().humanWriting ? api.assistant.writingGuide().catch(() => '') : Promise.resolve(''));
 /** Whether `provider` runs its turns on the user's Claude Code or Codex (SPEC §7i Coding CLIs). */
 export const isCli = (provider = assistantSettings().provider) => provider === 'claude' || provider === 'codex';
 

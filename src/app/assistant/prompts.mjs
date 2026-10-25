@@ -19,8 +19,8 @@ export const STYLE_RULE = [
   '- Say a thing once, with no stacked intensifiers. Bad: "really very important". Good: "important".',
   '- No filler openers or hedges. Bad: "Great question! It\'s worth noting that the map is wide." Good: "The map is wide."',
 ].join('\n');
-// The user's writing guide (HUMAN-WRITING.md, 2026-10-25), its own section after STYLE_RULE while settings.assistant.humanWriting
-// is on. It shapes prose only, so this line keeps the calls as the tools need them.
+// EasyWriter's writing guide (src/assistant/human-writing.md, taken from the user's HUMAN-WRITING.md on 2026-10-25), its own section
+// after STYLE_RULE while settings.assistant.humanWriting is on. It shapes prose only, so this line keeps the calls as the tools need them.
 export const GUIDE_RULE = 'The writing guide below applies to the prose you write: your replies and the text you put in a draft or on a board. '
   + 'It never changes tool names, argument names, ids, paths, numbers, JSON or any other value a tool needs.';
 // While view_render is offered (wave 2: the editor and board sets), both families.

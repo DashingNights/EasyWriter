@@ -6,7 +6,6 @@
 // runtime (downloads, llama-server, MTP, degrade steps, sleep, idle unload, power events) is commented out at the end of this
 // file, the module as it was, so uncommenting that part (and dropping this one) brings it back.
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
 const { app } = require('electron');
 const agentServer = require('./agent-server.js');
@@ -280,20 +279,11 @@ function cliTest(over = {}) {
   });
 }
 
-// The writing guide (2026-10-25): the user's HUMAN-WRITING.md, which Claude Code, Codex and OpenCode load too, read at every turn
-// so an edit reaches the next one; the copy bundled with the app while that file is missing (prompts.mjs GUIDE_RULE).
-const GUIDE = path.join(os.homedir(), '.claude', 'HUMAN-WRITING.md');
-const GUIDE_COPY = path.join(__dirname, 'assistant', 'human-writing.md');
-let guideFrom = '';
-
-/** {text, path, home}: the guide's text, the file it came from and the user's file; logs the file when it changes. */
-async function writingGuide() {
-  let file = GUIDE;
-  let text = await fs.promises.readFile(file, 'utf8').catch(() => null);
-  if (text == null) text = await fs.promises.readFile(file = GUIDE_COPY, 'utf8');
-  if (file !== guideFrom) console.log(`assistant: writing guide from ${guideFrom = file}`);
-  return { text, path: file, home: GUIDE };
-}
+// The writing guide (prompts.mjs GUIDE_RULE): EasyWriter's own, shipped with the app, so every user and every provider gets the
+// same one and nothing is read from the user's home folder (the user, 2026-10-25: "what if another user downloads the app").
+// Read at every turn, so an edit to the file reaches a dev build's next message without a restart.
+const GUIDE = path.join(__dirname, 'assistant', 'human-writing.md');
+const writingGuide = () => fs.promises.readFile(GUIDE, 'utf8');
 
 /** Registers the assistant.* channels through main.js's handle(). The local runtime's channels answer that it is off (install,
  * delete) or do nothing (warm, stop), so an older caller never hangs. */
