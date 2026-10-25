@@ -123,7 +123,7 @@ function Palette({ board, at }) {
             {assist ? (
               <CommandEmpty className="p-1">
                 <div role="option" aria-selected data-resolve onMouseDown={(e) => e.preventDefault()} onClick={() => resolve(query)}
-                  className="flex cursor-default items-center gap-2 rounded-sm bg-accent px-2 py-1.5 text-sm text-accent-foreground select-none [&_svg]:size-4 [&_svg]:shrink-0 [&_svg]:text-muted-foreground">
+                  className="flex cursor-default items-center gap-2 rounded-sm bg-accent/60 px-2 py-1.5 text-sm text-accent-foreground select-none [&_svg]:size-4 [&_svg]:shrink-0 [&_svg]:text-muted-foreground">
                   <MessageSquare />Resolve with assistant
                 </div>
               </CommandEmpty>
@@ -135,7 +135,7 @@ function Palette({ board, at }) {
                     {x.icon}
                     <span className="truncate">{x.label}</span>
                     <span className="ml-auto flex shrink-0 items-center gap-2">
-                      {x.options && <span className="text-xs text-muted-foreground">Tab: options</span>}
+                      {x.options && <span className="text-xs text-muted-foreground">Tab for options</span>}
                       {shortcutOf(x) && <CommandShortcut className="ml-0">{shortcutOf(x)}</CommandShortcut>}
                     </span>
                   </CommandItem>
@@ -176,7 +176,7 @@ function OptionsPanel({ entry, ctx }) {
       <PopoverContent {...CHROME} data-tool-options="" side="bottom" align="start" sideOffset={GAP} collisionPadding={{ top: TOP, right: PAD, bottom: PAD, left: PAD }} className="flex w-auto flex-col gap-1.5 p-2"
         onOpenAutoFocus={(e) => e.preventDefault()} onCloseAutoFocus={(e) => e.preventDefault()}
         onFocusOutside={(e) => e.preventDefault()} onEscapeKeyDown={(e) => e.stopPropagation()}>
-        <div className="flex items-center gap-1.5 px-0.5 text-xs font-medium text-muted-foreground [&_svg]:size-3.5">{entry.icon}{entry.label}</div>
+        <div className="flex items-center gap-1.5 px-0.5 text-sm font-semibold [&_svg]:size-3.5 [&_svg]:text-muted-foreground">{entry.icon}{entry.label}</div>
         <div className="flex items-center gap-1">{applies && entry.options(c)}</div>
       </PopoverContent>
     </Popover>

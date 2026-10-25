@@ -45,7 +45,7 @@ export function LayersPanel({ board, className, style }) {
       className={cn('absolute left-[3.5rem] z-30 flex flex-col overflow-y-auto rounded-island border bg-island p-1 text-sm shadow-xl [scrollbar-width:thin] [scrollbar-color:var(--border)_transparent]', open ? 'w-60' : 'w-fit', className)}>
       <button type="button" aria-expanded={open} aria-label={open ? 'Hide layers' : 'Show layers'}
         onClick={() => { toggleLayers(); board.focus(); }}
-        className="flex items-center gap-1 rounded-md py-1 pr-2 text-xs font-medium text-muted-foreground hover:bg-accent/60 hover:text-foreground">
+        className="flex items-center gap-1 rounded-md py-1 pr-2 text-sm font-semibold hover:bg-accent/60">
         <span className="flex w-5 shrink-0 justify-center"><Chevron className="size-3.5" /></span>
         Layers
       </button>

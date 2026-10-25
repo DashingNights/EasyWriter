@@ -90,8 +90,8 @@ export function DraftMenu() {
     tr.insertText(w, from, to);
     return true;
   }));
-  const item = (label, icon, shortcut, fn, enabled = true) => (
-    <DropdownMenuItem key={label} disabled={!enabled} onSelect={() => (picked.current = fn)}>{icon}{label}<DropdownMenuShortcut>{shortcut}</DropdownMenuShortcut></DropdownMenuItem>
+  const item = (label, icon, shortcut, fn, enabled = true, variant) => (
+    <DropdownMenuItem key={label} variant={variant} disabled={!enabled} onSelect={() => (picked.current = fn)}>{icon}{label}<DropdownMenuShortcut>{shortcut}</DropdownMenuShortcut></DropdownMenuItem>
   );
   const tool = (key, label, icon = T[key].children) => item(label, icon, keyLabel(T[key].keyId), T[key].onClick, !T[key].disabled);
   const runPicked = (e) => {
@@ -100,10 +100,11 @@ export function DraftMenu() {
     picked.current = null;
     fn?.();
   };
-  // The node-selected block's actions, as the tool search lists them (tool-rank.mjs), Delete apart at the end.
+  // The node-selected block's actions, as the tool search lists them (tool-rank.mjs), Delete apart at the end, in red.
   const tools = c.block?.kind && listTools(c);
   const block = tools && BLOCK_SECTIONS[c.block.kind][1].map((id) => tools.find((t) => t.id === id && t.run)).filter(Boolean)
-    .map((t) => ({ ...t, el: item(t.label, t.icon, entryKey(t), () => t.run(toolContext(null))) }));
+    .map((t) => ({ ...t, el: item(t.label, t.icon, entryKey(t), () => t.run(toolContext(null)), true,
+      t.risk === 'destructive' ? 'destructive' : undefined) }));
   const link = menu.linkURL && ed.isActive('link') ? menu.linkURL : null;
   const selected = !ed.state.selection.empty;
   const { canCut, canCopy, canPaste } = menu.editFlags;

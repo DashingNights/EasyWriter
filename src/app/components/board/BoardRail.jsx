@@ -31,7 +31,7 @@ import {
 import { LayersPanel, toggleLayers } from './LayersPanel.jsx';
 
 const BASIC = KINDS.filter((k) => k.group === 'basic'); // the quick tools' shapes (§7d), two rows of 7
-const ACTIVE = 'size-8 data-[state=on]:bg-(--ui-accent) data-[state=on]:text-white hover:data-[state=on]:bg-(--ui-accent) hover:data-[state=on]:text-white';
+const ACTIVE = 'size-8 data-[state=on]:bg-(--ui-accent) data-[state=on]:text-white hover:data-[state=on]:bg-(--ui-accent) hover:data-[state=on]:text-white'; // the active board tool: the only use of the rail's blue
 const SNAP_RULES = [['items', 'Other items'], ['board', 'Board edges and centre'], ['grid', '10 px grid', 'board.grid']]; // the third: its keybind (§7k)
 const CHECKER = 'repeating-conic-gradient(#8a8ca0 0 25%, #d0d0da 0 50%) 0 0 / 8px 8px';
 
@@ -50,14 +50,14 @@ function usePopup() {
   return anchor ? { side: 'bottom', align: 'start' } : { side, align: 'start', sideOffset: 10 };
 }
 
-/** One fixed rail slot: an icon button, or a toggle when `active` is given. `slot` (PopoverAnchor / PopoverTrigger /
- * DropdownMenuTrigger) wraps the button for its flyout. */
-function RailButton({ title, active, disabled, onClick, slot: Slot, children }) {
+/** One fixed rail slot: an icon button, or a toggle when `active` is given; `tool`: a board tool, blue while active. `slot`
+ * (PopoverAnchor / PopoverTrigger / DropdownMenuTrigger) wraps the button for its flyout. */
+function RailButton({ title, active, tool, disabled, onClick, slot: Slot, children }) {
   const { side, anchor, toolAnchor, off } = useContext(RailLayout);
   const props = { 'aria-label': title, disabled: disabled || off };
   let button = active === undefined
     ? <Button variant="ghost" size="icon-sm" onClick={onClick} {...props}>{children}</Button>
-    : <Toggle size="sm" className={ACTIVE} pressed={active && !off} onPressedChange={() => onClick()} {...props}>{children}</Toggle>;
+    : <Toggle size="sm" className={tool ? ACTIVE : 'size-8'} pressed={active && !off} onPressedChange={() => onClick()} {...props}>{children}</Toggle>;
   // In the island a popover is anchored to the whole island instead of the button.
   const island = anchor && (Slot === PopoverAnchor || Slot === PopoverTrigger);
   if (Slot && !(island && Slot === PopoverAnchor)) button = <Slot asChild>{button}</Slot>;
@@ -226,7 +226,7 @@ function BoardSlots({ board }) {
   const layers = useStore((s) => s.settings?.layersPanel ?? true);
   const showTool = (m) => mode === m && !bar && (inIsland || !quickHere);
   const kindButton = (k) => (
-    <RailButton key={k.kind} title={withKey(k.label, SHAPE_KEYS[k.kind])} active={mode === 'shape' && !snap.prefab && snap.shape.shape === k.kind}
+    <RailButton key={k.kind} tool title={withKey(k.label, SHAPE_KEYS[k.kind])} active={mode === 'shape' && !snap.prefab && snap.shape.shape === k.kind}
       onClick={act(() => armTile(board, { kind: k.kind }))}><ShapeIcon shape={k.kind} /></RailButton>
   );
 
@@ -253,21 +253,21 @@ function BoardSlots({ board }) {
         <Group first>
           {!bar && <RailButton title={withKey('Undo', 'edit.undo')} disabled={!snap.canUndo} onClick={act(() => board.undo())}><Undo2 /></RailButton>}
           {!bar && <RailButton title={withKey('Redo', 'edit.redo')} disabled={!snap.canRedo} onClick={act(() => board.redo())}><Redo2 /></RailButton>}
-          <RailButton title={withKey('Add image', 'board.image')} active={mode === 'image'} onClick={act(() => (mode === 'image' ? board.setMode(null) : board.pickImages()))}><ImagePlus /></RailButton>
+          <RailButton tool title={withKey('Add image', 'board.image')} active={mode === 'image'} onClick={act(() => (mode === 'image' ? board.setMode(null) : board.pickImages()))}><ImagePlus /></RailButton>
         </Group>
       )}
       <Group first={inIsland}>
-        <RailButton title={withKey('Select', 'board.select')} active={!mode}
+        <RailButton tool title={withKey('Select', 'board.select')} active={!mode}
           onClick={act(() => { if (mode) board.setMode(null); if (inIsland) closeQuickTools(); })}><MousePointer2 /></RailButton>
-        <RailButton title={withKey('Add text', 'board.text')} active={mode === 'text'} onClick={tool('text')}><Type /></RailButton>
+        <RailButton tool title={withKey('Add text', 'board.text')} active={mode === 'text'} onClick={tool('text')}><Type /></RailButton>
         <Popover open={showTool('pen')}>
-          <RailButton title={withKey('Pen', 'board.pen')} active={mode === 'pen'} onClick={tool('pen')} slot={PopoverAnchor}><Pen /></RailButton>
+          <RailButton tool title={withKey('Pen', 'board.pen')} active={mode === 'pen'} onClick={tool('pen')} slot={PopoverAnchor}><Pen /></RailButton>
           <ToolFlyout board={board}>{strokes}</ToolFlyout>
         </Popover>
         {/* The eraser removes whole strokes it crosses: it has no settings, so no options flyout. */}
-        <RailButton title={withKey('Eraser', 'board.eraser')} active={mode === 'eraser'} onClick={tool('eraser')}><Eraser /></RailButton>
+        <RailButton tool title={withKey('Eraser', 'board.eraser')} active={mode === 'eraser'} onClick={tool('eraser')}><Eraser /></RailButton>
         <Popover open={showTool('shape')}>
-          <RailButton title={withKey('Shape', 'board.shape')} active={mode === 'shape'} onClick={tool('shape')} slot={PopoverAnchor}><Shapes /></RailButton>
+          <RailButton tool title={withKey('Shape', 'board.shape')} active={mode === 'shape'} onClick={tool('shape')} slot={PopoverAnchor}><Shapes /></RailButton>
           <ToolFlyout board={board}>
             {/* The island already shows the shapes and the ribbon the styles, so its card has no shape list and no presets (§7d). */}
             <ShapeControls board={board} value={snap.shape} set={(p) => board.setShapeTool(p)} live strokeFirst={inIsland} picker={!inIsland} />
@@ -275,7 +275,7 @@ function BoardSlots({ board }) {
           </ToolFlyout>
         </Popover>
         <Popover open={showTool('connector')}>
-          <RailButton title={withKey('Connector', 'board.connector')} active={mode === 'connector'} onClick={tool('connector')} slot={PopoverAnchor}><Spline /></RailButton>
+          <RailButton tool title={withKey('Connector', 'board.connector')} active={mode === 'connector'} onClick={tool('connector')} slot={PopoverAnchor}><Spline /></RailButton>
           <ToolFlyout board={board}>
             <ConnectorControls board={board} value={snap.conn} set={(p) => board.setConnTool(p)} live strokeFirst={inIsland} />
             {!inIsland && <PresetRow set={(p) => board.setConnTool(p)} connector />}

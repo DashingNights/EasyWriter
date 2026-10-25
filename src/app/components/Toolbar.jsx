@@ -12,7 +12,6 @@ import {
 import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
-import { Toggle } from '@/components/ui/toggle';
 import { FONT_SIZES, TEXT_COLORS, HIGHLIGHTS, FONTS } from '../../extensions.js';
 import { canvasEditor } from '../../canvas.js';
 import { addImageFilesToEditor } from '../../whiteboard.js';
@@ -26,7 +25,7 @@ import { keyLabel, withKey } from '../keybinds.js';
 import { BAR, BoardTools, RailLayout } from './board/BoardRail.jsx';
 import { CHROME, keepFocus as keepBoardFocus, useBoard, useSnapshot } from './board/controls.jsx';
 import { getState, useEditor, useStore } from '../store.js';
-import { Tip } from './Tip.jsx';
+import { IconButton, Tip } from './Tip.jsx';
 
 // Swatch colours: the forum's (SPEC §1), root, soft and hard in the page theme's (page.css).
 const HUE = {
@@ -111,13 +110,11 @@ export function textTools(ed) {
 
 /** Icon button (26 px high, 24 px wide: the whole bar fits one row); a toggle with pressed state when `active` is given. */
 export function ToolButton({ title, onClick, active, disabled, children }) {
-  const common = { 'aria-label': title, disabled, onMouseDown: keepFocus };
   return (
-    <Tip title={title}>
-      {active === undefined
-        ? <Button variant="ghost" size="icon-sm" className={typeof children === 'string' ? 'w-auto px-1.5' : 'w-7.5'} onClick={onClick} {...common}>{children}</Button>
-        : <Toggle size="sm" className="min-w-7.5" pressed={!!active} onPressedChange={() => onClick()} {...common}>{children}</Toggle>}
-    </Tip>
+    <IconButton size="regular" label={title} pressed={active === undefined ? undefined : !!active} disabled={disabled} onMouseDown={keepFocus}
+      onClick={onClick} className={typeof children === 'string' ? 'w-auto px-1.5' : 'w-7.5'}>
+      {children}
+    </IconButton>
   );
 }
 
@@ -165,19 +162,19 @@ export function Swatches({ swatches, onPick }) {
   return (
     <div className="grid grid-cols-5 gap-1.5">
       {swatches.map((s) => (
-        <button
-          key={s.key}
-          type="button"
-          title={s.label}
-          aria-label={s.label}
-          onMouseDown={keepFocus}
-          onClick={() => { onPick?.(); s.pick(); }}
-          className={cn('size-6.5 rounded-sm', s.active ? 'ring-2 ring-foreground ring-offset-1 ring-offset-popover' : 'ring-1 ring-foreground/25 ring-inset',
-            !s.color && 'border border-dashed border-muted-foreground text-muted-foreground')}
-          style={s.color ? { background: s.color } : undefined}
-        >
-          {s.color ? null : <Ban className="m-auto size-3.5" aria-label="None" />}
-        </button>
+        <Tip key={s.key} title={s.label}>
+          <button
+            type="button"
+            aria-label={s.label}
+            onMouseDown={keepFocus}
+            onClick={() => { onPick?.(); s.pick(); }}
+            className={cn('size-6.5 rounded-sm', s.active ? 'ring-2 ring-foreground ring-offset-1 ring-offset-popover' : 'ring-1 ring-foreground/25 ring-inset',
+              !s.color && 'border border-dashed border-muted-foreground text-muted-foreground')}
+            style={s.color ? { background: s.color } : undefined}
+          >
+            {s.color ? null : <Ban className="m-auto size-3.5" aria-label="None" />}
+          </button>
+        </Tip>
       ))}
     </div>
   );
@@ -190,14 +187,11 @@ export function SwatchMenu({ title, icon, bar, swatches, side, anchor, disabled 
   return (
     <Popover open={open} onOpenChange={setOpen}>
       {anchor && <PopoverAnchor virtualRef={anchor} />}
-      <Tip title={title} side={side}>
-        <PopoverTrigger asChild>
-          <Button variant="ghost" size="icon-sm" aria-label={title} disabled={disabled} onMouseDown={keepFocus} className={cn('flex-col gap-0.5', !side && 'w-7.5')}>
-            {icon}
-            <span className="h-[3px] w-4 rounded-sm ring-1 ring-foreground/25" style={{ background: bar }} />
-          </Button>
-        </PopoverTrigger>
-      </Tip>
+      <IconButton size="regular" label={title} slot={PopoverTrigger} tip={{ side }} disabled={disabled} onMouseDown={keepFocus}
+        className={cn('flex-col gap-0.5', !side && 'w-7.5')}>
+        {icon}
+        <span className="h-[3px] w-4 rounded-sm ring-1 ring-foreground/25" style={{ background: bar }} />
+      </IconButton>
       <PopoverContent side={side} align={(side || anchor) && 'start'} sideOffset={side && 10} className="w-auto p-2"
         onOpenAutoFocus={keepFocus} onCloseAutoFocus={refocusEditor}>
         <Swatches swatches={swatches} onPick={() => setOpen(false)} />
@@ -250,7 +244,7 @@ export function PresetsMenu({ disabled }) {
     <DropdownMenu>
       <Tip title={presetsTitle()}>
         <DropdownMenuTrigger asChild disabled={disabled}>
-          <Button variant="ghost" size="sm" aria-label="Font presets" disabled={disabled} onMouseDown={keepFocus}><Palette /><ChevronDown /></Button>
+          <Button variant="ghost" size="sm" aria-label="Font presets" disabled={disabled} onMouseDown={keepFocus}><Palette /><ChevronDown className="opacity-50" /></Button>
         </DropdownMenuTrigger>
       </Tip>
       <DropdownMenuContent align="start" onCloseAutoFocus={refocusEditor}>
