@@ -115,11 +115,13 @@ const deletedBlocks = (old, id) => (view) => {
   return box;
 };
 const textOf = (j) => (j?.type === 'text' ? j.text ?? '' : (j?.content ?? []).map(textOf).join(j?.type === 'paragraph' || j?.type === 'heading' ? '' : ' '));
-const deletedWords = (text, id) => (view) => {
-  const s = el(view, 'span', 'sg-del', text);
+// Deleted words at their place; `pid` (a place's id) and `cls` (' sg-place', ' sg-active') when the change is decided by place.
+const deletedWords = (text, id, pid = null, cls = '') => (view) => {
+  const s = el(view, 'span', `sg-del${cls}`, text);
   s.contentEditable = 'false';
   s.spellcheck = false;
   s.dataset.sg = id;
+  if (pid) s.dataset.sgp = pid;
   return s;
 };
 
@@ -169,6 +171,21 @@ function decorate(state, active) {
       if (old && old.textContent === n.textContent && (old.type !== n.type || old.attrs.level !== n.attrs.level)) out.push(Decoration.inline(at, end, attrs('sg-fmt')));
     });
     if (e.kind !== 'replace') continue;
+    // A change decided place by place: each place carries its id (data-sgp), for its card's hover and the active one.
+    const ps = core.places(e, schema);
+    if (ps.length) {
+      for (const p of ps) {
+        const cls = ` sg-place${p.id === active ? ' sg-active' : ''}`;
+        const pattrs = (c) => ({ class: c + cls, 'data-sg': e.id, 'data-sgp': p.id });
+        if (p.kind === 'fmt') {
+          out.push(Decoration.inline(p.from, p.to, pattrs('sg-fmt')));
+          continue;
+        }
+        if (p.gone.trim()) out.push(Decoration.widget(p.from, deletedWords(p.gone, e.id, p.id, cls), { side: -1, key: `sgw:${p.id}:${p.gone}:${cls}`, marks: [], ignoreSelection: true }));
+        if (p.to > p.from && p.added.trim()) out.push(Decoration.inline(p.from, p.to, pattrs('sg-add')));
+      }
+      continue;
+    }
     core.diff(e, doc, schema).forEach((c, k) => {
       if (c.kind === 'del') out.push(Decoration.widget(c.from, deletedWords(c.text, e.id), { side: -1, key: `sgw:${e.id}:${k}:${c.text}:${on}`, marks: [], ignoreSelection: true }));
       else if (c.to > c.from) out.push(Decoration.inline(c.from, c.to, attrs(c.kind === 'add' ? 'sg-add' : 'sg-fmt')));
@@ -262,6 +279,7 @@ const log = []; // this session's decisions, the last 200
 /** Accepts or rejects (`action`) the changes `sel` picks ({ids} | {group} | {all: true}) in `editor`, one transaction and one undo
  * step; logs {draftId, ids, g, author, by, action, at} per group. `by`: who decided (a source). → the ids it resolved. */
 export function resolve(editor, sel, action, { by = null, draftId = null } = {}) {
+  if (sel?.places?.length) return resolvePlaces(editor, sel.places, action, { by, draftId });
   const all = core.entries(editor.state.doc);
   const picked = sel?.all ? all : sel?.group ? all.filter((e) => e.g === sel.group) : all.filter((e) => sel?.ids?.includes(e.id));
   if (!picked.length) return [];
@@ -275,6 +293,22 @@ export function resolve(editor, sel, action, { by = null, draftId = null } = {})
   }
   log.splice(0, Math.max(0, log.length - 200));
   return ids;
+}
+
+// Places `pids` (core.places ids) of `editor`'s changes, accepted or rejected in one transaction; logged per group like a change.
+function resolvePlaces(editor, pids, action, { by, draftId }) {
+  const { state } = editor;
+  const picked = core.items(state.doc, state.schema).filter((it) => it.place && pids.includes(it.id));
+  if (!picked.length) return [];
+  const tr = (action === 'reject' ? core.rejectPlaces : core.acceptPlaces)(state, picked.map((it) => it.id));
+  if (tr) editor.view.dispatch(tr);
+  const at = Date.now();
+  for (const g of new Set(picked.map((it) => it.e.g))) {
+    const mine = picked.filter((it) => it.e.g === g);
+    log.push({ draftId, ids: mine.map((it) => it.id), g, author: mine[0].e.by, by, action, at });
+  }
+  log.splice(0, Math.max(0, log.length - 200));
+  return picked.map((it) => it.id);
 }
 
 /** This session's decisions, oldest first. */

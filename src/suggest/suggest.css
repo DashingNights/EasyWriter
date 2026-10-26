@@ -79,9 +79,11 @@
   border-radius: 4px;
   font-size: 0.85em;
 }
-/* The active change, and a change whose block is hovered: the stronger fill over the whole block (the unit of accept). */
-.page .ProseMirror :is(.sg-add, .sg-del-block, .sg-fmt).sg-active,
-.page .ProseMirror .sg-block:has(:is(.sg-add, .sg-del, .sg-fmt):hover) :is(.sg-add, .sg-fmt),
+/* The active change, and a change whose block is hovered: the stronger fill over the whole block (the unit of accept). A change
+   decided place by place (core.places, .sg-place) raises only the hovered or active place. */
+.page .ProseMirror :is(.sg-add, .sg-del, .sg-del-block, .sg-fmt).sg-active,
+.page .ProseMirror .sg-block:has(:is(.sg-add, .sg-del, .sg-fmt):not(.sg-place):hover) :is(.sg-add, .sg-fmt):not(.sg-place),
+.page .ProseMirror :is(.sg-add, .sg-del, .sg-fmt).sg-place:hover,
 .page .ProseMirror .sg-del-block:hover {
   background: var(--sg-fill-active);
 }

@@ -17,21 +17,23 @@ import { saveAssistant } from '../app/assistant/assistant.js';
 import { IconButton } from '../app/components/Tip.jsx';
 import { can } from '../app/gates.mjs';
 import { useStore } from '../app/store.js';
-import { describe } from './core.mjs';
+import { describe, places } from './core.mjs';
 import { groupNotes } from './extension.js';
 
-// The review UI of agent edits waiting as suggestions (docs/plans/suggestions.md Display, Keys): one card per change right of
-// the page, each pinned beside the yellow text it describes, and the status bar's slot. App chrome outside #page-wrap, so the
-// page zoom never scales it. Agents cannot press any of it (data-agent-deny): the suggestions.* commands are theirs. Clicks
-// never take the focus from the editor; Escape gives it back.
+// The review UI of agent edits waiting as suggestions (docs/plans/suggestions.md Display, Keys): one card per decision right of
+// the page, each pinned beside the yellow text it describes, and the status bar's slot. A decision is a change, or one place of
+// a change decided place by place (core.places: a rewritten paragraph's word changes, each with its own card, the user,
+// 2026-10-26). App chrome outside #page-wrap, so the page zoom never scales it. Agents cannot press any of it (data-agent-deny):
+// the suggestions.* commands are theirs. Clicks never take the focus from the editor; Escape gives it back.
 
 const keepFocus = (e) => e.preventDefault();
 const clock = (t) => new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 const nameOf = (by) => (by === 'agent:assistant' ? 'Assistant' : `Agent: ${String(by ?? 'agent').replace(/^agent:/, '')}`);
 const cut = (s, n) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
 const GAP = 8;
-// Page setup first, at the sheet's top; a deleted block's widget draws above the block that starts at its position.
-const order = (e) => (e.kind === 'attr' ? -1 : e.kind === 'delete' ? e.from - 0.5 : e.from);
+// Page setup first, at the sheet's top; a deleted block's widget draws above the block that starts at its position; a place at its
+// words.
+const order = ({ e, place }) => (place ? place.from : e.kind === 'attr' ? -1 : e.kind === 'delete' ? e.from - 0.5 : e.from);
 
 /** Turns settings.assistant.autoApproveEdits on or off (the status bar popover, Settings, tool search). */
 const setAutoApprove = (on) => saveAssistant({ autoApproveEdits: on === true });
@@ -50,9 +52,16 @@ function lineTop(el) {
   return el.getBoundingClientRect().top;
 }
 
-/** The screen top of change `e` in editor `ed`: its first block's first line (an object: its box), its deleted-block widget's
- * first line, or the sheet's top for page setup. */
-function topOf(ed, e, sheet) {
+/** The screen top of decision `it` in editor `ed`: a place's line; a change's first block's first line (an object: its box), its
+ * deleted-block widget's first line, or the sheet's top for page setup. */
+function topOf(ed, { e, place }, sheet) {
+  if (place) {
+    try {
+      return ed.view.coordsAtPos(Math.min(place.from, ed.state.doc.content.size)).top;
+    } catch {
+      return null;
+    }
+  }
   if (e.kind === 'attr') return sheet.top;
   if (e.kind === 'delete') {
     const w = ed.view.dom.querySelector(`.sg-del-block[data-sg="${e.id}"]`);
@@ -74,25 +83,24 @@ const decide = (p) => Promise.resolve(p).then(() => setTimeout(() => {
   if (!document.activeElement || document.activeElement === document.body) refocusEditor();
 }));
 
-/** The CSS of the hovered or focused card {id, g}: its change's fill raised on the page, as hovering the change itself does
- * (suggest.css), and the other cards of the same request tinted. */
-const hotCss = (h) => (/^[\w-]+$/.test(h?.id ?? '') && /^[\w-]+$/.test(h?.g ?? '')
-  ? `.page .ProseMirror [data-sg="${h.id}"]:is(.sg-add, .sg-fmt, .sg-del-block) { background: var(--sg-fill-active); }
-.page .ProseMirror [data-sg="${h.id}"]:is(.sg-node, .sg-fmt-block) { outline-style: solid; }
-[data-sg-layer] [data-sg-group="${h.g}"]:not([data-sg-card="${h.id}"]) { background: color-mix(in oklab, var(--suggest) 12%, var(--card)); }`
-  : '');
+/** The CSS of the hovered or focused card {id, place}: its change's or its place's fill raised on the page, as hovering the words
+ * themselves does (suggest.css). The other cards stay as they are (the user, 2026-10-26: no tint over them). */
+const hotCss = (h) => (!/^[\w-]+$/.test(h?.id ?? '') ? ''
+  : h.place ? `.page .ProseMirror [data-sgp="${h.id}"]:is(.sg-add, .sg-fmt, .sg-del) { background: var(--sg-fill-active); }`
+    : `.page .ProseMirror [data-sg="${h.id}"]:is(.sg-add, .sg-fmt, .sg-del-block) { background: var(--sg-fill-active); }
+.page .ProseMirror [data-sg="${h.id}"]:is(.sg-node, .sg-fmt-block) { outline-style: solid; }`);
 
-/** One change's card: who and when, Accept and Reject for this change, then what it does (a click shows it on the page). `g`
- * is set on the first card of its group in document order: that card also holds the request (the note), the group's metadata
- * rows and, for a request of more than one change, Accept all and Reject all. */
-const ChangeCard = memo(({ e, g, notes, on, schema, setHot, className, ...props }) => {
+/** One decision's card (`it`: a change, or a place of one): who and when, Accept and Reject for it, then what it does (a click
+ * shows it on the page). `g` is set on the first card of its group in document order: that card also holds the request (the
+ * note), the group's metadata rows and, for a request of more than one decision (`n`), Accept all and Reject all. */
+const ChangeCard = memo(({ it, g, n, notes, on, schema, setHot, className, ...props }) => {
+  const { e, place } = it;
   const name = nameOf(e.by);
-  const text = describe(e, schema);
-  const n = g?.changes.length ?? 0;
+  const text = place ? place.text : describe(e, schema);
   const note = g?.note ? ` (${cut(g.note, 60)})` : '';
-  const hot = { id: e.id, g: e.g };
+  const hot = { id: it.id, place: !!place };
   return (
-    <Card data-sg-card={e.id} data-sg-group={e.g} role="region" aria-label={`Suggestion from ${name}, ${text}`} onMouseDown={keepFocus}
+    <Card data-sg-card={it.id} data-sg-change={e.id} data-sg-group={e.g} role="region" aria-label={`Suggestion from ${name}, ${text}`} onMouseDown={keepFocus}
       onMouseEnter={() => setHot(hot)} onMouseLeave={() => setHot(null)} onFocus={() => setHot(hot)} onBlur={() => setHot(null)}
       className={cn('w-[17rem] gap-0 rounded-island border-suggest/50 py-2 text-sm shadow-xl',
         on && 'ring-2 ring-suggest', className)} {...props}>
@@ -100,11 +108,11 @@ const ChangeCard = memo(({ e, g, notes, on, schema, setHot, className, ...props 
         <Badge variant="secondary" className="min-w-0"><Bot /><span className="truncate">{name}</span></Badge>
         <span className="text-xs text-muted-foreground tabular-nums">{clock(e.at)}</span>
         <span className="ml-auto flex">
-          <IconButton label="Accept" keybind="suggest.accept" aria-label={`Accept change, ${text}`} onClick={() => decide(acceptChange(e.id))}><Check /></IconButton>
-          <IconButton label="Reject" keybind="suggest.reject" aria-label={`Reject change, ${text}`} onClick={() => decide(rejectChange(e.id))}><X /></IconButton>
+          <IconButton label="Accept" keybind="suggest.accept" aria-label={`Accept change, ${text}`} onClick={() => decide(acceptChange(it.id))}><Check /></IconButton>
+          <IconButton label="Reject" keybind="suggest.reject" aria-label={`Reject change, ${text}`} onClick={() => decide(rejectChange(it.id))}><X /></IconButton>
         </span>
       </div>
-      <button type="button" data-sg-show="" onClick={() => showSuggestion(e.id)}
+      <button type="button" data-sg-show="" onClick={() => showSuggestion(it.id)}
         className="mx-1.5 mt-1 rounded-sm px-1.5 py-0.5 text-left break-words outline-none focus-visible:ring-2 focus-visible:ring-ring">{text}</button>
       {g && (g.note || notes?.length > 0 || n > 1) && (
         <div data-sg-request="">
@@ -121,15 +129,15 @@ const ChangeCard = memo(({ e, g, notes, on, schema, setHot, className, ...props 
       )}
     </Card>
   );
-}, (a, b) => a.on === b.on && a.schema === b.schema && a.setHot === b.setHot && a.e.id === b.e.id && a.e.kind === b.e.kind
-  && a.e.by === b.e.by && a.e.at === b.e.at && a.e.old === b.e.old && a.e.key === b.e.key && a.e.nodes.length === b.e.nodes.length
-  && a.e.nodes.every((x, i) => x === b.e.nodes[i]) && a.g?.g === b.g?.g && a.g?.note === b.g?.note
-  && a.g?.changes.length === b.g?.changes.length && a.notes?.join('\n') === b.notes?.join('\n'));
+}, (a, b) => a.on === b.on && a.schema === b.schema && a.setHot === b.setHot && a.it.id === b.it.id && a.it.place?.text === b.it.place?.text
+  && a.it.e.kind === b.it.e.kind && a.it.e.by === b.it.e.by && a.it.e.at === b.it.e.at && a.it.e.old === b.it.e.old
+  && a.it.e.key === b.it.e.key && a.it.e.nodes.length === b.it.e.nodes.length && a.it.e.nodes.every((x, i) => x === b.it.e.nodes[i])
+  && a.g?.g === b.g?.g && a.g?.note === b.g?.note && a.n === b.n && a.notes?.join('\n') === b.notes?.join('\n'));
 // Unchanged blocks keep their node objects through a transaction, so a keystroke elsewhere renders no card again (describe
 // diffs a replace's words).
 
 /** The card layer (App.jsx, in the editor column: over the page, under its islands, panels, menus and dialogs) while the open
- * draft has suggestions and the editor page shows: one card per change right of the sheet, its top at the change's first block.
+ * draft has suggestions and the editor page shows: one card per decision right of the sheet, its top at the decision's words.
  * The cards live in the document's space, as Google Docs' do: they follow the sheet through scrolling, panning and zoom
  * (keeping their own size), and like the page they may lie outside the view (the user, 2026-10-26). An anchor never depends on
  * the view or the active change, so a card moves only when its change moves or a card above it grows: in document order, a
@@ -143,7 +151,7 @@ export function SuggestionCards() {
   useStore((s) => s.drafts); // a rename, tag or move rewrites the list: re-read the cards' metadata rows (groupNotes)
   const layer = useRef(null);
   const kick = useRef(() => {});
-  // The hovered or focused card {id, g}, written straight into the layer's <style>: a hover renders no card again.
+  // The hovered or focused card {id, place}, written straight into the layer's <style>: a hover renders no card again.
   const style = useRef(null);
   const hot = useRef(null);
   const setHot = useCallback((h) => {
@@ -151,15 +159,24 @@ export function SuggestionCards() {
     if (style.current) style.current.textContent = hotCss(h);
   }, []);
   const on = shown && groups.length > 0 && !!ed && !ed.isDestroyed;
-  // Every change in document order (the DOM order, so Tab walks the cards down the page), each group's first one holding its request.
+  // Every decision (a change, or each place of a change decided place by place) in document order (the DOM order, so Tab walks the
+  // cards down the page), each group's first one holding its request and `n`, the number of the group's decisions.
+  const schema = ed?.schema;
   const list = useMemo(() => {
+    if (!schema) return [];
     const seen = new Set();
-    return groups.flatMap((g) => g.changes.map((e) => ({ e, group: g }))).sort((a, b) => order(a.e) - order(b.e))
-      .map(({ e, group }) => ({ e, g: seen.has(group.g) ? null : (seen.add(group.g), group) }));
-  }, [groups]);
-  // A card removed while hovered or focused (its Accept or Reject) never fires mouseleave or blur: its tint goes with it.
+    const counts = new Map();
+    const all = groups.flatMap((group) => group.changes.flatMap((e) => {
+      const ps = places(e, schema);
+      return ps.length ? ps.map((place) => ({ id: place.id, e, place, group })) : [{ id: e.id, e, group }];
+    }));
+    for (const it of all) counts.set(it.group.g, (counts.get(it.group.g) ?? 0) + 1);
+    return all.sort((a, b) => order(a) - order(b))
+      .map(({ group, ...it }) => ({ it, g: seen.has(group.g) ? null : (seen.add(group.g), group), n: counts.get(group.g) }));
+  }, [groups, schema]);
+  // A card removed while hovered or focused (its Accept or Reject) never fires mouseleave or blur: its fill goes with it.
   useLayoutEffect(() => {
-    if (hot.current && !list.some(({ e }) => e.id === hot.current.id)) setHot(null);
+    if (hot.current && !list.some(({ it }) => it.id === hot.current.id)) setHot(null);
   }, [list, setHot]);
 
   // The stack may run past the end of the pan surface (many changes close together, a low zoom): the surface grows below the
@@ -179,7 +196,7 @@ export function SuggestionCards() {
     if (!on) return undefined;
     const area = document.getElementById('editor-area');
     const surf = area?.firstElementChild;
-    const byId = new Map(list.map(({ e }) => [e.id, e]));
+    const byId = new Map(list.map(({ it }) => [it.id, it]));
     let frame = 0;
     let last = '';
     let still = 0;
@@ -199,14 +216,14 @@ export function SuggestionCards() {
       let sig = `${Math.round(x)}:${Math.round(L.left)},${Math.round(L.top)}`;
       // Every anchor and height is read before any card is moved: one layout per frame however many cards there are.
       const cards = [...el.querySelectorAll('[data-sg-card]')].map((c) => {
-        const e = byId.get(c.dataset.sgCard);
-        return { c, e, y: (e && topOf(ed, e, s)) ?? s.top, h: c.offsetHeight };
+        const it = byId.get(c.dataset.sgCard);
+        return { c, it, y: (it && topOf(ed, it, s)) ?? s.top, h: c.offsetHeight };
       });
       let floor = -Infinity;
       for (const a of cards) {
         const top = Math.max(a.y, floor);
         floor = top + a.h + GAP;
-        const left = (a.e?.id === active ? x - GAP : x) - L.left; // the active card 8 px nearer the page
+        const left = (a.it?.id === active ? x - GAP : x) - L.left; // the active card 8 px nearer the page
         a.c.style.transform = `translate(${Math.round(left)}px, ${Math.round(top - L.top)}px)`;
         sig += `|${Math.round(left)},${Math.round(top)},${a.h}`;
       }
@@ -250,8 +267,7 @@ export function SuggestionCards() {
   useLayoutEffect(() => kick.current());
 
   if (!on) return null;
-  const { schema } = ed;
-  const say = list.find(({ e }) => e.id === active)?.e;
+  const said = list.find(({ it }) => it.id === active)?.it;
   const escape = (e) => {
     if (e.key !== 'Escape') return;
     e.preventDefault();
@@ -275,9 +291,9 @@ export function SuggestionCards() {
   return (
     <div ref={layer} data-agent-deny data-sg-layer="" className="pointer-events-none absolute inset-0 z-[5] overflow-clip" onKeyDown={escape} onFocus={reveal}>
       <style ref={style}>{hotCss(hot.current)}</style>
-      <div aria-live="polite" className="sr-only">{say ? describe(say, schema) : ''}</div>
-      {list.map(({ e, g }) => (
-        <ChangeCard key={e.id} e={e} g={g} notes={g ? groupNotes(g.g) : null} on={e.id === active} schema={schema} setHot={setHot}
+      <div aria-live="polite" className="sr-only">{said ? (said.place ? said.place.text : describe(said.e, schema)) : ''}</div>
+      {list.map(({ it, g, n }) => (
+        <ChangeCard key={it.id} it={it} g={g} n={n} notes={g ? groupNotes(g.g) : null} on={it.id === active} schema={schema} setHot={setHot}
           data-board-chrome className="pointer-events-auto absolute top-0 left-0" />
       ))}
     </div>

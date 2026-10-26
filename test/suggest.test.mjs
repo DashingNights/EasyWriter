@@ -450,3 +450,84 @@ test("groups: another group's takeover of a page setup record does not keep the 
   assert.deepEqual(core.groups(ed.state.doc).map(({ g, by, note }) => ({ g, by, note })), [{ g: 'gB', by: 'agent:claude-code', note: null }]);
   assert.equal(ed.state.doc.attrs.suggest.attrs[0].old, null);
 });
+
+// ---------- places: one decision per word change ----------
+test('places: a rewritten paragraph is decided place by place; reject puts old words back, accept moves the base, undo restores', () => {
+  const OLD = 'Every mechanism has a published precedent, however, it was found that no system combines them in a way that applies to a shared world.';
+  const NEW = 'Every mechanism has a published precedent. What this review could not find is a system that combines them and applies to a shared world.';
+  const ed = editor(DOC_KIT, doc(p('Intro'), p(OLD), p('After')));
+  const c = call();
+  agent(ed, c, (x) => {
+    const at = posOf(x, 1) + 1;
+    const tr = x.state.tr.insertText(NEW, at, at + OLD.length);
+    const s = at + NEW.indexOf('shared');
+    run(x, tr.addMark(s, s + 'shared'.length, x.schema.marks.bold.create()));
+  });
+  const [e] = core.entries(ed.state.doc);
+  const ps = core.places(e, ed.schema);
+  assert.deepEqual(ps.map((x) => x.text), ['Replace “, however, it was found that no system” with “. What this review could not find is a…”',
+    'Replace “in a way that applies” with “and applies”', 'Format bold']);
+  assert.deepEqual(core.items(ed.state.doc, ed.schema).map((it) => it.id), ps.map((x) => x.id));
+  // Reject the first place: its old words are back, the rest still waits, and the change does not count as edited.
+  run(ed, core.rejectPlaces(ed.state, [ps[0].id]));
+  assert.equal(texts(ed)[1], 'Every mechanism has a published precedent, however, it was found that no system combines them and applies to a shared world.');
+  assert.equal(core.places(core.entries(ed.state.doc)[0], ed.schema).length, 2);
+  assert.equal(core.edited(ed.state.doc, e.id), false);
+  // Undo brings the place back as it was.
+  ed.commands.undo();
+  assert.equal(texts(ed)[1], NEW);
+  assert.equal(core.places(core.entries(ed.state.doc)[0], ed.schema).length, 3);
+  ed.commands.redo();
+  // Accept the next place: the text stays; one place is left, which is the change's own decision again.
+  const [second] = core.places(core.entries(ed.state.doc)[0], ed.schema); // the places renumber after a decision
+  run(ed, core.acceptPlaces(ed.state, [second.id]));
+  const after = texts(ed)[1];
+  assert.equal(after, 'Every mechanism has a published precedent, however, it was found that no system combines them and applies to a shared world.');
+  const [left] = core.entries(ed.state.doc);
+  assert.equal(core.places(left, ed.schema).length, 0);
+  assert.equal(core.describe(left, ed.schema), 'Format bold');
+  // Rejecting that last one gives the text with the accepted words and no bold, and no record.
+  run(ed, core.reject(ed.state, [left.id]));
+  assert.equal(texts(ed)[1], after);
+  assert.equal(hasRecords(ed), false);
+  assert.ok(!/"bold"/.test(json(ed)));
+});
+
+test('places: a run of two rewritten paragraphs; deciding every place one by one leaves no record; a block type change stays whole', () => {
+  const ed = editor(DOC_KIT, doc(p('The quick brown fox jumps'), p('over the lazy brown dog today')));
+  agent(ed, call(), (x) => {
+    const one = 1;
+    const two = posOf(x, 1) + 1;
+    // The second block first, so the first block's positions still hold.
+    run(x, x.state.tr.insertText('over the sleepy brown dog now', two, two + 'over the lazy brown dog today'.length)
+      .insertText('The slow brown fox leaps', one, one + 'The quick brown fox jumps'.length));
+  });
+  const [e] = core.entries(ed.state.doc);
+  assert.equal(e.nodes.length, 2);
+  assert.equal(core.places(e, ed.schema).length, 4);
+  // Reject the last place of block 2 first, then accept the rest from the first.
+  let ps = core.places(core.entries(ed.state.doc)[0], ed.schema);
+  run(ed, core.rejectPlaces(ed.state, [ps[3].id]));
+  assert.deepEqual(texts(ed), ['The slow brown fox leaps', 'over the sleepy brown dog today']);
+  while ((ps = core.places(core.entries(ed.state.doc)[0] ?? { kind: null }, ed.schema)).length) run(ed, core.acceptPlaces(ed.state, [ps[0].id]));
+  const rest = core.entries(ed.state.doc);
+  if (rest.length) run(ed, core.accept(ed.state, rest.map((x) => x.id)));
+  assert.deepEqual(texts(ed), ['The slow brown fox leaps', 'over the sleepy brown dog today']);
+  assert.equal(hasRecords(ed), false);
+  // A heading level change with new words is one decision.
+  const ed2 = editor(DOC_KIT, doc(h(1, 'Old title words'), p('Body')));
+  agent(ed2, call(), (x) => run(x, x.state.tr.setNodeMarkup(0, null, { ...x.state.doc.child(0).attrs, level: 2 }).insertText('New', 1, 4).insertText('heading', 11, 16)));
+  assert.equal(core.places(core.entries(ed2.state.doc)[0], ed2.schema).length, 0);
+});
+
+test("places: the user's own typing in a change makes it one decision again, never an agent's place", () => {
+  const ed = editor(DOC_KIT, doc(p('The quick brown fox jumps over the lazy dog')));
+  agent(ed, call(), (x) => run(x, x.state.tr.insertText('sleepy', 36, 40).insertText('slow', 5, 10)));
+  const [e] = core.entries(ed.state.doc);
+  assert.equal(core.places(e, ed.schema).length, 2);
+  run(ed, ed.state.tr.insertText('X', 2)); // the user types in the paragraph
+  const [now] = core.entries(ed.state.doc);
+  assert.equal(core.places(now, ed.schema).length, 0);
+  assert.equal(core.edited(ed.state.doc, now.id), true);
+  assert.deepEqual(core.items(ed.state.doc, ed.schema).map((it) => it.id), [now.id]);
+});

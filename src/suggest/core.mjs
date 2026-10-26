@@ -682,6 +682,155 @@ export function diff(e, doc, schema) {
   return out;
 }
 
+// ---------- places: one decision per word change ----------
+// The user, 2026-10-26, on an agent's rewrite of a paragraph: "there are many inline edits but agent as opted to group them all
+// into one, i cant individually decide on them." A change whose blocks pair one to one with its old blocks (text blocks of the
+// same type and block attributes) is decided place by place: accepting a place writes its words into the change's old blocks,
+// rejecting one writes the old words back into the text, and a change left with no difference goes.
+const placeCache = new WeakMap();
+const pairs = (e, olds) => olds.length === e.nodes.length
+  && e.nodes.every((n, k) => n.isTextblock && olds[k].type === n.type && blockAttrs(olds[k]) === blockAttrs(n));
+const fragMarks = (frag) => {
+  const s = new Set();
+  frag.descendants((c) => void c.marks.forEach((m) => s.add(m.type.name)));
+  return s;
+};
+
+/** The row text of a place in old block `o` and new block `n` (one of places()' rows before ids). */
+function placeText(p, o, n) {
+  if (p.kind === 'fmt') {
+    const was = fragMarks(o.slice(p.fromA, p.toA).content);
+    const now = fragMarks(n.slice(p.fromB, p.toB).content);
+    const names = (l) => [...new Set(l.map((m) => MARK_NAMES[m] ?? m))].join(' and ');
+    const added = [...now].filter((m) => !was.has(m));
+    const gone = [...was].filter((m) => !now.has(m));
+    return added.length ? `Format ${names(added)}` : gone.length ? `Remove ${names(gone)}` : 'Change formatting';
+  }
+  if (p.kind === 'add') return `Add ${q(p.added)}`;
+  if (p.kind === 'del') return `Delete ${q(p.gone)}`;
+  return p.gone.trim() && p.added.trim() ? `Replace ${q(p.gone)} with ${q(p.added)}` : 'Change spacing';
+}
+
+/** The word changes of replace change `e` (an entries() row) as decisions of their own, when its blocks pair one to one with its
+ * old blocks and it changes two places or more: [{id, change, k, fromA, toA, fromB, toB, from, to, kind: 'replace' | 'add' | 'del'
+ * | 'fmt', gone, added, text}] in document order; fromA/toA in old block k, fromB/toB in its block k, from/to the doc positions of
+ * the proposed words (from = to for a deletion). [] when the change is one decision: an insert, a delete, an object, a block type
+ * or attribute change, a split or joined block, a change the user edited, or a single place (whose decision is the change's). Ids are `<change>-<n>` by
+ * order, so they shift when a place is decided. Memoized per proposed block. */
+export function places(e, schema) {
+  if (e.kind !== 'replace' || !e.nodes.length) return [];
+  const key = e.nodes[0];
+  let hit = placeCache.get(key);
+  if (!hit || hit.old !== e.old || hit.nodes.length !== e.nodes.length || hit.nodes.some((n, k) => n !== e.nodes[k])) {
+    const olds = oldNodesOf(e, schema);
+    const list = [];
+    // A change the user edited is one decision again: their own words would otherwise show as the agent's places.
+    const mine = e.nodes.some((n) => rec(n)?.ins?.sig !== sigOf(n));
+    if (!mine && pairs(e, olds)) {
+      e.nodes.forEach((n, k) => {
+        const o = olds[k];
+        if (o.content.eq(n.content)) return;
+        const set = ChangeSet.create(o, (x) => x, ENCODER).addSteps(n, [new StepMap([0, o.content.size, n.content.size])], null);
+        for (const c of simplifyChanges(set.changes, n)) {
+          const gone = o.textBetween(c.fromA, c.toA, ' ', ' ');
+          const added = n.textBetween(c.fromB, c.toB, ' ', ' ');
+          const kind = c.toA > c.fromA && c.toB > c.fromB && gone === added ? 'fmt'
+            : gone.trim() && added.trim() ? 'replace' : added.trim() ? 'add' : gone.trim() ? 'del' : 'replace';
+          const p = { k, fromA: c.fromA, toA: c.toA, fromB: c.fromB, toB: c.toB, kind, gone, added };
+          list.push({ ...p, text: placeText(p, o, n) });
+        }
+      });
+    }
+    hit = { old: e.old, nodes: e.nodes.slice(), list: list.length > 1 ? list : [] };
+    placeCache.set(key, hit);
+  }
+  return hit.list.map((p, i) => ({ ...p, id: `${e.id}-${i}`, change: e.id, from: e.starts[p.k] + 1 + p.fromB, to: e.starts[p.k] + 1 + p.toB }));
+}
+
+/** What the user decides on in `doc`, in document order: each place of a change that has places, else the change. [{id, e, place?}]
+ * (`place`: a places() row). */
+export function items(doc, schema) {
+  return entries(doc).flatMap((e) => {
+    const ps = places(e, schema);
+    return ps.length ? ps.map((place) => ({ id: place.id, e, place })) : [{ id: e.id, e }];
+  });
+}
+
+// The places `pids` picks in `doc`, by change: Map id → {e, list}.
+function pickPlaces(doc, schema, pids) {
+  const want = new Set(pids);
+  const out = new Map();
+  for (const e of entries(doc)) {
+    const list = places(e, schema).filter((p) => want.has(p.id));
+    if (list.length) out.set(e.id, { e, list });
+  }
+  return out;
+}
+
+// After some of change `id`'s places were decided in `tr`: a change whose blocks now match its old ones goes (the blocks stay as
+// they are, other changes' del records with them); otherwise a block whose text the decision changed takes its new signature,
+// unless the user had edited the change (`keepSig`), which then still counts as edited.
+function settle(tr, id, schema, keepSig) {
+  const carriers = [];
+  tr.doc.forEach((n, pos) => {
+    if (rec(n)?.ins?.id === id) carriers.push({ n, pos });
+  });
+  if (!carriers.length) return;
+  const old = carriers.map(({ n }) => rec(n).ins.old).find(Boolean) ?? [];
+  let olds;
+  try {
+    olds = old.map((j) => schema.nodeFromJSON(j));
+  } catch {
+    olds = [];
+  }
+  const done = olds.length === carriers.length
+    && carriers.every(({ n }, k) => olds[k].type === n.type && blockAttrs(olds[k]) === blockAttrs(n) && olds[k].content.eq(n.content));
+  for (const { n, pos } of carriers) {
+    const r = rec(n);
+    if (done) tr.setNodeAttribute(pos, 'suggest', pack(null, (r.del ?? []).filter((d) => d.id !== id)));
+    else if (!keepSig && r.ins.sig !== sigOf(n)) tr.setNodeAttribute(pos, 'suggest', pack({ ...r.ins, sig: sigOf(n) }, r.del));
+  }
+}
+
+/** Accepting places `pids` (places() ids): each one's proposed words go into its change's old blocks, so only the rest of that
+ * change still differs; a change left with no difference goes. The text stays. One undo step. Null when none is in the doc. */
+export function acceptPlaces(state, pids) {
+  const { schema } = state;
+  const tr = state.tr;
+  for (const [id, { e, list }] of pickPlaces(state.doc, schema, pids)) {
+    const olds = oldNodesOf(e, schema);
+    // From the end of each block, so the earlier places' old positions still hold.
+    for (const p of [...list].sort((a, b) => b.k - a.k || b.fromA - a.fromA)) olds[p.k] = olds[p.k].replace(p.fromA, p.toA, e.nodes[p.k].slice(p.fromB, p.toB));
+    let at = -1;
+    tr.doc.forEach((n, pos) => {
+      if (at < 0 && rec(n)?.ins?.id === id && rec(n).ins.old) at = pos;
+    });
+    if (at < 0) continue;
+    const r = rec(tr.doc.nodeAt(at));
+    tr.setNodeAttribute(at, 'suggest', pack({ ...r.ins, old: olds.map(plainJSON) }, r.del));
+    settle(tr, id, schema, true);
+  }
+  return tr.steps.length ? closeHistory(tr.setMeta(META, 'accept')) : null;
+}
+
+/** Rejecting places `pids`: each one's old words go back into the text, so only the rest of its change still differs; a change left
+ * with no difference goes. One undo step. Null when none is in the doc. */
+export function rejectPlaces(state, pids) {
+  const { schema } = state;
+  const tr = state.tr;
+  const picked = pickPlaces(state.doc, schema, pids);
+  const edits = [];
+  const was = new Map();
+  for (const [id, { e, list }] of picked) {
+    was.set(id, edited(state.doc, id));
+    const olds = oldNodesOf(e, schema);
+    for (const p of list) edits.push({ from: p.from, to: p.to, slice: olds[p.k].slice(p.fromA, p.toA) });
+  }
+  for (const x of edits.sort((a, b) => b.from - a.from)) tr.replace(x.from, x.to, x.slice);
+  for (const id of picked.keys()) settle(tr, id, schema, was.get(id));
+  return tr.steps.length ? closeHistory(tr.setMeta(META, 'reject')) : null;
+}
+
 // ---------- row text ----------
 const q = (s) => {
   const t = String(s).replace(/\s+/g, ' ').trim();
