@@ -170,7 +170,12 @@ class MediaView {
     const { src, name } = node.attrs;
     this.dom = make('div');
     this.dom.dataset.media = '';
-    this.el = src?.startsWith('data:video/') ? make('video', '', { src, controls: true, preload: 'metadata' }) : make('img', '', { src, alt: name });
+    // An imported forum post's picture or video still downloading (integrations/forum/import.mjs): its src is the forum's URL,
+    // which this window never loads.
+    const pending = !src?.startsWith('data:');
+    if (pending) this.dom.dataset.mediaPending = '';
+    this.el = pending ? make('div', 'flex items-center justify-center rounded-md border border-dashed border-border px-4 py-8 text-sm text-muted-foreground', { textContent: `Downloading ${name}` })
+      : src.startsWith('data:video/') ? make('video', '', { src, controls: true, preload: 'metadata' }) : make('img', '', { src, alt: name });
     this.dom.append(this.el);
     this.dom.addEventListener('pointerdown', this.onPointerDown);
     this.dom.addEventListener('pointermove', this.onPointerMove);
@@ -264,14 +269,17 @@ export const Media = Node.create({
     return [{
       tag: 'div[data-media]',
       getAttrs: (el) => {
-        const src = el.firstElementChild?.getAttribute('src') ?? '';
+        // data-src: a forum import placeholder (renderHTML), kept through copy and paste so its download still fills it
+        const src = el.firstElementChild?.getAttribute('src') ?? el.getAttribute('data-src') ?? '';
         const dw = Math.round(Number(el.getAttribute('data-dw'))) || null;
-        return /^data:(image|video)\//.test(src) ? { src, name: el.getAttribute('data-name') || 'media', dw } : false;
+        return /^(data:(image|video)\/|https:\/\/)/.test(src) ? { src, name: el.getAttribute('data-name') || 'media', dw } : false;
       },
     }];
   },
   renderHTML({ node: { attrs: { src, name, dw } } }) {
     const style = dw ? `width: ${dw}px` : null;
+    // A forum import placeholder (MediaView): its URL only, never an <img> that would load it
+    if (!src?.startsWith('data:')) return ['div', { 'data-media': '', 'data-name': name, 'data-dw': dw, 'data-src': src }];
     const el = src?.startsWith('data:video/') ? ['video', { src, controls: '', preload: 'metadata', style }] : ['img', { src, alt: name, style }];
     return ['div', { 'data-media': '', 'data-name': name, 'data-dw': dw }, el];
   },

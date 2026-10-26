@@ -1,22 +1,20 @@
 import { startTransition, useCallback, useEffect, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
-import { ArrowDown, ArrowUp, Bot, Check, CloudUpload, Globe, RefreshCw, Keyboard, MessageSquare, Mic, Monitor, Moon, Plus, Puzzle, SlidersHorizontal, Sparkles, Sun, Tags, Trash2, Type } from 'lucide-react';
 import { toast } from 'sonner';
+import { ArrowDown, ArrowUp, Bot, CloudUpload, Globe, Keyboard, MessageSquare, Mic, Monitor, Moon, Plus, Puzzle, SlidersHorizontal, Sparkles, Sun, Tags, Trash2, Type } from 'lucide-react';
 // import { Badge } from '@/components/ui/badge'; // LOCAL LLM (commented out 2026-10-07): the model file row's state
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Command, CommandEmpty, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { Select, SelectButton, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Slider } from '@/components/ui/slider';
 import { Switch } from '@/components/ui/switch';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { FONT_SIZES, TEXT_COLORS, HIGHLIGHTS, FONTS } from '../../extensions.js';
 import { keyLabel, withKey } from '../keybinds.js';
 import { motion, MOTION } from '../motion.js';
-import { applyPalette, changeSettings, confirmDialog, PALETTE, saveSettings } from '../actions.js';
+import { applyPalette, changeSettings, confirmDialog, PALETTE, runSetup, saveSettings } from '../actions.js';
 // LOCAL LLM (commented out 2026-10-07): BACKENDS, deleteAssistant, deleteLeftover, openInstall as openAssistantInstall, size, wake.
 import { ASSISTANT_DEFAULTS, saveAssistant } from '../assistant/assistant.js';
 import QWEN_MODELS from '../../assistant/qwen-models.json';
@@ -27,6 +25,7 @@ import { openInstall } from '../dictation/dictation.js';
 import { defaultTag, draftsWithTag, pruneMap, tagList } from '../drafts-meta.js';
 import { DEFAULT_PAGE_WIDTH } from '../../formats.mjs';
 import { INTEGRATIONS } from '../../integrations/index.mjs';
+import { copy, IntegrationRows, ipcMessage, RepoPicker, useGitHubStatus, useRepos } from '../setup/shared.jsx';
 import { settingsSections } from '../../integrations/ui.js';
 import { columnsFollowing } from '../plans.js';
 import { getState, useStore } from '../store.js';
@@ -63,7 +62,7 @@ function UiScale() {
 const UI_THEMES = [['light', 'Light', Sun, 'Light'], ['system', 'Auto', Monitor, 'Follows the system'], ['dark', 'Dark', Moon, 'Dark']];
 
 function UiTheme() {
-  const value = useStore((s) => s.settings?.uiTheme ?? 'dark');
+  const value = useStore((s) => s.settings?.uiTheme ?? 'system');
   return <>
     <Label className="text-muted-foreground">Theme</Label>
     <ToggleGroup type="single" variant="outline" size="sm" aria-label="Theme" value={value} onValueChange={(v) => v && changeSettings({ uiTheme: v })}>
@@ -163,7 +162,7 @@ function MotionSection() {
   </>;
 }
 
-function Pick({ value, onChange, options, className = 'w-36', label }) {
+export function Pick({ value, onChange, options, className = 'w-36', label }) {
   return (
     <Select value={value === '' ? NONE : value} onValueChange={(v) => onChange(v === NONE ? '' : v)}>
       <SelectTrigger size="sm" aria-label={label} className={className}><SelectValue /></SelectTrigger>
@@ -210,7 +209,7 @@ const tagRow = (t) => ({ key: ++rowKey, id: t.id, name: t.name, color: t.color }
 const readTag = (r, i) => ({ id: r.id, name: r.name.trim() || `Tag ${i + 1}`, color: r.color });
 const URL_RE = /^https?:\/\/\S+$/;
 const languageOptions = [['auto', 'Automatic'], ...LANGUAGES];
-const pathValue = (v) => v.trim().replace(/^"(.*)"$/, '$1'); // "Copy as path" quotes it
+export const pathValue = (v) => v.trim().replace(/^"(.*)"$/, '$1'); // "Copy as path" quotes it
 const FIELDS = 'grid grid-cols-[8rem_auto] items-center justify-start gap-x-3 gap-y-2'; // label column | control
 
 /** Settings > Dictation (SPEC §7h): status and install, model, the downloaded models, language, microphone; under Advanced,
@@ -288,11 +287,11 @@ function DictationSection({ value: d, onChange }) {
 // };
 
 // settings.assistant.permission (the executor's policy for the assistant, SPEC §8 Policy) and its line under the select.
-const PERMISSIONS = [['standard', 'Standard'], ['ask', 'Ask first'], ['readonly', 'Read only'], ['all', 'Allow all']];
+export const PERMISSIONS = [['standard', 'Standard'], ['ask', 'Ask first'], ['readonly', 'Read only'], ['all', 'Allow all']];
 // settings.assistant.provider (2026-10-08); 'none' turns the assistant off (no chat button, no shortcut).
-const PROVIDERS = [['none', 'None'], ['qwen', 'Qwen Cloud'], ['google', 'Google AI (Gemini)'], ['deepseek', 'DeepSeek'], ['claude', 'Claude (Claude Code)'], ['codex', 'ChatGPT (Codex)']];
+export const PROVIDERS = [['none', 'None'], ['qwen', 'Qwen Cloud'], ['google', 'Google AI (Gemini)'], ['deepseek', 'DeepSeek'], ['claude', 'Claude (Claude Code)'], ['codex', 'ChatGPT (Codex)']];
 // Claude Code and Codex (SPEC §7i Coding CLIs): the user's installed CLI with its own sign-in; its path, model and effort fields.
-const CLI = {
+export const CLI = {
   claude: { path: 'claudePath', model: 'claudeModel', effort: 'claudeEffort', label: 'Claude (Claude Code)' },
   codex: { path: 'codexPath', model: 'codexModel', effort: 'codexEffort', label: 'ChatGPT (Codex)' },
 };
@@ -363,12 +362,12 @@ function CliSetup({ value: a, edit, status, recheck }) {
   );
 }
 // Each provider's key and model fields, where its key comes from, its name. Qwen Cloud's model is picked in the chat panel.
-const PROVIDER = {
+export const PROVIDER = {
   qwen: { key: 'qwenKey', model: 'qwenModel', from: 'From home.qwencloud.com', label: 'Qwen Cloud' },
   google: { key: 'googleKey', model: 'googleModel', from: 'From aistudio.google.com', model0: 'gemini-3.8-flash', label: 'Google AI' },
   deepseek: { key: 'deepseekKey', model: 'deepseekModel', from: 'From platform.deepseek.com', model0: 'deepseek-flash', label: 'DeepSeek' },
 };
-const providerOf = (a) => (a.provider === 'none' || Object.hasOwn(PROVIDER, a.provider) || Object.hasOwn(CLI, a.provider) ? a.provider : 'qwen');
+export const providerOf = (a) => (a.provider === 'none' || Object.hasOwn(PROVIDER, a.provider) || Object.hasOwn(CLI, a.provider) ? a.provider : 'qwen');
 
 /** Qwen Cloud's models for the chat panel's model menu (settings.assistant.qwenModels): the known ones, then any added by id. */
 function QwenModels({ value: a, edit }) {
@@ -425,7 +424,7 @@ function AdvancedFields({ value: a, edit }) {
       <div className={`mt-2 ${FIELDS}`}>
         <Label htmlFor="set-asst-limit" className="text-muted-foreground">Tool calls</Label>
         <div className="flex items-center gap-2">
-          <Switch id="set-asst-limit" checked={limit} onCheckedChange={(on) => set('limitCalls', on ? undefined : false)} />
+          <Switch id="set-asst-limit" checked={limit} onCheckedChange={(on) => set('limitCalls', on === ADVANCED.limitCalls ? undefined : on)} />
           <Label htmlFor="set-asst-limit">At most</Label>
           {num('maxCalls', 'w-20')}
           <span className="text-sm text-muted-foreground">per request. A batch of calls counts as one.</span>
@@ -451,14 +450,14 @@ function AdvancedFields({ value: a, edit }) {
   );
 }
 
-const PERMISSION_HINT = {
+export const PERMISSION_HINT = {
   standard: 'Standard. Makes changes you can undo. Asks before deleting.',
   ask: 'Ask first. Asks before every change.',
   readonly: 'Read only. Reads and answers. Changes nothing.',
   all: 'Allow all. Does everything without asking, deleting included.',
 };
 // While Auto-approve assistant edits is off, edits to drafts wait as suggestions (docs/plans/suggestions.md Setting).
-const SUGGEST_HINT = {
+export const SUGGEST_HINT = {
   ...PERMISSION_HINT,
   standard: 'Standard. Edits to drafts wait as suggestions. Asks before deleting drafts, flowcharts, tags, folders or threads.',
   ask: 'Ask first. Edits to drafts wait as suggestions. Asks before every other change.',
@@ -473,18 +472,14 @@ function qwenFields(a) {
   return { qwenKey: a.qwenKey.trim(), qwenModels, qwenModel: qwenModels.includes(a.qwenModel) ? a.qwenModel : qwenModels[0] };
 }
 
-/** Settings > Assistant (SPEC §7i): Google AI's API key and model with the status, the permission mode and on-screen controls,
- * the picture after each change, resetting the chat panel's place. Local models are off since 2026-10-07: the section's local
- * version (install, the model choice and MTP, model files, backend, idle unload, existing llama.cpp files or a server) is
- * commented out after this one. `value` is the dialog's copy of settings.assistant. */
-function AssistantSection({ value: a, onChange }) {
-  const edit = (patch) => onChange((v) => ({ ...v, ...patch }));
+/** assistant.status for `a`'s provider with its key or program and model (null while main answers; nothing for None), and
+ * recheck() to ask a CLI again (Check again). */
+export function useAssistantStatus(a) {
   const [status, setStatus] = useState(null);
   const provider = providerOf(a);
-  const p = PROVIDER[provider] ?? {};
   const f = CLI[provider];
-  const [keyField, modelField] = f ? [f.path, f.model] : [p.key, p.model];
-  const [fresh, setFresh] = useState(0); // Check again: the CLI is asked again
+  const [keyField, modelField] = f ? [f.path, f.model] : [PROVIDER[provider]?.key, PROVIDER[provider]?.model];
+  const [fresh, setFresh] = useState(0);
   useEffect(() => {
     if (!keyField) return undefined; // None: nothing to check
     let live = true;
@@ -493,6 +488,61 @@ function AssistantSection({ value: a, onChange }) {
       .then((st) => live && setStatus(st), () => live && setStatus(null));
     return () => { live = false; };
   }, [a.provider, a[keyField], a[modelField], fresh]);
+  return [status, () => setFresh((n) => n + 1)];
+}
+
+/** A provider's own fields (Settings > Assistant and the setup): a CLI's setup, or the API key and model and where they go. */
+export function ProviderFields({ value: a, edit, status, recheck }) {
+  const provider = providerOf(a);
+  const p = PROVIDER[provider];
+  if (CLI[provider]) return <CliSetup value={a} edit={edit} status={status} recheck={recheck} />;
+  if (!p) return null;
+  return <>
+    <div className="flex items-center gap-2">
+      <Label htmlFor="set-asst-key" className="w-16 text-muted-foreground">API key</Label>
+      <Input id="set-asst-key" type="password" className="h-8 w-80" autoComplete="off" spellCheck={false} placeholder={p.from}
+        value={a[p.key]} onChange={(e) => edit({ [p.key]: e.target.value })} />
+    </div>
+    {provider === 'qwen' ? <QwenModels value={a} edit={edit} /> : (
+      <div className="flex items-center gap-2">
+        <Label htmlFor="set-asst-model" className="w-16 text-muted-foreground">Model</Label>
+        <Input id="set-asst-model" className="h-8 w-80" spellCheck={false} placeholder={p.model0}
+          value={a[p.model]} onChange={(e) => edit({ [p.model]: e.target.value })} />
+      </div>
+    )}
+    <span className="max-w-[36rem] text-xs text-muted-foreground">
+      Your messages, drafts and board pictures go to {p.label} with this key.
+    </span>
+    {provider === 'qwen' && (
+      <span className="max-w-[36rem] text-xs text-muted-foreground" data-qwen-free>
+        To stay on the free tier, turn on Free quota only for each model on
+        the <a href="https://home.qwencloud.com/benefits" target="_blank" rel="noreferrer" className="underline">Free Tier page</a>.
+        Calls then stop when a model's free quota runs out instead of being billed. Each model has its own quota, valid for 90 days.
+      </span>
+    )}
+  </>;
+}
+
+/** settings.assistant `a` as saved (Settings' Save and the setup): the provider a known one, keys and paths trimmed, an empty
+ * model back to its default. */
+export const assistantFields = (a) => ({
+  ...a, provider: providerOf(a), ...qwenFields(a),
+  googleKey: a.googleKey.trim(), googleModel: a.googleModel.trim() || 'gemini-3.8-flash',
+  deepseekKey: a.deepseekKey.trim(), deepseekModel: a.deepseekModel.trim() || 'deepseek-flash',
+  claudePath: pathValue(a.claudePath), claudeModel: a.claudeModel.trim(),
+  codexPath: pathValue(a.codexPath), codexModel: a.codexModel.trim(),
+});
+
+/** Settings > Assistant (SPEC §7i): Google AI's API key and model with the status, the permission mode and on-screen controls,
+ * the picture after each change, resetting the chat panel's place. Local models are off since 2026-10-07: the section's local
+ * version (install, the model choice and MTP, model files, backend, idle unload, existing llama.cpp files or a server) is
+ * commented out after this one. `value` is the dialog's copy of settings.assistant. */
+function AssistantSection({ value: a, onChange }) {
+  const edit = (patch) => onChange((v) => ({ ...v, ...patch }));
+  const provider = providerOf(a);
+  const p = PROVIDER[provider] ?? {};
+  const f = CLI[provider];
+  const [status, recheck] = useAssistantStatus(a);
   const resetPanel = () => {
     edit({ panel: null });
     saveAssistant({ panel: null });
@@ -503,7 +553,7 @@ function AssistantSection({ value: a, onChange }) {
     saveAssistant(patch);
   };
   // data-agent-deny: the assistant never changes its own settings (assistant-coverage §5).
-  if (!keyField) return (
+  if (provider === 'none') return (
     <div className={FIELDS} data-agent-deny>
       <Label className="self-start pt-2 text-muted-foreground">Provider</Label>
       <div className="grid gap-1.5" data-assistant-provider>
@@ -517,30 +567,7 @@ function AssistantSection({ value: a, onChange }) {
       <Label className="self-start pt-2 text-muted-foreground">Provider</Label>
       <div className="grid gap-1.5" data-assistant-provider>
         <Pick label="Assistant provider" value={provider} onChange={(v) => edit({ provider: v })} options={PROVIDERS} className="w-48" />
-        {f ? <CliSetup value={a} edit={edit} status={status} recheck={() => setFresh((n) => n + 1)} /> : <>
-        <div className="flex items-center gap-2">
-          <Label htmlFor="set-asst-key" className="w-16 text-muted-foreground">API key</Label>
-          <Input id="set-asst-key" type="password" className="h-8 w-80" autoComplete="off" spellCheck={false} placeholder={p.from}
-            value={a[keyField]} onChange={(e) => edit({ [keyField]: e.target.value })} />
-        </div>
-        {provider === 'qwen' ? <QwenModels value={a} edit={edit} /> : (
-          <div className="flex items-center gap-2">
-            <Label htmlFor="set-asst-model" className="w-16 text-muted-foreground">Model</Label>
-            <Input id="set-asst-model" className="h-8 w-80" spellCheck={false} placeholder={p.model0}
-              value={a[modelField]} onChange={(e) => edit({ [modelField]: e.target.value })} />
-          </div>
-        )}
-        <span className="max-w-[36rem] text-xs text-muted-foreground">
-          Your messages, drafts and board pictures go to {p.label} with this key.
-        </span>
-        {provider === 'qwen' && (
-          <span className="max-w-[36rem] text-xs text-muted-foreground" data-qwen-free>
-            To stay on the free tier, turn on Free quota only for each model on
-            the <a href="https://home.qwencloud.com/benefits" target="_blank" rel="noreferrer" className="underline">Free Tier page</a>.
-            Calls then stop when a model's free quota runs out instead of being billed. Each model has its own quota, valid for 90 days.
-          </span>
-        )}
-        </>}
+        <ProviderFields value={a} edit={edit} status={status} recheck={recheck} />
       </div>
       <Label className="text-muted-foreground">Status</Label>
       <div className="flex items-center gap-2" data-assistant-status>
@@ -807,7 +834,6 @@ const SWATCH = 'size-8 shrink-0 cursor-pointer rounded-md border border-input bg
 
 // The section nav: one entry per <Section> in the dialog, in the same order ([id, nav label, icon]).
 const AGENT_PORT = 47823; // settings.agent.port when unset (main's src/agent-server.js PORT)
-const copy = (text) => navigator.clipboard.writeText(text).then(() => toast('Copied'), () => toast.error('Could not copy'));
 
 /** Settings > MCP (SPEC §8 Agents): the switch, the port, and how to connect an MCP client, by URL or by the stdio
  * config main reports (agent.status: the app's own executable runs bin/easywriter-agent.js as Node), shown while the switch is on. The
@@ -864,60 +890,16 @@ const SECTIONS = [['general', 'General', SlidersHorizontal], ['motion', 'Motion'
   ['assistant', 'Assistant', MessageSquare], ['agents', 'MCP', Bot], ['browser', 'Browser', Globe], ['keybinds', 'Keybinds', Keyboard],
   ['integrations', 'Integrations', Puzzle], ['github', 'GitHub backup', CloudUpload]];
 
-/** Settings > Integrations: one card per integration with what it does, what it may do, and its switch (saved with Save).
- * The one place an integration that is off is named. `value` is {<id>: {enabled}}.
- * data-agent-deny: agents never turn an integration on or off (Settings switch only, like agent.enabled). */
-function IntegrationsSection({ value, onChange }) {
-  return (
-    <div className="grid gap-3" data-agent-deny>
-      {INTEGRATIONS.map((i) => (
-        <div key={i.id} className="flex items-start gap-3 rounded-md border p-3" data-integration={i.id}>
-          <Switch id={`set-int-${i.id}`} className="mt-0.5" checked={value[i.id].enabled}
-            onCheckedChange={(on) => onChange({ ...value, [i.id]: { ...value[i.id], enabled: on } })} />
-          <div className="grid gap-1">
-            <Label htmlFor={`set-int-${i.id}`}>{i.name}</Label>
-            <span className="max-w-[36rem] text-xs text-muted-foreground">{i.description}</span>
-            <ul className="list-disc pl-4 text-xs text-muted-foreground">
-              {i.permissions.map((line) => <li key={line}>{line}</li>)}
-            </ul>
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-// An IPC rejection's own message, without Electron's "Error invoking remote method ..." prefix.
-const ipcMessage = (e) => String(e?.message ?? e).replace(/^Error invoking remote method '[^']+': (?:Error: )?/, '');
-
 /** Settings > GitHub backup (SPEC §4b). Logging in and out happens at once (GitHub's device flow: main opens GitHub's page and
  * the user enters the code shown here); the rest is saved with Save. The picked repository is checked at once, and
  * `setProblem` gets why it cannot be used ('' when it can). Push now syncs with the saved settings. */
 function GitHubSection({ value: g, onChange, setProblem }) {
   const edit = (patch) => onChange({ ...g, ...patch });
-  const [st, setSt] = useState(null);
+  const [st, setSt] = useGitHubStatus();
   const [code, setCode] = useState(null);
-  const [repos, setRepos] = useState(null);
-  const [repoOpen, setRepoOpen] = useState(false); // the repository list, open until a pick
-  const [check, setCheck] = useState(null);
   const [starting, setStarting] = useState(false);
   const login = st?.login;
-  useEffect(() => {
-    window.api.github.status().then(setSt, () => {});
-    return window.api.github.onEvent(setSt);
-  }, []);
-  const loadRepos = () => {
-    setRepos(null); // the list shows Loading... until GitHub answers
-    window.api.github.repos().then(setRepos, (e) => { setRepos([]); toast.error(ipcMessage(e)); });
-  };
-  useEffect(() => { if (login) loadRepos(); }, [login]);
-  useEffect(() => {
-    setCheck(null);
-    if (!login || !g.repo) return;
-    let live = true;
-    window.api.github.checkRepo(g.repo).then((c) => live && setCheck(c), () => {});
-    return () => { live = false; };
-  }, [login, g.repo]);
+  const { repos, loadRepos, check } = useRepos(login, g.repo);
   // Only a repository that can never work stops Save; one GitHub cannot be reached for now is checked again by each sync.
   useEffect(() => {
     setProblem(!g.enabled || !login ? '' : !g.repo ? 'Choose a repository for the GitHub backup.' : check?.refused ? check.error : '');
@@ -934,11 +916,9 @@ function GitHubSection({ value: g, onChange, setProblem }) {
     setCode(null);
     setStarting(false);
   };
-  const logout = () => window.api.github.logout().then(() => { setRepos(null); return window.api.github.status().then(setSt); });
+  const logout = () => window.api.github.logout().then(() => window.api.github.status().then(setSt));
   const pushNow = () => window.api.github.syncNow().then(() => toast('Pushed to GitHub'), (e) => toast.error(ipcMessage(e)));
   const saved = st?.enabled && st.repo === g.repo && g.enabled;
-  const repoNote = !g.repo ? '' : !check ? 'Checking...' : !check.ok ? check.error
-    : check.empty ? 'Empty. The first push starts the backup.' : 'Holds an EasyWriter backup. Saving merges it with this computer.';
   const state = st?.busy ? 'Syncing...' : st?.error ? st.error : st?.lastSync
     ? `Last synced ${new Date(st.lastSync).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : 'Not synced yet';
 
@@ -977,34 +957,7 @@ function GitHubSection({ value: g, onChange, setProblem }) {
         </div>
         {g.enabled && <div className={FIELDS}>
           <Label className="self-start pt-2 text-muted-foreground">Repository</Label>
-          <div className="grid gap-1.5">
-            <div className="flex items-center gap-2">
-              {/* The button shows the pick; the list opens under it, search by typing, a click or Enter picks and closes */}
-              <Popover open={repoOpen} onOpenChange={setRepoOpen}>
-                <PopoverTrigger asChild>
-                  <SelectButton role="combobox" aria-expanded={repoOpen} aria-label="Repository" data-placeholder={g.repo ? undefined : ''} className="w-96">
-                    <span className="truncate">{g.repo || 'Choose a repository'}</span>
-                  </SelectButton>
-                </PopoverTrigger>
-                <PopoverContent align="start" className="w-96 p-0">
-                  <Command className="bg-transparent">
-                    <CommandInput placeholder="Search your private repositories..." />
-                    <CommandList className="max-h-48">
-                      <CommandEmpty>{repos ? 'No private repository found.' : 'Loading...'}</CommandEmpty>
-                      {repos && [...new Set([g.repo, ...repos])].filter(Boolean).map((r) => (
-                        <CommandItem key={r} value={r} onSelect={() => { edit({ repo: r }); setRepoOpen(false); }}>
-                          <Check className={r === g.repo ? '' : 'invisible'} />
-                          <span className="truncate">{r}</span>
-                        </CommandItem>
-                      ))}
-                    </CommandList>
-                  </Command>
-                </PopoverContent>
-              </Popover>
-              <IconButton size="regular" label="Reload the list" disabled={!repos} onClick={loadRepos}><RefreshCw /></IconButton>
-            </div>
-            {repoNote && <span className={`text-xs ${check && !check.ok ? 'text-destructive' : 'text-muted-foreground'}`}>{repoNote}</span>}
-          </div>
+          <RepoPicker repo={g.repo} onPick={(repo) => edit({ repo })} repos={repos} loadRepos={loadRepos} check={check} />
           <Label htmlFor="set-github-every" className="text-muted-foreground">Push every</Label>
           <div className="flex items-center gap-2">
             <Input id="set-github-every" type="number" min={0.5} max={1440} step={0.5} className="h-8 w-28" value={g.minutes}
@@ -1025,11 +978,21 @@ function GitHubSection({ value: g, onChange, setProblem }) {
   );
 }
 
+/** This copy's version, at the top of Settings > General (the user, 2026-10-26). */
+function AppVersion() {
+  const [version, setVersion] = useState(null);
+  useEffect(() => {
+    window.api.update.version().then(setVersion, () => {});
+  }, []);
+  return version && <p className="text-xs text-muted-foreground tabular-nums" data-app-version>EasyWriter {version}</p>;
+}
+
 /** A titled section of the dialog's scrolling column. The last one is at least the column's height past its
  * top border, so every section can be scrolled to just below its border (jump in SettingsDialog). */
-function Section({ id, title, hint, children }) {
+function Section({ id, title, hint, lead, children }) {
   return (
     <section data-section={id} aria-labelledby={`set-sec-${id}`} className="flex flex-col gap-3 border-t py-6 first:border-t-0 first:pt-0 last:min-h-[calc(100%_+_1px)]">
+      {lead}
       <div className="grid gap-1.5">
         <h3 id={`set-sec-${id}`} className="text-sm leading-none font-semibold">{title}</h3>
         {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
@@ -1141,6 +1104,7 @@ export function SettingsDialog({ settings: s, section, onClose }) {
   // and the tour starts. A plain button, not a submit button: Enter in a field must not start the tour. The flag is set only for
   // the click's own submit (dispatched synchronously); one the browser blocks (a number field out of range) must not leave it set.
   const tour = useRef(false);
+  const setup = useRef(false); // Run setup again: the same, then the setup opens
   const validate = () => {
     const problem = shown.map((x) => x.check(extra[x.id])).find(Boolean);
     if (problem) return problem;
@@ -1170,11 +1134,7 @@ export function SettingsDialog({ settings: s, section, onClose }) {
     draftTags: pruneMap(s.draftTags, getState().drafts, tagRows),
     dictation: { ...dictation, serverPath: pathValue(dictation.serverPath), modelPath: pathValue(dictation.modelPath), serverUrl: dictation.serverUrl.trim() },
     assistant: {
-      ...assistant, provider: providerOf(assistant), ...qwenFields(assistant),
-      googleKey: assistant.googleKey.trim(), googleModel: assistant.googleModel.trim() || 'gemini-3.8-flash',
-      deepseekKey: assistant.deepseekKey.trim(), deepseekModel: assistant.deepseekModel.trim() || 'deepseek-flash',
-      claudePath: pathValue(assistant.claudePath), claudeModel: assistant.claudeModel.trim(),
-      codexPath: pathValue(assistant.codexPath), codexModel: assistant.codexModel.trim(),
+      ...assistantFields(assistant),
       // LOCAL LLM (commented out 2026-10-07): serverPath: pathValue(assistant.serverPath), modelPath: pathValue(assistant.modelPath),
       // mmprojPath: pathValue(assistant.mmprojPath), serverUrl: assistant.serverUrl.trim(), apiKey: assistant.apiKey.trim(),
       // idleUnloadMinutes: Number(assistant.idleUnloadMinutes),
@@ -1191,7 +1151,7 @@ export function SettingsDialog({ settings: s, section, onClose }) {
   return (
     // Fixed height, centred in the room below the 34 px title strip (+17 px) with a 1rem margin; only the right column scrolls.
     <FormDialog title="Settings" okText="Save" validate={validate} onClose={onClose}
-      result={() => { if (tour.current) startTour(); return result(); }}
+      result={() => { if (tour.current) startTour(); if (setup.current) runSetup(); return result(); }}
       className="top-[calc(50%_+_17px)] h-[min(60rem,calc(100vh_-_34px_-_2rem))] p-6 sm:max-w-[min(68rem,calc(100vw_-_2rem))] *:data-[slot=dialog-close]:top-5 *:data-[slot=dialog-close]:right-5 [&>form]:gap-4">
       <div className="grid min-h-0 grid-cols-[11rem_minmax(0,1fr)] gap-6">
         <nav aria-label="Settings sections" className="flex flex-col gap-1">
@@ -1204,7 +1164,7 @@ export function SettingsDialog({ settings: s, section, onClose }) {
         </nav>
         {/* -ml-1 pl-1: room for the 3 px focus ring of controls at the left edge, which the scroll box would clip */}
         <div ref={paneRef} tabIndex={-1} onScroll={spy} className="relative -ml-1 min-h-0 overflow-y-auto pr-3 pl-1 outline-none" data-settings-pane>
-          <Section id="general" title="General">
+          <Section id="general" title="General" lead={<AppVersion />}>
             <div className={FIELDS}>
               <UiTheme />
               <UiPalette />
@@ -1231,6 +1191,10 @@ export function SettingsDialog({ settings: s, section, onClose }) {
               <Label className="text-muted-foreground">Tour</Label>
               <div>
                 <Button type="button" variant="outline" size="sm" onClick={(e) => { tour.current = true; e.currentTarget.form.requestSubmit(); tour.current = false; }}>Show the tour</Button>
+              </div>
+              <Label className="text-muted-foreground">Setup</Label>
+              <div>
+                <Button type="button" variant="outline" size="sm" onClick={(e) => { setup.current = true; e.currentTarget.form.requestSubmit(); setup.current = false; }}>Run setup again</Button>
               </div>
             </div>
             <div className="flex items-start gap-2">
@@ -1346,7 +1310,7 @@ export function SettingsDialog({ settings: s, section, onClose }) {
           </Section>}
 
           {show('integrations') && <Section id="integrations" title="Integrations">
-            <IntegrationsSection value={ints} onChange={setInts} />
+            <IntegrationRows value={ints} onChange={setInts} />
           </Section>}
 
           {show('github') && <Section id="github" title="GitHub backup">

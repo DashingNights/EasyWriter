@@ -10,6 +10,9 @@
 //   describe(urls: at most 50 topic URLs of forumUrl) -> {threads: [{url, title, subject, year, forum}]}
 //   push({threadUrl, html, images: [{name, base64, width, height}]}) -> {ok, error?}; it fills the reply box and never submits
 //   open(url) -> true
+//   posts(urls: at most 50 topic URLs of forumUrl) -> {threads: [{url, posts: [{id, url, date, html, media}]} | {url, error}]}, the
+//     signed-in member's own posts (docs/plans/onboarding.md Forum import); it throws when nobody is signed in
+//   download(url: https) -> {type, data: Uint8Array}, one picture or video of an imported post, with the forum's sign-in
 const service = window.api.forum;
 
 import {
@@ -17,9 +20,13 @@ import {
   showOverlay, threadLabel, toast, updateDraft,
 } from '../../app/actions.js';
 import { fail } from '../../app/commands/define.mjs';
-import { getState, setState } from '../../app/store.js';
+import { getState, setState, subscribe } from '../../app/store.js';
+import { tagList } from '../../app/drafts-meta.js';
+import { kitOf } from '../../editors.js';
+import { FORMATS } from '../../formats.mjs';
 import { enabled } from '../index.mjs';
 import { buildPayload } from './export.js';
+import { fillPlaceholders, placeholderUrls, postTitle, postToDoc } from './import.mjs';
 import { hasForum, normalizeThread as normalizeTopic, siteOf, slugTitle, topicId, topicOf } from './topic.mjs';
 
 export { buildPayload }; // export.preview and push.prepare (forum/commands.mjs), and the smoke hook (app/actions.js __smoke)
@@ -168,6 +175,25 @@ export async function login() {
   }
 }
 
+/** The setup's sign-in (ui.jsx SetupThreads) on forum `site` (set when none is yet): no window while the forum already knows
+ * the member, else the forum window's login, which resolves once signed in or once the window closes. `onWindow()` runs just
+ * before that window opens; false from it (the page dropped this sign-in) opens none. Keeps the status bar's status. → the status. */
+export async function signIn(site, onWindow = () => {}) {
+  if (!settings().forumUrl) await saveSettings({ forumUrl: site });
+  let status = await service.status();
+  if (!status.loggedIn && onWindow() !== false) status = await service.login();
+  setState({ status });
+  return status;
+}
+
+/** The setup's threads (canonical topic URLs) as projects: a project that links one already is kept, the others are added
+ * (addLinkedProject, which looks each up on the forum). → their project keys, in order. */
+export async function linkThreads(topics) {
+  const keys = [];
+  for (const topic of topics) keys.push(findThread(topic)?.url ?? await addLinkedProject('', topic));
+  return keys;
+}
+
 /** Plan step 9: before `action` ('Pushing' or 'Unpushing') of a forum draft's control while the forum is off, asks to turn it
  * back on and saves that. Only the user answers (human): agents never turn an integration on. Main merges `integrations` by
  * id, so the other ids, a newer build's among them, stay as they are. → whether the forum is on. */
@@ -253,4 +279,245 @@ export async function push({ requireThread = false } = {}) {
   hideOverlay();
   if (error) await alertDialog('Push failed', String(error.message || error));
   else toast('Content placed in the forum reply box. Review it there and press Submit.');
+}
+
+// ---------------------------------------------------------------------------------------------
+// Import of the member's earlier posts (docs/plans/onboarding.md Forum import). Drafts are written through window.api.drafts
+// directly: a new draft here is never the open one, so the editor and its autosave stay as they are.
+
+// ponytail: the forum's clock against this computer's. Two posts of the member in one thread closer together than this can pair
+// a pushed draft with the wrong post.
+const CLOCK_SKEW = 2 * 60000;
+
+/** The draft id of post `postId` on forum `site`: the same on every import, so a post imported before is found by it. */
+async function postDraftId(site, postId) {
+  const hash = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`${site}#${postId}`)));
+  const h = [...hash.slice(0, 16)].map((b) => b.toString(16).padStart(2, '0')).join('');
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
+}
+
+/** Imports the signed-in member's own posts in the forum threads of the projects keyed `projectKeys` as forum post drafts: each
+ * titled by its first line, in its project, tagged Done, marked pushed (and created) at the post's date, its pictures and
+ * videos placeholders that download in the background (downloadMedia). A post imported before, or pushed from this app, is
+ * skipped. `onProgress({found, imported})` follows the count. → {found, imported, skipped, failed: [{url, error}], downloads};
+ * throws when nobody is signed in to the forum. */
+export async function importPosts(projectKeys, onProgress = () => {}) {
+  const topics = new Map(); // topic URL → project key
+  const failed = [];
+  for (const key of new Set(projectKeys)) {
+    const topic = projectTopic(key);
+    if (topic) topics.set(topic, key);
+    else failed.push({ url: key, error: 'The project links no forum thread' });
+  }
+  let found = 0;
+  let imported = 0;
+  let skipped = 0;
+  let downloads = 0;
+  if (!topics.size) return { found, imported, skipped, failed, downloads };
+  const { threads } = await service.posts([...topics.keys()]);
+  found = threads.reduce((n, t) => n + (t.posts?.length ?? 0), 0);
+  onProgress({ found, imported });
+  const done = tagList(settings()).find((t) => t.id === 'done') ?? tagList(settings()).find((t) => /^done$/i.test(t.name));
+  const format = FORMATS['forum-post'];
+  const { schema } = kitOf(format.id);
+  const tags = {};
+  const pending = [];
+  for (const t of threads) {
+    if (!t.posts) {
+      failed.push({ url: t.url, error: t.error });
+      continue;
+    }
+    const key = topics.get(t.url);
+    const ids = new Set(getState().drafts.map((d) => d.id));
+    const pushed = getState().drafts.filter((d) => d.threadUrl === key && d.pushedAt).map((d) => d.pushedAt);
+    let prev = -Infinity; // the date of the member's post before this one in the thread
+    for (const post of t.posts) {
+      const date = Date.parse(post.date); // NaN: the page showed none
+      const id = await postDraftId(siteOf(t.url), post.id);
+      // Imported before (its id), or pushed from this app: a draft of the project pushed after the member's previous post and
+      // before this one (the reply box is filled first, then submitted by hand).
+      const had = ids.has(id) || (!Number.isNaN(date) && pushed.some((at) => at > prev + CLOCK_SKEW && at <= date + CLOCK_SKEW));
+      if (!Number.isNaN(date)) prev = date;
+      if (had) {
+        skipped++;
+        continue;
+      }
+      const at = Number.isNaN(date) ? Date.now() : date;
+      const doc = postToDoc(post.html, post.media);
+      // A given id keeps `created` at the post's date (main sets created only for a record without an id).
+      const draft = { id, title: postTitle(doc, post.date), threadUrl: key, created: at, pushedAt: at, format: format.id,
+        formatVersion: format.version, doc };
+      try {
+        schema.nodeFromJSON(doc).check(); // the editor would drop what its schema cannot hold
+        await window.api.drafts.save(draft);
+      } catch (e) {
+        failed.push({ url: post.url, error: String(e.message || e) });
+        continue;
+      }
+      ids.add(id);
+      if (done) tags[draft.id] = done.id;
+      const n = placeholderUrls(doc).length;
+      if (n) {
+        pending.push(draft.id);
+        downloads += n;
+      }
+      onProgress({ found, imported: ++imported });
+    }
+  }
+  if (imported) {
+    setState({ drafts: await window.api.drafts.list() });
+    await saveSettings({ draftTags: { ...settings().draftTags, ...tags }, ...(pending.length && { forumMedia: [...(settings().forumMedia ?? []), ...pending] }) });
+  }
+  if (pending.length) downloadMedia();
+  return { found, imported, skipped, failed, downloads };
+}
+
+const dataUrlOf = (blob) => new Promise((resolve, reject) => {
+  const reader = new FileReader();
+  reader.onload = () => resolve(reader.result);
+  reader.onerror = () => reject(reader.error);
+  reader.readAsDataURL(blob);
+});
+
+/** The placeholder URLs of draft `id`: its file's, and the open editor's while it is the open draft (the two differ until the
+ * editor's next save). [] when the draft is gone, null when its file could not be read. */
+async function pendingUrls(id) {
+  let file;
+  try {
+    file = await window.api.drafts.load(id);
+  } catch {
+    return null;
+  }
+  if (!file) return [];
+  const { draft, editor } = getState();
+  const open = draft?.id === id && editor ? placeholderUrls(editor.getJSON()) : [];
+  return [...new Set([...placeholderUrls(file.doc ?? {}), ...open])];
+}
+
+/** Puts `files` ({url: data URL}) in draft `id`'s placeholders: another draft loaded, patched and saved; the open draft in one
+ * transaction outside the undo history, saved at once, also when it opened while its file was patched (it may have loaded the
+ * old file). A fill that still gets lost (the draft switched while it landed) leaves the placeholder, which the next pass sees. */
+async function fill(id, files) {
+  if (getState().draft?.id !== id) {
+    const doc = (await window.api.drafts.load(id))?.doc;
+    // ponytail: load, then save through updateDraft; an edit to that draft landing in between (the background window) is lost.
+    // Lock per draft if that window starts editing imported drafts while they download.
+    if (doc) await updateDraft(id, { doc: fillPlaceholders(doc, files) });
+  }
+  const { draft, editor } = getState();
+  if (draft?.id !== id || !editor) return;
+  const tr = editor.state.tr;
+  editor.state.doc.descendants((node, pos) => {
+    if (node.type.name === 'media' && files[node.attrs.src]) tr.setNodeMarkup(pos, null, { ...node.attrs, src: files[node.attrs.src] });
+  });
+  if (!tr.docChanged) return;
+  editor.view.dispatch(tr.setMeta('addToHistory', false));
+  await saveNow(); // not the 800 ms autosave: openDraft may replace this editor before then
+}
+
+let downloading = null;
+let again = false;
+let watched;
+
+/** The import's background downloads: every placeholder of the drafts in settings.forumMedia, fetched by main (at most three
+ * at a time) and swapped for its file. A draft leaves the list once its file and open editor hold no placeholder; a failed
+ * download stays a placeholder and is tried again on the next start (ui.jsx init), the next import or when its draft opens.
+ * The status bar shows the count (store forumDownloads). Never throws. */
+export function downloadMedia() {
+  watchEditor();
+  if (downloading) {
+    again = true;
+    return downloading;
+  }
+  downloading = (async () => {
+    // The app opens its first draft after the integrations' init: start once it has, so no fill races that load.
+    while (!getState().editor) await new Promise((r) => setTimeout(r, 200));
+    // Another pass while one was asked for, or while the last one fetched every file and left fewer placeholders (a fill lost
+    // to a draft switch); a pass that leaves as many as it found ends it.
+    let before = Infinity;
+    for (;;) {
+      again = false;
+      const { total, failed } = await downloadPass().catch(() => ({ total: 0, failed: 1 }));
+      if (!again && (failed || !total || total >= before)) break;
+      before = total;
+    }
+  })().finally(() => {
+    downloading = null;
+    setState({ forumDownloads: 0 });
+  });
+  return downloading;
+}
+
+/** An editor that opens on a draft with placeholders (one opened from a file older than its last fill, or a pasted
+ * placeholder) puts that draft on the list and starts the downloads. */
+function watchEditor() {
+  if (watched !== undefined) return;
+  watched = null;
+  subscribe(() => {
+    const { draft, editor } = getState();
+    if (editor === watched) return;
+    watched = editor;
+    if (!editor || !draft?.id || !enabled(settings(), 'forum') || !placeholderUrls(editor.getJSON()).length) return;
+    const list = settings().forumMedia ?? [];
+    (list.includes(draft.id) ? Promise.resolve() : saveSettings({ forumMedia: [...list, draft.id] })).then(downloadMedia, () => {});
+  });
+}
+
+/** One pass over settings.forumMedia → {total: placeholders found, failed: downloads that failed}. */
+async function downloadPass() {
+  const work = [];
+  for (const id of settings().forumMedia ?? []) work.push({ id, urls: await pendingUrls(id) });
+  const total = work.reduce((n, w) => n + (w.urls?.length ?? 0), 0);
+  let left = total;
+  let failed = 0;
+  setState({ forumDownloads: left });
+  let listed = Promise.resolve(); // settings.forumMedia changes one at a time
+  // Every file at once: main's three download slots set the pace, so a slow file holds up only itself. A draft's fills run one
+  // after another (each loads and saves it), and a draft whose placeholders are all gone leaves forumMedia.
+  await Promise.all(work.filter((w) => w.urls).map(async (w) => {
+    let filled = Promise.resolve();
+    await Promise.all(w.urls.map(async (url) => {
+      try {
+        const { type, data } = await service.download(url);
+        const file = await dataUrlOf(new Blob([data], { type }));
+        filled = filled.then(() => fill(w.id, { [url]: file })).catch(() => {});
+      } catch {
+        failed++;
+      }
+      setState({ forumDownloads: --left });
+    }));
+    await filled;
+    const rest = await pendingUrls(w.id);
+    if (rest && !rest.length) listed = listed.then(() => saveSettings({ forumMedia: (settings().forumMedia ?? []).filter((id) => id !== w.id) })).catch(() => {});
+  }));
+  await listed;
+  return { total, failed };
+}
+
+/** Tool search's Import my forum posts: signs in when needed, asks, then imports the posts of every project's forum thread
+ * (at most 50) with the count on the overlay. */
+export async function importAll() {
+  const keys = settings().threads.filter((t) => projectTopic(t.url)).map((t) => t.url).slice(0, 50);
+  if (!keys.length) return toast('No project links a forum thread yet. Link one from its row in the sidebar first.', true);
+  if (!getState().status.loggedIn) {
+    await login();
+    if (!getState().status.loggedIn) return;
+  }
+  if (!(await confirmDialog({
+    title: 'Import your earlier posts as drafts?',
+    description: `Your own posts in ${keys.length === 1 ? 'the linked forum thread' : `${keys.length} linked forum threads`} become drafts, marked pushed and tagged Done. Pictures and videos download in the background, so you can keep writing.`,
+    confirmText: 'Import',
+  }))) return;
+  showOverlay('Looking for your posts...');
+  let result;
+  try {
+    result = await importPosts(keys, ({ found, imported }) => showOverlay(`${found} posts found, ${imported} imported`));
+  } catch (e) {
+    hideOverlay();
+    return alertDialog('Import failed', String(e.message || e));
+  }
+  hideOverlay();
+  const { imported, skipped, failed } = result;
+  toast([`${imported} ${imported === 1 ? 'post' : 'posts'} imported`, skipped && `${skipped} imported before`, failed.length && `${failed.length} could not be read`]
+    .filter(Boolean).join(', ') + '.', failed.length > 0);
 }

@@ -10,7 +10,7 @@ import { SelectButton } from '@/components/ui/select';
 import { Spinner } from '@/components/ui/spinner';
 import { canvasEditor } from '../../canvas.js';
 import { activeBoard } from '../../whiteboard.js';
-import { openSettings, refocusEditor } from '../actions.js';
+import { openSettings, refocusEditor, setupOpen } from '../actions.js';
 import { assistantMode } from '../commands/tool-sets.mjs';
 import { AgentAsk } from '../components/AgentAsk.jsx';
 import { IconButton, Tip } from '../components/Tip.jsx';
@@ -724,7 +724,7 @@ export function Assistant() {
     const onKey = (e) => {
       if (!keyIs('app.assistant', e)) return; // §7k
       const st = getState();
-      if (st.dialog || st.confirm || (st.settings?.assistant?.provider ?? ASSISTANT_DEFAULTS.provider) === 'none') return;
+      if (st.dialog || st.confirm || setupOpen(st) || (st.settings?.assistant?.provider ?? ASSISTANT_DEFAULTS.provider) === 'none') return;
       e.preventDefault();
       e.stopPropagation();
       if (!e.repeat) toggleChat();

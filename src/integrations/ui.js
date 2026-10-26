@@ -41,5 +41,10 @@ export function Slot({ name, ...props }) {
   return h(Fragment, null, ...uis.filter((ui) => ui[name]).map((ui, i) => h(ui[name], { key: i, ...props })));
 }
 
+/** The setup's integration pages (docs/plans/onboarding.md, Integration setup pages): the SetupPages ({id, title, Page}) of
+ * each integration on with `settings`, in manifest order, each with its `integration` id. */
+export const setupPages = (settings = getState().settings) => INTEGRATIONS.filter((i) => enabled(settings, i.id))
+  .flatMap((i) => (UI[i.id].SetupPages ?? []).map((p) => ({ ...p, integration: i.id })));
+
 /** ctx.integrations of commands (app/commands.js makeCtx): each integration's actions. Its commands run only while it is on. */
 export const integrationsCtx = () => Object.fromEntries(Object.entries(UI).map(([id, ui]) => [id, ui.actions]));

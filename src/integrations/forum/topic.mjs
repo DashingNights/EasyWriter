@@ -57,3 +57,15 @@ export function slugTitle(url) {
   words = words.replace(/-+/g, ' ').trim();
   return words ? words[0].toUpperCase() + words.slice(1) : `Topic ${m[2]}`;
 }
+
+/** The setup's thread list (forum/ui.jsx SetupThreads): pasted `value` → {topic}, its canonical URL on forum `site` (none set:
+ * its own site, so the first link sets it), or {error} when it is no topic link of that forum, `list` has that topic, or `list`
+ * is full (forum.posts reads at most 50 topics). */
+export function listTopic(list, value, site) {
+  if (list.length >= 50) return { error: 'The list holds 50 threads at most.' };
+  const text = String(value ?? '').trim();
+  const topic = normalizeThread(text, site || siteOf(text));
+  if (!topic) return { error: site && siteOf(text) ? `That thread is not on ${site}. Add threads of one forum.` : 'Paste the full link of a forum topic, like https://forum.example.com/topic/12345-name/' };
+  if (list.some((u) => topicId(u) === topicId(topic))) return { error: 'That thread is in the list already.' };
+  return { topic };
+}

@@ -15,7 +15,7 @@ import { listFonts } from '../document/fonts.js';
 import { defaultFormat, drawTheme, FORMATS, formatOf, pageOf } from '../formats.mjs';
 import { each, first, UI } from '../integrations/ui.js';
 import { legacyTopic } from '../thread-url.mjs';
-import { edited, entries, groups as groupsOf, META as SUGGEST_META } from '../suggest/core.mjs';
+import { edited, entries, groups as groupsOf, items as suggestionItems, META as SUGGEST_META } from '../suggest/core.mjs';
 import { activeOf, agentInputOpen, resolve as resolveChanges, setActive, setWindowEditor, setWorkerCall, workerIds } from '../suggest/extension.js';
 import { activeBoard, contentWidth, finishBoardEdits, migrateBoards } from '../whiteboard.js';
 import { captureSelection } from './assistant/capture.js';
@@ -34,7 +34,7 @@ import * as history from './history.js';
 import { bindPanZoom, keepPlace, zoomAround } from './panzoom.js';
 import { flushPlans, initPlans } from './plans.js';
 import { clearRevLog, recordRev } from './rev.js';
-import { cell, demoDoc, para, sampleImage, text } from './samples/demo.js';
+import { cell, para, sampleImage, text } from './samples/demo.js';
 import { flowSample } from './samples/flow.js';
 import { planSample } from './samples/plan.js';
 import { applyMotion } from './motion.js';
@@ -108,23 +108,28 @@ export async function resolveSuggestions(editor, draftId, sel, action, { by = 'u
   const doc = editor.state.doc;
   const pick = (e) => sel?.all || (sel?.group ? e.g === sel.group : sel?.ids?.includes(e.id));
   const changes = entries(doc).filter(pick);
-  if (!changes.length) return [];
-  if (action === 'reject' && changes.some((e) => edited(doc, e.id)) && !(await confirmDialog({
-    title: changes.length > 1 ? 'Reject these suggestions?' : 'Reject this suggestion?',
+  // A place of a change decided place by place (core.places): its id is `<change>-<n>` (the cards, the keys, Next and Previous).
+  const places = sel?.ids ? suggestionItems(doc, editor.schema).filter((it) => it.place && sel.ids.includes(it.id)) : [];
+  if (!changes.length && !places.length) return [];
+  if (action === 'reject' && [...changes, ...places.map((it) => it.e)].some((e) => edited(doc, e.id)) && !(await confirmDialog({
+    title: changes.length + places.length > 1 ? 'Reject these suggestions?' : 'Reject this suggestion?',
     description: 'You edited this suggestion. Rejecting it also removes your edits.',
     confirmText: 'Reject',
     destructive: true,
   }))) return null;
   if (editor.isDestroyed) return null;
+  if (places.length) return resolveChanges(editor, { places: places.map((it) => it.id) }, action, { by, draftId });
   return resolveChanges(editor, { ids: changes.map((e) => e.id) }, action, { by, draftId });
 }
 
 const NO_SUGGESTIONS = { groups: [], count: 0, active: null };
 let syncedDoc = null;
 
-/** The change in `list` (core.entries) whose blocks hold position `pos` (a deletion has no text to hold the caret). The end is
- * strict: a block's end is the next block's start, where a node selection or gap cursor on that next block sits. */
-export const changeAt = (list, pos) => list.find((e) => e.nodes.some((n, k) => e.starts[k] <= pos && pos < e.starts[k] + n.nodeSize));
+/** The decision in `list` (core.items) at position `pos`: a place whose words hold it (ends included, a deletion at its point),
+ * else a change decided whole whose blocks hold it (a deletion has no text to hold the caret). A block's end is strict: it is the
+ * next block's start, where a node selection or gap cursor on that next block sits. */
+export const itemAt = (list, pos) => list.find(({ e, place }) => (place ? place.from <= pos && pos <= place.to
+  : e.nodes.some((n, k) => e.starts[k] <= pos && pos < e.starts[k] + n.nodeSize)));
 
 /** Mirrors the open editor's waiting changes into state.suggestions (the cards, the status bar slot, the sidebar badge, tool
  * search) after a transaction `tr` that changes the doc or the selection or carries the extension's meta; no `tr`: a new editor.
@@ -138,18 +143,18 @@ export function syncSuggestions(tr) {
     return;
   }
   const { doc, selection } = ed.state;
-  const list = entries(doc);
+  const list = suggestionItems(doc, ed.schema);
   if (!list.length) {
     syncedDoc = doc;
     if (state.suggestions !== NO_SUGGESTIONS) setState({ suggestions: NO_SUGGESTIONS });
     return;
   }
   let active = activeOf(ed.state);
-  const under = !tr || tr.selectionSet ? changeAt(list, selection.from) : null;
+  const under = !tr || tr.selectionSet ? itemAt(list, selection.from) : null;
   if (under && under.id !== active) {
     const { id } = under;
     active = id; // the decorations follow in a transaction of their own, after this one
-    queueMicrotask(() => !ed.isDestroyed && activeOf(ed.state) !== id && entries(ed.state.doc).some((e) => e.id === id) && setActive(ed, id));
+    queueMicrotask(() => !ed.isDestroyed && activeOf(ed.state) !== id && suggestionItems(ed.state.doc, ed.schema).some((it) => it.id === id) && setActive(ed, id));
   }
   if (!list.some((e) => e.id === active)) active = null;
   const s = state.suggestions;
@@ -159,28 +164,34 @@ export function syncSuggestions(tr) {
   setState({ suggestions: { groups: same ? s.groups : groupsOf(doc), count: list.length, active } });
 }
 
-/** Makes change `id` of the open draft the active one and centres it in the page's viewport (a card row, a tab, Next, Previous). */
+/** Makes decision `id` of the open draft (a change, or a place of one: core.items) the active one and centres it in the page's
+ * viewport (a card, Next, Previous, an agent's suggestions.show). A change decided place by place shows its first place. */
 export function showSuggestion(id) {
   const ed = state.editor;
-  const e = ed && entries(ed.state.doc).find((x) => x.id === id);
-  if (!e) return false;
-  setActive(ed, id);
-  let pos = e.starts[0] ?? e.from;
+  const list = ed ? suggestionItems(ed.state.doc, ed.schema) : [];
+  const it = list.find((x) => x.id === id) ?? list.find((x) => x.e.id === id);
+  if (!it) return false;
+  const { e, place } = it;
+  setActive(ed, it.id);
+  let pos = place ? e.starts[place.k] : e.starts[0] ?? e.from;
   if (e.kind === 'attr') pos = 0;
   else if (e.kind === 'delete' && e.side === 'after') pos = e.from - (ed.state.doc.resolve(e.from).nodeBefore?.nodeSize ?? 0);
   scrollToBlock(ed, Math.min(pos, Math.max(0, ed.state.doc.content.size - 1)));
   return true;
 }
 
-/** Moves to the next (`dir` 1) or previous (-1) change in document order, wrapping; from the caret when none is active. */
+// Where decision `it` (core.items) sits in the doc: a place's words, else its change's.
+const itemFrom = (it) => (it.place ? it.place.from : it.e.from);
+
+/** Moves to the next (`dir` 1) or previous (-1) decision in document order, wrapping; from the caret when none is active. */
 function stepSuggestion(dir) {
   const ed = state.editor;
-  const list = ed ? entries(ed.state.doc) : [];
+  const list = ed ? suggestionItems(ed.state.doc, ed.schema) : [];
   if (!list.length) return false;
-  let i = list.findIndex((e) => e.id === state.suggestions.active);
+  let i = list.findIndex((it) => it.id === state.suggestions.active);
   if (i < 0) {
     const at = ed.state.selection.from;
-    i = dir > 0 ? list.findIndex((e) => e.kind !== 'attr' && e.from >= at) : list.findLastIndex((e) => e.kind === 'attr' || e.from < at);
+    i = dir > 0 ? list.findIndex((it) => it.e.kind !== 'attr' && itemFrom(it) >= at) : list.findLastIndex((it) => it.e.kind === 'attr' || itemFrom(it) < at);
     if (i < 0) i = dir > 0 ? 0 : list.length - 1;
   } else i = (i + dir + list.length) % list.length;
   return showSuggestion(list[i].id);
@@ -193,15 +204,21 @@ export const previousSuggestion = () => stepSuggestion(-1);
 async function review(sel, action) {
   const ed = state.editor;
   if (!ed) return null;
-  const before = entries(ed.state.doc);
-  const at = before.findIndex((e) => e.id === state.suggestions.active);
+  // Places renumber once one is decided (`<change>-<n>`), so the next active one is found by where it sits.
+  const before = suggestionItems(ed.state.doc, ed.schema);
+  const at = before.findIndex((it) => it.id === state.suggestions.active);
   const done = await resolveSuggestions(ed, state.draft?.id ?? null, sel, action);
-  if (!done?.length || ed.isDestroyed) return done;
-  const left = new Set(entries(ed.state.doc).map((e) => e.id));
-  if (at >= 0 && !left.has(before[at].id)) setActive(ed, before.slice(at + 1).find((e) => left.has(e.id))?.id ?? null);
+  if (!done?.length || ed.isDestroyed || at < 0) return done;
+  const now = suggestionItems(ed.state.doc, ed.schema);
+  if (now.some((it) => it.id === before[at].id && itemFrom(it) === itemFrom(before[at]))) return done;
+  const from = itemFrom(before[at]);
+  setActive(ed, now.find((it) => it.e.kind !== 'attr' && itemFrom(it) >= from)?.id ?? null);
   return done;
 }
-const activeGroup = () => state.suggestions.groups.find((g) => g.changes.some((e) => e.id === state.suggestions.active))?.g;
+const activeGroup = () => {
+  const ed = state.editor;
+  return ed && suggestionItems(ed.state.doc, ed.schema).find((it) => it.id === state.suggestions.active)?.e.g;
+};
 /** The review actions of the cards, the keys, the status bar and tool search: the active change, a group (default: the active
  * change's), or every change in the draft. */
 export const acceptActive = () => state.suggestions.active && review({ ids: [state.suggestions.active] }, 'accept');
@@ -223,7 +240,7 @@ const systemDark = matchMedia('(prefers-color-scheme: dark)');
 systemDark.addEventListener('change', () => state.settings && applyUiTheme());
 
 function applyUiTheme() {
-  const t = state.settings.uiTheme;
+  const t = state.settings.uiTheme ?? 'system';
   const dark = WORKER || t === 'system' ? systemDark.matches : t !== 'light';
   document.documentElement.classList.toggle('dark', dark);
   if (dark !== state.uiDark) setState({ uiDark: dark });
@@ -1051,6 +1068,19 @@ export async function openSettings(section) {
   if (values) await changeSettings(values);
 }
 
+/** Whether the setup dialog shows (Setup.jsx): until settings.onboarded, or after Run setup again; never in the background
+ * window or the smoke sample run. */
+export function setupOpen(s = state) {
+  return !!s.settings && !s.smoke && !WORKER && !SMOKE && (s.settings.onboarded !== true || !!s.setup);
+}
+
+/** Settings > General Run setup again and its tool search entry: the setup (src/app/setup) from its first page. Nothing is
+ * cleared: each page shows the settings as they are. */
+export async function runSetup() {
+  await saveSettings({ setup: { usedBefore: null, ...state.settings.setup, step: 'welcome' } });
+  setState({ setup: true });
+}
+
 /** Saves and applies `values` (some settings keys: the dialog's, or settings.patch's, §8). */
 export async function changeSettings(values) {
   const s = state.settings;
@@ -1086,7 +1116,7 @@ function onKeyDown(e) {
   if (zoom && !e.target.closest?.('[data-browser-pane], [data-browser-page]')) {
     return go(e, () => api.window.zoom(WINDOW_ZOOM[zoom]).then((settings) => setState({ settings }))); // saved as uiScale
   }
-  if (state.dialog || state.confirm) return;
+  if (state.dialog || state.confirm || setupOpen()) return; // the setup is modal to the keyboard too
   if (keyIs('app.save', e)) {
     go(e, () => {
       commitBoardEdit();
@@ -1258,11 +1288,9 @@ async function init() {
   initBrowser();
   watchWorker();
   api.update.onEvent(onUpdateEvent);
-  if (!state.settings.demoSeeded && !SMOKE) { // the first start: the demo draft, once (samples/demo.js)
-    // A forum post, since the demo uses the forum marks. Saved; lastDraftId opens it below.
-    if (!state.drafts.length) await createDraft({ threadUrl: null, doc: demoDoc(), format: 'forum-post' }).catch(() => {});
-    await saveSettings({ demoSeeded: true }).catch(() => {}); // deleting it later does not bring it back; a profile with drafts never gets it
-  }
+  // The demo draft (samples/demo.js) is no longer created on a new profile (docs/plans/onboarding.md); the flag is still set
+  // once, so a profile reads the same to an older build, which would otherwise seed it.
+  if (!state.settings.demoSeeded && !SMOKE) await saveSettings({ demoSeeded: true }).catch(() => {});
   const { lastDraftId } = state.settings;
   const id = state.drafts.some((d) => d.id === lastDraftId) ? lastDraftId : state.drafts[0]?.id;
   if (!id || !(await openDraft(id))) await fallbackDraft();

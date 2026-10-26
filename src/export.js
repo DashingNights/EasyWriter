@@ -49,6 +49,7 @@ export const CopyPicture = Extension.create({
     const copy = (view) => {
       const sel = view.state.selection;
       if (!(sel instanceof NodeSelection) || !PICTURED.includes(sel.node.type.name)) return false;
+      if (sel.node.type.name === 'media' && !sel.node.attrs.src?.startsWith('data:')) return false; // a forum import placeholder: no picture yet
       const html = getHTMLFromFragment(Fragment.from(sel.node), view.state.schema);
       const picture = nodePicture(sel.node, view.nodeDOM(sel.from));
       navigator.clipboard.write([new ClipboardItem({ 'text/html': new Blob([html], { type: 'text/html' }), 'image/png': picture })])

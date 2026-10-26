@@ -3,13 +3,14 @@ import { cn } from 'cn';
 import { Bot } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { setupOpen } from '../actions.js';
 import { motion } from '../motion.js';
 import { useStore } from '../store.js';
 
 // The agent request card (SPEC §8 Agent requests): a destructive or approval command from an agent waits here for a click.
 // Non-modal, at the bottom right above the bottom row, below dialogs (z 45 < 50); while the chat panel is open, inside it above
 // its input row instead (Chat.jsx renders it there, `inline`), so it never covers the panel; hidden while the user's own dialog or
-// confirm is open (it waits behind them). Its buttons never take the focus, Escape does nothing to it and no shortcut is
+// confirm is open, or the first start's setup (it waits behind them). Its buttons never take the focus, Escape does nothing to it and no shortcut is
 // blocked while it waits. Deny carries a ring that runs out with the 60 s the executor waits; then the call is denied.
 
 const keepFocus = (e) => e.preventDefault();
@@ -37,7 +38,7 @@ function Countdown({ expires }) {
 /** The card: fixed (App.jsx), or `inline` in the open chat panel; each shows only in its own case. */
 export function AgentAsk({ inline = false }) {
   const queue = useStore((s) => s.agentAsk);
-  const blocked = useStore((s) => !!(s.dialog || s.confirm));
+  const blocked = useStore((s) => !!(s.dialog || s.confirm) || setupOpen(s));
   const chatOpen = useStore((s) => !!s.assistant?.open);
   const ask = queue[0];
   if (!ask || blocked || chatOpen !== inline) return null;

@@ -279,6 +279,25 @@ function cliTest(over = {}) {
   });
 }
 
+/** The setup's Save (docs/plans/onboarding.md helpers): whether `key` works for the cloud provider `provider`, asked through its
+ * OpenAI-compatible models list, which spends no tokens → {ok, message}. */
+async function checkKey({ provider, key } = {}) {
+  if (!Object.hasOwn(CLOUD, provider)) return { ok: false, message: 'This provider has no API key.' };
+  const { url, label } = CLOUD[provider];
+  const k = typeof key === 'string' ? key.trim() : '';
+  if (!k) return { ok: false, message: `Add your ${label} API key.` };
+  try {
+    const res = await fetch(`${url}/models`, { headers: { Authorization: `Bearer ${k}` }, signal: AbortSignal.timeout(15000) });
+    if (res.ok) return { ok: true };
+    const body = await res.json().catch(() => null);
+    const said = String((Array.isArray(body) ? body[0] : body)?.error?.message ?? '').trim(); // Google AI answers with a list
+    const why = res.status === 401 || res.status === 403 ? `${label} did not accept this key.` : `${label} answered HTTP ${res.status}.`;
+    return { ok: false, message: said ? `${why} ${said}` : why };
+  } catch (e) {
+    return { ok: false, message: `${label} could not be reached. ${e.message}` };
+  }
+}
+
 // The writing guide (prompts.mjs GUIDE_RULE): EasyWriter's own, shipped with the app, so every user and every provider gets the
 // same one and nothing is read from the user's home folder (the user, 2026-10-25: "what if another user downloads the app").
 // Read at every turn, so an edit to the file reaches a dev build's next message without a restart.
@@ -296,6 +315,7 @@ function register(handle, settings, win) {
   handle('assistant.cancelChat', cancelChat);
   handle('assistant.cliRun', cliRun);
   handle('assistant.cliTest', cliTest);
+  handle('assistant.checkKey', checkKey);
   for (const ch of ['assistant.install', 'assistant.delete', 'assistant.deleteLeftover']) handle(ch, async () => { throw new Error(OFF); });
   for (const ch of ['assistant.cancel', 'assistant.warm', 'assistant.stop']) handle(ch, async () => true);
   app.on('will-quit', killRuns);

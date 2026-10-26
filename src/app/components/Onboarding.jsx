@@ -5,7 +5,7 @@ import { TITLEBAR } from '@/components/ui/bounds';
 import { Button } from '@/components/ui/button';
 import { showIslandTab } from '../../document/Ribbon.jsx';
 import { saveSettings } from '../actions.js';
-import { getState, setState, useStore, WORKER } from '../store.js';
+import { getState, setState, useStore } from '../store.js';
 import { useViewportBox } from '../viewport.js';
 import { showPage } from '../views.js';
 import { CHROME, keepFocus } from './board/controls.jsx';
@@ -13,8 +13,8 @@ import { STEPS } from './onboarding-steps.jsx';
 import { IconButton } from './Tip.jsx';
 
 // The tour (STEPS in onboarding-steps.jsx): a card mounted in the main column's area, above the islands and below dialogs
-// (z 45, like the agent request card). It starts on the first start (settings.onboarded not true; never in the background
-// window, §7i) and from Settings > General; it is not shown during smoke. Non-modal: it never takes the focus or a key and its
+// (z 45, like the agent request card). It starts from Settings > General (the first start shows the setup instead,
+// src/app/setup); it is not shown during smoke. Non-modal: it never takes the focus or a key and its
 // buttons keep the editor's selection, so the app can be used while it is open. Done, Skip tour and its X end it and save
 // `onboarded: true`. A step's `target` (a CSS selector) gets a ring while a visible element matching it is on screen, and the
 // card then sits beside the ring with an arrow pointing at it, following it; with no target on screen the card is at the top
@@ -96,16 +96,12 @@ function useAnchor(target, card) {
 /** The tour card and its ring (one, mounted in App). */
 export function Onboarding() {
   const tour = useStore((s) => s.tour);
-  const fresh = useStore((s) => !!s.settings && !s.settings.onboarded);
   const smoke = useStore((s) => s.smoke);
   const page = useStore((s) => s.view.type);
   const box = useViewportBox(!!tour);
   const card = useRef(null);
   const step = tour && STEPS[tour.step];
   const at = useAnchor(!smoke && step?.target, card);
-  useEffect(() => {
-    if (fresh && !WORKER) startTour();
-  }, [fresh]);
   useEffect(() => { if (step?.island) showIslandTab(step.island); }, [step]); // a Document's Insert tab holds the Insert buttons
   if (!tour || smoke || !box) return null;
   const i = tour.step;

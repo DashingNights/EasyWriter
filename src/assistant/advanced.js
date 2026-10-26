@@ -10,7 +10,8 @@ const NUMBERS = {
   cloudLive: [3, 1, 20], // the cloud models: pictures kept with their image per request
   maxTokens: [8192, 1024, 65536], // max_tokens of a cloud request
 };
-const SWITCHES = { limitCalls: true, repeatStop: true }; // the call limit; the stops for repeated and failing calls
+// The call limit (off by default since 2026-10-26, docs/plans/onboarding.md); the stops for repeated and failing calls.
+const SWITCHES = { limitCalls: false, repeatStop: true };
 
 /** The default of every knob: {limitCalls, repeatStop, maxCalls, ...}. */
 const ADVANCED = { ...SWITCHES, ...Object.fromEntries(Object.entries(NUMBERS).map(([k, [d]]) => [k, d])) };

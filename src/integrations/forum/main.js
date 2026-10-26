@@ -1,9 +1,9 @@
 'use strict';
 // The forum (SPEC §1, §4), main-process side: the forum window on its own session (PARTITION, which keeps the sign-in), the
-// hidden worker windows, and the inject.js scripts run on the forum's pages. main.js registers the five forum.* channels
-// through register(); this module never calls ipcMain itself.
-const { BrowserWindow, dialog } = require('electron');
-const { buildPushScript, describeThreadsScript, STATUS_SCRIPT } = require('./inject.js');
+// hidden worker windows, the inject.js scripts run on the forum's pages, and the import's downloads. main.js registers the
+// forum.* channels through register(); this module never calls ipcMain itself.
+const { BrowserWindow, dialog, session } = require('electron');
+const { buildPushScript, describeThreadsScript, postsScript, STATUS_SCRIPT } = require('./inject.js');
 
 const PARTITION = 'persist:daf';
 const LOGGED_OUT = { loggedIn: false, memberId: 0, name: null, profileUrl: null };
@@ -88,22 +88,24 @@ const hostOf = (url) => new URL(url).host.toLowerCase().replace(/^www\./, '');
 const onForum = (site, url) => typeof url === 'string' && url.startsWith('https://') && URL.canParse(url) && hostOf(url) === hostOf(site);
 const isTopicOf = (site, url) => onForum(site, url) && TOPIC_RE.test(url);
 
-// Runs script in a hidden window on the forum home page, then destroys the window.
-async function runInWorker(script, timeoutMs) {
+// Runs work(webContents) in a hidden window on the forum home page, then destroys the window.
+async function withWorker(work, timeoutMs) {
   const site = await forumSite();
   const win = new BrowserWindow({ show: false, webPreferences: forumWebPreferences() });
   let timer;
   try {
-    const work = loadAndWait(win, `${site}/`, timeoutMs).then(() => win.webContents.executeJavaScript(script, true));
+    const done = loadAndWait(win, `${site}/`, timeoutMs).then(() => work(win.webContents));
     const timeout = new Promise((_, reject) => {
       timer = setTimeout(() => reject(new Error('forum request timed out')), timeoutMs);
     });
-    return await Promise.race([work, timeout]);
+    return await Promise.race([done, timeout]);
   } finally {
     clearTimeout(timer);
     if (!win.isDestroyed()) win.destroy();
   }
 }
+
+const runInWorker = (script, timeoutMs) => withWorker((wc) => wc.executeJavaScript(script, true), timeoutMs);
 
 async function forumStatus() {
   try {
@@ -120,6 +122,60 @@ async function forumDescribe(urls) {
   const result = await runInWorker(describeThreadsScript(urls), 45000);
   if (result && result.error) throw new Error(result.error);
   return { threads: (result && result.threads) || [] };
+}
+
+/** The signed-in member's own posts in up to 50 topic URLs (docs/plans/onboarding.md Forum import) → {threads: [{url, posts:
+ * [{id, url, date, html, media}]} | {url, error}]}: a topic it cannot read is reported, not thrown. Throws when nobody is
+ * signed in. */
+async function forumPosts(urls) {
+  const site = await forumSite();
+  if (!Array.isArray(urls) || !urls.length || urls.length > 50 || !urls.every((u) => isTopicOf(site, u))) throw new Error('urls must be 1 to 50 forum topic URLs');
+  return withWorker(async (wc) => {
+    const status = await wc.executeJavaScript(STATUS_SCRIPT, true);
+    if (!status?.loggedIn) throw new Error('Not signed in to the forum. Sign in, then import again.');
+    const threads = [];
+    for (const url of urls) {
+      const r = await wc.executeJavaScript(postsScript(url, status.memberId), true).catch((e) => ({ error: String(e.message || e) }));
+      threads.push(r?.posts ? { url, posts: r.posts } : { url, error: r?.error || 'The topic could not be read' });
+    }
+    return { threads };
+  }, 60000 + 180000 * urls.length);
+}
+
+// The import's downloads (docs/plans/onboarding.md Forum import): a picture or video of a post, at most DOWNLOADS at a time. A
+// file on the forum's host or one under it (its upload host) is fetched with the forum's sign-in (the PARTITION session); any
+// other host (a picture linked from elsewhere, or a placeholder pasted or written by an agent) through MEDIA_PARTITION, an
+// in-memory session with no cookies. The renderer keeps what is left to fetch in the drafts' placeholders.
+const MEDIA_PARTITION = 'forum-media';
+const DOWNLOADS = 3;
+const MAX_FILE = 100 * 1024 * 1024; // the forum's own limit per file
+let downloading = 0;
+const waiting = [];
+const MIME = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp', avif: 'image/avif', bmp: 'image/bmp',
+  mp4: 'video/mp4', webm: 'video/webm', mov: 'video/quicktime', m4v: 'video/mp4', ogv: 'video/ogg' };
+
+/** `url` (https) → {type, data: Uint8Array}; throws on an HTTP error, a file that is no picture or video, or one over 100 MB. */
+async function forumDownload(url) {
+  if (typeof url !== 'string' || !URL.canParse(url) || new URL(url).protocol !== 'https:') throw new Error('url must be an https URL');
+  if (downloading >= DOWNLOADS) await new Promise((resolve) => waiting.push(resolve));
+  downloading++;
+  try {
+    const site = hostOf((await opts.getSettings()).forumUrl || 'https://invalid');
+    const host = hostOf(url);
+    const signedIn = host === site || host.endsWith(`.${site}`);
+    const res = await session.fromPartition(signedIn ? PARTITION : MEDIA_PARTITION).fetch(url, { cache: 'no-store', signal: AbortSignal.timeout(10 * 60000) });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    if (Number(res.headers.get('content-length')) > MAX_FILE) throw new Error('the file is over 100 MB');
+    let type = (res.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
+    if (!/^(image|video)\/[a-z0-9.+-]+$/.test(type)) type = MIME[new URL(url).pathname.split('.').pop().toLowerCase()] || '';
+    if (!type) throw new Error('not a picture or video');
+    const data = new Uint8Array(await res.arrayBuffer());
+    if (data.length > MAX_FILE) throw new Error('the file is over 100 MB');
+    return { type, data };
+  } finally {
+    downloading--;
+    waiting.shift()?.();
+  }
 }
 
 async function forumLogin() {
@@ -229,6 +285,8 @@ function register(handle, { getSettings, icon }) {
   handle('forum.describe', forumDescribe);
   handle('forum.push', forumPush);
   handle('forum.open', forumOpen);
+  handle('forum.posts', forumPosts);
+  handle('forum.download', forumDownload);
 }
 
 // close(), not destroy(): the forum page's unsaved-reply prompt (will-prevent-unload) still shows.
@@ -241,4 +299,4 @@ async function checkSettings(partial) {
   if ('forumUrl' in partial && partial.forumUrl !== '' && forumOrigin(partial.forumUrl) !== partial.forumUrl) throw new Error('forumUrl must be an https origin or empty');
 }
 
-module.exports = { register, stop, checkSettings, PARTITION };
+module.exports = { register, stop, checkSettings, PARTITION, MEDIA_PARTITION };

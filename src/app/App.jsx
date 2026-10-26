@@ -26,6 +26,7 @@ import { StatusBar } from './components/StatusBar.jsx';
 import { Toolbar } from './components/Toolbar.jsx';
 import { ToolSearch } from './components/ToolSearch.jsx';
 import { Dictation } from './dictation/Dictation.jsx';
+import { Setup } from './setup/Setup.jsx';
 import { NavPane } from '../document/NavPane.jsx';
 import { SuggestionCards } from '../suggest/Review.jsx';
 import { DocIsland } from '../document/Ribbon.jsx';
@@ -169,6 +170,8 @@ export function App() {
       <BoardMenu />
       <DraftMenu />
       <DialogHost />
+      {/* the setup on the first start and after Run setup again (setup/Setup.jsx) */}
+      <Setup />
       <ToolSearch />
       <AgentAsk />
       <Toaster theme={dark ? 'dark' : 'light'} position="top-right" offset={{ top: 58 }} duration={5000} />

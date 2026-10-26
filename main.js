@@ -76,7 +76,7 @@ const DEFAULT_SETTINGS = {
   pageWidth: 1454, // the core page's content width, 320-4000 (src/formats.mjs PAGE; Settings > General Page width)
   paper: 'a4', // a new Document's paper, per device: 'letter' or 'a4' from the Windows region (localPaper, at read)
   lastFormat: 'document', // the New draft dialog's last pick, preselected next time, per device (src/formats.mjs defaultFormat)
-  uiTheme: 'dark', // the app's own colours (Settings > General Theme): dark | light | system (actions.js applyUiTheme)
+  uiTheme: 'system', // the app's own colours (Settings > General Theme): dark | light | system (actions.js applyUiTheme)
   palette: {}, // {dark, light}: the user's colours over each theme's (Settings > General Palette, actions.js PALETTE)
   reduceMotion: 'system', // Settings > Motion: off | system | on | custom (src/app/motion.js)
   motion: {}, // {name: false} turns one animation off when reduceMotion is custom (src/app/motion.js MOTION)
@@ -110,8 +110,10 @@ const DEFAULT_SETTINGS = {
   browserAutoTab: false, // the browser page opens a Google tab when it has none
   keybinds: {}, // §7k: {bindingId: [chord]} for the bindings changed from their defaults (src/app/keys.mjs)
   github: github.DEFAULTS, // the GitHub backup (SPEC §4b)
-  demoSeeded: false, // the demo draft was created on the first start (actions.js init)
-  autoUpdate: false, // updates download in the background and install on quit; off: the update toast offers them (checkForUpdates)
+  demoSeeded: false, // set once on the first start (actions.js init); no longer seeds the demo draft, so an older build does not either
+  // On by default (the user, 2026-10-26): updates download in the background and install on quit (a portable copy on Restart);
+  // off: the update toast offers them (checkForUpdates). A saved choice stays.
+  autoUpdate: true,
   uiScale: 0, // the main window's zoom level (Settings > General UI scale, Ctrl+= / Ctrl+- / Ctrl+0): applyUiScale
 };
 
@@ -142,7 +144,9 @@ async function getSettings() {
   }
   // A missing file is not migrated: a new install starts with every integration off.
   const { DEFAULTS, migrateSettings } = await integrations;
-  return { ...structuredClone(DEFAULT_SETTINGS), paper: localPaper(), ...structuredClone(DEFAULTS), ...(isPlainObject(stored) ? migrateSettings(stored) : {}) };
+  // A smoke run (--smoke, the sample and every --script) counts as onboarded unless its profile says otherwise: the first
+  // start's setup would cover the app its steps drive.
+  return { ...structuredClone(DEFAULT_SETTINGS), paper: localPaper(), ...(SMOKE && { onboarded: true }), ...structuredClone(DEFAULTS), ...(isPlainObject(stored) ? migrateSettings(stored) : {}) };
 }
 
 function setSettings(partial) {
@@ -544,6 +548,9 @@ const sendUpdate = (ev) => {
   mainWin?.webContents.send('update.event', ev);
 };
 handle('update.last', () => lastUpdate);
+// Settings > General shows it at the top (the user, 2026-10-26). From this app's package.json, not app.getVersion(): started as
+// `electron <script>` (the harnesses), that answers Electron's own version.
+handle('app.version', () => require('./package.json').version);
 let checkUpdate = null; // set by checkForUpdates
 function checkForUpdates() {
   checkUpdate = PORTABLE ? checkPortableUpdate : () => autoUpdater.checkForUpdates().catch(() => {});

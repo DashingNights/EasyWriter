@@ -8,7 +8,7 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { refocusEditor } from '../actions.js';
+import { refocusEditor, setupOpen } from '../actions.js';
 import { IconButton, Tip } from '../components/Tip.jsx';
 import { keyIs, withKey } from '../keybinds.js';
 import { motion } from '../motion.js';
@@ -322,7 +322,7 @@ function InstallForm({ open }) {
         {error && <p className="text-destructive">{error}</p>}
         <DialogFooter>
           <Button type="button" variant="outline" size="sm" onClick={cancel}>Cancel</Button>
-          <Button type="button" size="sm" disabled={busy || !status} onClick={start}>
+          <Button type="button" size="sm" disabled={busy || !status} onClick={start} data-agent-risk={total ? 'approval' : undefined}>
             {phase === 'error' ? 'Retry' : total ? `Download and install (${mb(total)})` : 'Use this model'}
           </Button>
         </DialogFooter>
@@ -422,7 +422,7 @@ export function Dictation({ children }) {
     const onDown = (e) => {
       if (!keyIs('app.dictate', e)) return;
       const st = getState();
-      if (st.dialog || st.confirm) return;
+      if (st.dialog || st.confirm || setupOpen(st)) return;
       e.preventDefault();
       e.stopPropagation();
       if (held || e.repeat) return;

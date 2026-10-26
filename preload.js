@@ -25,6 +25,8 @@ contextBridge.exposeInMainWorld('api', {
     describe: call('forum.describe'),
     push: call('forum.push'),
     open: call('forum.open'),
+    posts: call('forum.posts'), // the import (docs/plans/onboarding.md Forum import): the member's own posts of topic URLs
+    download: call('forum.download'), // one picture or video of an imported post, with the forum's sign-in → {type, data}
   },
   window: {
     zoom: call('window.zoom'),
@@ -68,6 +70,7 @@ contextBridge.exposeInMainWorld('api', {
     cancelChat: call('assistant.cancelChat'),
     cliRun: call('assistant.cliRun'), // {rid, prompt, system, session}: one Claude Code or Codex turn (SPEC §7i Coding CLIs)
     cliTest: call('assistant.cliTest'), // the dialog's fields → {ok, tools, reply, code, message}
+    checkKey: call('assistant.checkKey'), // {provider, key} → {ok, message}: the provider's models list, no tokens spent
     writingGuide: call('assistant.writingGuide'), // the text of EasyWriter's writing guide (src/assistant/human-writing.md)
     /** Install progress, server status and chat stream events (`assistant.event`); returns the unsubscribe function. */
     onEvent: (fn) => {
@@ -131,6 +134,7 @@ contextBridge.exposeInMainWorld('api', {
   // Self-update: `update.event` {type: available|progress|ready, version, percent}; download() resolves once the update is
   // ready; install() quits and runs the installer. onEvent first replays the last offer or ready event sent before it.
   update: {
+    version: call('app.version'), // this copy's version (package.json, also in the dev build)
     download: call('update.download'),
     install: call('update.install'),
     onEvent: (fn) => {

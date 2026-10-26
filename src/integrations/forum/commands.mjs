@@ -4,9 +4,9 @@ import { GATES } from '../../app/gates.mjs';
 import { BOARD_TYPES } from '../../doc-path.mjs';
 
 // The forum integration's commands (SPEC §8 Catalogue; agent-automation plan §6.4), spread by app/commands/catalogue.mjs:
-// export.preview, push.prepare, forum.*, threads.openInForum and drafts.unpush. Each has integration: 'forum', so agents see
-// them only while the forum is on. They reach the forum only through ctx.integrations.forum (forum/actions.js), so this
-// file imports no renderer code. Push stays the existing flow (forum/actions.js push): its human confirm, then the forum window's
+// export.preview, push.prepare, forum.* (forum.import too), threads.openInForum and drafts.unpush. Each has integration:
+// 'forum', so agents see them only while the forum is on. They reach the forum only through ctx.integrations.forum
+// (forum/actions.js), so this file imports no renderer code. Push stays the existing flow (forum/actions.js push): its human confirm, then the forum window's
 // reply box is filled; Submit is always the human's click.
 
 // Copies of app/commands/drafts.mjs's, which imports renderer code (whiteboard.js).
@@ -118,6 +118,32 @@ export const defs = [
     run: async (ctx) => {
       await ctx.integrations.forum.login();
       return { loggedIn: !!ctx.state.status?.loggedIn };
+    },
+  }),
+  define({
+    id: 'forum.import',
+    integration: 'forum',
+    needs: ['app.forum'],
+    title: "Import the user's own earlier posts in forum threads as drafts, tagged Done and pushed",
+    group: 'forum',
+    risk: 'approval', // it creates a draft per post
+    undo: 'none',
+    slow: true,
+    args: { type: 'object', required: ['threads'], additionalProperties: false, properties: {
+      threads: { type: 'array', minItems: 1, maxItems: 50, items: ref('URL', 'A project from threads_list that links a forum thread') },
+    } },
+    result: { type: 'object', required: ['found', 'imported', 'skipped', 'failed', 'downloads'] },
+    examples: [{ args: { threads: [THREAD] } }],
+    ask: (ctx, a) => ({
+      title: `import your earlier forum posts in ${a.threads.length === 1 ? 'one thread' : `${a.threads.length} threads`} as drafts`,
+      description: 'Each of your own posts becomes a draft, tagged Done and marked pushed. Pictures and videos download in the background.',
+    }),
+    run: async (ctx, a) => {
+      try {
+        return await ctx.integrations.forum.importPosts(a.threads);
+      } catch (e) {
+        return fail('failed', String(e.message || e)); // not signed in, or the forum could not be reached
+      }
     },
   }),
   define({

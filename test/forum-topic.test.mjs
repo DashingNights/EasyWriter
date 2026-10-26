@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { forumOrigin, hasForum, normalizeThread, siteOf, slugTitle, topicId, topicOf } from '../src/integrations/forum/topic.mjs';
+import { forumOrigin, hasForum, listTopic, normalizeThread, siteOf, slugTitle, topicId, topicOf } from '../src/integrations/forum/topic.mjs';
 
 const SITE = 'https://forum.example.com';
 const CANON = 'https://forum.example.com/topic/12345-level-design/';
@@ -56,4 +56,16 @@ test("topicOf: a project's linked thread, an old thread's own key, else none", (
   assert.ok(!hasForum({ ...on, forumUrl: SITE, threads: threads.slice(1) })); // the site stays, but no project links a thread
   assert.ok(!hasForum({ ...on, forumUrl: '', threads }));
   assert.ok(!hasForum({ integrations: { forum: { enabled: false } }, forumUrl: SITE, threads })); // turned off in Settings > Integrations
+});
+
+test('listTopic: the first link sets the site, later ones must match it and be new', () => {
+  assert.deepEqual(listTopic([], 'forum.example.com/topic/12345-level-design/page/2/', ''), { topic: CANON });
+  assert.deepEqual(listTopic([CANON], 'https://forum.example.com/topic/777-other/', SITE), { topic: 'https://forum.example.com/topic/777-other/' });
+  assert.match(listTopic([CANON], 'https://forum.example.com/topic/12345-renamed/', SITE).error, /in the list already/);
+  assert.match(listTopic([], 'https://other.example.org/topic/1-x/', SITE).error, /not on https:\/\/forum\.example\.com/);
+  for (const bad of ['', 'hello', 'https://forum.example.com/forum/3-news/']) assert.match(listTopic([], bad, '').error, /full link of a forum topic/);
+  // forum.posts reads at most 50 topics, so the list stops there
+  const full = Array.from({ length: 50 }, (_, i) => `${SITE}/topic/${i + 1}-t/`);
+  assert.match(listTopic(full, 'https://forum.example.com/topic/777-other/', SITE).error, /50 threads at most/);
+  assert.ok(listTopic(full.slice(1), 'https://forum.example.com/topic/777-other/', SITE).topic);
 });

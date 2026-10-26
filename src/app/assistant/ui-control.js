@@ -1,4 +1,4 @@
-import { confirming } from '../actions.js';
+import { confirming, setupOpen } from '../actions.js';
 import { fail } from '../commands/define.mjs';
 import { changes, createRefs, denyReason, keyRefusal, riskOf, snapshotPage, TEXT_TYPES, textField } from './ui-tree.mjs';
 
@@ -295,7 +295,7 @@ export async function invokeControl(ctx, a) {
   const rule = ctx.policy[risk]; // for the assistant in Ask first, 'ask' for every control
   if (rule === 'deny') fail('denied', `"${r.name}" is not allowed for ${ctx.source}`, { reason: 'policy' });
   if (rule === 'ask') {
-    if (ctx.state.dialog || ctx.state.confirm) fail('denied', 'The approval card cannot show over a dialog; ask the user to press it', { reason: 'policy' });
+    if (ctx.state.dialog || ctx.state.confirm || setupOpen(ctx.state)) fail('denied', 'The approval card cannot show over a dialog; ask the user to press it', { reason: 'policy' });
     if (!(await ctx.ask(PHRASE[a.action](r, a), '', { risk }))) fail('denied', 'The user denied the request', { reason: 'user' });
     // The card waited: the element must still be the control (and row) the user approved, shown and not denied.
     const now = el.isConnected && recordOf(el);

@@ -4,7 +4,7 @@ import {
   ALargeSmall, AppWindow, BadgeCheck, BringToFront, Check, CheckCheck, ChevronDown, ChevronUp, ListChecks, ListX, CaseSensitive, ClipboardPaste, Copy, CopyPlus, Crop, Eraser, Eye, EyeOff, FilePlus, FileText, FolderInput, FolderPlus, Group, Heading1,
   Heading2, Heading3, Globe, Heading4, Heading5, Heading6, ImagePlus, Layers, Lock, LockOpen, Magnet, MessagesSquare, MousePointer2, MoveHorizontal, PaintBucket, Palette, Pen, Pencil, Pilcrow, Pin, Puzzle, Redo2, Save,
   Replace, Scaling, Scissors, Search, MessageSquare, SendToBack, Settings, Shapes, SlidersHorizontal, SpellCheck, SquarePen, TableColumnsSplit, TableRowsSplit, Tag, Trash2,
-  Type, Undo2, Ungroup, Workflow, X, PenLine,
+  Type, Undo2, Ungroup, WandSparkles, Workflow, X, PenLine,
 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { SelectItem } from '@/components/ui/select';
@@ -16,7 +16,7 @@ import { KINDS } from '../flow/shapes.mjs';
 import { all } from '../integrations/ui.js';
 import {
   acceptActive, acceptAll, acceptGroup, applyPresetAt, canPaste, commitBoardEdit, copyDraft, cutDraft, deleteDraft, nextSuggestion, openSettings,
-  pasteDraft, previousSuggestion, rejectActive, rejectAll, rejectGroup, saveNow, startNewDraft, threadLabel,
+  pasteDraft, previousSuggestion, rejectActive, rejectAll, rejectGroup, runSetup, saveNow, startNewDraft, threadLabel,
 } from './actions.js';
 import { assistantSettings, saveAssistant, toggleChat } from './assistant/assistant.js';
 import { closePanes, HOME, newTab, openPane, openPanes } from './browser.js';
@@ -373,6 +373,9 @@ const APP = [
   // Settings > Integrations, where an integration is turned on: no integration's own words, so an off one is never named here.
   { id: 'integrations', label: 'Integrations', group: 'App', icon: h(Puzzle), run: () => openSettings('integrations'), headless: false,
     keywords: ['integrations', 'plugins', 'extensions', 'add-ons', 'connect'] },
+  // Settings > General Run setup again: the first start's setup from its first page (src/app/setup).
+  { id: 'setup', label: 'Run setup again', group: 'App', icon: h(WandSparkles), run: runSetup, headless: false,
+    keywords: ['setup', 'onboarding', 'first start', 'wizard'] },
   { id: 'assistant', label: 'Assistant', group: 'App', icon: h(MessageSquare), key: 'app.assistant', run: () => toggleChat(), headless: false,
     keywords: ['assistant', 'chat', 'ai', 'ask', 'help', 'bot', 'model', 'llm', 'local ai', 'agent', 'copilot', 'assistent', 'asistant'] },
   { id: 'spell-check', label: 'Spell check', group: 'App', icon: h(SpellCheck), toggle: true, active: () => getState().settings?.spellCheck ?? true,

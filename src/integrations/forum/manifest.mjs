@@ -3,7 +3,8 @@
 // it. It imports only ./topic.mjs, never index.mjs or the gates, so no ESM cycle forms.
 import { hasForum, siteOf, topicOf } from './topic.mjs';
 
-const defaults = { forumUrl: '', forumWidth: 1454 };
+// forumMedia: the ids of imported drafts that still hold picture or video placeholders (forum/actions.js downloadMedia).
+const defaults = { forumUrl: '', forumWidth: 1454, forumMedia: [] };
 
 /** The forum post format (src/formats.mjs), with the forum switch on or off: the core page width (forumWidth is a legacy key,
  * kept for older builds) and the titled box, whose HTML is Invision's ipsRichTextBox. default: true only makes it the format of
@@ -20,10 +21,11 @@ export default {
   permissions: [
     'Opens the forum site in its own window, which keeps your sign-in',
     'Reads the title and breadcrumb of linked topic pages',
+    'Reads your own posts in linked threads and their pictures when you import them',
     'Types the draft into the reply box of a linked thread when you push',
   ],
   // Never pruned: an off integration's keys are only hidden (constraint 3).
-  owns: { settings: ['forumUrl', 'forumWidth'], project: ['thread', 'subject', 'year', 'forum'], draft: ['pushedAt'] },
+  owns: { settings: ['forumUrl', 'forumWidth', 'forumMedia'], project: ['thread', 'subject', 'year', 'forum'], draft: ['pushedAt'] },
   defaults,
   formats: [FORUM_POST],
   // Gates of app/gates.mjs (its subjects), listed there only while the forum is on (index.mjs integrationGates). The draft

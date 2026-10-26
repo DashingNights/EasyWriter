@@ -70,6 +70,102 @@ ${TOPIC_HELPERS}
 })(${JSON.stringify(urls)})`;
 }
 
+// Async IIFE → {posts: [{id, url, date (ISO or null), html, media: [{kind, src, alt}]}]}: the posts of member `memberId` on every
+// page of the topic `url` (Invision pagination, /page/N/), or {error}. Invision 4 (article.cPost, .cAuthorPane) and 5
+// (article.ipsEntry, .ipsEntry__author-column) both: a post is article[id^="elComment_"], its author the userid of its
+// data-quotedata (else its first profile link), its body [data-role="commentContent"]. In the returned html every kept picture
+// or video is an element marked data-ew-media="<index into media>" (its full-size https URL in media), an emoticon is its
+// text, links are absolute, and the edit note (data-excludequote) is gone.
+function postsScript(url, memberId) {
+  return `(async (url, memberId) => {
+  try {
+${TOPIC_HELPERS}
+    const topicId = (/\\/topic\\/(\\d+)/.exec(url) || [])[1];
+    const base = url.replace(/[?#].*$/, '').replace(/\\/?$/, '/');
+    const first = await fetchDoc(url);
+    let last = 1;
+    for (const el of first.querySelectorAll('[data-pages]')) last = Math.max(last, Number(el.getAttribute('data-pages')) || 1);
+    for (const a of first.querySelectorAll('a[href*="/page/"], link[href*="/page/"]')) {
+      const m = /\\/topic\\/(\\d+)[^?#]*\\/page\\/(\\d+)/.exec(a.getAttribute('href') || '');
+      if (m && m[1] === topicId) last = Math.max(last, Number(m[2]));
+    }
+    last = Math.min(last, 1000);
+    const docs = [first];
+    let cursor = 2;
+    const worker = async () => {
+      while (cursor <= last) {
+        const page = cursor++;
+        docs[page - 1] = await fetchDoc(base + 'page/' + page + '/');
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(4, last - 1) }, worker));
+
+    const IMAGE_FILE = /\\.(png|jpe?g|gif|webp|avif|bmp)(?:[?#]|$)/i;
+    const abs = (v) => { try { return new URL(v, location.href).href; } catch { return ''; } };
+    const authorOf = (art) => {
+      for (const q of art.querySelectorAll('[data-quotedata]')) {
+        if (q.closest('[data-role="commentContent"]')) continue;
+        try { const d = JSON.parse(q.getAttribute('data-quotedata')); if (d && Number(d.userid)) return Number(d.userid); } catch {}
+      }
+      const a = art.querySelector('.cAuthorPane a[href*="/profile/"], .ipsEntry__author-column a[href*="/profile/"], aside a[href*="/profile/"], [data-role="author"] a[href*="/profile/"]')
+        || art.querySelector('a[href*="/profile/"]');
+      const m = a && /\\/profile\\/(\\d+)-/.exec(a.getAttribute('href') || '');
+      return m ? Number(m[1]) : 0;
+    };
+    // The post body, cleaned for import (see above).
+    const body = (content) => {
+      const root = content.cloneNode(true);
+      for (const x of root.querySelectorAll('[data-excludequote], script, noscript, style, template')) x.remove();
+      const media = [];
+      for (const img of root.querySelectorAll('img')) {
+        const alt = img.getAttribute('alt') || '';
+        const src = [img.getAttribute('data-src'), img.getAttribute('src')].find((v) => v && !/spacer\\.png|^data:/.test(v));
+        if (img.hasAttribute('data-emoticon') || /\\/emoticons\\//.test(src || '')) { img.replaceWith(alt); continue; }
+        if (!src) { img.remove(); continue; }
+        const link = img.closest('a');
+        // A thumbnail's full-size file: Invision 5 keeps it in data-full-image, Invision 4 in the attach link around it.
+        const full = img.getAttribute('data-full-image')
+          || (link && link.querySelectorAll('img').length === 1 && IMAGE_FILE.test(link.getAttribute('href') || '') ? link.getAttribute('href') : src);
+        const mark = document.createElement('img');
+        mark.setAttribute('data-ew-media', String(media.length));
+        media.push({ kind: 'image', src: abs(full), alt });
+        (link && link.textContent.trim() === '' && link.querySelectorAll('img').length === 1 ? link : img).replaceWith(mark);
+      }
+      for (const video of root.querySelectorAll('video')) {
+        const source = video.querySelector('source');
+        const src = video.getAttribute('src') || video.getAttribute('data-video-src') || (source && (source.getAttribute('src') || source.getAttribute('data-video-src')));
+        if (!src) continue;
+        const mark = document.createElement('img');
+        mark.setAttribute('data-ew-media', String(media.length));
+        media.push({ kind: 'video', src: abs(src), alt: (video.querySelector('a')?.textContent || '').trim() }); // the fallback link reads the file's name
+        video.replaceWith(mark);
+      }
+      for (const a of root.querySelectorAll('a[href]')) a.setAttribute('href', abs(a.getAttribute('href')));
+      for (const f of root.querySelectorAll('iframe')) { const s = f.getAttribute('data-embed-src') || f.getAttribute('src'); if (s) f.setAttribute('src', abs(s)); }
+      return { html: root.innerHTML.trim(), media };
+    };
+
+    const posts = [];
+    const seen = new Set();
+    for (const doc of docs) {
+      for (const art of doc.querySelectorAll('article[id^="elComment_"]')) {
+        const id = art.id.slice('elComment_'.length);
+        if (seen.has(id) || authorOf(art) !== memberId) continue;
+        const content = art.querySelector('[data-role="commentContent"]');
+        if (!content) continue;
+        seen.add(id);
+        const time = [...art.querySelectorAll('time[datetime]')].find((t) => !content.contains(t));
+        const when = time ? new Date(time.getAttribute('datetime')) : null;
+        posts.push({ id, url: base + '?do=findComment&comment=' + id, date: when && !isNaN(when) ? when.toISOString() : null, ...body(content) });
+      }
+    }
+    return { posts };
+  } catch (e) {
+    return { error: String((e && e.message) || e) };
+  }
+})(${JSON.stringify(url)}, ${Number(memberId)})`;
+}
+
 // Async IIFE that fills the topic's reply editor with payload.html and uploads payload.images
 // in place of the [[IMG:i]] placeholders. Never submits the form.
 function buildPushScript(payload) {
@@ -168,4 +264,4 @@ function buildPushScript(payload) {
 })(${JSON.stringify(payload)})`;
 }
 
-module.exports = { buildPushScript, describeThreadsScript, STATUS_SCRIPT };
+module.exports = { buildPushScript, describeThreadsScript, postsScript, STATUS_SCRIPT };
