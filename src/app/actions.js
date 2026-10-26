@@ -11,6 +11,7 @@ import { draftMarks } from '../draft-marks.js';
 import { draftTitle, wordCount } from '../export.js';
 import { newDocumentJson } from '../document/defaults.mjs';
 import { numberNewLists } from '../document/numbering.mjs';
+import { listFonts } from '../document/fonts.js';
 import { defaultFormat, drawTheme, FORMATS, formatOf, pageOf } from '../formats.mjs';
 import { each, first, UI } from '../integrations/ui.js';
 import { legacyTopic } from '../thread-url.mjs';
@@ -1331,6 +1332,9 @@ export function start() {
     alertDialog('EasyWriter failed to start', String(e.message || e));
     throw e;
   });
+  // The installed fonts load once in the background when the app is idle, so the Font list never stalls on its first open
+  // (the user, 2026-10-26; document/fonts.js caches them). The background window shows no Font list.
+  if (!WORKER) ready.then(() => requestIdleCallback(() => listFonts(), { timeout: 5000 }), () => {});
 }
 
 // ---------------------------------------------------------------------------------------------

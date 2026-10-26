@@ -16,7 +16,7 @@ import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from '@/compon
 import { SelectItem } from '@/components/ui/select';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
-  FONT_SIZES, FONTS, fontStack, HIGHLIGHT_MENU, HIGHLIGHTS, LINE_SPACINGS, MARGIN_PRESETS, PAPER_SIZES, resolveColor, STANDARD_COLORS, THEME_GRID,
+  FONT_SIZES, fontStack, HIGHLIGHT_MENU, HIGHLIGHTS, LINE_SPACINGS, MARGIN_PRESETS, PAPER_SIZES, resolveColor, STANDARD_COLORS, THEME_GRID,
 } from '../office.mjs';
 import { refocusEditor } from '../app/actions.js';
 import { AlignMenu } from '../app/components/board/BoardRail.jsx';
@@ -27,7 +27,7 @@ import { Group, GroupRows, keepFocus, SelectRow, ToolButton, ToolSelect } from '
 import { DictationButton } from '../app/dictation/Dictation.jsx';
 import { keyLabel } from '../app/keybinds.js';
 import { useEditor, useStore } from '../app/store.js';
-import { listFonts } from './fonts.js';
+import { fontsNow, listFonts } from './fonts.js';
 import { MAX_PAPER, showIn } from './pages.mjs';
 import { resolved } from './stylesheet.js';
 import { clip, documentTools, GALLERY, HEADINGS_MORE, insertTable, openPageSetup } from './tools.js';
@@ -52,7 +52,7 @@ const fontName = (font, theme) => (font === '+major' ? `${theme?.fonts?.major ??
  * Its list has a fixed width and long names end in an ellipsis, so it never changes width as the installed fonts arrive. */
 export function FontBox({ T, wide }) {
   const island = useContext(Island);
-  const [fonts, setFonts] = useState(FONTS);
+  const [fonts, setFonts] = useState(fontsNow);
   const all = ['+major', '+minor', ...fonts];
   const commit = (text) => {
     const t = text.trim();

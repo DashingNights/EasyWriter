@@ -3,7 +3,7 @@
 // their undo history, plans, flowcharts, prefabs, their pictures and the drafts' metadata from settings. Login is GitHub's device flow; the
 // token is kept encrypted (safeStorage) in github-token.json. github-sync.json holds the last synced commit and each file's
 // blob SHA at that commit, the base of a three-way merge per file.
-const { app, dialog, net, safeStorage, shell } = require('electron');
+const { app, clipboard, dialog, net, safeStorage, shell } = require('electron');
 const path = require('path');
 const os = require('os');
 const fs = require('fs/promises');
@@ -93,7 +93,11 @@ async function login() {
   const run = (loginRun = { cancelled: false });
   run.done = poll(run, r);
   run.done.catch(() => {});
-  shell.openExternal(r.verification_uri);
+  // GitHub returns no verification_uri_complete. Its device page keeps a user_code parameter through the sign-in redirect, so the
+  // page is opened with it in case GitHub fills the boxes from it, and the code is put on the clipboard so a paste fills them
+  // otherwise (the user, 2026-10-26: no copying the code by hand).
+  clipboard.writeText(r.user_code);
+  shell.openExternal(`${r.verification_uri}?user_code=${encodeURIComponent(r.user_code)}`);
   return { userCode: r.user_code, uri: r.verification_uri };
 }
 

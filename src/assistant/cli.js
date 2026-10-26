@@ -11,21 +11,30 @@ const path = require('path');
 const HOME = os.homedir();
 const WIN = process.platform === 'win32';
 const LOCAL = process.env.LOCALAPPDATA || path.join(HOME, 'AppData', 'Local');
+const ROAMING = process.env.APPDATA || path.join(HOME, 'AppData', 'Roaming');
 const KEY_VAR = 'EASYWRITER_ASSISTANT'; // the bridge's env: the key that makes its calls the in-app assistant's
 const SERVER = 'easywriter'; // the MCP server's name in the run: Claude names its tools mcp__easywriter__<tool>
 // The CLIs (settings.assistant.provider): the executable, the folders their installers use besides PATH, the settings fields,
 // how to install and sign in. Efforts from `claude --help` (2.1.274) and Codex's model_reasoning_effort values (0.154.0).
 const CLIS = {
   claude: {
-    label: 'Claude Code', bin: 'claude', npm: '@anthropic-ai/claude-code', pathField: 'claudePath', modelField: 'claudeModel', effortField: 'claudeEffort',
+    // label: the app name, then the CLI (the user, 2026-10-26, as ChatGPT (Codex)).
+    label: 'Claude (Claude Code)', bin: 'claude', npm: '@anthropic-ai/claude-code', pathField: 'claudePath', modelField: 'claudeModel', effortField: 'claudeEffort',
     dirs: [path.join(HOME, '.local', 'bin'), path.join(HOME, '.claude', 'local'), '/opt/homebrew/bin', '/usr/local/bin'],
-    install: 'Install Claude Code from claude.com/claude-code, then open Settings again.', login: 'Run claude in a terminal and sign in.',
+    // The Claude app for Windows keeps its own Claude Code in <appDir>/<version>/<build>/claude.exe; the newest one is used.
+    appDir: path.join(ROAMING, 'Claude', 'claude-code'),
+    // Not found: the Claude app brings Claude Code with it.
+    install: 'Download the Claude app for Windows, then open Settings again.', installUrl: 'https://claude.com/download',
+    login: 'Run claude in a terminal and sign in.',
     efforts: ['low', 'medium', 'high', 'xhigh', 'max'],
   },
   codex: {
-    label: 'Codex', bin: 'codex', npm: '@openai/codex', pathField: 'codexPath', modelField: 'codexModel', effortField: 'codexEffort',
+    // label: the name the user knows it by (2026-10-26).
+    label: 'ChatGPT (Codex)', bin: 'codex', npm: '@openai/codex', pathField: 'codexPath', modelField: 'codexModel', effortField: 'codexEffort',
     dirs: [path.join(LOCAL, 'Programs', 'OpenAI', 'Codex', 'bin'), path.join(HOME, '.codex', 'packages', 'standalone', 'current', 'bin'), '/opt/homebrew/bin', '/usr/local/bin'],
-    install: 'Install Codex from developers.openai.com/codex, then open Settings again.', login: 'Run codex login in a terminal.',
+    // Not found: the ChatGPT app for Windows brings Codex with it (the user, 2026-10-26).
+    install: 'Download the ChatGPT app for Windows, then open Settings again.', installUrl: 'https://chatgpt.com/download/',
+    login: 'Run codex login in a terminal.',
     efforts: ['minimal', 'low', 'medium', 'high', 'xhigh'],
   },
 };
@@ -63,6 +72,17 @@ function find(id, custom) {
       const exe = isFile(file) && native(file);
       if (exe) return exe;
     }
+  }
+  return CLIS[id].appDir ? newestIn(CLIS[id].appDir, names[0]) : null;
+}
+
+/** The newest `<dir>/<version>/<build>/<name>` by version number, else null. */
+function newestIn(dir, name) {
+  const list = (d) => { try { return fs.readdirSync(d); } catch { return []; } };
+  const parts = (v) => v.split('.').map((n) => Number(n) || 0);
+  const newer = (a, b) => { const x = parts(a), y = parts(b); for (let i = 0; i < Math.max(x.length, y.length); i++) if ((x[i] ?? 0) !== (y[i] ?? 0)) return (y[i] ?? 0) - (x[i] ?? 0); return 0; };
+  for (const v of list(dir).sort(newer)) {
+    for (const b of list(path.join(dir, v))) if (isFile(path.join(dir, v, b, name))) return path.join(dir, v, b, name);
   }
   return null;
 }
@@ -105,7 +125,7 @@ async function probe(id, a = {}, fresh = false) {
   const c = CLIS[id];
   const file = find(id, a[c.pathField]);
   const base = { id, label: c.label, path: file, models: id === 'claude' ? CLAUDE_MODELS : codexModels(), efforts: c.efforts };
-  if (!file) return { ...base, version: '', signedIn: false, account: '', state: 'not_found', hint: c.install };
+  if (!file) return { ...base, version: '', signedIn: false, account: '', state: 'not_found', hint: c.install, url: c.installUrl ?? null };
   const k = `${id}|${file}`;
   if (fresh || !probes.has(k) || probes.get(k).at < Date.now() - 60000) {
     const p = Promise.all([quick(file, ['--version']), quick(file, id === 'claude' ? ['auth', 'status', '--json'] : ['login', 'status'])]);
@@ -113,7 +133,7 @@ async function probe(id, a = {}, fresh = false) {
   }
   const [v, s] = await probes.get(k).p;
   const version = v.code === 0 ? v.out.trim().split('\n')[0] : '';
-  if (!version) return { ...base, version: '', signedIn: false, account: '', state: 'not_found', hint: `${file} did not run. ${c.install}` };
+  if (!version) return { ...base, version: '', signedIn: false, account: '', state: 'not_found', hint: `${file} did not run. ${c.install}`, url: c.installUrl ?? null };
   const sign = signInOf(id, s);
   return { ...base, version, ...sign, state: sign.signedIn ? 'ready' : 'signed_out', hint: sign.signedIn ? '' : c.login };
 }
@@ -190,7 +210,7 @@ function parseClaude(st, msg) {
       .map((b) => ({ type: 'tool_end', id: b.tool_use_id, name: st.names[b.tool_use_id] ?? '', ok: !b.is_error, result: textOf(b.content) }));
   }
   if (msg.type === 'result') {
-    if (msg.is_error || msg.subtype !== 'success') return [signedOut('claude', String(msg.result || msg.errors?.join(' ') || msg.subtype || 'Claude Code failed'))];
+    if (msg.is_error || msg.subtype !== 'success') return [signedOut('claude', String(msg.result || msg.errors?.join(' ') || msg.subtype || `${CLIS.claude.label} failed`))];
     const u = msg.usage ?? {};
     const prompt = (u.input_tokens || 0) + (u.cache_read_input_tokens || 0) + (u.cache_creation_input_tokens || 0);
     return [{ type: 'done', session: st.session ?? null, usage: { prompt, completion: u.output_tokens || 0 }, ...(Number.isFinite(msg.total_cost_usd) && { cost: msg.total_cost_usd }) }];
@@ -231,7 +251,7 @@ function parseCodex(st, msg) {
       return [{ type: 'done', session: st.session ?? null, usage: { prompt: (u.input_tokens || 0), completion: u.output_tokens || 0 } }];
     }
     case 'turn.failed':
-      return [signedOut('codex', String(msg.error?.message ?? 'Codex failed'))];
+      return [signedOut('codex', String(msg.error?.message ?? `${CLIS.codex.label} failed`))];
     default:
       return [];
   }
@@ -282,4 +302,4 @@ function run({ id, file, args, cwd, prompt, key, emit }) {
   return { st, kill: () => { ended = true; killTree(child); } };
 }
 
-module.exports = { CLIS, KEY_VAR, isCli, find, probe, signInOf, codexModels, claudeArgs, codexArgs, parseClaude, parseCodex, run, killTree };
+module.exports = { CLIS, KEY_VAR, isCli, find, newestIn, probe, signInOf, codexModels, claudeArgs, codexArgs, parseClaude, parseCodex, run, killTree };

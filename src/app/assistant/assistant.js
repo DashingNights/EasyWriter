@@ -21,7 +21,8 @@ export const CTX = 16384; // llama-server -c until a request reports the server'
 const IDLE = { open: false, status: null, messages: [], turn: null, pending: null, usage: null };
 export const ASSISTANT_DEFAULTS = {
   installed: false, model: 'qwen9b', mtp: false, backend: 'auto', serverPath: '', modelPath: '', mmprojPath: '', serverUrl: '', apiKey: '',
-  provider: 'qwen', googleKey: '', googleModel: 'gemini-3.8-flash', // a cloud provider since 2026-10-07 (local models commented out)
+  // None by default (the user, 2026-10-26): the assistant is off until a provider is picked in Settings > Assistant.
+  provider: 'none', googleKey: '', googleModel: 'gemini-3.8-flash',
   qwenKey: '', qwenModel: 'qwen3.7-plus', qwenModels: ['qwen3.7-plus', 'qwen3.7-flash', 'qwen3.8-flash', 'qwen3.8-max'], // Qwen Cloud (2026-10-08)
   deepseekKey: '', deepseekModel: 'deepseek-flash', // provider 'deepseek' (2026-10-08)
   claudePath: '', claudeModel: '', claudeEffort: '', codexPath: '', codexModel: '', codexEffort: '', // providers 'claude', 'codex' ('': found, the CLI's default)

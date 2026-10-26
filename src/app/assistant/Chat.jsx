@@ -543,7 +543,8 @@ function ChatPanel({ islandRef, closing, onClosed }) {
               or "It is turned off." with Install... (N GB) / Turn on... (openInstall). */}
           <p>{privacy(s?.providerLabel)}</p>
           <p className="text-muted-foreground">{s?.cli ? `${s.providerLabel} ${s.state === 'signed_out' ? 'is not signed in' : 'is not installed'}. ${s.cli.hint}`
-            : `Add your ${s?.providerLabel ?? 'Google AI'} API key in Settings.`}</p>
+            : `Add your ${s?.providerLabel ?? 'Google AI'} API key in Settings.`}
+            {s?.cli?.state === 'not_found' && s.cli.url && <> <a href={s.cli.url} target="_blank" rel="noreferrer" className="underline">{new URL(s.cli.url).host + new URL(s.cli.url).pathname.replace(/\/$/, '')}</a></>}</p>
           <Button size="sm" onMouseDown={keep} onClick={() => openSettings('assistant')}>Open Settings</Button>
           <span className="flex-1" />
           <AgentAsk inline />
@@ -707,7 +708,7 @@ export function Assistant() {
   const islandRef = useRef(null);
   const open = useAssistant().open;
   const pane = useStore((s) => s.workerPane && !!s.worker); // the background window's live view (§7i Background window)
-  const off = useStore((s) => s.settings?.assistant?.provider === 'none'); // Settings > Assistant > Provider > None
+  const off = useStore((s) => (s.settings?.assistant?.provider ?? ASSISTANT_DEFAULTS.provider) === 'none'); // Settings > Assistant > Provider > None (the default)
   const [shown, setShown] = useState(open); // the panel stays mounted while it plays its close sequence
   if (open && !shown) setShown(true);
   const ready = usable(useAssistant().status);
@@ -723,7 +724,7 @@ export function Assistant() {
     const onKey = (e) => {
       if (!keyIs('app.assistant', e)) return; // §7k
       const st = getState();
-      if (st.dialog || st.confirm || st.settings?.assistant?.provider === 'none') return;
+      if (st.dialog || st.confirm || (st.settings?.assistant?.provider ?? ASSISTANT_DEFAULTS.provider) === 'none') return;
       e.preventDefault();
       e.stopPropagation();
       if (!e.repeat) toggleChat();

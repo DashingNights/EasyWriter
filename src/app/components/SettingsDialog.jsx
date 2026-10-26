@@ -290,11 +290,11 @@ function DictationSection({ value: d, onChange }) {
 // settings.assistant.permission (the executor's policy for the assistant, SPEC §8 Policy) and its line under the select.
 const PERMISSIONS = [['standard', 'Standard'], ['ask', 'Ask first'], ['readonly', 'Read only'], ['all', 'Allow all']];
 // settings.assistant.provider (2026-10-08); 'none' turns the assistant off (no chat button, no shortcut).
-const PROVIDERS = [['none', 'None'], ['qwen', 'Qwen Cloud'], ['google', 'Google AI (Gemini)'], ['deepseek', 'DeepSeek'], ['claude', 'Claude Code'], ['codex', 'Codex']];
+const PROVIDERS = [['none', 'None'], ['qwen', 'Qwen Cloud'], ['google', 'Google AI (Gemini)'], ['deepseek', 'DeepSeek'], ['claude', 'Claude (Claude Code)'], ['codex', 'ChatGPT (Codex)']];
 // Claude Code and Codex (SPEC §7i Coding CLIs): the user's installed CLI with its own sign-in; its path, model and effort fields.
 const CLI = {
-  claude: { path: 'claudePath', model: 'claudeModel', effort: 'claudeEffort', label: 'Claude Code' },
-  codex: { path: 'codexPath', model: 'codexModel', effort: 'codexEffort', label: 'Codex' },
+  claude: { path: 'claudePath', model: 'claudeModel', effort: 'claudeEffort', label: 'Claude (Claude Code)' },
+  codex: { path: 'codexPath', model: 'codexModel', effort: 'codexEffort', label: 'ChatGPT (Codex)' },
 };
 const OTHER = 'other'; // the model menu's "Another model" entry
 const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
@@ -329,7 +329,9 @@ function CliSetup({ value: a, edit, status, recheck }) {
           value={a[f.path]} onChange={(e) => edit({ [f.path]: e.target.value })} />
       </div>
       <span className="max-w-[36rem] text-xs text-muted-foreground" data-cli-found>
-        {!c ? 'Looking for it...' : c.state === 'not_found' ? c.hint : `${c.version} at ${c.path}`}
+        {!c ? 'Looking for it...' : c.state === 'not_found' ? (
+          <>{c.hint}{c.url && <> <a href={c.url} target="_blank" rel="noreferrer" className="underline">{new URL(c.url).host + new URL(c.url).pathname.replace(/\/$/, '')}</a></>}</>
+        ) : `${c.version} at ${c.path}`}
       </span>
       {c && c.state !== 'not_found' && (
         <div className="flex items-center gap-2" data-cli-signin>
@@ -542,7 +544,7 @@ function AssistantSection({ value: a, onChange }) {
       </div>
       <Label className="text-muted-foreground">Status</Label>
       <div className="flex items-center gap-2" data-assistant-status>
-        {!status ? 'Checking...' : status.ready ? `Using ${status.providerLabel} (${status.model?.label})`
+        {!status ? 'Checking...' : status.ready ? `Using ${status.providerLabel}, ${status.model?.label === 'Default' ? 'its default model' : status.model?.label}`
           : f ? (status.state === 'not_found' ? `${f.label} is not installed` : `${f.label} is not signed in`) : `Add your ${p.label} API key above`}
       </div>
       <Label className="self-start pt-2 text-muted-foreground">Permissions</Label>
@@ -952,7 +954,7 @@ function GitHubSection({ value: g, onChange, setProblem }) {
           </div>
         ) : code ? (
           <div className="flex items-center gap-2 text-sm">
-            Enter <code className="rounded-md border bg-muted/40 px-2 py-0.5 font-mono text-base select-text">{code.userCode}</code> on GitHub
+            Paste <code className="rounded-md border bg-muted/40 px-2 py-0.5 font-mono text-base select-text">{code.userCode}</code> on GitHub if it is not filled in. It is on your clipboard.
             <Button type="button" variant="outline" size="sm" onClick={() => copy(code.userCode)}>Copy</Button>
             <Button type="button" variant="ghost" size="sm" onClick={logout}>Cancel</Button>
           </div>

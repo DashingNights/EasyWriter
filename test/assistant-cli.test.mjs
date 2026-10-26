@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
-const { claudeArgs, codexArgs, parseClaude, parseCodex, signInOf } = require('../src/assistant/cli.js');
+const { claudeArgs, codexArgs, newestIn, parseClaude, parseCodex, signInOf } = require('../src/assistant/cli.js');
 
 const link = { command: 'C:\\App\\EasyWriter.exe', args: ['C:\\App\\bin\\easywriter-agent.js', '--pipe=\\\\.\\pipe\\easywriter-abc'] };
 const parse = (fn, lines) => {
@@ -111,7 +111,7 @@ test('parseCodex: signed out → one signed_out error at turn.failed; notices an
   const { st, events } = parse(parseCodex, CODEX_SIGNED_OUT);
   assert.equal(st.session, '01a16a31-5ada-7873-882a-308892f3dd6c');
   assert.deepEqual(events.map((e) => [e.type, e.code]), [['error', 'signed_out']]);
-  assert.match(events[0].message, /Codex is not signed in\. Run codex login/);
+  assert.match(events[0].message, /ChatGPT \(Codex\) is not signed in\. Run codex login/);
 });
 
 test('parseCodex: reasoning, MCP calls with ok and error, text once per item, done with the thread id and usage', () => {
@@ -157,7 +157,7 @@ test('chat display of a Codex turn: reasoning, a step per call with its command 
   assert.ok(ms.every((m) => !m.streaming));
   const out = shown(CODEX_SIGNED_OUT).at(-1);
   assert.equal(out.streaming, false);
-  assert.match(out.error, /^Codex is not signed in\. Run codex login in a terminal\.$/);
+  assert.match(out.error, /^ChatGPT \(Codex\) is not signed in\. Run codex login in a terminal\.$/);
   // The bridge's result JSON keeps undoSteps, rev and draftId for the step's Undo; an error's JSON is the error.
   assert.deepEqual(cliResult({ ok: true, result: '{"result":{"id":"d1"},"undoSteps":1,"rev":4,"draftId":"d1"}' }), { ok: true, result: { id: 'd1' }, undoSteps: 1, rev: 4, draftId: 'd1' });
   assert.deepEqual(cliResult({ ok: false, result: '{"code":"denied","message":"No"}' }), { ok: false, error: { code: 'denied', message: 'No' } });
@@ -198,4 +198,21 @@ test('takePictures: a calls step picture is taken out of its result', async () =
   assert.deepEqual(pictures, [{ url: pic.url, size: pic.size }]);
   assert.equal(res.result.results[0].result.url, undefined);
   assert.equal(res.result.results[1].error.code, 'x');
+});
+
+test('newestIn: the Claude app keeps Claude Code per version and build; the newest version with the program wins', () => {
+  const fs = require('fs');
+  const os = require('os');
+  const path = require('path');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ew-cli-'));
+  const put = (v, b) => { fs.mkdirSync(path.join(dir, v, b), { recursive: true }); fs.writeFileSync(path.join(dir, v, b, 'claude.exe'), ''); };
+  try {
+    assert.equal(newestIn(path.join(dir, 'missing'), 'claude.exe'), null);
+    put('2.1.9', 'aaa');
+    put('2.1.10', 'bbb'); // 10 > 9 by number, not by text
+    fs.mkdirSync(path.join(dir, '2.2.0', 'ccc'), { recursive: true }); // newest folder without the program
+    assert.equal(newestIn(dir, 'claude.exe'), path.join(dir, '2.1.10', 'bbb', 'claude.exe'));
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
