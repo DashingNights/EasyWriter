@@ -1,9 +1,9 @@
 import { useState, useSyncExternalStore } from 'react';
 import { cn } from 'cn';
 import {
-  AlignCenter, AlignJustify, AlignLeft, AlignRight, Ban, Baseline, BetweenHorizontalEnd, BetweenVerticalEnd, Bold, ChevronDown, ChevronUp, Code, Frame,
-  Grid2x2X, Highlighter, ImagePlus, Italic, Link, List, ListOrdered, Minus, Palette, PanelTop, Quote, Redo2,
-  RemoveFormatting, SquareCode, SquareKanban, Strikethrough, Subscript, Superscript, Table, Underline, Undo2, Workflow,
+  AlignCenter, AlignJustify, AlignLeft, AlignRight, Ban, Baseline, BetweenHorizontalEnd, BetweenVerticalEnd, Bold, BookMarked, ChevronDown, ChevronUp, Code,
+  Frame, Grid2x2X, Highlighter, ImagePlus, Italic, Link, List, ListOrdered, Minus, Palette, PanelTop, Quote, Redo2,
+  RemoveFormatting, SquareCode, SquareKanban, Strikethrough, Subscript, Superscript, Table, TextQuote, Underline, Undo2, Workflow,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -22,6 +22,7 @@ import {
 import { insertFlowchartDialog } from '../flows.js';
 import { can } from '../gates.mjs';
 import { insertPlanChartDialog } from '../plans.js';
+import { openCitePicker, openReferences } from '../references.js';
 import { keyLabel, withKey } from '../keybinds.js';
 import { BAR, BoardTools, RailLayout } from './board/BoardRail.jsx';
 import { CHROME, keepFocus as keepBoardFocus, useBoard, useSnapshot } from './board/controls.jsx';
@@ -105,6 +106,9 @@ export function textTools(ed) {
     flowchart: { title: withKey('Insert flowchart', 'insert.flowchart'), keyId: 'insert.flowchart', disabled: !can('doc.open', { editor: ed }), onClick: insertFlowchartDialog, children: <Workflow /> },
     planChart: { title: 'Insert plan chart', disabled: !can('doc.open', { editor: ed }), onClick: insertPlanChartDialog, children: <SquareKanban /> },
     image: { title: 'Insert images or videos', onClick: () => imageInput.click(), children: <ImagePlus /> },
+    // The draft's sources (docs/plans/references.md): the citation picker at the cursor, and the References dialog.
+    cite: { title: 'Insert reference', disabled: !can('doc.open', { editor: ed }), onClick: openCitePicker, children: <TextQuote /> },
+    references: { title: 'References', disabled: !can('doc.open', { editor: ed }), onClick: openReferences, children: <BookMarked /> },
     clear: { title: 'Clear formatting', onClick: () => run((c) => c.unsetAllMarks().clearNodes()), children: <RemoveFormatting /> },
   };
 }
@@ -329,6 +333,10 @@ export function Toolbar() {
               <Group>
                 {box && <ToolButton {...T.box} />}
                 <ToolButton {...T.planChart} />
+              </Group>
+              <Group>
+                <ToolButton {...T.cite} />
+                <ToolButton {...T.references} />
               </Group>
               <RailLayout.Provider value={BAR}>
                 <BoardTools board={board} />

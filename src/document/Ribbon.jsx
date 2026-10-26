@@ -356,6 +356,10 @@ function InsertTab({ T }) {
         <ToolButton {...T.flowchart} />
         <ToolButton {...T.planChart} />
       </Section>
+      <Section title="References">
+        <ToolButton {...T.cite} />
+        <ToolButton {...T.references} />
+      </Section>
     </>
   );
 }
@@ -753,6 +757,7 @@ export function DocumentQuickTools({ anchor }) {
         <ToolButton {...T.outdent} />
         <ToolButton {...T.indent} />
       </Group>
+      <Group><ToolButton {...T.cite} /></Group>
     </GroupRows>
   );
 }

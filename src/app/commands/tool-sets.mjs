@@ -12,6 +12,7 @@ export const CATEGORY_OF_GROUP = {
   drafts: 'drafts', tags: 'drafts', folders: 'drafts', threads: 'drafts',
   canvas: 'board',
   suggestions: 'doc', // suggestions.* (docs/plans/suggestions.md): reviewing agent edits of the draft
+  references: 'doc', // references.* (docs/plans/references.md): the draft's sources, its citations and reference list
   export: 'export', push: 'export', forum: 'export',
 };
 

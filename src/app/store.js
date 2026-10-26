@@ -31,6 +31,7 @@ const state = {
   notices: [],       // [{ id, icon, text, mode? }] — the fading notices above the toolbar island (§7c; Notices.jsx notify)
   quickTools: null,  // { board, x, y } — the open quick tools island (§7d): the board it serves (null: the document), the pointer it opened at
   wordCount: false,  // the status bar's Word count popover is open (a Document's; document/tools.js openWordCount)
+  citePicker: null,  // { x, y } — the open citation picker (References.jsx; references.js openCitePicker): the text cursor's place
   find: null,        // { n, seed } — the open find bar (FindBar.jsx): n +1 per Ctrl+F (focuses it again), seed: a query to start with
   setup: false,      // Run setup again (actions.js runSetup): the setup shows although settings.onboarded is true (setupOpen)
   tour: null,        // { step } — the open tour (Onboarding.jsx): the index of its shown step in STEPS

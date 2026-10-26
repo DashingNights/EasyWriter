@@ -13,6 +13,7 @@ import { defs as forum } from '../../integrations/forum/commands.mjs';
 import { defs as history } from './history.mjs';
 import { defs as render } from './render.mjs';
 import { PARA_ARGS as PARA, RUN_ARGS as RUN } from '../../office.mjs';
+import { defs as references } from './references.mjs';
 import { ID, ITEM, ITEM_BRIEF, PARA_BRIEF, PATH, RUN_BRIEF, TAG_ID, URL } from './schema-defs.mjs';
 import { defs as settings } from './settings.mjs';
 import { defs as suggestions } from './suggestions.mjs';
@@ -22,7 +23,7 @@ import { defs as ui } from './ui.mjs';
 
 // Every command (SPEC §8 Catalogue), an integration's own (integrations/<id>/commands.mjs) included. Node-importable: node --test imports it (test/commands-contract.test.mjs).
 
-export const CATALOGUE = [...app, ...ui, ...settings, ...threads, ...drafts, ...doc, ...documents, ...board, ...connectors, ...flow, ...render, ...computer, ...canvas, ...forum, ...history, ...suggestions, ...tool, ...batch, ...commands];
+export const CATALOGUE = [...app, ...ui, ...settings, ...threads, ...drafts, ...doc, ...documents, ...references, ...board, ...connectors, ...flow, ...render, ...computer, ...canvas, ...forum, ...history, ...suggestions, ...tool, ...batch, ...commands];
 
 export const $defs = { ID, PATH, URL, TAG_ID, ITEM, RUN, PARA };
 

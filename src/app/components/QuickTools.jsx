@@ -57,6 +57,7 @@ function TextTools({ anchor }) {
         <TableTools T={T} ed={ed} />
         {box && <ToolButton {...T.box} />}
         <ToolButton {...T.link} />
+        <ToolButton {...T.cite} />
         <ToolButton {...T.canvas} />
         <ToolButton {...T.flowchart} />
         <ToolButton {...T.planChart} />

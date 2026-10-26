@@ -28,6 +28,7 @@ contextBridge.exposeInMainWorld('api', {
     posts: call('forum.posts'), // the import (docs/plans/onboarding.md Forum import): the member's own posts of topic URLs
     download: call('forum.download'), // one picture or video of an imported post, with the forum's sign-in → {type, data}
   },
+  references: { fetch: call('references.fetch') }, // {url, accept}: one GET for a source's details (docs/plans/references.md)
   window: {
     zoom: call('window.zoom'),
     titleBar: call('window.titleBar'),

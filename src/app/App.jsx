@@ -21,6 +21,7 @@ import { Notices } from './components/Notices.jsx';
 import { Onboarding } from './components/Onboarding.jsx';
 import { PlanPage } from './components/plan/PlanPage.jsx';
 import { QuickTools } from './components/QuickTools.jsx';
+import { CitePicker } from './components/References.jsx';
 import { Sidebar, SidebarToggle } from './components/Sidebar.jsx';
 import { StatusBar } from './components/StatusBar.jsx';
 import { Toolbar } from './components/Toolbar.jsx';
@@ -167,6 +168,7 @@ export function App() {
       <PlanChartBar />
       <HoverHint />
       <QuickTools />
+      <CitePicker />
       <BoardMenu />
       <DraftMenu />
       <DialogHost />

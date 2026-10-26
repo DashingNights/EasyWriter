@@ -314,6 +314,34 @@ handle('window.titleBar', ({ color, symbolColor } = {}) => {
 });
 // The page as the user sees it (§8 view.render): the whole window's content as PNG bytes; the renderer crops its viewport.
 handle('window.capture', () => mainWin.webContents.capturePage().then((img) => img.toPNG()));
+// References (docs/plans/references.md): one GET of a pasted link or of doi.org for a source's details → {ok, status, url, type,
+// body}. A session of its own, in memory, so no sign-in of the app's other pages goes along; http and https only, 15 s, at most
+// 2 MB of text read.
+let refsSession = null;
+handle('references.fetch', async ({ url, accept } = {}) => {
+  const u = new URL(url);
+  if (u.protocol !== 'https:' && u.protocol !== 'http:') throw new Error('Only http and https links can be read');
+  refsSession ??= session.fromPartition('references');
+  try {
+    const res = await refsSession.fetch(u.href, { cache: 'no-store', signal: AbortSignal.timeout(15000),
+      headers: { accept: typeof accept === 'string' ? accept : 'text/html,application/xhtml+xml,*/*;q=0.8' } });
+    const type = res.headers.get('content-type') ?? '';
+    const chunks = [];
+    if (/html|xml|json|text/i.test(type) && res.body) {
+      const reader = res.body.getReader();
+      for (let size = 0; size < 2 * MB;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        chunks.push(value);
+        size += value.length;
+      }
+      reader.cancel().catch(() => {});
+    }
+    return { ok: res.ok, status: res.status, url: res.url, type, body: Buffer.concat(chunks).toString('utf8') };
+  } catch (e) {
+    return { ok: false, status: 0, url: u.href, type: '', body: '', error: e.message };
+  }
+});
 // The draft menu's entries on the last right-click (editMenuAct): native | learn (Add to dictionary) | copyLink | an edit command.
 // The edit commands need no right-click: a Document's ribbon and tool search run Cut, Copy and Paste through them too.
 handle('editMenu.act', (act) => (menuParams || EDIT_ACTS.includes(act)) && editMenuAct(act));

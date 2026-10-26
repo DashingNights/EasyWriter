@@ -24,6 +24,7 @@ import { can, GATES } from './gates.mjs';
 import { enabled, listed, offArg } from '../integrations/index.mjs';
 import { integrationsCtx } from '../integrations/ui.js';
 import * as plans from './plans.js';
+import * as references from './references.js';
 import { mapPath } from './rev.js';
 import { newId as suggestId, pendingCount, strip as stripRecords } from '../suggest/core.mjs';
 import { noteGroup, withCall } from '../suggest/extension.js';
@@ -498,6 +499,10 @@ const META_ROWS = {
   'drafts.rename': (a, r) => `Rename to “${r?.title ?? a.title}”`,
   'drafts.setTag': (a) => (a.tagId ? `Tag as “${tagList(state.settings).find((t) => t.id === a.tagId)?.name ?? a.tagId}”` : 'Clear the tag'),
   'drafts.move': (a) => (a.folderId ? `Move to “${(state.settings.folders ?? []).find((f) => f.id === a.folderId)?.name ?? a.folderId}”` : 'Move to the top level'),
+  // The draft's sources (references.*, docs/plans/references.md)
+  'references.add': (a, r) => `Add the source ${r?.source?.citeNarrative ?? ''}`,
+  'references.update': (a, r) => `Change the source ${r?.source?.citeNarrative ?? ''}`,
+  'references.remove': (a, r) => `Remove the source ${r?.source?.citeNarrative ?? ''}`,
 };
 
 function noteMeta(def, args, source, result) {
@@ -718,6 +723,7 @@ function makeCtx(source, signal, sess = null) {
     session: sess,
     api,
     actions,
+    references, // the open draft's sources (app/references.js), for references.*
     integrations: integrationsCtx(), // each integration's actions (integrations/ui.js), for its commands
     board: sess ? null : liveBoard(),
     plans,

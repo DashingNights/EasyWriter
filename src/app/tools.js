@@ -4,7 +4,7 @@ import {
   ALargeSmall, AppWindow, BadgeCheck, BringToFront, Check, CheckCheck, ChevronDown, ChevronUp, ListChecks, ListX, CaseSensitive, ClipboardPaste, Copy, CopyPlus, Crop, Eraser, Eye, EyeOff, FilePlus, FileText, FolderInput, FolderPlus, Group, Heading1,
   Heading2, Heading3, Globe, Heading4, Heading5, Heading6, ImagePlus, Layers, Lock, LockOpen, Magnet, MessagesSquare, MousePointer2, MoveHorizontal, PaintBucket, Palette, Pen, Pencil, Pilcrow, Pin, Puzzle, Redo2, Save,
   Replace, Scaling, Scissors, Search, MessageSquare, SendToBack, Settings, Shapes, SlidersHorizontal, SpellCheck, SquarePen, TableColumnsSplit, TableRowsSplit, Tag, Trash2,
-  Type, Undo2, Ungroup, WandSparkles, Workflow, X, PenLine,
+  Type, Undo2, Ungroup, WandSparkles, Workflow, X, PenLine, BookMarked, Hash, ScrollText, TextQuote,
 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { SelectItem } from '@/components/ui/select';
@@ -30,11 +30,13 @@ import { ShapeControls, ShapeIcon, StrokeControls } from './components/board/con
 import { ItemControls } from './components/board/ItemRibbon.jsx';
 import { notify } from './components/Notices.jsx';
 import { openFind, openReplace } from './components/FindBar.jsx';
+import { ReferenceStyle } from './components/References.jsx';
 import { toggleSpellCheck } from './components/StatusBar.jsx';
 import { BlockSelect, FontSelect, NONE, SizeSelect, Swatches, textTools, ToolButton, ToolSelect } from './components/Toolbar.jsx';
 import { draftTag, tagList } from './drafts-meta.js';
 import { openFlows } from './flows.js';
 import { can, GATES } from './gates.mjs';
+import { insertReferenceList, openCitePicker, openReferences, sourcesOf } from './references.js';
 import { getState, useStore } from './store.js';
 import { blockKind, flowchartMode } from './tool-rank.mjs';
 import { showPage } from './views.js';
@@ -281,6 +283,19 @@ const CORE = [
   text('deleteTable', 'Delete table', 'Insert', ['remove table', 'table'], { needs: [...TEXT, 'doc.inTable'], risk: 'destructive' }),
   text('box', 'Insert titled box', 'Insert', ['box', 'titled box', 'panel', 'callout', 'container', 'card', 'section', 'spoiler'], { needs: [...TEXT, 'format.box'] }),
   text('rule', 'Horizontal rule', 'Insert', ['divider', 'separator', 'line', 'hr', 'rule', 'horizontal line', 'break', 'section break'], { needs: POST_INSERT }),
+  // The draft's sources (docs/plans/references.md), in both formats. Agents use the references.* commands.
+  { id: 'insert-reference', label: 'Insert reference', group: 'Insert', icon: h(TextQuote), needs: TEXT, also: noBoard, run: openCitePicker, headless: false,
+    keywords: ['reference', 'citation', 'cite', 'in-text citation', 'source', 'harvard', 'quote a source', 'referance', 'refrence', 'citeation'] },
+  { id: 'references', label: 'References', group: 'Insert', icon: h(BookMarked), needs: TEXT, also: noBoard, run: openReferences, headless: false,
+    keywords: ['references', 'sources', 'bibliography', 'works cited', 'citations', 'add source', 'add reference', 'edit source', 'manage sources',
+      'harvard', 'doi', 'arxiv', 'paste link'] },
+  { id: 'insert-reference-list', label: 'Insert reference list', group: 'Insert', icon: h(ScrollText), needs: TEXT,
+    also: (c) => noBoard(c) && sourcesOf().length > 0, run: insertReferenceList,
+    keywords: ['reference list', 'bibliography', 'works cited', 'references', 'list of sources', 'insert references', 'harvard'] },
+  { id: 'reference-style', label: 'Reference style', group: 'Insert', icon: h(Hash), needs: TEXT, also: noBoard, via: 'references.setStyle',
+    options: () => h(ReferenceStyle),
+    keywords: ['reference style', 'citation style', 'referencing style', 'harvard', 'ieee', 'numbered', 'numbers', 'numbering', 'author date',
+      'default style'] },
 
   // Both modes: history; text mode: formatting and presets.
   { id: 'undo', label: 'Undo', group: 'Edit', icon: h(Undo2), key: 'edit.undo', keywords: ['back', 'revert', 'go back', 'step back', 'reverse', 'oops', 'undo last'],

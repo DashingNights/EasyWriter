@@ -15,6 +15,7 @@ import { FLOW_FORMS } from './flows/forms.jsx';
 import { FormDialog } from './FormDialog.jsx';
 import { NewDraftDialog } from './NewDraftDialog.jsx';
 import { PLAN_FORMS } from './plan/forms.jsx';
+import { ReferencesDialog } from './References.jsx';
 import { SettingsDialog } from './SettingsDialog.jsx';
 
 function LinkDialog({ href, onClose }) {
@@ -47,7 +48,8 @@ function AddThreadDialog({ validate, onClose }) {
   );
 }
 
-const CORE = { newDraft: NewDraftDialog, link: LinkDialog, altText: AltTextDialog, pageSetup: PageSetupDialog, addThread: AddThreadDialog, settings: SettingsDialog };
+const CORE = { newDraft: NewDraftDialog, link: LinkDialog, altText: AltTextDialog, pageSetup: PageSetupDialog, addThread: AddThreadDialog, settings: SettingsDialog,
+  references: ReferencesDialog };
 // Object.assign: all('FORMS') is one object per integration.
 const FORMS = Object.assign({ ...CORE, ...PLAN_FORMS, ...FLOW_FORMS }, ...all('FORMS'));
 
