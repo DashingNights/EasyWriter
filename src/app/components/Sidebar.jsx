@@ -233,6 +233,8 @@ function DraftRow({ d, folderId, folders, threads, tag, tags, active, dragging, 
   const [tagging, setTagging] = useState(false); // the tag menu is open
   const working = useStore((s) => s.bgWrites.includes(d.id)); // the assistant wrote to it in the background this turn (§7i)
   const background = useStore((s) => s.worker?.draftId === d.id); // the background window of computer use has it (§7i)
+  // Agent edits waiting in it as suggestions: the open draft's live count, else the drafts summary's (docs/plans/suggestions.md)
+  const waiting = useStore((s) => (s.draft?.id === d.id && s.editor ? s.suggestions.count : d.suggestions ?? 0));
   return (
     <DropdownMenu>
       <Row active={active} title={d.title || 'Untitled draft'} data-draft={d.id}
@@ -255,6 +257,12 @@ function DraftRow({ d, folderId, folders, threads, tag, tags, active, dragging, 
         )}
         {(working || background) && (
           <Badge variant="secondary" data-draft-assistant className="shrink-0 gap-1 px-1.5 py-0">{working && <Spinner className="size-3" />}Assistant</Badge>
+        )}
+        {waiting > 0 && (
+          <span data-draft-suggestions={waiting} title={waiting === 1 ? '1 suggestion waiting' : `${waiting} suggestions waiting`}
+            className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground tabular-nums">
+            <Dot color="var(--suggest)" />{waiting}
+          </span>
         )}
         <Slot name="DraftRowBadge" d={d} />
         {!renaming && ( // they would show over the rename box, which has the focus

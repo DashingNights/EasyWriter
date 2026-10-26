@@ -110,24 +110,20 @@ export const Pagination = Extension.create({
           const step = box.body + box.breaker;
           const widgets = [...view.dom.querySelectorAll(':scope > .pg-pages')];
           if (widgets.length !== runStarts(state.doc).length) return false; // not drawn yet
-          // Each run ends at the bottom of its last block: the one before the next page break, or the doc's last.
-          const ends = [];
-          let last = -1;
-          state.doc.forEach((n, pos) => {
-            if (n.type.name !== 'pageBreak') last = pos;
-            else {
-              ends.push(last);
-              last = -1;
-            }
-          });
-          ends.push(last);
+          // Each run ends at the bottom of the last element before the next run's widget: its last block, or a widget after it
+          // (a deleted block shown as a suggestion, docs/plans/suggestions.md). The page break's own element does not count, as
+          // clearance places it at its page's end.
+          const kids = [...view.dom.children];
+          const at = [];
+          kids.forEach((el, k) => el.classList.contains('pg-pages') && at.push(k)); // the widgets' places, in order
           const segments = widgets.map((w, i) => {
             const top = w.offsetTop;
             let end = top;
-            const at = ends[i];
-            if (at >= 0) {
-              const dom = view.nodeDOM(at);
-              if (dom?.offsetParent === view.dom) end = Math.max(top, dom.offsetTop + dom.offsetHeight);
+            for (let k = (at[i + 1] ?? kids.length) - 1; k > at[i]; k--) {
+              const el = kids[k];
+              if (el.offsetParent !== view.dom || el.matches('[data-page-break], .ProseMirror-gapcursor')) continue;
+              end = Math.max(top, el.offsetTop + el.offsetHeight);
+              break;
             }
             return { top, pages: pagesFor(end - top, box.body, box.breaker) };
           });

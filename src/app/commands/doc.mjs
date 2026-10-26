@@ -1,4 +1,5 @@
 import { BOARD_TYPES, find, nodeAt, outline, pathOfPos, posOfPath } from '../../doc-path.mjs';
+import { brief } from '../../suggest/core.mjs';
 import { FONT_SIZES, FONTS, HIGHLIGHTS, presetChain, TEXT_COLORS } from '../../format.mjs';
 import { resolveColor } from '../../office.mjs';
 import { can } from '../gates.mjs';
@@ -192,8 +193,13 @@ export const defs = [
       let content;
       // Boards sit at the top level only: the doc's children, or the block at a path.
       const boards = (a.path ? [node] : node.content ?? []).filter((n) => BOARD_TYPES.includes(n.type));
-      const stub = (n) => (BOARD_TYPES.includes(n.type) ? boardStub(ctx, n) : n);
-      if (a.format === 'json') content = a.images ? node : ctx.lib.stripImages(a.path ? stub(node) : { ...node, content: (node.content ?? []).map(stub) });
+      // json: a board's briefed record {id, kind} stays on its stub
+      const stub = (n) => (BOARD_TYPES.includes(n.type) ? { ...boardStub(ctx, n), ...(n.attrs?.suggest && { suggest: n.attrs.suggest }) } : n);
+      if (a.format === 'json') {
+        // A suggestion record as {id, kind}, its old blocks left out (the whole doc first: a replace is told from its run's first block).
+        node = a.path ? nodeAt(brief(json), a.path) : brief(json);
+        content = a.images ? node : ctx.lib.stripImages(a.path ? stub(node) : { ...node, content: (node.content ?? []).map(stub) });
+      }
       else if (a.format === 'outline') content = outline({ content: node.content ?? [] }).map((e) => ({ ...e, path: [...(a.path ?? []), ...e.path] }));
       else if (a.format === 'markdown') content = ctx.lib.toMarkdown(node, a.path);
       else if (a.format === 'html') {

@@ -121,3 +121,18 @@ test('mapPath: a block replaced in place (a board write, a block type change) ke
   apply(state.tr.delete(at, at + 1)); // and deleting it is still stale
   assert.equal(mapPath([3], rev, state.doc), 'stale');
 });
+
+test('outline: pending names a waiting suggestion on a top-level block (docs/plans/suggestions.md)', () => {
+  const ins = (id, old) => ({ suggest: { ins: { id, g: 'g000001', n: 1, sig: 'x', ...(old && { old }) } } });
+  const doc = {
+    content: [
+      { type: 'paragraph', attrs: ins('s7k2a1', [p(t('was'))]), content: [t('new')] },
+      { type: 'paragraph', attrs: ins('s7k2a1'), content: [t('more')] },
+      { type: 'paragraph', attrs: ins('s9x0b2'), content: [t('added')] },
+      { type: 'paragraph', attrs: { suggest: { del: [{ id: 's8m3q0', g: 'g000001', side: 'before', old: [p(t('a')), p(t('b'))] }] } }, content: [t('kept')] },
+      p(t('plain')),
+    ],
+  };
+  assert.deepEqual(outline(doc).map((e) => e.pending), ['replace s7k2a1', 'replace s7k2a1', 'insert s9x0b2', 'deleted before: 2 blocks s8m3q0', undefined]);
+  assert.ok(!('pending' in outline(DOC)[0]));
+});

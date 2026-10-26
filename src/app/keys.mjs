@@ -87,7 +87,7 @@ const WINDOWS = new Map([
   ...WIN('standard', 'deletes a word', 'Ctrl+Backspace', 'Ctrl+Del'),
   ...WIN('standard', 'moves the focus', 'Tab', 'Shift+Tab'),
   ...WIN('layout', 'types a character with AltGr on many keyboard layouts', 'Ctrl+Alt+E', 'Ctrl+Alt+Q', 'Ctrl+Alt+4', 'Ctrl+Alt+2',
-    'Ctrl+Alt+3', 'Ctrl+Alt+7', 'Ctrl+Alt+8', 'Ctrl+Alt+9', 'Ctrl+Alt+0', 'Ctrl+Alt+-', 'Ctrl+Alt+=', 'Ctrl+Alt+\\', 'Ctrl+Alt+M'),
+    'Ctrl+Alt+3', 'Ctrl+Alt+7', 'Ctrl+Alt+8', 'Ctrl+Alt+9', 'Ctrl+Alt+0', 'Ctrl+Alt+-', 'Ctrl+Alt+=', 'Ctrl+Alt+\\', 'Ctrl+Alt+M', 'Ctrl+Alt+[', 'Ctrl+Alt+]'),
 ]);
 
 /** What Windows does with `chord` ({level: 'system' | 'standard' | 'layout', what}), or null. A chord without Ctrl or Alt that
@@ -165,7 +165,7 @@ export function overridesOf(defs, binds) {
  * kind → binding id. The key arms the shape tool with that kind; S arms it with the last kind used. */
 export const SHAPE_KEYS = { rect: 'board.box', ellipse: 'board.circle', line: 'board.line', arrow: 'board.arrow' };
 
-export const GROUPS = ['General', 'Text', 'Document', 'Insert', 'Boards', 'Plans', 'Flowcharts', 'Browser'];
+export const GROUPS = ['General', 'Text', 'Document', 'Insert', 'Suggestions', 'Boards', 'Plans', 'Flowcharts', 'Browser'];
 const def = (group, scope) => (id, label, keys, more) => ({ id, label, group, scope, keys, ...more });
 const general = def('General', 'global');
 const generalEditor = def('General', 'editor');
@@ -173,6 +173,7 @@ const text = def('Text', 'text');
 const textEditor = def('Text', 'editor');
 const insert = def('Insert', 'editor');
 const doc = def('Document', 'document');
+const suggest = def('Suggestions', 'editor');
 const board = def('Boards', 'board');
 const plan = def('Plans', 'plan');
 const flows = def('Flowcharts', 'flows');
@@ -239,6 +240,13 @@ export const DEFS = [
 
   insert('insert.canvas', 'Insert canvas', ['Ctrl+Alt+C']),
   insert('insert.flowchart', 'Insert flowchart', ['Ctrl+Alt+F']),
+
+  // Agent edits waiting as suggestions (docs/plans/suggestions.md Keys): none types a character with AltGr. Accept and reject act
+  // on the active change.
+  suggest('suggest.next', 'Next suggestion', ['Ctrl+Alt+PageDown']),
+  suggest('suggest.previous', 'Previous suggestion', ['Ctrl+Alt+PageUp']),
+  suggest('suggest.accept', 'Accept suggestion', ['Ctrl+Alt+Enter']),
+  suggest('suggest.reject', 'Reject suggestion', ['Ctrl+Alt+Backspace']),
 
   board('board.select', 'Select tool', ['V']),
   board('board.text', 'Text tool', ['T']),

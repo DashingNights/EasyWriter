@@ -8,6 +8,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Slider } from '@/components/ui/slider';
 import { openSettings, refocusEditor, saveSettings, setZoom } from '../actions.js';
 import { paginationKey } from '../../document/pagination.js';
+import { SuggestionsSlot } from '../../suggest/Review.jsx';
 import { Slot } from '../../integrations/ui.js';
 import { on } from '../commands.js';
 import { getState, setState, useEditor, useStore } from '../store.js';
@@ -138,6 +139,7 @@ export function StatusBar() {
       <Slot name="StatusBarItem" />
       <Model />
       <Agents />
+      <SuggestionsSlot />
       <div className="ml-auto flex items-center gap-2">
         Zoom
         <Slider aria-label="Page zoom" className="w-28" min={25} max={200} step={1} value={[Math.min(200, Math.max(25, zoomPct))]}

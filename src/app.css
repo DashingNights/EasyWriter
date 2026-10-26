@@ -2,6 +2,7 @@
 @import "tw-animate-css";
 @import "./page.css";
 @import "./document/document.css";
+@import "./suggest/suggest.css";
 
 @source "./";
 @source "../index.html";
@@ -32,6 +33,7 @@
   --accent-foreground: #1f1f1f;
   --destructive: oklch(0.577 0.245 27.325);
   --warning: #c2410c; /* blocked, conflicts, due today, refused on push, keybind warnings */
+  --suggest: #f2b400; /* agent edits waiting as suggestions (suggest/suggest.css has the page's own tokens) */
   --success: #16a34a; /* pushed, done */
   --border: #dadada;
   --input: #cfcfcf;
@@ -56,6 +58,7 @@
   --accent-foreground: #e6e6e6;
   --destructive: oklch(0.704 0.191 22.216);
   --warning: #e09952;
+  --suggest: #f5c542;
   --success: #22c55e;
   --border: rgb(255 255 255 / 10%);
   --input: rgb(255 255 255 / 15%);
@@ -114,6 +117,7 @@
   --color-accent-foreground: var(--accent-foreground);
   --color-destructive: var(--destructive);
   --color-warning: var(--warning);
+  --color-suggest: var(--suggest);
   --color-success: var(--success);
   --color-border: var(--border);
   --color-input: var(--input);

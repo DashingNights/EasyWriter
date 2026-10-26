@@ -43,7 +43,7 @@ test('flowchart items (§6d): a connector with three labels, a labelled shape, r
   assert.equal(items[0].html, 'Valid?');
   assert.deepEqual([items[1].rot, items[1].align, items[1].size], [undefined, undefined, undefined]); // bad values dropped
   assert.deepEqual(Object.keys(items[2].labels), ['start', 'mid', 'end']);
-  assert.deepEqual(items[2].labels.mid, { html: 'yes', t: 0.4, dx: 0, dy: -10, size: 14, textColor: '#ffffff', bold: false });
+  assert.deepEqual(items[2].labels.mid, { html: 'yes', t: 0.4, dx: 0, dy: -10, size: 14, bold: false }); // no colour: the theme's as drawn
   assert.deepEqual([items[2].labels.start.t, items[2].labels.end.t, items[2].labels.end.bold], [0.15, 0.85, true]);
   assert.deepEqual(items[2].to, { item: 'sh2', anchor: [0.5, 1] });
   assert.deepEqual([items[3].h, 'h' in items[4]], [38, false]);

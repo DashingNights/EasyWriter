@@ -51,7 +51,11 @@ export function cleanConnector(c) {
     if (!isObj(l) || typeof l.html !== 'string' || !l.html) continue;
     labels[slot] = {
       html: l.html, t: num(l.t) ? fit(l.t, 0, 1) : t, dx: num(l.dx) ? l.dx : 0, dy: num(l.dy) ? l.dy : 0,
-      size: num(l.size) && l.size > 0 ? l.size : 14, textColor: typeof l.textColor === 'string' ? l.textColor : '#ffffff', bold: l.bold === true,
+      size: num(l.size) && l.size > 0 ? l.size : 14, bold: l.bold === true,
+      // none: the theme's text colour as drawn (whiteboard.js). A stored white counts as none: before 2026-10-26 this function wrote
+      // '#ffffff' into every label left without a colour, so on a light board agents' labels drew white on white (the user asked
+      // for them to follow the theme). On a dark surface the ink drawn is white anyway.
+      ...(typeof l.textColor === 'string' && !/^#ffffff$/i.test(l.textColor) && { textColor: l.textColor }),
     };
   }
   const out = {

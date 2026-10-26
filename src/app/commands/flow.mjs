@@ -7,14 +7,14 @@ import { cleanConnector, defaultMeasure, moveItem, normalizeGroups, repairEnds, 
 import { resolveConnectors } from '../../flow/route.mjs';
 import { KINDS, rotBox, rotOf } from '../../flow/shapes.mjs';
 import {
-  contentWidth, groupBox, injectStyle, itemElement, make, parseBoard, smartArtboard, topLevelPos, WB_BG,
+  boardSurface, contentWidth, groupBox, injectStyle, itemElement, make, parseBoard, smartArtboard, topLevelPos, WB_BG,
 } from '../../whiteboard.js';
 import { validate } from '../schema.mjs';
 import { endSide } from '../assistant/attach.mjs';
-import { grouped, patched, placeAt, ungrouped } from './board.mjs';
+import { grouped, itemDefaults, patched, placeAt, ungrouped } from './board.mjs';
 import { connectorOf, endBoxes, straightPatch } from './connectors.mjs';
 import { define, fail } from './define.mjs';
-import { matchStyle } from './item-style.mjs';
+import { contrastWarnings, styledText } from './item-style.mjs';
 import { DRAFT_ID, ITEM, ITEM_ID, ref } from './schema-defs.mjs';
 
 // flow.* (SPEC §8 Catalogue, §6f; assistant-coverage plan §3.6): the flowchart library by flowId, through the store
@@ -49,7 +49,7 @@ function busy(ctx, a) {
   return !!s && s.target.owner?.flow?.()?.id === a.flowId;
 }
 
-// --- copied from board.mjs (private there; wave 2 edits that file): plain, int, briefItem, findText, itemDefaults, freshIds,
+// --- copied from board.mjs (private there; wave 2 edits that file): plain, int, briefItem, findText, freshIds,
 // checked, endWarnings, settle, mustHave. Export them from board.mjs and delete these copies once it is free. ---
 
 const ENTITIES = { nbsp: ' ', lt: '<', gt: '>', quot: '"', amp: '&' };
@@ -57,7 +57,7 @@ const plain = (i) => String(i?.html ?? i?.labels?.mid?.html ?? '').replace(/<[^>
   .replace(/\s+/g, ' ').trim();
 const int = (v) => (typeof v === 'number' ? Math.round(v) : undefined);
 const newId = () => Math.random().toString(36).slice(2, 9).padEnd(7, '0');
-const ink = (ctx) => (ctx.state.settings.theme === 'light' ? '#111111' : '#ffffff');
+const themeOf = (ctx) => (ctx.state.settings.theme === 'light' ? 'light' : 'dark'); // the library draws in the page theme (flows.js)
 
 function briefItem(i, byId) {
   const short = (it) => {
@@ -79,14 +79,6 @@ const STOP = new Set(['a', 'an', 'the', 'of', 'on', 'in', 'to', 'and']);
 function findText(i, byId) {
   const ends = i.type === 'connector' ? `from ${plain(byId.get(i.from?.item))} to ${plain(byId.get(i.to?.item))}` : '';
   return `${plain(i)} ${i.type} ${FIND_WORDS[i.type] ?? ''} ${i.shape ?? ''} ${KIND_NAMES.get(i.shape) ?? ''} ${ends}`.toLowerCase();
-}
-
-function itemDefaults(item, color, items = []) {
-  const i = matchStyle(item, items); // the flowchart's own style first (item-style.mjs)
-  if (i.type === 'text') return { size: 20, color, bold: false, align: 'left', bg: null, ...i };
-  if (i.type === 'shape') return { color, width: 2, opacity: 1, fill: 'none', fillColor: color, textColor: color, ...i };
-  if (i.type === 'connector') return { color, ...i };
-  return i;
 }
 
 function freshIds(items, used) {
@@ -163,20 +155,22 @@ function mustHave(items, ids) {
 
 // --- end of the copies ---
 
-/** `items` plus the new items `add` (defaults, fresh ids, the board's checks; `at`: their args pointer) → {items, result}. */
-function added(ctx, items, add, at = '/items') {
-  const color = ink(ctx);
-  const fresh = freshIds(add.map((i) => itemDefaults(i, color, items)), new Set(items.map((i) => i.id))).map((i, k) => checked(i, `${at}/${k}`));
+/** `items` plus the new items `add` (defaults, the flowchart's own style first; fresh ids, the board's checks; `at`: their args
+ * pointer; `bg`: the board's background) → {items, result}. */
+function added(ctx, items, add, at, bg) {
+  const theme = themeOf(ctx);
+  const board = boardSurface(bg, theme);
+  const fresh = freshIds(add.map((i) => itemDefaults(i, theme, board, items)), new Set(items.map((i) => i.id))).map((i, k) => checked(i, `${at}/${k}`));
   const ids = new Set(fresh.map((i) => i.id));
   const all = repairEnds([...items, ...fresh]);
-  const warnings = endWarnings(fresh, all, ids);
+  const warnings = [...endWarnings(fresh, all, ids), ...contrastWarnings(all, ids, theme, board)];
   return { items: all, result: { ids: [...ids], ...(warnings.length && { warnings }) } };
 }
 
-/** Runs `edit(items) → {items, result}` on the record's items, settles and commits them (header) → edit's result. */
+/** Runs `edit(items, bg) → {items, result}` on the record's items, settles and commits them (header) → edit's result. */
 async function write(ctx, flowId, edit) {
   const r = await recordOf(ctx, flowId);
-  const out = edit(r.board.items);
+  const out = edit(r.board.items, r.board.bg);
   const s = settle(r.board, out.items);
   ctx.flows.commitLibrary(r.id, { w: s.w, h: s.h, frame: s.frame, bg: r.board.bg, items: s.items }, true);
   return out.result;
@@ -292,7 +286,7 @@ export const defs = [
       },
     ],
     busy,
-    run: (ctx, a) => write(ctx, a.flowId, (items) => added(ctx, items, a.items)),
+    run: (ctx, a) => write(ctx, a.flowId, (items, bg) => added(ctx, items, a.items, '/items', bg)),
   }),
   define({
     id: 'flow.items.update',
@@ -315,7 +309,7 @@ export const defs = [
     ],
     busy,
     run: async (ctx, a) => {
-      const result = await write(ctx, a.flowId, (items) => {
+      const result = await write(ctx, a.flowId, (items, bg) => {
         const k = items.findIndex((i) => i.id === a.id);
         if (k < 0) mustHave(items, [a.id]);
         const old = items[k];
@@ -327,7 +321,9 @@ export const defs = [
         const item = checked(patched(old, a.patch), '/patch');
         const next = items.map((i, j) => (j === k ? item : i));
         const all = repairEnds(next);
-        const warnings = endWarnings(next, all, new Set([item.id]));
+        const theme = themeOf(ctx);
+        const looks = styledText(a.patch) ? new Set([item.id]) : new Set(); // a move never warns about a colour the user chose
+        const warnings = [...endWarnings(next, all, new Set([item.id])), ...contrastWarnings(all, looks, theme, boardSurface(bg, theme))];
         return { items: all, result: { id: item.id, ...(warnings.length && { warnings }) } };
       });
       // The item as stored: its route redone, the artboard grown round it.
@@ -488,7 +484,7 @@ export const defs = [
   define({
     id: 'flow.insert',
     title: 'Insert a library flowchart into the open draft, synced',
-    brief: 'Its later edits show in the draft. draftId: another draft to work on without opening it (drafts_list gives it); leave it out for the open draft.',
+    brief: 'Synced with the library flowchart. draftId: another draft to work on without opening it (drafts_list gives it); leave it out for the open draft.',
     group: GROUP,
     risk: 'write',
     undo: 'doc',
@@ -564,12 +560,15 @@ export const defs = [
     run: (ctx, a) => {
       const b = a.board ?? {};
       let board = { w: b.w ?? FLOW_SIZE.w, h: b.h ?? FLOW_SIZE.h, frame: null, ...(b.bg && { bg: b.bg }), items: [] };
+      let warnings;
       if (b.items?.length) {
-        const s = settle(board, added(ctx, [], b.items, '/board/items').items);
+        const out = added(ctx, [], b.items, '/board/items', b.bg);
+        const s = settle(board, out.items);
         board = { ...board, w: s.w, h: s.h, frame: s.frame, items: s.items };
+        ({ warnings } = out.result);
       }
       const r = ctx.flows.createFlow({ title: a.title, threadUrl: a.threadUrl === undefined ? ctx.flows.draftThread() : a.threadUrl, board });
-      return { flowId: r.id, title: r.title, threadUrl: r.threadUrl };
+      return { flowId: r.id, title: r.title, threadUrl: r.threadUrl, ...(warnings && { warnings }) };
     },
   }),
   define({

@@ -3,7 +3,7 @@
 // integrations/index.mjs, whose gates (each manifest's, and integration.<id>) are spread in and tagged with their integration.
 //
 // A gate reads one subject: `ui` {view, editor} (the store's state fits), `board` (Board.getSnapshot(), null without a
-// board), `doc` {inTable}, `history` {canUndo, canRedo} (a board snapshot fits), `draft` {id, threadUrl, pushedAt, format, threads (settings.threads)}, `node`
+// board), `doc` {inTable}, `history` {canUndo, canRedo} (a board snapshot fits), `draft` {id, threadUrl, pushedAt, format, threads (settings.threads), suggestions}, `node`
 // (a TipTap JSON block), `flow` (a library record; null when not loaded or missing), `window` {visible}
 // (document.visibilityState is 'visible': shown and not minimized) or `settings` (settings.json as loaded).
 
@@ -36,6 +36,9 @@ export const GATES = {
     'The selection is not one item of the needed type', 'Select exactly one item of that type'),
   'doc.inTable': gate('doc', (d) => !!d?.inTable, 'The caret is not in a table', 'Put the caret in a table cell first'),
   'history.canUndo': gate('history', (h) => !!h?.canUndo, 'There is nothing to undo', 'Make a change first'),
+  // No agent edit waits as a suggestion in the draft (docs/plans/suggestions.md): `suggestions` is the count, the open draft's or
+  // a session's live, else its summary's. A forum push needs it.
+  'draft.settled': gate('draft', (d) => !(d?.suggestions > 0), 'Suggestions wait in this draft', 'Accept or reject them in the draft first'),
   'history.canRedo': gate('history', (h) => !!h?.canRedo, 'There is nothing to redo', 'Undo a change first'),
   // The draft's format (formats.mjs formatOf: no draft or no format is the forum post). Forum services, typography and tools
   // need format.post (the forum post or the core page); the Document's own need format.document (docs/plans/document.md).

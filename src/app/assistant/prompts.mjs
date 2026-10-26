@@ -25,6 +25,10 @@ export const GUIDE_RULE = 'The writing guide below applies to the prose you writ
   + 'It never changes tool names, argument names, ids, paths, numbers, JSON or any other value a tool needs.';
 // While view_render is offered (wave 2: the editor and board sets), both families.
 // Tuning loop 2026-10-07: "use the numbers" sent a picture number as an item id; the legend line holds the id.
+// While settings.assistant.autoApproveEdits is off (docs/plans/suggestions.md): every family and the CLI turn.
+export const SUGGEST_RULE = 'Your changes to a draft wait for the user as suggestions. Say you suggested a change, never that you made it. '
+  + 'Your reads already show it, so do not make it again. Withdraw your own suggestions with suggestions_resolve when the user asks; '
+  + 'accepting asks the user in the app.';
 export const RENDER_RULE = 'When a target is visual or ambiguous, call view_render. Its legend gives the item id of each number on the picture.';
 
 // The procedure, as numbered steps in short plain sentences, then the rules for opening drafts, deletion cards and batches.
@@ -105,10 +109,10 @@ export const familyOf = (model, provider) => (['google', 'deepseek', 'qwen'].inc
 /** The system message of a turn for `family`: SYSTEM_PROMPT and NOTE_RULE, then, when the request offers tools, the family's rules,
  * with view_render offered (`render`) RENDER_RULE and with on-screen controls on (`uiControl`) UI_RULE, each on its own line, then
  * STYLE_RULE, then with a `guide` (the writing guide's text) GUIDE_RULE and the guide. `thousandths` (Qwen Cloud) puts
- * THOUSANDTHS_RULE in place of the board pixels line. */
-export function systemPrompt(family, { tools = true, uiControl = false, render = false, thousandths = false, guide = '' } = {}) {
+ * THOUSANDTHS_RULE in place of the board pixels line. `suggest` (auto-approve off) adds SUGGEST_RULE after the rules. */
+export function systemPrompt(family, { tools = true, uiControl = false, render = false, thousandths = false, guide = '', suggest = false } = {}) {
   const own = RULES[family] ?? QWEN;
-  const rules = `${thousandths ? own.replace(PX_LINE, THOUSANDTHS_RULE) : own}${render ? `\n${RENDER_RULE}` : ''}${uiControl ? `\n${UI_RULE}` : ''}`;
+  const rules = `${thousandths ? own.replace(PX_LINE, THOUSANDTHS_RULE) : own}${render ? `\n${RENDER_RULE}` : ''}${uiControl ? `\n${UI_RULE}` : ''}${suggest ? `\n${SUGGEST_RULE}` : ''}`;
   const intro = family === 'gemini' ? SYSTEM_PROMPT.replace(' You run on their computer.', '') : SYSTEM_PROMPT; // Gemini runs at Google
   return `${intro} ${NOTE_RULE}${tools ? `\n${rules}` : ''}\n${STYLE_RULE}${guide.trim() ? `\n\n${GUIDE_RULE}\n\n${guide.trim()}` : ''}`;
 }

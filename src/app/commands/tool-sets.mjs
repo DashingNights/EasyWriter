@@ -11,6 +11,7 @@ export const CATEGORY_OF_GROUP = {
   app: 'app', ui: 'app', audit: 'app', settings: 'app', tool: 'app', batch: 'app', commands: 'app',
   drafts: 'drafts', tags: 'drafts', folders: 'drafts', threads: 'drafts',
   canvas: 'board',
+  suggestions: 'doc', // suggestions.* (docs/plans/suggestions.md): reviewing agent edits of the draft
   export: 'export', push: 'export', forum: 'export',
 };
 

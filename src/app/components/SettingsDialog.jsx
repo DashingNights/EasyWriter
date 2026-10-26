@@ -455,6 +455,13 @@ const PERMISSION_HINT = {
   readonly: 'Read only. Reads and answers. Changes nothing.',
   all: 'Allow all. Does everything without asking, deleting included.',
 };
+// While Auto-approve assistant edits is off, edits to drafts wait as suggestions (docs/plans/suggestions.md Setting).
+const SUGGEST_HINT = {
+  ...PERMISSION_HINT,
+  standard: 'Standard. Edits to drafts wait as suggestions. Asks before deleting drafts, flowcharts, tags, folders or threads.',
+  ask: 'Ask first. Edits to drafts wait as suggestions. Asks before every other change.',
+  all: 'Allow all. Edits to drafts wait as suggestions. Asks only when an agent accepts them or changes a flowchart a draft shows.',
+};
 
 /** settings.assistant's Qwen Cloud fields as saved: the key trimmed, the enabled models (at least the default), the chat panel's
  * model one of them. */
@@ -541,7 +548,18 @@ function AssistantSection({ value: a, onChange }) {
       <Label className="self-start pt-2 text-muted-foreground">Permissions</Label>
       <div className="grid gap-1.5" data-assistant-permission>
         <Pick label="Assistant permissions" value={a.permission} onChange={(permission) => savePermission({ permission })} options={PERMISSIONS} className="w-48" />
-        <span className="max-w-[36rem] text-xs text-muted-foreground" data-permission-hint>{PERMISSION_HINT[a.permission]}</span>
+        <span className="max-w-[36rem] text-xs text-muted-foreground" data-permission-hint>
+          {(a.autoApproveEdits === true ? PERMISSION_HINT : SUGGEST_HINT)[a.permission]}
+        </span>
+        <div className="flex items-start gap-2">
+          <Switch id="set-asst-auto" className="mt-0.5" checked={a.autoApproveEdits === true} onCheckedChange={(on) => savePermission({ autoApproveEdits: on })} />
+          <div className="grid gap-0.5">
+            <Label htmlFor="set-asst-auto">Auto-approve assistant edits</Label>
+            <span className="max-w-[36rem] text-xs text-muted-foreground">
+              When this is off, edits from the assistant and MCP clients wait in the draft as suggestions until you accept or reject them.
+            </span>
+          </div>
+        </div>
         <div className="flex items-start gap-2">
           <Switch id="set-asst-ui" className="mt-0.5" checked={a.uiControl !== false} onCheckedChange={(on) => savePermission({ uiControl: on })} />
           <div className="grid gap-0.5">
@@ -806,8 +824,8 @@ function AgentsSection({ enabled, setEnabled, port, setPort }) {
         <div className="grid gap-0.5">
           <Label htmlFor="set-agents">Allow MCP clients</Label>
           <span className="max-w-[36rem] text-xs text-muted-foreground">
-            Lets MCP clients work in this app. Any program on this computer can connect while this is on. Deleting asks you
-            every time.
+            Lets MCP clients work in this app. Any program on this computer can connect while this is on. Their edits to drafts
+            wait as suggestions unless Auto-approve assistant edits is on in Settings &gt; Assistant. Other deletes ask you every time.
           </span>
         </div>
       </div>

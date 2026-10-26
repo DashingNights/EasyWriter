@@ -27,6 +27,7 @@ import { Toolbar } from './components/Toolbar.jsx';
 import { ToolSearch } from './components/ToolSearch.jsx';
 import { Dictation } from './dictation/Dictation.jsx';
 import { NavPane } from '../document/NavPane.jsx';
+import { SuggestionCards } from '../suggest/Review.jsx';
 import { DocIsland } from '../document/Ribbon.jsx';
 import { can } from './gates.mjs';
 import { useStore, WORKER } from './store.js';
@@ -134,6 +135,9 @@ export function App() {
               {editor && isDocument && navPane && <NavPane />}
               <EditorPage inert={!editor} />
             </div>
+            {/* agent edits waiting as suggestions: their cards beside the sheet, in the page's space, under everything below
+                (docs/plans/suggestions.md Display) */}
+            <SuggestionCards />
             {/* §7i Background drafts: the hidden editors of the assistant's background sessions mount here (assistant/sessions.js) */}
             <div id="sessions" aria-hidden inert />
             {/* §7j: the browser page stays mounted too, so its tabs keep running behind the other pages */}

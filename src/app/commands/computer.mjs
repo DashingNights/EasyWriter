@@ -79,7 +79,14 @@ export const defs = [
         fail('refused', "Undo and redo in the main window are the user's. Each step line has its own Undo.", { code: 'undo' });
       }
       if (DOING[a.action]) await mayAct(ctx, a);
-      return picture(await ctx.api.computer.act(a));
+      // The call its edits wait under as suggestions: the background window records them itself (computer-main.js act).
+      const call = ctx.suggest && { g: ctx.suggest.g, by: ctx.suggest.by, at: ctx.suggest.at, note: ctx.suggest.note, ids: [] };
+      const act = () => ctx.api.computer.act({ ...a, call: call ?? null });
+      // On the main window the input alone is the call's ('computer' counts every transaction), not the time on the card above.
+      const r = await (a.target === 'background' ? act() : ctx.inScope('computer', act));
+      // The background window's converter filled its own copy of the call: its ids join this call's (the answer's suggested).
+      for (const id of Array.isArray(r?.ids) ? r.ids : []) if (typeof id === 'string' && !ctx.suggest.ids.includes(id)) ctx.suggest.ids.push(id);
+      return picture(r);
     },
   }),
   define({

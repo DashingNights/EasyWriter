@@ -313,3 +313,19 @@ test('doc.format: its examples, a theme colour and null pass the model form of i
     assert.deepEqual(validate(params, { path: [0], run: { color: null, highlight: null } }), [], family);
   }
 });
+
+test('suggestions.*: the examples of the plan validate, the category is doc, and none joins a view set', () => {
+  const ex = (id) => byId(id).examples.map((e) => e.args);
+  assert.deepEqual(ex('suggestions.resolve'), [{ action: 'reject', ids: ['s7k2a1'] }, { action: 'accept', group: 'g3m9x0' }, { action: 'accept', all: true }]);
+  assert.deepEqual(ex('suggestions.show')[0], { direction: 'next' });
+  assert.deepEqual(ex('suggestions.group'), [{ note: 'Tighten the intro' }]);
+  for (const id of ['suggestions.list', 'suggestions.resolve', 'suggestions.show', 'suggestions.group']) {
+    assert.equal(categoryOf(byId(id)), 'doc', id);
+    assert.ok(!Object.values(VIEW_SETS).flat().includes(id), id);
+  }
+  const r = byId('suggestions.resolve');
+  assert.equal(validate(r.args, { action: 'accept' }, $defs).length > 0, true); // ids, group or all
+  assert.equal(validate(r.args, { action: 'accept', all: false }, $defs).length > 0, true);
+  assert.equal(validate(byId('suggestions.group').args, { note: 'x'.repeat(141) }, $defs).length > 0, true);
+  assert.equal(byId('suggestions.group').risk, 'read');
+});

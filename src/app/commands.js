@@ -25,6 +25,9 @@ import { enabled, listed, offArg } from '../integrations/index.mjs';
 import { integrationsCtx } from '../integrations/ui.js';
 import * as plans from './plans.js';
 import { mapPath } from './rev.js';
+import { newId as suggestId, pendingCount, strip as stripRecords } from '../suggest/core.mjs';
+import { noteGroup, withCall } from '../suggest/extension.js';
+import { tagList } from './drafts-meta.js';
 import { deref, validate, withDefaults } from './schema.mjs';
 import { getState, setState, subscribe } from './store.js';
 
@@ -133,6 +136,12 @@ async function runOne(def, rawArgs, opts) {
   if (typeof args.draftId === 'string' && !draftById(args.draftId)) return error('not_found', `No draft has the id ${args.draftId}`);
   const failed = failedGates(def, args, opts.source, sess);
   if (failed.length) return error('precondition_failed', failed.map((f) => f.message).join('; '), { failed });
+  // An agent's change to draft content waits as a suggestion (docs/plans/suggestions.md Which calls suggest): ctx.suggest is its
+  // call, which the Suggestions extension records the change under. An agent's undo would change the draft without a record.
+  if (suggests(def, args, opts)) {
+    if (def.group === 'history') return error('refused', 'Undo by an agent would change the draft directly. Withdraw your own suggestions with suggestions_resolve.');
+    ctx.suggest = callOf(opts.source, targetDraft(def, args, sess));
+  }
   // 6. Policy.
   const denied = await policy(def, args, opts, ctx);
   if (denied) return denied;
@@ -154,7 +163,9 @@ async function runOne(def, rawArgs, opts) {
     if (sess && !opts.group) sess.pending = job.catch(() => {});
     const out = await job;
     if (sess && out.undoSteps > 0 && opts.source === ASSISTANT) noteWrite(sess.draftId);
-    return { ok: true, ...out, ...(sess && { draftId: sess.draftId, rev: sess.rev }) };
+    if (!opts.dryRun) noteMeta(def, args, opts.source, out.result);
+    const suggested = ctx.suggest?.ids.length ? { suggested: { group: ctx.suggest.g, changes: [...ctx.suggest.ids] } } : {};
+    return { ok: true, ...out, ...suggested, ...(sess && { draftId: sess.draftId, rev: sess.rev }) };
   } catch (e) {
     return errorOf(e);
   } finally {
@@ -172,9 +183,11 @@ async function work(def, ctx, args, opts) {
     if (opts.dryRun) return { result, undoSteps: 0, diff: diffOf(ed.state.doc, ed.state.apply(tr).doc) };
     const view = ed.view;
     const before = undoDepth(view.state);
-    if (opts.group?.first) tr.setMeta('appendedTransaction', opts.group.first); // joins the batch's undo step
+    // Joins the batch's undo step. A suggesting step names a fresh transaction there, not the batch's first: the Suggestions
+    // extension takes appendedTransaction as the root of the dispatch and converts each root once.
+    if (opts.group?.first) tr.setMeta('appendedTransaction', ctx.suggest ? view.state.tr : opts.group.first);
     else closeHistory(tr); // never merges into the user's typing
-    view.dispatch(tr); // no focus, no scrollIntoView; the selection is mapped, not moved
+    withCall(ed, ctx.suggest, 'exact', () => view.dispatch(tr)); // no focus, no scrollIntoView; the selection is mapped, not moved
     if (opts.group && !opts.group.first) opts.group.first = tr;
     if (!opts.group) view.dispatch(closeHistory(view.state.tr)); // the user's next typing starts its own step
     return { result, undoSteps: undoDepth(view.state) - before };
@@ -182,9 +195,69 @@ async function work(def, ctx, args, opts) {
   if (opts.dryRun && def.risk !== 'read') return { result: { simulated: false, title: def.title, args }, undoSteps: 0 };
   const ed = ctx.editor;
   const before = def.undo === 'doc' && ed ? undoDepth(ed.state) : 0;
-  const result = await def.run(ctx, args);
+  // Presses (ui.invoke, tool.run) run in their call's 'ui' scope. computer.mjs scopes the main window's input itself, after its
+  // card (ctx.inScope); board writes and canvas.close scope their own dispatch ('exact').
+  const result = await (PRESSES.includes(def.id) ? inScope(ctx.suggest, 'ui', () => def.run(ctx, args)) : def.run(ctx, args));
   const undoSteps = def.undo === 'doc' && ed && ctx.editor === ed ? undoDepth(ed.state) - before : 0;
   return { result, undoSteps };
+}
+
+/** Runs `fn` under withCall(null, `call`, `kind`) (One converter). Board text typed in the scope is the call's: the user's open
+ * text edit is committed as theirs before it, and the same edit, its text changed in the scope, is committed inside it. Both
+ * stay open with the caret in place, so the next typing (the user's or the agent's) continues. An edit the call opened holds
+ * no typing yet and stays open. Pending plan and library flowchart writes go out inside the scope. */
+async function inScope(call, kind, fn) {
+  if (!call) return fn();
+  // A text just placed (addText) and not typed into would be removed by a commit; it is left as it is.
+  let e = openEdit();
+  if (e && e.b.newText?.id !== e.id) e = recommit(e);
+  return withCall(null, call, kind, async () => {
+    try {
+      return await fn();
+    } finally {
+      const now = openEdit();
+      if (e && now && now.b === e.b && now.id === e.id && now.slot === e.slot && now.html !== e.html) recommit(now);
+      plans.flushPlans();
+      flows.flushFlows();
+    }
+  });
+}
+
+/** The open board text edit {b, id, slot, text, html}, or null. At most one is open: on the board with the focus, or the
+ * board its chrome serves (whiteboard.js activeBoard). */
+function openEdit() {
+  const b = activeBoard.get();
+  const text = b?.editingId ? b.editText() : null;
+  return text ? { b, id: b.editingId, slot: b.editingSlot, text, html: text.innerHTML } : null;
+}
+
+/** Commits open edit `e` and opens it again with its selection (character offsets) → the reopened edit, or null when the
+ * commit removed the item. */
+function recommit(e) {
+  const sel = document.getSelection();
+  const at = (node, off) => {
+    const r = document.createRange();
+    r.selectNodeContents(e.text);
+    r.setEnd(node, off);
+    return r.toString().length;
+  };
+  const range = sel.rangeCount && e.text.contains(sel.anchorNode) && e.text.contains(sel.focusNode)
+    ? [at(sel.anchorNode, sel.anchorOffset), at(sel.focusNode, sel.focusOffset)] : null;
+  e.b.finishEdit();
+  e.b.startEdit(e.id, e.slot);
+  const now = openEdit();
+  if (now && range) {
+    const point = (n) => {
+      const w = document.createTreeWalker(now.text, NodeFilter.SHOW_TEXT);
+      for (let t; (t = w.nextNode());) {
+        if (n <= t.length) return [t, n];
+        n -= t.length;
+      }
+      return [now.text, now.text.childNodes.length];
+    };
+    sel.setBaseAndExtent(...point(range[0]), ...point(range[1]));
+  }
+  return now;
 }
 
 /** Dry-run diff: {from, to} = the changed range in the new doc, before / after = outline entries of the top-level blocks
@@ -282,7 +355,10 @@ function subjectOf(kind, args = {}, sess = null) {
     case 'ui': return sess ? { editor: sess.editor, view: { type: 'editor' } } : state;
     case 'draft': {
       const d = args.draftId ? draftById(args.draftId) : state.draft;
-      return d && { id: d.id, threadUrl: d.threadUrl ?? null, pushedAt: d.pushedAt ?? null, format: d.format ?? null, threads: state.settings?.threads };
+      // Waiting suggestions: the live count of the open draft or the session, else the summary's (draft.settled).
+      const live = d && (d.id === state.draft?.id ? state.editor : sess?.draftId === d.id ? sess.editor : null);
+      const suggestions = live ? pendingCount(live.state.doc) : d?.suggestions ?? 0;
+      return d && { id: d.id, threadUrl: d.threadUrl ?? null, pushedAt: d.pushedAt ?? null, format: d.format ?? null, threads: state.settings?.threads, suggestions };
     }
     case 'doc': return ed && { inTable: ed.isActive('table') };
     case 'history': return ed && { canUndo: undoDepth(ed.state) > 0, canRedo: redoDepth(ed.state) > 0 };
@@ -337,7 +413,9 @@ const modeOf = () => assistantMode(state.settings?.assistant);
 const policyOf = (source) => (source === ASSISTANT ? PERMISSIONS[modeOf().permission]
   : isAgent(source) ? POLICIES.agent : source === 'smoke' ? POLICIES.smoke : POLICIES.user);
 // Their run asks with the pressed control's or the palette entry's own risk (ui-control.js, tool.mjs): the executor only denies.
-const SELF_ASK = ['ui.invoke', 'tool.run'];
+// suggestions.resolve asks in its run unless the agent withdraws its own suggestions (suggestions.mjs).
+const PRESSES = ['ui.invoke', 'tool.run'];
+const SELF_ASK = [...PRESSES, 'suggestions.resolve'];
 
 /** The phrase after "wants to" and the card's description for `def` with `args`. */
 function askText(def, ctx, args) {
@@ -349,9 +427,13 @@ function askText(def, ctx, args) {
 async function policy(def, args, opts, ctx, risk = def.risk, text = null) {
   const why = opts.source === ASSISTANT && refusal({ id: def.id, risk }, modeOf()); // Read only, or on-screen controls off
   if (why) return error('denied', why, { reason: 'policy' });
-  const rule = policyOf(opts.source)[risk];
+  let rule = policyOf(opts.source)[risk];
   if (rule === 'deny') return error('denied', `${def.id} is not allowed for ${opts.source}`, { reason: 'policy' });
-  if (rule !== 'ask' || opts.dryRun || opts.approved || SELF_ASK.includes(def.id)) return null;
+  // A suggestion is the request (Policy precedence 2); a write that reaches a flowchart other drafts show asks in every mode (3).
+  if (ctx.suggest && (risk === 'write' || risk === 'destructive') && rule === 'ask') rule = true;
+  const linked = text ? (text.force ? text : null) : !opts.dryRun && !opts.approved ? await linkedAsk(def, args, ctx) : null;
+  if (linked) text = linked;
+  else if (rule !== 'ask' || opts.dryRun || opts.approved || SELF_ASK.includes(def.id)) return null;
   const { title, description } = text ?? askText(def, ctx, args);
   const answer = await askRaw(opts.source, title, description, risk, text?.steps, opts.signal);
   if (answer === 'allow') return null;
@@ -359,6 +441,121 @@ async function policy(def, args, opts, ctx, risk = def.risk, text = null) {
   return answer === 'timeout'
     ? error('denied', 'Nobody answered the request within 60 s', { reason: 'timeout' })
     : error('denied', 'The user denied the request', { reason: 'user' });
+}
+
+// ---------------------------------------------------------------------------------------------
+// Suggestions (docs/plans/suggestions.md Which calls suggest, Grouping, Policy precedence)
+
+const autoApprove = () => state.settings?.assistant?.autoApproveEdits === true; // undefined (an older profile): suggestions on
+const INPUT_ACTIONS = ['click', 'double_click', 'move', 'drag', 'type', 'key', 'scroll'];
+const NEVER_SUGGEST = ['drafts.create', 'drafts.duplicate']; // a new draft arrives as a normal draft (the user, 2026-10-26)
+
+/** Whether `def` with `args` from opts.source changes draft content as a suggestion: an agent's call, not a dry run, while
+ * auto-approve is off. history.undo and redo count, so the executor refuses them. */
+function suggests(def, args, opts) {
+  if (!isAgent(opts.source) || opts.dryRun || autoApprove()) return false;
+  if (def.group === 'suggestions' || NEVER_SUGGEST.includes(def.id)) return false;
+  if (def.id === 'computer.act') return INPUT_ACTIONS.includes(args.action);
+  return def.undo === 'doc' || def.id === 'canvas.close';
+}
+
+/** The draft a call works on: its draftId, the background window's for computer.act there, else the session's or the open one. */
+const targetDraft = (def, args, sess) => args.draftId
+  ?? (def.id === 'computer.act' && args.target === 'background' ? state.worker?.draftId : sess?.draftId ?? state.draft?.id) ?? null;
+
+const groupsOf = new Map(); // `${source} ${epoch} ${draftId}` → {g, last}
+const epochs = new Map(); // source → {n, note, turn}: the group suggestions.group started
+
+/** The group of a call of `source` on draft `draftId` → {g, note}: the assistant's chat turn (the user's message as the note);
+ * else the source's suggestions.group note with one group per draft until IDLE (5 minutes) passes without a call. */
+function groupFor(source, draftId) {
+  const turn = source === ASSISTANT ? state.assistant?.turn : null;
+  const e = epochs.get(source);
+  if (turn?.id && e?.turn !== turn.id) return { g: turn.id, note: String(turn.request ?? '').slice(0, 140) || null };
+  const key = `${source} ${e?.n ?? 0} ${draftId}`;
+  const now = Date.now();
+  let k = groupsOf.get(key);
+  if (!k || now - k.last > SESSION_IDLE.ms) {
+    for (const [x, v] of groupsOf) if (now - v.last > SESSION_IDLE.ms) groupsOf.delete(x);
+    groupsOf.set(key, (k = { g: suggestId('g'), last: now }));
+  }
+  k.last = now;
+  return { g: k.g, note: e?.note ?? null };
+}
+
+/** suggestions.group: a new group for `source` with `note` → its group on the open draft. The assistant's lasts its turn. */
+function startGroup(source, note) {
+  const e = epochs.get(source);
+  epochs.set(source, { n: (e?.n ?? 0) + 1, note: note.slice(0, 140), turn: source === ASSISTANT ? state.assistant?.turn?.id ?? null : null });
+  return groupFor(source, state.draft?.id ?? null).g;
+}
+
+/** A suggesting call of `source` on draft `draftId`: {g, by, at, note, ids} (ids: the changes the converter records). */
+const callOf = (source, draftId) => ({ ...groupFor(source, draftId), by: source, at: Date.now(), ids: [] });
+
+// Draft metadata an agent changes applies at once and shows as a plain row on its group's card (Grouping).
+const META_ROWS = {
+  'drafts.rename': (a, r) => `Rename to “${r?.title ?? a.title}”`,
+  'drafts.setTag': (a) => (a.tagId ? `Tag as “${tagList(state.settings).find((t) => t.id === a.tagId)?.name ?? a.tagId}”` : 'Clear the tag'),
+  'drafts.move': (a) => (a.folderId ? `Move to “${(state.settings.folders ?? []).find((f) => f.id === a.folderId)?.name ?? a.folderId}”` : 'Move to the top level'),
+};
+
+function noteMeta(def, args, source, result) {
+  const row = META_ROWS[def.id];
+  if (!row || !isAgent(source) || autoApprove()) return;
+  noteGroup(groupFor(source, args.draftId).g, row(args, result));
+  setState({ suggestions: { ...getState().suggestions } }); // the cards (Review.jsx) render again with the row
+}
+
+/** The drafts that show library flowchart `flowId`: the open draft and the background sessions as they are now, the others by
+ * their summary's `flows`. */
+async function linkedDrafts(flowId) {
+  const shows = (doc) => {
+    let hit = false;
+    doc.descendants((n) => {
+      if (n.type.name === 'canvas' && n.attrs.flow?.id === flowId) hit = true;
+      return !hit;
+    });
+    return hit;
+  };
+  const live = new Map();
+  if (state.editor && state.draft?.id) live.set(state.draft.id, shows(state.editor.state.doc));
+  for (const id of sessionIds()) {
+    const s = live.has(id) ? null : await sessionFor(id).catch(() => null);
+    if (s) live.set(id, shows(s.editor.state.doc));
+  }
+  const out = [...live].filter(([, hit]) => hit).map(([id]) => id);
+  for (const d of state.drafts) if (!live.has(d.id) && d.flows?.includes(flowId)) out.push(d.id);
+  return out;
+}
+
+// The flowchart library writes that reach every draft showing that flowchart (Policy precedence 3).
+const FLOW_WRITE = /^flow\.(items\.|layout$|library\.(rename|delete)$)/;
+
+/** The approval card's text {title, description, force} when an agent's write reaches a library flowchart that drafts show
+ * without a record there, else null: a flow.* write to a flowchart any draft shows, and a suggesting board write on a linked
+ * canvas whose flowchart another draft shows too. Only while auto-approve is off. */
+async function linkedAsk(def, args, ctx, suggesting = !!ctx.suggest) {
+  if (!isAgent(ctx.source) || autoApprove() || def.risk === 'read') return null;
+  let flowId;
+  let drafts;
+  if (FLOW_WRITE.test(def.id) && args.flowId) {
+    flowId = args.flowId;
+    drafts = await linkedDrafts(flowId);
+    if (!drafts.length) return null;
+  } else if (suggesting && def.group === 'board' && args.path && ctx.editor) {
+    const n = nodeSubject(args.path, ctx.editor);
+    flowId = n?.type === 'canvas' ? n.attrs.flow?.id : null;
+    drafts = flowId ? await linkedDrafts(flowId) : [];
+    if (!drafts.some((id) => id !== ctx.state.draft?.id)) return null;
+  } else return null;
+  const title = flows.getFlow(flowId)?.title ?? flows.flowList().find((f) => f.id === flowId)?.title ?? 'Flowchart';
+  const n = drafts.length;
+  return {
+    title: `change the flowchart “${title}”, shown in ${n} draft${n === 1 ? '' : 's'}`,
+    description: 'The drafts that show it change at once, without a suggestion to review.',
+    force: true,
+  };
 }
 
 let asks = 0;
@@ -431,16 +628,23 @@ async function runBatch(args, opts) {
     const failed = failedGates(def, a, opts.source, routes(def) ? sess : null);
     if (failed.length) return error('precondition_failed', `steps[${i}] (${def.id}): ${failed.map((f) => f.message).join('; ')}`, { failed, step: i });
     steps[i].text = askText(def, ctx, a);
+    // A suggesting step leaves the card and its risk (the suggestion is the request); one reaching a flowchart other drafts show
+    // joins the card in every mode.
+    steps[i].suggest = suggests(def, a, opts);
+    steps[i].linked = opts.dryRun ? null : await linkedAsk(def, a, ctx, steps[i].suggest);
+    if (steps[i].linked) steps[i].text = steps[i].linked;
   }
   const RANK = ['read', 'write', 'destructive', 'approval'];
-  const own = steps.filter((s) => !SELF_ASK.includes(s.def.id)); // tool.run asks in its own run: never on the batch's card too
+  // tool.run asks in its own run: never on the batch's card too
+  const own = steps.filter((s) => !SELF_ASK.includes(s.def.id) && !(s.suggest && ['write', 'destructive'].includes(s.def.risk)));
   const risk = own.reduce((r, s) => (RANK.indexOf(s.def.risk) > RANK.indexOf(r) ? s.def.risk : r), 'read');
   const rules = policyOf(opts.source);
-  const asked = own.filter((s) => rules[s.def.risk] === 'ask');
+  const asked = steps.filter((s) => s.linked || (own.includes(s) && rules[s.def.risk] === 'ask'));
   const text = {
     title: asked.length === 1 ? asked[0].text.title : `make ${asked.length} changes in one step`,
     description: asked.length === 1 ? asked[0].text.description : '',
     steps: asked.map((s) => s.text.title),
+    force: steps.some((s) => s.linked),
   };
   const denied = await policy(byId('batch'), args, opts, ctx, risk, text);
   if (denied) return denied;
@@ -464,10 +668,12 @@ async function runBatch(args, opts) {
       }
     }
     if (group.first && live()) ed.view.dispatch(closeHistory(ed.state.tr));
+    const suggested = results.filter((r) => r.suggested).map((r) => r.suggested);
     return {
       ok: true,
       result: { results: results.map((r) => (r.ok ? r.result : { error: r.error })) },
       undoSteps: ed && live() ? undoDepth(ed.state) - before : 0,
+      ...(suggested.length && { suggested: { group: suggested[0].group, changes: suggested.flatMap((x) => x.changes) } }),
       ...(sess && { draftId: sess.draftId, rev: sess.rev }),
     };
   };
@@ -520,6 +726,13 @@ function makeCtx(source, signal, sess = null) {
     policy: policyOf(source),
     signal,
     ask: (title, description = '', { risk = 'destructive', steps } = {}) => askRaw(source, title, description, risk, steps, signal).then((a) => a === 'allow'),
+    suggest: null, // the call a suggesting command's change is recorded under (runOne)
+    inScope(kind, fn) { // `fn` in this call's window-level scope (computer.act on the main window: 'computer')
+      return inScope(this.suggest, kind, fn);
+    },
+    autoApprove,
+    linkedDrafts,
+    startGroup: (note) => startGroup(source, note),
     emit,
     lib: sess ? sessionLib(sess) : lib,
   };
@@ -608,6 +821,7 @@ async function toNodes(content, ed = state.editor, draft = state.draft) {
     const width = ed ? contentWidth(ed.view) : pageOf(draft, state.settings).width;
     json = await Promise.all(content.images.map((img, i) => imageNode(img, i, width, format === 'document')));
   }
+  json = stripRecords(json); // no agent writes or forges a suggestion record
   let nodes;
   try {
     nodes = json.map((j) => {

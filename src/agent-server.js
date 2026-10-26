@@ -38,9 +38,14 @@ const RPC = '2.0';
 const HEAD = 'EasyWriter is a desktop editor for drafts with canvases, plans and flowcharts. '
   + 'Start with ui_state or drafts_list; commands_index and commands_describe explain the commands. Blocks are addressed by path '
   + '(indices from doc_get or doc_find). A draft has a format (drafts_list shows it); doc_format takes run and paragraph on a '
-  + 'document. Writes run at once and the user can undo them; ';
-const INSTRUCTIONS = `${HEAD}deletes ask the user in the app.`;
-const ASSISTANT_INSTRUCTIONS = `${HEAD}the app asks the user before a delete when the permission mode needs it, so never ask in text.`;
+  + 'document. On a canvas or flowchart, colours you leave out follow the board and its theme; when a result warns of low '
+  + 'contrast, set the colour it names. Unless the user turned on auto-approve, each change to a draft waits in it as a suggestion until the user accepts '
+  + 'or rejects it: the result then has suggested {group, changes}, and reads already show the change. Tell the user the change '
+  + 'waits for their review in the draft. suggestions_list shows what waits and what the user decided; ';
+// Outside clients group their suggestions with suggestions_group (the in-app assistant's turn groups them already). A client
+// caches these at initialize, so the suggested field of each answer is what tells it a change waits.
+const INSTRUCTIONS = `${HEAD}with auto-approve on, deletes ask the user in the app. Call suggestions_group with a short note of the user's request before you edit.`;
+const ASSISTANT_INSTRUCTIONS = `${HEAD}with auto-approve on, the app asks the user before a delete when the permission mode needs it, so never ask in text.`;
 // The stdio relay, outside the asar archive in a packaged app (package.json build.asarUnpack).
 const BRIDGE = path.join(__dirname, '..', 'bin', 'easywriter-agent.js').replace(`app.asar${path.sep}`, `app.asar.unpacked${path.sep}`);
 

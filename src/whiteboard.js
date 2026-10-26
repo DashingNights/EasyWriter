@@ -4,7 +4,7 @@ import { Fragment, Slice } from '@tiptap/pm/model';
 import { Plugin, PluginKey, NodeSelection, Selection, TextSelection } from '@tiptap/pm/state';
 import { toBlob } from 'html-to-image';
 import { toast } from 'sonner';
-import { anchorPoint, kindOf, portNormal, portsOf, rotatePoint, rotBox, rotOf, turns } from './flow/shapes.mjs';
+import { anchorPoint, fillable, kindOf, portNormal, portsOf, rotatePoint, rotBox, rotOf, turns } from './flow/shapes.mjs';
 import {
   align as alignBoxes, arrangeItems, boundIndex, cleanConnector, cleanLayers, cloneItems, containedIn, DASHES, defaultMeasure, distribute as distributeBoxes,
   groupItems, HEADS, hitTarget, JUMPS, flipItem, LABEL_SLOTS, MAX_POINTS, moveItem, normalizeGroups, repairEnds, resizeInFrame, ROUTES,
@@ -16,6 +16,7 @@ import { cleanPoints, dragSegment, labelSlotAt, midHandles, OPPOSITE, pickInDire
 import { keyAmong, keyLabel } from './app/keybinds.js';
 import { DEFAULT_PAGE_WIDTH as DEFAULT_WIDTH } from './formats.mjs';
 import { SHAPE_KEYS } from './app/keys.mjs';
+import { INK, inkOn, surfaceOf } from './app/commands/item-style.mjs';
 
 export const WB_BG = { post: { dark: '#303039', light: '#ffffff' }, transparent: null, white: '#ffffff', black: '#000000' };
 
@@ -75,7 +76,7 @@ function saveTools() {
     localStorage.setItem(TOOLS_KEY, JSON.stringify(toolSettings));
   } catch { /* not persisted */ }
 }
-const ink = () => (pageTheme() === 'light' ? '#111111' : '#ffffff'); // text / line colour chosen by theme at creation
+const ink = () => inkOn(null, pageTheme()); // text / line colour chosen by theme at creation
 // The fields a ribbon change sets on each selected item of a type when several are selected (setItems); LINE_TYPES share colour,
 // width and line style.
 const GROUP_FIT = {
@@ -88,8 +89,9 @@ const LINE_TYPES = new Set(['shape', 'connector', 'stroke']);
 const SHAPE_NUMS = ['x', 'y', 'w', 'h', 'width', 'opacity'];
 const CANVAS_NUMS = ['x', 'y', 'w', 'h', 'aw', 'ah'];
 const UNIT_KEYS = ['size', 'width']; // item sizes the chrome shows and sets in post px (§6c Units)
-// A shape label's style where the item has none (§6d); align / valign also by kind (a frame's label sits top-left).
-const LABEL = { size: 16, textColor: '#ffffff', align: 'center', valign: 'middle' };
+// A shape label's style where the item has none (§6d); align / valign also by kind (a frame's label sits top-left). Its colour:
+// the theme's text colour for what it sits on (labelInk).
+const LABEL = { size: 16, align: 'center', valign: 'middle' };
 const FLEX = { left: 'flex-start', top: 'flex-start', center: 'center', middle: 'center', right: 'flex-end', bottom: 'flex-end' };
 // A gesture changed an item when one of these differs (compared as JSON: ends, waypoints and labels are objects).
 const CHANGE_KEYS = ['x', 'y', 'w', 'h', 'crop', 'from', 'to', 'points', 'labels', 'rot', 'mirrorX', 'mirrorY', 'flipX', 'flipY'];
@@ -155,6 +157,20 @@ const pageTheme = () => (document.documentElement.dataset.theme === 'light' ? 'l
 export function resolveBg(bg, theme) {
   const value = Object.hasOwn(WB_BG, bg) ? WB_BG[bg] : WB_BG.post;
   return value && typeof value === 'object' ? value[theme === 'light' ? 'light' : 'dark'] : value;
+}
+/** What board background `bg` shows in `theme` as a colour: a transparent board shows the page (the post colour). */
+export const boardSurface = (bg, theme) => resolveBg(bg, theme) ?? resolveBg('post', theme);
+/** The CSS custom properties a board's items read from their container: --wb-bg (connector labels mask the line with it) and
+ * --wb-ink (text with no colour of its own on the board, item-style.mjs inkOn). */
+export function setBoardVars(el, bg, theme) {
+  el.style.setProperty('--wb-bg', resolveBg(bg, theme) ?? 'transparent');
+  el.style.setProperty('--wb-ink', inkOn(boardSurface(bg, theme), theme));
+}
+/** Shape `item`'s label colour: its own, else the theme's text colour on its fill laid over `board` (the board's background
+ * hex); null on the board (styleText's --wb-ink). */
+function labelInk(item, theme, board) {
+  const s = surfaceOf(item, board);
+  return item.textColor ?? (s !== board ? inkOn(s, theme) : null);
 }
 
 function validItem(i) {
@@ -357,7 +373,7 @@ const ROTATE_CURSOR = `url("data:image/svg+xml,${encodeURIComponent(ROTATE_ICON)
 const CSS = `
 .wb{position:relative;outline:none;box-sizing:border-box;user-select:none;-webkit-user-select:none}
 .wb[data-bg="post"]{background:var(--wb-post,${WB_BG.post.dark})}
-:root[data-theme="light"]{--wb-post:${WB_BG.post.light}}
+:root[data-theme="light"]{--wb-post:${WB_BG.post.light};--wb-post-ink:${INK.light}}
 .wb[data-bg="white"]{background:${WB_BG.white}}
 .wb[data-bg="black"]{background:${WB_BG.black}}
 .wb-layer{position:absolute;inset:0;overflow:clip}
@@ -375,9 +391,10 @@ const CSS = `
 .wb-stroke.wb-sel,.wb-shape.wb-sel{pointer-events:auto}
 .wb-layer>.wb-conn .wb-text,.wb-layer>.wb-shape>.wb-label>.wb-text{pointer-events:auto}
 .wb-locked,.wb-locked *,.wb-hidden,.wb-hidden *{pointer-events:none!important}
+.wb .wb-layer{--wb-ink:var(--wb-post-ink,${INK.dark})}
 .wb[data-bg="post"] .wb-layer{--wb-bg:var(--wb-post,${WB_BG.post.dark})}
-.wb[data-bg="white"] .wb-layer{--wb-bg:${WB_BG.white}}
-.wb[data-bg="black"] .wb-layer{--wb-bg:${WB_BG.black}}
+.wb[data-bg="white"] .wb-layer{--wb-bg:${WB_BG.white};--wb-ink:${INK.light}}
+.wb[data-bg="black"] .wb-layer{--wb-bg:${WB_BG.black};--wb-ink:${INK.dark}}
 .wb.wb-drawing,.wb.wb-drawing .wb-item{cursor:crosshair;touch-action:none}
 .wb.wb-drawing.wb-place-text,.wb.wb-drawing.wb-place-text .wb-item{cursor:text}
 .wb-text p{margin:0!important}
@@ -439,11 +456,12 @@ const routed = (items) => (items.some((i) => i.type === 'connector' && typeof i.
 // A canvas's artboard (aw × ah px, unscaled: the caller sets its transform) holding its items, put first into `box` on
 // the canvas's background. Draws the document canvas preview and a dragged tile's ghost.
 export function drawCanvas(box, { aw, ah, bg, items }) {
-  box.style.background = resolveBg(bg, pageTheme()) ?? 'none';
+  const theme = pageTheme();
+  box.style.background = resolveBg(bg, theme) ?? 'none';
   const art = make('div', 'sc-art');
   art.style.cssText = `position:absolute;left:0;top:0;width:${aw}px;height:${ah}px;transform-origin:0 0;overflow:hidden;pointer-events:none`;
-  art.style.setProperty('--wb-bg', resolveBg(bg, pageTheme()) ?? 'transparent'); // connector labels mask the line with it
-  art.append(...routed(items).map(itemElement));
+  setBoardVars(art, bg, theme);
+  art.append(...routed(items).map((i) => itemElement(i, theme, boardSurface(bg, theme))));
   box.prepend(art);
   return art;
 }
@@ -453,7 +471,9 @@ function placeCrop(img, c = FULL) {
     `left:${(-100 * c.x) / c.w}%;top:${(-100 * c.y) / c.h}%`;
 }
 
-function styleText(text, item) {
+// Text with no colour of its own: the theme's text colour on its note colour laid over `board` (the board's background hex),
+// else on the board (--wb-ink, setBoardVars).
+function styleText(text, item, theme = pageTheme(), board = boardSurface('post', theme)) {
   Object.assign(text.style, {
     boxSizing: 'border-box',
     minHeight: '1.3em',
@@ -463,7 +483,7 @@ function styleText(text, item) {
     lineHeight: '1.3',
     fontWeight: item.bold ? '700' : '400',
     fontVariantLigatures: 'none',
-    color: item.color,
+    color: item.color || (item.bg ? inkOn(surfaceOf({ type: 'text', bg: item.bg }, board), theme) : `var(--wb-ink,${inkOn(null, theme)})`),
     textAlign: item.align,
     whiteSpace: 'pre-wrap',
     overflowWrap: 'break-word',
@@ -496,8 +516,7 @@ function smoothPath(pts) {
 // --- Shapes: geometry is computed in item pixels (viewBox 0 0 w h) so arrowheads and bumps never distort.
 
 const isLineish = (s) => s === 'line' || s === 'arrow';
-/** Whether shape kind `s` can be filled: not a line or arrow, not an open outline (the annotation brace). */
-export const fillable = (s) => !isLineish(s) && !kindOf(s)?.open;
+export { fillable } from './flow/shapes.mjs';
 const arrowHead = (width) => Math.max(12, width * 3.5);
 // Line/arrow boxes are padded so the stroke and arrowhead fit; endpoints sit at opposite padded corners.
 const linePad = (item) => (item.shape === 'arrow' ? arrowHead(item.width) * 0.6 : item.width / 2) + 1;
@@ -644,7 +663,7 @@ function shapeSvg(item) {
 
 // A shape's label (§6d): a box inset by the kind's labelInset (a lane: its title band) holding the text, placed by align /
 // valign; it turns with the shape. Only the words take the pointer (CSS), so an empty interior stays click-through.
-function shapeLabel(item) {
+function shapeLabel(item, theme, board) {
   const k = kindOf(item.shape);
   const ins = k?.labelInset ?? { x: 0.08, y: 0.08 };
   const box = k?.band ? `left:8px;right:8px;top:0;height:${Math.min(k.band, item.h)}px`
@@ -653,15 +672,15 @@ function shapeLabel(item) {
   wrap.style.cssText = `position:absolute;${box};display:flex;pointer-events:none`;
   const text = make('div', 'wb-text', { innerHTML: item.html });
   wrap.append(text);
-  styleLabel(text, item);
+  styleLabel(text, item, theme, board);
   return wrap;
 }
 
 // A shape label's text and its box's alignment from the shape's label fields (defaults: LABEL, the kind's align / valign).
-function styleLabel(text, item) {
+function styleLabel(text, item, theme = pageTheme(), board = boardSurface('post', theme)) {
   const k = kindOf(item.shape);
   const [align, valign] = [item.align ?? k?.align ?? LABEL.align, item.valign ?? k?.valign ?? LABEL.valign];
-  styleText(text, { size: item.size ?? LABEL.size, color: item.textColor ?? LABEL.textColor, bold: !!item.bold, align, bg: null });
+  styleText(text, { size: item.size ?? LABEL.size, color: labelInk(item, theme, board), bold: !!item.bold, align, bg: null }, theme);
   Object.assign(text.style, { padding: '2px 4px', maxWidth: '100%' });
   Object.assign(text.parentElement.style, { justifyContent: FLEX[align], alignItems: FLEX[valign] });
 }
@@ -672,7 +691,7 @@ const labelHtml = (text) => (text.textContent.trim() ? text.innerHTML : '');
 // A connector (§6d): its derived shaft path in an SVG the size of its bbox, a head per end drawn at its tip, a wide
 // transparent hit path (only the line takes the pointer, never the bbox), and one label per present slot centred on its
 // anchor, masking the line with the board colour (--wb-bg).
-function connectorParts(el, item) {
+function connectorParts(el, item, theme) {
   el.classList.add('wb-conn');
   if (typeof item.d !== 'string') return; // never routed (renderers route first: routed())
   const { color = '#ffffff', width = 2, opacity = 1, dash = 'solid', heads = {} } = item;
@@ -692,7 +711,7 @@ function connectorParts(el, item) {
     if (!p) continue;
     const text = make('div', 'wb-text', { innerHTML: l.html });
     text.dataset.slot = slot;
-    styleText(text, { size: l.size ?? 14, color: l.textColor ?? '#ffffff', bold: !!l.bold, align: 'center', bg: null });
+    styleText(text, { size: l.size ?? 14, color: l.textColor, bold: !!l.bold, align: 'center', bg: null }, theme);
     Object.assign(text.style, {
       position: 'absolute', left: `${p.x}px`, top: `${p.y}px`, transform: 'translate(-50%, -50%)', whiteSpace: 'pre',
       padding: `${LABEL_PAD.y}px ${LABEL_PAD.x}px`, background: 'var(--wb-bg, transparent)',
@@ -701,7 +720,8 @@ function connectorParts(el, item) {
   }
 }
 
-export function itemElement(item) {
+/** Item `item` drawn in `theme` (the page theme by default; a rasterized board's own) on `board` (its background hex). */
+export function itemElement(item, theme = pageTheme(), board = boardSurface('post', theme)) {
   const el = document.createElement('div');
   el.className = 'wb-item';
   el.dataset.id = item.id;
@@ -734,14 +754,14 @@ export function itemElement(item) {
   } else if (item.type === 'shape') {
     el.classList.add('wb-shape');
     el.append(shapeSvg(item));
-    if (item.html) el.append(shapeLabel(item));
+    if (item.html) el.append(shapeLabel(item, theme, board));
   } else if (item.type === 'connector') {
-    connectorParts(el, item);
+    connectorParts(el, item, theme);
   } else {
     const text = document.createElement('div');
     text.className = 'wb-text';
     text.innerHTML = item.html;
-    styleText(text, item);
+    styleText(text, item, theme, board);
     el.append(text);
   }
   placeItem(el, item);
@@ -1156,20 +1176,32 @@ export class Board {
     for (const fn of this.listeners) fn();
   }
 
+  // The board's background as a colour in the page theme.
+  surface() {
+    return boardSurface(this.bg, pageTheme());
+  }
+
+  // The colour text with none of its own draws in here (item-style.mjs inkOn): shape `item`'s own, else on what `item` (a shape,
+  // a text note or none) puts under it on the board.
+  inkOf(item = null) {
+    return item?.textColor ?? inkOn(surfaceOf(item, this.surface()), pageTheme());
+  }
+
   // Keeps its identity until something in it changes (useSyncExternalStore).
   // Item `item`'s properties as the ribbon shows them: no content (src, html, d, items), sizes in post px, a shape's label style
-  // as drawn (§6d defaults), a connector's label sizes.
+  // and a connector's label colours as drawn (§6d defaults), a connector's label sizes.
   itemProps(item) {
     const post = (v) => Math.max(1, Math.round(v / this.unit)); // a size in post px
     const { src, html, d, crop, items, ...rest } = item;
     let props = { ...rest, cropped: !!crop };
     if (item.type === 'shape') {
       const k = kindOf(item.shape);
-      props = { size: LABEL.size, textColor: LABEL.textColor, bold: false, align: k?.align ?? LABEL.align, valign: k?.valign ?? LABEL.valign, ...props };
+      props = { size: LABEL.size, bold: false, align: k?.align ?? LABEL.align, valign: k?.valign ?? LABEL.valign, ...props, textColor: this.inkOf(item) };
     }
+    if (item.type === 'text') props.color = item.color || this.inkOf(item); // an agent's text may have none: as drawn
     for (const k of UNIT_KEYS) if (k in props) props[k] = post(props[k]); // in post px
     if (item.type === 'connector') {
-      props.labels = Object.fromEntries(Object.entries(item.labels ?? {}).map(([s, l]) => [s, { ...l, size: post(l.size ?? 14) }]));
+      props.labels = Object.fromEntries(Object.entries(item.labels ?? {}).map(([s, l]) => [s, { ...l, size: post(l.size ?? 14), textColor: l.textColor ?? this.inkOf() }]));
     }
     return props;
   }
@@ -1445,11 +1477,11 @@ export class Board {
       saveTools();
     } else rememberStyle(item.type, patch);
     const text = item.type === 'text' ? this.itemEl(item.id)?.querySelector('.wb-text') : null;
-    if (text) styleText(text, item); // the commit measures the restyled height
+    if (text) styleText(text, item, pageTheme(), this.surface()); // the commit measures the restyled height
     // A shape whose label is being typed: the live label takes the style, the typed text is kept (as for text items).
     const label = item.type === 'shape' && item.id === this.editingId ? this.editText() : null;
     if (label) {
-      styleLabel(label, item);
+      styleLabel(label, item, pageTheme(), this.surface());
       item.html = labelHtml(label);
     }
     const live = text ?? label;
@@ -1469,7 +1501,7 @@ export class Board {
       Object.assign(item, p);
       for (const k of UNIT_KEYS) if (k in p) item[k] = r2(p[k] * this.unit);
       const text = item.type === 'text' ? this.itemEl(item.id)?.querySelector('.wb-text') : null;
-      if (text) styleText(text, item); // the commit measures the restyled height
+      if (text) styleText(text, item, pageTheme(), this.surface()); // the commit measures the restyled height
     }
     for (const type of new Set(this.selectedItems().map((i) => i.type))) rememberStyle(type, patch); // as setItem
     this.commit();
@@ -1497,7 +1529,7 @@ export class Board {
 
   // A new element for `item`, kept in the id → element map.
   addEl(item) {
-    const el = itemElement(item);
+    const el = itemElement(item, pageTheme(), this.surface());
     this.els.set(item.id, el);
     return el;
   }
@@ -1579,7 +1611,7 @@ export class Board {
     if (item.type !== 'text') return item.h;
     let el = this.itemEl(item.id);
     if (el) return el.offsetHeight;
-    el = itemElement(item);
+    el = itemElement(item, pageTheme(), this.surface());
     el.style.visibility = 'hidden';
     this.layer.append(el);
     const h = el.offsetHeight;
@@ -1716,7 +1748,7 @@ export class Board {
       y: Math.round(p.y),
       w: Math.min(Math.round(200 * this.unit), this.size().w),
       size: r2(textTool.size * this.unit),
-      color: textTool.color ?? (pageTheme() === 'light' ? '#111111' : '#ffffff'),
+      color: textTool.color ?? this.inkOf({ type: 'text', bg }),
       bold: textTool.bold,
       align: 'left',
       bg,
@@ -2233,7 +2265,7 @@ export class Board {
     const c = this.items.find((i) => i.id === id);
     if (c?.type !== 'connector') return;
     if (!c.labels?.[slot]) {
-      const l = { html: 'Label', t: at ?? LABEL_SLOTS[slot], dx: 0, dy: 0, size: r2(14 * this.unit), textColor: ink(), bold: false };
+      const l = { html: 'Label', t: at ?? LABEL_SLOTS[slot], dx: 0, dy: 0, size: r2(14 * this.unit), textColor: this.inkOf(), bold: false };
       c.labels = { ...c.labels, [slot]: l };
       this.sel = new Set([id]);
       this.commit(true);
@@ -2552,9 +2584,9 @@ export class Board {
     const item = this.items.find((i) => i.id === id);
     const el = this.itemEl(id);
     if (item?.type === 'shape' && el && !this.editText(id)) {
-      if (item.textColor == null) item.textColor = ink();
+      if (item.textColor == null) item.textColor = this.inkOf(item);
       if (item.size == null) item.size = r2(LABEL.size * this.unit);
-      el.append(shapeLabel({ ...item, html: '' }));
+      el.append(shapeLabel({ ...item, html: '' }, pageTheme(), this.surface()));
     }
     const text = this.editText(id, slot);
     if (!text) return;
@@ -3339,8 +3371,8 @@ export async function rasterizeWhiteboard(attrs, { width, theme, scale = 2 }) {
   host.style.cssText = 'position:fixed;left:-100000px;top:0;pointer-events:none';
   const board = document.createElement('div');
   board.style.cssText = `position:relative;overflow:hidden;width:${width}px;height:${height}px`;
-  board.style.setProperty('--wb-bg', resolveBg(attrs.bg, theme) ?? 'transparent'); // connector labels mask the line with it
-  board.append(...routed(attrs.items).filter((i) => !i.hidden).map(itemElement)); // routed first: a hidden item still binds ends
+  setBoardVars(board, attrs.bg, theme);
+  board.append(...routed(attrs.items).filter((i) => !i.hidden).map((i) => itemElement(i, theme, boardSurface(attrs.bg, theme)))); // routed first: a hidden item still binds ends
   host.append(board);
   document.body.append(host);
   // html-to-image waits an animation frame for its picture, and a hidden or minimized window draws none (an agent's render

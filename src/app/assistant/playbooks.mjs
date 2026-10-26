@@ -36,7 +36,7 @@ export const PLAYBOOKS = [
       '3. To straighten an arrow, call board_items_straighten {"path":[4],"id":"c81hd0q"}. It also turns both ends to face each other. Else call board_items_update {"path":[4],"id":"k3j9x0a","patch":{"w":200}}. Colours go in color or fillColor, sizes in w and h.',
       '4. To add, call board_items_add {"path":[4],"items":[{"type":"text","html":"Note","x":40,"y":30,"w":240}]} with only the new items, placed by the boxes in the attachment. Leave colours out.',
       'Never call canvas_edit to change an item. It only opens Canvas Mode for drawing by hand.',
-      'Check: the item in the result and on the picture after your change is as the request asked. If not, say what differs.',
+      'Check: the result and the picture show the change as asked, with no contrast warning. If not, fix it or say what differs.',
     ].join('\n'),
   },
   {
@@ -112,7 +112,7 @@ export const PLAYBOOKS = [
       '2. Change blocks by path. doc_replace {"path":[1],"content":{"markdown":"New text."}} rewrites one block. doc_insert {"at":[3],"position":"before","content":{"markdown":"## Heading"}} adds blocks.',
       '3. Use the paths of your last read. After a stale error, read the outline again.',
       'For several changes, read once, then run one batch.',
-      'Check: the paths in the result are the blocks the request named. If not, say what differs.',
+      'Check: the paths in the result are the blocks the request named. If not, say what differs. A result with suggested is done: it waits for the user.',
     ].join('\n'),
   },
   {

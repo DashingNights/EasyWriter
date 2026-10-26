@@ -130,3 +130,12 @@ test('boundary: core imports no forum module, and only the forum and preload nam
   const named = [...files('src'), 'main.js'].filter((f) => !f.startsWith('src/integrations/forum/') && readFileSync(f, 'utf8').includes('api.forum'));
   assert.deepEqual(named, []);
 });
+
+test('a forum push needs draft.settled: push.prepare, export.preview, and the push and push-wake tool entries', () => {
+  for (const id of ['push.prepare', 'export.preview']) assert.ok(byId(id).needs.some((n) => (n.gate ?? n) === 'draft.settled'), id);
+  const ui = readFileSync('src/integrations/forum/ui.jsx', 'utf8');
+  for (const id of ['push', 'push-wake']) {
+    const entry = ui.slice(ui.indexOf(`{ id: '${id}',`)).split('keywords:')[0];
+    assert.match(entry, /needs: \[[^\]]*'draft\.settled'/, id);
+  }
+});

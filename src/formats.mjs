@@ -53,6 +53,10 @@ export function formatOf(draft, settings) {
   return f && (draft?.formatVersion ?? 1) <= f.version ? f : null;
 }
 
+/** The theme `draft`'s canvases, flowcharts and plan charts draw in: light on a Document's white paper, else the page theme
+ * (settings.theme; actions.js applyPageTheme sets it on the root while the draft is open). */
+export const drawTheme = (draft, settings) => (formatOf(draft, settings)?.id === 'document' || settings?.theme === 'light' ? 'light' : 'dark');
+
 /** {format, width, padding, paper?} of the page `draft` shows (PAGE's when its format is unknown). `sect`: the open editor's
  * doc.attrs.sect, newer than the draft file's. A Document adds paper (px, DOCUMENT.paper) and its padding is the left margin. */
 export function pageOf(draft, settings, sect) {

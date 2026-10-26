@@ -278,6 +278,8 @@ export const KINDS = [
 ];
 const BY_KIND = new Map(KINDS.map((k) => [k.kind, k]));
 export const kindOf = (kind) => BY_KIND.get(kind) ?? null;
+/** Whether shape kind `s` can be filled: not a line or arrow, not an open outline (the annotation brace). */
+export const fillable = (s) => s !== 'line' && s !== 'arrow' && !kindOf(s)?.open;
 
 // --- rotation ---
 

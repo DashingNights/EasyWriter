@@ -49,12 +49,13 @@ function shape(r) {
         : Array.isArray(v) ? [`${k} (${plural(v.length, 'item')})`] : [`${k} (${plural(Object.keys(v).length, 'field')})`])).join(', ');
 }
 
-/** One tool answer ({ok, result} | {ok: false, error}) → its result line of at most 160 characters: "read: …" for a read, "done:
- * …" for a change, "failed (code): message" for an error; `title` (the draft the call names) is added when given. */
+/** One tool answer ({ok, result, suggested?} | {ok: false, error}) → its result line of at most 160 characters: "read: …" for a
+ * read, "done: …" for a change, "suggested: …" for a change that waits for the user (docs/plans/suggestions.md), "failed (code):
+ * message" for an error; `title` (the draft the call names) is added when given. */
 export function resultLine(risk, res, title = '') {
   const named = title ? ` (draft "${clip(title, VALUE_CHARS)}")` : '';
   const s = res.ok ? shape(res.result) : '';
-  const line = !res.ok ? `failed (${res.error?.code ?? 'error'}): ${res.error?.message ?? ''}` : `${risk === 'read' ? 'read' : 'done'}${named}${s ? `: ${s}` : ''}`;
+  const line = !res.ok ? `failed (${res.error?.code ?? 'error'}): ${res.error?.message ?? ''}` : `${risk === 'read' ? 'read' : res.suggested ? 'suggested' : 'done'}${named}${s ? `: ${s}` : ''}`;
   return clip(line, RESULT_CHARS);
 }
 
@@ -122,13 +123,20 @@ const MODE_LINES = {
   readonly: 'Permission mode: Read only. You can read and answer. Every change is refused.',
   all: 'Permission mode: Allow all. Changes and deletions run at once with no card.',
 };
+// The same while edits wait as suggestions (s.suggest; SettingsDialog SUGGEST_HINT): edits to drafts never get a card.
+const SUGGEST_MODE_LINES = {
+  ...MODE_LINES,
+  ask: 'Permission mode: Ask first. Your edits to drafts wait as suggestions; the user approves every other change on a card.',
+  all: 'Permission mode: Allow all. Your edits to drafts wait as suggestions; other changes run at once with no card.',
+};
 
 /** The situation note the app puts before the user's message at send time; `s` = {page: 'editor' | 'plan' | 'flows', plan?,
  * flow? (the workspace's title), draft: {title, tag?} | null, thread?, selection: {label, summary, attached} | null, canvas? (the
  * canvas being edited, e.g. "the canvas at block [4]"), background?: [title] (the drafts with a background session, sessions.js),
  * drafts: [{title, tag?}], total, scope: 'thread' | 'all', projectNote? (what the enabled integrations add after the project,
  * integrations/index.mjs situationNotes), permission?:
- * 'standard' | 'ask' | 'readonly' | 'all', playbooks?: [{id?, title, text}] (playbooks.mjs pickPlaybooks, under "How to do this:")}. Never
+ * 'standard' | 'ask' | 'readonly' | 'all', suggest?: {waiting, mine, accepted, rejected} while edits wait as suggestions (the
+ * open draft's waiting changes, the assistant's among them, and the user's decisions on the assistant's since its last turn), playbooks?: [{id?, title, text}] (playbooks.mjs pickPlaybooks, under "How to do this:")}. Never
  * stored. */
 export function situationNote(s) {
   const q = (t) => `"${clip(t || 'Untitled draft', TITLE_CHARS)}"`;
@@ -151,7 +159,13 @@ export function situationNote(s) {
   lines.push(`${head} (${count})${shown.length ? '' : ': none'}`, ...shown.map((d) => `- ${tagged(d)}${d.id ? ` (id ${d.id})` : ''}`));
   // Google AI: the open draft's blocks with their paths (capture.js outlineLines), so the model knows the draft before it acts.
   if (s.outline?.length) lines.push('Open draft outline (block paths for the doc and board tools):', ...s.outline);
-  if (MODE_LINES[s.permission]) lines.push(MODE_LINES[s.permission]);
+  const modes = s.suggest ? SUGGEST_MODE_LINES : MODE_LINES;
+  if (modes[s.permission]) lines.push(modes[s.permission]);
+  const sg = s.suggest;
+  if (sg) {
+    lines.push(`Edits wait as suggestions until the user accepts them. Waiting: ${sg.waiting ?? 0} (${sg.mine ?? 0} yours).`);
+    if (sg.accepted || sg.rejected) lines.push(`Since your last turn the user accepted ${sg.accepted ?? 0} and rejected ${sg.rejected ?? 0}.`);
+  }
   // A playbook's id goes after its title (wave 2b): the tool text of board_items_add, batch and canvas_edit names it.
   if (s.playbooks?.length) lines.push('How to do this:', ...s.playbooks.map((p) => `${p.title}${p.id ? ` (playbook ${p.id})` : ''}\n${p.text}`));
   lines.push('[End of situation note]');
@@ -226,9 +240,11 @@ const PAST = { find: 'found', set: 'set', run: 'ran', leave: 'left', format: 'fo
 /** The reply that ends a turn readsAfterWrite caught: "Done: " and the change's step title (a command title, or a past-tense
  * step label) in the past tense up to its first colon or "and", without brackets: "Change one item of a canvas" →
  * "Done: changed one item of a canvas.", "Rename or recolour a status tag" → "Done: renamed or recoloured
- * a status tag." */
-export function doneReply(title) {
+ * a status tag." With `suggested` (the change waits for the user): "Suggested: change one item of a canvas. It waits for you in
+ * the draft." */
+export function doneReply(title, suggested = null) {
   const head = title.replace(/\s*\([^)]*\)/g, '').split(/:| and /)[0].trim();
+  if (suggested) return `Suggested: ${head.charAt(0).toLowerCase()}${head.slice(1).replace(/[.\s]*$/, '')}. It waits for you in the draft.`;
   const past = (verb) => {
     const v = verb.toLowerCase();
     return v.endsWith('ed') ? v : PAST[v] ?? (v.endsWith('e') ? `${v}d` : `${v}ed`);

@@ -160,9 +160,15 @@ function Message({ m, dim }) {
     const s = m.step ?? {};
     const Icon = s.ok ? Check : s.code === 'denied' ? Ban : CircleAlert;
     return (
-      <div data-role="step" data-ok={s.ok} className={cn('flex min-h-6 items-center gap-1.5 text-xs text-muted-foreground', dim && 'opacity-50')}>
-        <Icon className={cn('size-3.5 shrink-0', !s.ok && s.code !== 'denied' && 'text-destructive')} />
+      <div data-role="step" data-ok={s.ok} data-suggested={s.suggested ? '' : undefined} className={cn('flex min-h-6 items-center gap-1.5 text-xs text-muted-foreground', dim && 'opacity-50')}>
+        {/* A change that waits as a suggestion (docs/plans/suggestions.md): a yellow dot in place of the check. */}
+        {s.suggested && s.ok
+          ? <span className="flex size-3.5 shrink-0 items-center justify-center"><Dot color="var(--suggest)" /></span>
+          : <Icon className={cn('size-3.5 shrink-0', !s.ok && s.code !== 'denied' && 'text-destructive')} />}
         <span className="min-w-0 flex-1 truncate" title={s.summary}>{s.title}{s.summary ? `: ${s.summary}` : ''}</span>
+        {s.show && <Button variant="ghost" size="xs" onMouseDown={keep} onClick={s.show}>Show</Button>}
+        {s.reject && <Button variant="ghost" size="xs" onMouseDown={keep} onClick={s.reject}>Reject</Button>}
+        {s.rejected && <span className="px-2">Rejected</span>}
         {s.undo && <Button variant="ghost" size="xs" onMouseDown={keep} onClick={s.undo}>Undo</Button>}
         {s.undone && <span className="px-2">Undone</span>}
       </div>

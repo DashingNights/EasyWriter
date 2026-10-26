@@ -44,6 +44,9 @@ const state = {
   worker: null,      // the background window's draft { draftId, title } (§7i Background window), null while it has none
   workerPane: false, // the pane with the background window's live view is shown
   draftClip: null,   // { id, cut } — the sidebar's draft clipboard (§7 Drafts menu): Copy or Cut, for this session only, never the OS clipboard
+  // The open draft's waiting agent edits (docs/plans/suggestions.md; actions.js syncSuggestions): core.groups, their change count,
+  // the active change's id (under the caret, else the last shown)
+  suggestions: { groups: [], count: 0, active: null },
 };
 
 // This window is the background window of computer use (§7i Background window: main.js loads the app with ?worker=1&draft=<id>):

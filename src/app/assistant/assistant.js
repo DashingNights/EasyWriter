@@ -4,6 +4,7 @@ import { getState, setState, useStore } from '../store.js';
 import { modelContent, partsText } from './attach.mjs';
 import { buildHistory, COMPACT_ASK, COMPACT_SYSTEM, repeats, shouldCompact } from './context.mjs';
 import { runCliTurn, runTurn } from './loop.js';
+import { newId } from '../../suggest/core.mjs';
 import QWEN_MODELS from '../../assistant/qwen-models.json';
 
 // The local assistant's chat (SPEC §7i; automation plan §13.4): the panel's state and the client of api.assistant (main runs
@@ -26,6 +27,7 @@ export const ASSISTANT_DEFAULTS = {
   claudePath: '', claudeModel: '', claudeEffort: '', codexPath: '', codexModel: '', codexEffort: '', // providers 'claude', 'codex' ('': found, the CLI's default)
   warmAtStart: true, sleepMinutes: 10, idleUnloadMinutes: 30, step: 0, panel: null, thinking: 'auto', permission: 'standard', uiControl: true,
   pictureAfterWrite: true, humanWriting: true,
+  autoApproveEdits: false, // off: agent edits wait in the draft as suggestions (docs/plans/suggestions.md)
 };
 // export const BACKENDS = [['auto', 'Auto'], ['cuda', 'NVIDIA CUDA'], ['vulkan', 'Vulkan'], ['cpu', 'CPU']]; // LOCAL LLM (commented out 2026-10-07)
 const THINK_RE = /\b(solve|derive|prove|verify|calculate|compute|integral|equation|simplif(y|ies))\b/i; // §13.16 routing
@@ -231,7 +233,11 @@ export function send(parts, note = '') {
   const kept = parts.map((p) => (typeof p === 'string' || !p.picture ? p : withoutPicture(p))); // the message keeps no renderer
   const id = addMessage({ role: 'user', text, parts: kept, content: modelContent(parts, note) });
   const ctrl = new AbortController();
-  set({ turn: { ctrl } });
+  // The turn groups its suggestions (docs/plans/suggestions.md Grouping): id is the group, request its note. lastTurnAt: when the
+  // previous turn began, so the situation note can tell what the user decided since.
+  const at = Date.now();
+  set({ turn: { ctrl, id: newId('g'), request: text, at }, lastTurnAt: lastAt });
+  lastAt = at;
   session.signal = ctrl.signal;
   (async () => {
     if (isCli()) return runCliTurn(session, kept); // ponytail: no pictures for Claude Code or Codex yet, pass them as image files if wanted
@@ -244,6 +250,8 @@ export function send(parts, note = '') {
     .finally(() => get().turn?.ctrl === ctrl && set({ turn: null }));
   return true;
 }
+
+let lastAt = null; // when the last turn began
 
 const withoutPicture = ({ picture, ...p }) => p;
 

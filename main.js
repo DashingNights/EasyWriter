@@ -7,6 +7,7 @@ const { externalize, fileFamily, inline, isPlainObject, readJson, serialized, se
 const dictation = require('./src/dictation-main.js');
 const assistant = require('./src/assistant-main.js');
 const computer = require('./src/computer-main.js');
+const { draftMarks } = require('./src/draft-marks.js');
 const chromeSignIn = require('./src/chrome-signin.js');
 const agentServer = require('./src/agent-server.js');
 const github = require('./src/github-sync.js');
@@ -99,6 +100,7 @@ const DEFAULT_SETTINGS = {
   assistant: {
     installed: false, backend: 'auto', serverPath: '', modelPath: '', mmprojPath: '', serverUrl: '',
     warmAtStart: true, sleepMinutes: 10, idleUnloadMinutes: 30, step: 0, permission: 'standard', uiControl: true, pictureAfterWrite: true, humanWriting: true,
+    autoApproveEdits: false, // off: agent edits wait in the draft as suggestions (docs/plans/suggestions.md); read as === true
   },
   agent: { enabled: false, port: agentServer.PORT }, // the MCP server (SPEC §8 Agents): its pipe and http://127.0.0.1:<port>/mcp
   // In-app browser (§7j): the floating pane's state and its opacity (percent) while it does not have the focus.
@@ -172,7 +174,7 @@ function setSettings(partial) {
 // Drafts (`drafts/<id>.json`, list = summaries), each with its persistent undo history (§7e) next to it.
 const drafts = fileFamily(userDir('drafts'), {
   summary: (d) => ({ id: d.id, title: d.title, threadUrl: d.threadUrl ?? null, updated: d.updated, pushedAt: d.pushedAt ?? null,
-    format: d.format ?? null }),
+    format: d.format ?? null, ...draftMarks(d.doc) }),
   siblings: (id) => [historyFile(id)],
   images,
 });

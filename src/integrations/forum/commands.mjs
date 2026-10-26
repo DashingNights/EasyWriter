@@ -41,7 +41,7 @@ export const defs = [
     risk: 'read',
     undo: 'none',
     slow: true,
-    needs: ['doc.open', FORMAT_POST],
+    needs: ['doc.open', FORMAT_POST, 'draft.settled'],
     args: { type: 'object', additionalProperties: false, properties: { images: { type: 'boolean', default: false } } },
     result: { type: 'object', required: ['html', 'images'] },
     examples: [{ args: {} }, { args: { images: true } }],
@@ -58,7 +58,7 @@ export const defs = [
     risk: 'approval',
     undo: 'none',
     slow: true,
-    needs: ['app.forum', FORMAT_POST, 'draft.hasThread', 'draft.unpushed'], // on the addressed draft (draftId), else the open one
+    needs: ['app.forum', FORMAT_POST, 'draft.hasThread', 'draft.unpushed', 'draft.settled'], // on the addressed draft (draftId), else the open one
     args: { type: 'object', additionalProperties: false, properties: { draftId: ref('ID') } },
     result: { type: 'object', required: ['ok', 'attachments', 'submitted'] },
     examples: [{ args: {} }, { args: { draftId: '0b2c8f0e-1c4e-4f8a-9d6a-2b7f3c9e1a55' } }],

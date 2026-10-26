@@ -67,6 +67,9 @@ function pushAction(d) {
   if (!can('format.post', d)) return null;
   if (d.pushedAt) return { label: 'Unpush', Icon: Undo2, risk: 'destructive', run: async () => (await actions.wake('Unpushing')) && actions.unpushDraft(d) };
   if (!actions.projectTopic(d.threadUrl)) return null;
+  // Not while suggestions wait in it (gate draft.settled): the open draft's live count, another's summary.
+  const st = getState();
+  if (!can('draft.settled', st.draft?.id === d.id && st.editor ? { suggestions: st.suggestions.count } : d)) return null;
   return { label: 'Push to forum', Icon: Send, risk: 'approval', run: async () => (await actions.wake('Pushing')) && pushDraft(d.id) };
 }
 
@@ -184,11 +187,11 @@ export default {
   // forum is off, on a forum draft only (gate wake.forum, untagged): it asks to turn the forum back on first (plan step 9).
   TOOLS: [
     { id: 'push', label: 'Push to forum', group: 'App', icon: <Send />, risk: 'approval', run: () => actions.push(),
-      needs: ['integration.forum', 'app.forum', 'doc.open', FORMAT_POST, 'draft.hasThread', 'draft.unpushed'],
+      needs: ['integration.forum', 'app.forum', 'doc.open', FORMAT_POST, 'draft.hasThread', 'draft.unpushed', 'draft.settled'],
       keywords: ['push', 'post', 'publish', 'send', 'forum', 'reply', 'upload', 'submit', 'share'] },
     { id: 'push-wake', label: 'Push to forum', group: 'App', icon: <Send />, risk: 'approval',
       run: async () => (await actions.wake('Pushing')) && actions.push(),
-      needs: ['doc.open', FORMAT_POST, 'wake.forum', 'draft.unpushed'], also: () => !enabled(getState().settings, 'forum'),
+      needs: ['doc.open', FORMAT_POST, 'wake.forum', 'draft.unpushed', 'draft.settled'], also: () => !enabled(getState().settings, 'forum'),
       keywords: ['push', 'post', 'publish', 'send', 'forum', 'reply', 'upload', 'submit', 'share'] },
     { id: 'new-forum-post', label: 'New forum post', group: 'App', icon: <MessageSquareText />, command: PALETTE.newDraft,
       args: () => ({ format: 'forum-post' }), needs: ['integration.forum'], keywords: ['new forum post', 'new post', 'forum', 'reply', 'new reply'] },

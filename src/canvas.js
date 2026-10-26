@@ -8,7 +8,8 @@ import { Node } from '@tiptap/core';
 import { NodeSelection } from '@tiptap/pm/state';
 import { closeHistory } from '@tiptap/pm/history';
 import { stateOf, validFlow, validSource, writeBackOk } from './flow/library.mjs';
-import { Board, contentWidth, DEFAULT_WIDTH, dismissOnly, drawCanvas, edgeSpeed, injectStyle, insertBoard, make, parseBoard, parseFrame, scrollParent, smartArtboard, topLevelPos, whiteboardToCanvas, withoutScroll } from './whiteboard.js';
+import { boardDiff } from './suggest/core.mjs';
+import { Board, contentWidth, DEFAULT_WIDTH, dismissOnly, drawCanvas, edgeSpeed, injectStyle, insertBoard, itemElement, make, parseBoard, parseFrame, scrollParent, smartArtboard, topLevelPos, whiteboardToCanvas, withoutScroll } from './whiteboard.js';
 
 const DEFAULT = { w: 800, h: 450 };
 const MIN_SIZE = 40; // artboard sides and display width
@@ -227,8 +228,29 @@ class CanvasView {
     this.art?.remove();
     this.art = drawCanvas(this.dom, { aw: w, ah: h, bg, items });
     this.dom.classList.toggle('sc-empty', !items.length);
+    this.drawSuggestion(items);
     this.drawBadge(f);
     this.scaleArt();
+  }
+
+  // A changed canvas waiting as a suggestion (docs/plans/suggestions.md Display): added and changed items outlined, removed ones
+  // drawn as ghosts, against the board the change replaced.
+  drawSuggestion(items) {
+    const old = this.node.attrs.suggest?.ins?.old;
+    const was = old?.length === 1 && old[0].type === 'canvas' ? old[0].attrs?.items ?? [] : null;
+    if (!was) return;
+    const d = boardDiff(was, items);
+    for (const el of this.art.children) {
+      el.classList.toggle('sg-item-add', d.added.includes(el.dataset.id));
+      el.classList.toggle('sg-item-chg', d.changed.includes(el.dataset.id));
+    }
+    // A connector never routed has no path to draw.
+    for (const it of was) {
+      if (!d.removed.includes(it.id) || (it.type === 'connector' && typeof it.d !== 'string')) continue;
+      const ghost = itemElement(it);
+      ghost.classList.add('sg-item-ghost');
+      this.art.append(ghost);
+    }
   }
 
   // A synced canvas's badge (§5.11; editor DOM only, never exported): the live title, or "missing" while the record is
@@ -730,7 +752,8 @@ export const Canvas = Node.create({
   },
 
   renderHTML({ node }) {
-    return ['div', { 'data-canvas': '', 'data-json': JSON.stringify(node.attrs) }];
+    const { suggest, ...attrs } = node.attrs; // a suggestion's record never leaves the editor (copy, push)
+    return ['div', { 'data-canvas': '', 'data-json': JSON.stringify(attrs) }];
   },
 
   addCommands() {

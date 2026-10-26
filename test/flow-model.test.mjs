@@ -203,3 +203,12 @@ test('cleanConnector keeps pin only on a bound end with an anchor', () => {
   const c = cleanConnector({ id: 'c', type: 'connector', from: { item: 'a', anchor: [0.2, 0.7], pin: true }, to: { item: 'b', anchor: null, pin: true } });
   assert.deepEqual([c.from, c.to], [{ item: 'a', anchor: [0.2, 0.7], pin: true }, { item: 'b', anchor: null }]);
 });
+
+test('cleanConnector: a label stored as white has no colour (it follows the board); any other colour is kept', () => {
+  const c = cleanConnector({ id: 'c', type: 'connector', from: { x: 0, y: 0 }, to: { x: 9, y: 9 }, labels: {
+    start: { html: 'a', textColor: '#ffffff' }, mid: { html: 'b', textColor: '#FFFFFF' }, end: { html: 'c', textColor: '#ff0000' } } });
+  assert.deepEqual([c.labels.start.textColor, c.labels.mid.textColor, c.labels.end.textColor], [undefined, undefined, '#ff0000']);
+  // A board loaded from a draft goes through the same rule.
+  const board = parseBoard(JSON.stringify({ items: [{ id: 'k', type: 'connector', from: { x: 0, y: 0 }, to: { x: 5, y: 5 }, labels: { mid: { html: 'keep', textColor: '#ffffff' } } }] }));
+  assert.equal(board.items[0].labels.mid.textColor, undefined);
+});

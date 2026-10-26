@@ -192,7 +192,8 @@ const ParaProps = Extension.create({
   addKeyboardShortcuts() {
     return {
       // Enter at the end of a paragraph whose style names a next style (Title, Subtitle, Quote: Normal) goes on in that style,
-      // as in Word. Elsewhere a split keeps the attributes (TipTap keepOnSplit), so both halves keep the style.
+      // as in Word. Elsewhere a split keeps the attributes (TipTap keepOnSplit), so both halves keep the style. The new paragraph
+      // never takes the suggestion record (docs/plans/suggestions.md).
       Enter: ({ editor }) => {
         const { $from, empty } = editor.state.selection;
         const p = $from.parent;
@@ -203,7 +204,7 @@ const ParaProps = Extension.create({
         // run formatting goes on as splitBlock's keepMarks does.
         const marks = editor.state.storedMarks ?? $from.marks();
         return editor.commands.command(({ tr, dispatch }) => {
-          if (dispatch) tr.split($from.pos, 1, [{ type: p.type, attrs: { ...p.attrs, styleId: next === 'Normal' ? null : next } }]).ensureMarks(marks).scrollIntoView();
+          if (dispatch) tr.split($from.pos, 1, [{ type: p.type, attrs: { ...p.attrs, styleId: next === 'Normal' ? null : next, suggest: null } }]).ensureMarks(marks).scrollIntoView();
           return true;
         });
       },
@@ -492,14 +493,16 @@ const PageBreak = Node.create({
   addCommands() {
     return {
       // At a caret in top-level text, as Word's Ctrl+Enter: the text after the caret goes on the new sheet; at the start of a
-      // paragraph the break goes before it. False in a table or across blocks.
+      // paragraph the break goes before it. False in a table or across blocks. At a paragraph's end the new empty paragraph never
+      // takes the suggestion record (docs/plans/suggestions.md), as with Enter.
       setPageBreak: () => ({ tr, dispatch }) => {
         const { $from, $to } = tr.selection;
         if ($from.depth !== 1 || !$from.parent.isTextblock || !$from.sameParent($to)) return false;
         if (dispatch) {
           tr.deleteSelection();
           const $p = tr.selection.$from;
-          const at = $p.parentOffset === 0 ? $p.before() : (tr.split($p.pos), $p.pos + 1);
+          const types = $p.parentOffset === $p.parent.content.size ? [{ type: $p.parent.type, attrs: { ...$p.parent.attrs, suggest: null } }] : undefined;
+          const at = $p.parentOffset === 0 ? $p.before() : (tr.split($p.pos, 1, types), $p.pos + 1);
           tr.insert(at, this.type.create()).scrollIntoView();
         }
         return true;

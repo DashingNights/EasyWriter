@@ -1,0 +1,104 @@
+/* Agent edits waiting as suggestions on the page (docs/plans/suggestions.md Display), both formats: yellow, as Google Docs'
+   suggesting mode. The underline and the left rail set them apart from find matches (page.css) and the highlight marks.
+   Unlayered, as page.css. The page's own tokens follow the page theme (a Document is always light). */
+:root,
+:root[data-theme="light"] {
+  --sg-fill: rgb(255 199 0 / 0.22);
+  --sg-fill-active: rgb(255 199 0 / 0.45);
+  --sg-line: #f2b400;
+  --sg-strike: #b88600;
+}
+:root[data-theme="dark"] {
+  --sg-fill: rgb(255 199 0 / 0.18);
+  --sg-fill-active: rgb(255 199 0 / 0.45);
+  --sg-line: #f5c542;
+  --sg-strike: #f5c542;
+}
+
+/* Inserted text. */
+.page .ProseMirror .sg-add {
+  background: var(--sg-fill);
+  text-decoration: underline 2px var(--sg-line);
+  text-underline-offset: 2px;
+}
+/* Deleted words, at their place: outside the doc, never spell checked or selected. */
+.page .ProseMirror .sg-del {
+  color: var(--sg-strike);
+  text-decoration: line-through 1.5px var(--sg-strike);
+  user-select: none;
+}
+/* A changed mark or block type; a changed block attribute only (alignment, indent). */
+.page .ProseMirror .sg-fmt {
+  text-decoration: underline 2px dotted var(--sg-line);
+  text-underline-offset: 2px;
+}
+.page .ProseMirror .sg-fmt-block {
+  outline: 1.5px dotted var(--sg-line);
+  outline-offset: 2px;
+}
+/* A new or changed object (canvas, plan chart, table, picture): a dashed outline and a tag at its top left. */
+.page .ProseMirror .sg-node {
+  position: relative;
+  outline: 2px dashed var(--sg-line);
+  outline-offset: 2px;
+}
+.page .ProseMirror .sg-node::after {
+  content: attr(data-sg-tag);
+  position: absolute;
+  left: 6px;
+  top: 6px;
+  z-index: 1;
+  padding: 0 7px;
+  border-radius: 999px;
+  background: var(--sg-line);
+  color: #1a1a1a;
+  font: 600 11px/16px system-ui, sans-serif;
+  text-decoration: none;
+  pointer-events: none;
+}
+.page .ProseMirror .sc.sg-node:has(> .sc-flow)::after { top: 28px; } /* below a linked canvas's badge */
+/* Deleted whole blocks: a struck widget in plain block flow (no flex, grid, flow-root or overflow), so it sits beside
+   pagination's floats like a paragraph. */
+.page .ProseMirror .sg-del-block {
+  display: block;
+  margin: 0.25em 0;
+  padding: 2px 6px;
+  border-left: 3px solid var(--sg-line);
+  background: var(--sg-fill);
+  color: var(--sg-strike);
+  text-decoration: line-through 1.5px var(--sg-strike);
+  user-select: none;
+  cursor: default;
+}
+.page .ProseMirror .sg-del-line:empty::before { content: "\00a0"; }
+.page .ProseMirror .sg-del-block .sg-atom {
+  display: inline-block;
+  margin: 2px 0;
+  padding: 0 6px;
+  border: 1px dashed var(--sg-strike);
+  border-radius: 4px;
+  font-size: 0.85em;
+}
+/* The active change, and a change whose block is hovered: the stronger fill over the whole block (the unit of accept). */
+.page .ProseMirror :is(.sg-add, .sg-del-block, .sg-fmt).sg-active,
+.page .ProseMirror .sg-block:has(:is(.sg-add, .sg-del, .sg-fmt):hover) :is(.sg-add, .sg-fmt),
+.page .ProseMirror .sg-del-block:hover {
+  background: var(--sg-fill-active);
+}
+.page .ProseMirror .sg-node.sg-active,
+.page .ProseMirror .sg-fmt-block.sg-active {
+  outline-style: solid;
+}
+
+/* A changed canvas's items against the board it replaced: added and changed outlined, removed ones as ghosts. */
+.wb-item.sg-item-add,
+.wb-item.sg-item-chg {
+  outline: calc(2px * var(--wb-inv, 1)) solid var(--sg-line);
+  outline-offset: calc(1px * var(--wb-inv, 1));
+}
+.wb-item.sg-item-chg { outline-style: dashed; }
+.wb-item.sg-item-ghost {
+  opacity: 0.35;
+  outline: calc(1px * var(--wb-inv, 1)) dashed var(--sg-strike);
+  pointer-events: none;
+}

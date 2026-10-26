@@ -6,6 +6,7 @@ import { toast } from 'sonner';
 import { getState } from './app/store.js';
 import { flowSource } from './canvas.js';
 import { validFlow } from './flow/library.mjs';
+import { drawTheme } from './formats.mjs';
 import { rasterizePlanChart } from './plan-chart.js';
 import { rasterizeWhiteboard } from './whiteboard.js';
 
@@ -38,7 +39,7 @@ async function nodePicture(node, dom) {
   let board = { ...node.attrs, kind: node.type.name };
   const live = board.kind === 'canvas' && validFlow(board.flow) ? await flowSource.load(board.flow.id) : null; // as push draws it
   if (live) board = { ...board, ...live.board };
-  return (await boardPicture(board, dom.offsetWidth, getState().settings.theme, 1)).blob;
+  return (await boardPicture(board, dom.offsetWidth, drawTheme(getState().draft, getState().settings), 1)).blob; // as drawn
 }
 
 export const CopyPicture = Extension.create({

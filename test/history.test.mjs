@@ -4,6 +4,8 @@ import { Schema } from '@tiptap/pm/model';
 import { EditorState, Plugin } from '@tiptap/pm/state';
 import { history, redo, redoDepth, undo, undoDepth } from '@tiptap/pm/history';
 import { encode, newLog, rebuild, record } from '../src/app/history.js';
+import * as sgCore from '../src/suggest/core.mjs';
+import { suggestPlugin, withCall } from '../src/suggest/extension.js';
 
 const schema = new Schema({
   nodes: {
@@ -128,4 +130,75 @@ test('an undone doc attribute step goes back to the base value after a reopen', 
   assert.deepEqual(r.state.doc.attrs.sect, { w: 595.3 });
   r.cmd(undo);
   assert.equal(r.state.doc.attrs.sect, null);
+});
+
+// ---------- suggestions (docs/plans/suggestions.md step 1) ----------
+const sgSchema = new Schema({
+  nodes: {
+    doc: { content: 'block+', attrs: { sect: { default: null }, suggest: { default: null } } },
+    paragraph: { group: 'block', content: 'inline*', attrs: { suggest: { default: null } } },
+    text: { group: 'inline' },
+  },
+});
+const sgDoc = (...xs) => sgSchema.node('doc', null, xs.map((x) => sgSchema.node('paragraph', null, x ? [sgSchema.text(x)] : [])));
+// A session whose editor has the Suggestions plugin after the trailing-node stand-in, as in the kits (priority 1: last).
+function sgSession(doc) {
+  const s = { t: Date.now() };
+  const trailingSg = new Plugin({
+    appendTransaction: (trs, _old, state) => (state.doc.lastChild.content.size ? state.tr.insert(state.doc.content.size, sgSchema.nodes.paragraph.create()) : null),
+  });
+  s.state = EditorState.create({ schema: sgSchema, doc, plugins: [history({ depth: 50 }), trailingSg, suggestPlugin(s)] });
+  s.log = newLog(s.state);
+  s.dispatch = (tr) => {
+    const { state, transactions } = s.state.applyTransaction(tr);
+    record(s.log, tr, transactions.slice(1), state);
+    s.state = state;
+  };
+  s.cmd = (command) => command(s.state, s.dispatch);
+  return s;
+}
+const sgCall = () => ({ g: 'gtest01', by: 'agent:test', at: 1, ids: [] });
+const records = (state) => JSON.stringify(state.doc.toJSON()).includes('"suggest":{');
+
+test('an agent round with its appended records saves, rebuilds, and undoes in one step', () => {
+  const s = sgSession(sgDoc('one', ''));
+  s.dispatch(s.state.tr.insertText(' typed', 4).setTime((s.t += 2000)));
+  const c = sgCall();
+  withCall(s, c, 'exact', () => s.dispatch(s.state.tr.insertText('ONE', 1, 4).setTime((s.t += 2000))));
+  assert.ok(records(s.state));
+  assert.equal(undoDepth(s.state), 2);
+  const file = JSON.parse(JSON.stringify(encode(s.log, 50)));
+  const r = sgSession(s.state.doc);
+  const rebuilt = rebuild(r.state, file, 50);
+  assert.ok(rebuilt);
+  Object.assign(r, rebuilt);
+  assert.ok(r.state.doc.eq(s.state.doc));
+  r.cmd(undo);
+  assert.equal(r.state.doc.firstChild.textContent, 'one typed');
+  assert.ok(!records(r.state));
+});
+
+test('accept and reject are one undo step each; a normalize fix joins the user\'s undo step', () => {
+  const s = sgSession(sgDoc('one', 'two', ''));
+  const c = sgCall();
+  withCall(s, c, 'exact', () => s.dispatch(s.state.tr.insertText('ONE', 1, 4).setTime((s.t += 2000))));
+  const depth = undoDepth(s.state);
+  s.dispatch(sgCore.accept(s.state, c.ids).setTime((s.t += 100)));
+  assert.ok(!records(s.state));
+  assert.equal(undoDepth(s.state), depth + 1);
+  s.cmd(undo);
+  assert.ok(records(s.state));
+  s.dispatch(sgCore.reject(s.state, c.ids).setTime((s.t += 100)));
+  assert.equal(s.state.doc.firstChild.textContent, 'one');
+  assert.equal(undoDepth(s.state), depth + 1);
+  s.cmd(undo);
+  assert.equal(s.state.doc.firstChild.textContent, 'ONE');
+  // The user splits the suggested block: normalize keeps one old, in the same undo step as the split.
+  const before = s.state.doc;
+  s.dispatch(s.state.tr.split(3).setTime((s.t += 2000)));
+  const olds = [];
+  s.state.doc.forEach((n) => n.attrs.suggest?.ins && olds.push(!!n.attrs.suggest.ins.old));
+  assert.deepEqual(olds, [true, false]);
+  s.cmd(undo);
+  assert.ok(s.state.doc.eq(before));
 });

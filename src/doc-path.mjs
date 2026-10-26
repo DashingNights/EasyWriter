@@ -33,10 +33,21 @@ function boardAttrs(node) {
  * model knows the text goes on (2026-10-07: a cut paragraph read as a fragment, and the model replaced it with its 120 characters). */
 const cutText = (s) => (s.length > 120 ? `${s.slice(0, 120)}... (cut, ${s.length} characters in all)` : s);
 
-/** [{path, type, text, attrs?}] of the blocks of `doc` down to `depth` levels (1: the top level): `text` is the block's plain text,
- * cut after 120 characters with a marker (cutText); a board node's `attrs` = {kind, items, w, h}, a heading's = {level}. */
+/** A block's waiting suggestion (attrs.suggest, docs/plans/suggestions.md) for outline(), or undefined: 'insert s7k2a1',
+ * 'replace s7k2a1', 'deleted before: 2 blocks s8m3q0', joined by '; '. `replaced`: the ids whose run replaced blocks. */
+function pendingOf(r, replaced) {
+  if (!r) return undefined;
+  const out = r.ins ? [`${replaced.has(r.ins.id) ? 'replace' : 'insert'} ${r.ins.id}`] : [];
+  for (const d of r.del ?? []) out.push(`deleted ${d.side}: ${d.old?.length ?? 0} block${d.old?.length === 1 ? '' : 's'} ${d.id}`);
+  return out.join('; ') || undefined;
+}
+
+/** [{path, type, text, attrs?, pending?}] of the blocks of `doc` down to `depth` levels (1: the top level): `text` is the block's
+ * plain text, cut after 120 characters with a marker (cutText); a board node's `attrs` = {kind, items, w, h}, a heading's = {level};
+ * `pending` names a waiting suggestion on a top-level block (pendingOf). */
 export function outline(doc, { depth = 1 } = {}) {
   const out = [];
+  const replaced = new Set((doc.content ?? []).filter((b) => b?.attrs?.suggest?.ins?.old).map((b) => b.attrs.suggest.ins.id));
   const walk = (node, path) => {
     (node.content ?? []).forEach((child, i) => {
       if (child.type === 'text' || child.type === 'hardBreak') return;
@@ -44,6 +55,8 @@ export function outline(doc, { depth = 1 } = {}) {
       const entry = { path: p, type: child.type, text: BOARD_TYPES.includes(child.type) ? '' : cutText(nodeText(child)) };
       if (BOARD_TYPES.includes(child.type)) entry.attrs = boardAttrs(child);
       else if (child.type === 'heading') entry.attrs = { level: child.attrs?.level };
+      const pending = pendingOf(child.attrs?.suggest, replaced);
+      if (pending) entry.pending = pending;
       out.push(entry);
       if (p.length < depth && !BOARD_TYPES.includes(child.type)) walk(child, p);
     });

@@ -7,6 +7,7 @@
 // on `computer.event` when it opens and closes ({type: 'worker', draftId, title}), when it saves ({type: 'saved', entry: the
 // sidebar entry}) and, while the pane shows, its frames ({type: 'frame', url}, about 5 a second).
 const { BrowserWindow } = require('electron');
+const { draftMarks } = require('./draft-marks.js');
 
 const SIDE = 1344; // a screenshot's long side at most (px)
 const WORKER_SIZE = { width: 1440, height: 900 };
@@ -89,7 +90,7 @@ async function guard(wc, p) {
   const el = p ? `document.elementFromPoint(${p.x / z}, ${p.y / z})` : 'document.activeElement';
   if (await wc.executeJavaScript(`!!${el}?.closest(${JSON.stringify(DENY)})`, true)) {
     throw coded('denied', p ? 'That point is on the assistant panel or a control kept from the assistant.'
-      : 'The keyboard focus is in the assistant panel. Click where to type first.');
+      : 'The keyboard focus is in the assistant panel or a control kept from the assistant. Click where to type first.');
   }
 }
 
@@ -120,7 +121,13 @@ async function act(a = {}) {
   const t = a.target === 'background' ? 'background' : 'main';
   const win = windowOf(t);
   const wc = win.webContents;
-  if (t === 'background') touch();
+  if (t === 'background') {
+    touch();
+    // The agent call this action belongs to: the background window records its edits as that call's suggestions (null: none).
+    const c = a.call && typeof a.call === 'object' ? a.call : null;
+    const call = c && { g: String(c.g), by: String(c.by), at: Number(c.at) || Date.now(), note: typeof c.note === 'string' ? c.note.slice(0, 140) : null, ids: [] };
+    await wc.executeJavaScript(`window.__worker?.setCall?.(${JSON.stringify(call)})`, true);
+  }
   const at = (x, y) => toWindow(t, x, y);
   const button = ['left', 'right', 'middle'].includes(a.button) ? a.button : 'left';
   const held = [`${button}ButtonDown`];
@@ -176,7 +183,9 @@ async function act(a = {}) {
     default: throw coded('invalid_args', `${a.action} is not an action.`);
   }
   await settle(wc);
-  return screenshot(t);
+  // The changes the background window recorded under this action's call: computer.mjs adds them to the answer's suggested.
+  const ids = t === 'background' && a.call ? await wc.executeJavaScript('window.__worker?.callIds?.() ?? []', true).catch(() => []) : [];
+  return { ...(await screenshot(t)), ...(ids.length && { ids }) };
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -311,7 +320,7 @@ async function fromWorker(sender, channel, args, fn) {
     const d = args[0];
     rec.title = String(d.title || 'Untitled draft');
     notify({ type: 'saved', entry: { id: d.id, title: d.title, threadUrl: d.threadUrl ?? null, updated: out.updated, pushedAt: d.pushedAt ?? null,
-      format: d.format ?? null } });
+      format: d.format ?? null, ...draftMarks(d.doc) } });
   }
   return out;
 }

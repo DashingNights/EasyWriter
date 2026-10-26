@@ -1,7 +1,8 @@
 import { closeHistory } from '@tiptap/pm/history';
 import { commitSynced, liveBoard } from '../../canvas.js';
 import { pathOfPos, posOfPath } from '../../doc-path.mjs';
-import { pageOf } from '../../formats.mjs';
+import { withCall } from '../../suggest/extension.js';
+import { drawTheme, pageOf } from '../../formats.mjs';
 import { validFlow } from '../../flow/library.mjs';
 import {
   arrangeItems, cleanConnector, groupItems, moveItem, normalizeGroups, repairEnds, unbindFrom, ungroupItems, validConnector,
@@ -9,13 +10,13 @@ import {
 import { resolveConnectors } from '../../flow/route.mjs';
 import { KINDS, rotBox, rotOf } from '../../flow/shapes.mjs';
 import {
-  contentWidth, groupBox, injectStyle, itemElement, make, parseBoard, rasterizeWhiteboard, smartArtboard, topLevelPos, WB_BG,
+  boardSurface, contentWidth, groupBox, injectStyle, itemElement, make, parseBoard, rasterizeWhiteboard, smartArtboard, topLevelPos, WB_BG,
 } from '../../whiteboard.js';
 import { endSide } from '../assistant/attach.mjs';
 import { keyLabel } from '../keybinds.js';
 import { validate } from '../schema.mjs';
 import { define, fail, failGates } from './define.mjs';
-import { boardStyles, matchStyle, pageItems } from './item-style.mjs';
+import { boardStyles, contrastWarnings, inkOn, matchStyle, pageItems, styledText } from './item-style.mjs';
 import { DRAFT_ID, ITEM, ITEM_ID, ref } from './schema-defs.mjs';
 
 // board.* (SPEC §8 Catalogue; agent-automation plan §6.3): the items of a canvas block of the open draft. Every write is one
@@ -42,7 +43,8 @@ export function target(ctx, path) {
 }
 
 export const itemsOf = (t) => t.board.items;
-const ink = (ctx) => (ctx.state.settings.theme === 'light' ? '#111111' : '#ffffff');
+/** The theme the draft's canvases draw in (formats.mjs drawTheme: light on a Document's paper). */
+const themeOf = (ctx) => drawTheme(ctx.state.draft, ctx.state.settings);
 const ENTITIES = { nbsp: ' ', lt: '<', gt: '>', quot: '"', amp: '&' };
 const plain = (i) => String(i?.html ?? i?.labels?.mid?.html ?? '').replace(/<[^>]*>/g, ' ').replace(/&(nbsp|lt|gt|quot|amp);/g, (_, e) => ENTITIES[e])
   .replace(/\s+/g, ' ').trim();
@@ -79,11 +81,15 @@ function findText(i, byId) {
 }
 
 /** The defaults an agent may leave out: the board's own style first (item-style.mjs matchStyle, `items` the target's items, `page`
- * the draft's other boards' items), then a new text item's (Board.textItem; colours by theme). */
-function itemDefaults(item, color, items = [], page = []) {
-  const i = matchStyle(item, items, page);
-  if (i.type === 'text') return { size: 20, color, bold: false, align: 'left', bg: null, ...i };
-  if (i.type === 'shape') return { color, width: 2, opacity: 1, fill: 'none', fillColor: color, textColor: color, ...i };
+ * the draft's other boards' items), then a new text item's (Board.textItem): lines in the theme's ink on `board` (the board's
+ * background colour in `theme`). Text left without a colour stays without one: it draws in the theme's text colour for what it
+ * sits on at every draw (whiteboard.js, inkOn), so a theme switch, a new background or a Document's paper keeps it readable.
+ * Also flow.mjs. */
+export function itemDefaults(item, theme, board, items = [], page = []) {
+  const i = matchStyle(item, items, page, board);
+  const color = inkOn(board, theme);
+  if (i.type === 'text') return { size: 20, bold: false, align: 'left', bg: null, ...i };
+  if (i.type === 'shape') return { color, width: 2, opacity: 1, fill: 'none', fillColor: color, ...i };
   if (i.type === 'connector') return { color, ...i };
   return i;
 }
@@ -195,15 +201,19 @@ function write(ctx, a, edit) {
   const t = target(ctx, a.path);
   const view = ctx.editor.view;
   const cv = t.cv ?? fail('failed', 'The canvas is not drawn');
-  const out = edit(t.board.items, { size: { w: t.board.w, h: t.board.h } });
+  const out = edit(t.board.items, { size: { w: t.board.w, h: t.board.h }, bg: t.board.bg });
   const s = settle({ ...t.board, ...(out.frame !== undefined && { frame: out.frame }) }, out.items, out.fit);
   // A new artboard width keeps the displayed width's ratio to it (canvas.js nodeTarget); a set one or a changed one is never
   // wider than the page.
   const page = contentWidth(view);
   const dw = out.dw != null ? Math.min(out.dw, page)
     : s.w === t.board.w ? t.node.attrs.dw : Math.min(Math.round((t.node.attrs.dw / t.board.w) * s.w), page);
-  commitSynced(cv, t.pos, { ...t.node.attrs, w: s.w, h: s.h, frame: s.frame, bg: out.bg ?? t.board.bg, items: s.items, dw }, true);
-  view.dispatch(closeHistory(view.state.tr)); // the user's next typing starts its own undo step
+  // A suggesting call's change is recorded as its suggestion (suggest/extension.js); a linked canvas writes its library at once,
+  // and a reject writes the old board back (CanvasView.update).
+  withCall(ctx.editor, ctx.suggest, 'exact', () => {
+    commitSynced(cv, t.pos, { ...t.node.attrs, w: s.w, h: s.h, frame: s.frame, bg: out.bg ?? t.board.bg, items: s.items, dw }, true);
+    view.dispatch(closeHistory(view.state.tr)); // the user's next typing starts its own undo step
+  });
   return out.result;
 }
 
@@ -441,14 +451,15 @@ export const defs = [
       },
     ],
     busy,
-    run: (ctx, a) => write(ctx, a, (items, { size }) => {
-      const color = ink(ctx);
+    run: (ctx, a) => write(ctx, a, (items, { size, bg }) => {
+      const theme = themeOf(ctx);
+      const board = boardSurface(bg, theme);
       const page = pageItems(ctx.editor?.state.doc);
       const given = a.coords === 'thousandths' ? a.items.map((i) => fromThousandths(i, size)) : a.items;
-      const added = freshIds(given.map((i) => itemDefaults(i, color, items, page)), new Set(items.map((i) => i.id))).map((i, k) => checked(i, `/items/${k}`));
+      const added = freshIds(given.map((i) => itemDefaults(i, theme, board, items, page)), new Set(items.map((i) => i.id))).map((i, k) => checked(i, `/items/${k}`));
       const ids = new Set(added.map((i) => i.id));
       const all = repairEnds([...items, ...added]);
-      const warnings = endWarnings(added, all, ids);
+      const warnings = [...endWarnings(added, all, ids), ...contrastWarnings(all, ids, theme, board)];
       return { items: all, result: { ids: [...ids], ...(warnings.length && { warnings }) } };
     }),
   }),
@@ -480,7 +491,7 @@ export const defs = [
     ],
     busy,
     run: (ctx, a) => {
-      const result = write(ctx, a, (items, { size }) => {
+      const result = write(ctx, a, (items, { size, bg }) => {
         const k = items.findIndex((i) => i.id === a.id);
         if (k < 0) mustHave(items, [a.id]);
         const old = items[k];
@@ -493,7 +504,9 @@ export const defs = [
         const item = checked(patched(old, patch), '/patch');
         const next = items.map((i, j) => (j === k ? item : i));
         const all = repairEnds(next);
-        const warnings = endWarnings(next, all, new Set([item.id]));
+        const theme = themeOf(ctx);
+        const looks = styledText(patch) ? new Set([item.id]) : new Set(); // a move never warns about a colour the user chose
+        const warnings = [...endWarnings(next, all, new Set([item.id])), ...contrastWarnings(all, looks, theme, boardSurface(bg, theme))];
         return { items: all, result: { id: item.id, ...(warnings.length && { warnings }) } };
       });
       // The item as stored: its route redone.
@@ -683,7 +696,10 @@ export const defs = [
         let f;
         if (frame) f = { ...frame };
         else if (w || h) f = { x: 0, y: 0, w: w ?? t.board.frame?.w ?? t.board.w, h: h ?? t.board.frame?.h ?? t.board.h };
-        return { items, bg, frame: f, dw, result: { path: a.path } };
+        // A new background: text with a colour of its own may no longer read on it.
+        const theme = themeOf(ctx);
+        const warnings = bg ? contrastWarnings(items, new Set(items.map((i) => i.id)), theme, boardSurface(bg, theme)) : [];
+        return { items, bg, frame: f, dw, result: { path: a.path, ...(warnings.length && { warnings }) } };
       });
     },
   }),
@@ -720,7 +736,7 @@ export const defs = [
       // export.js: the artboard at its own size, at the pixel ratio giving 2× its drawn size.
       const shown = ctx.editor.view.nodeDOM(pos)?.offsetWidth || Math.min(node.attrs.dw, pageOf(ctx.state.draft, ctx.state.settings).width);
       const scale = a.scale ?? Math.min(4, Math.max(0.25, (2 * shown) / b.w));
-      const { blob } = await rasterizeWhiteboard({ height: b.h, bg: b.bg, items: b.items }, { width: b.w, theme: ctx.state.settings.theme, scale });
+      const { blob } = await rasterizeWhiteboard({ height: b.h, bg: b.bg, items: b.items }, { width: b.w, theme: themeOf(ctx), scale });
       const ihdr = new DataView(await blob.slice(16, 24).arrayBuffer()); // the PNG's own pixel size
       return { png: await blobBase64(blob), width: ihdr.getUint32(0), height: ihdr.getUint32(4), bytes: blob.size };
     },

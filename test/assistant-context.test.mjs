@@ -6,7 +6,7 @@ import {
   pictureMessage, promises, READS_AFTER_WRITE, readsAfterWrite, repeats, RESULT_CHARS, resultLine, shouldCompact, situationNote, takePictures, turnMessages,
   withNote, markIds, sameSentence, withMarkIds,
 } from '../src/app/assistant/context.mjs';
-import { familyOf, GUIDE_RULE, NOTE_RULE, RENDER_RULE, RULES, STYLE_RULE, SYSTEM_PROMPT, systemPrompt, THOUSANDTHS_RULE, UI_RULE } from '../src/app/assistant/prompts.mjs';
+import { familyOf, GUIDE_RULE, NOTE_RULE, RENDER_RULE, RULES, STYLE_RULE, SUGGEST_RULE, SYSTEM_PROMPT, systemPrompt, THOUSANDTHS_RULE, UI_RULE } from '../src/app/assistant/prompts.mjs';
 
 const ID = '11111111-2222-3333-4444-555555555555';
 
@@ -346,4 +346,27 @@ test('markIds and withMarkIds: a bare mark number in id, of, ids or a batch step
   assert.deepEqual(withMarkIds({ steps: [{ id: 'board_items_place', args: { path: [4], id: '1', of: '2', relation: 'left' } }] }, marks)[0].steps[0].args, { path: [4], id: 'g3n7c1f', of: 'p8w2r5d', relation: 'left' });
   assert.deepEqual(withMarkIds({ path: [4], id: 'p8w2r5d' }, marks), [{ path: [4], id: 'p8w2r5d' }, []]); // a real id stays
   assert.deepEqual(withMarkIds({ path: [4], id: '7' }, new Map()), [{ path: [4], id: '7' }, []]); // no legend, no swap
+});
+
+test('suggestions (docs/plans/suggestions.md): the result line, doneReply, the note line and SUGGEST_RULE', () => {
+  const suggested = { group: 'g3m9x0', changes: ['s7k2a1'] };
+  assert.equal(resultLine('write', { ok: true, result: { rev: 5 }, suggested }), 'suggested: rev 5');
+  assert.equal(resultLine('write', { ok: true, result: { rev: 5 } }), 'done: rev 5');
+  assert.equal(doneReply('Replace one block of the open draft (not a board)', suggested), 'Suggested: replace one block of the open draft. It waits for you in the draft.');
+  assert.equal(doneReply('Replace one block of the open draft (not a board)'), 'Done: replaced one block of the open draft.');
+  const base = { page: 'editor', draft: { title: 'A' }, selection: null, drafts: [], total: 0, scope: 'all' };
+  const lines = situationNote({ ...base, suggest: { waiting: 3, mine: 2, accepted: 1, rejected: 0 } }).split('\n');
+  assert.ok(lines.includes('Edits wait as suggestions until the user accepts them. Waiting: 3 (2 yours).'), lines.join('\n'));
+  assert.ok(lines.includes('Since your last turn the user accepted 1 and rejected 0.'));
+  const quiet = situationNote({ ...base, suggest: { waiting: 0, mine: 0, accepted: 0, rejected: 0 } });
+  assert.ok(quiet.includes('Waiting: 0 (0 yours).') && !quiet.includes('Since your last turn'));
+  assert.ok(!situationNote(base).includes('suggestion'));
+  // The permission line agrees with the suggestions line: edits to drafts never get a card while they wait as suggestions.
+  const all = situationNote({ ...base, permission: 'all', suggest: { waiting: 1, mine: 1, accepted: 0, rejected: 0 } });
+  assert.ok(all.includes('Permission mode: Allow all. Your edits to drafts wait as suggestions;') && !all.includes('Changes and deletions run at once'), all);
+  assert.ok(situationNote({ ...base, permission: 'all' }).includes('Changes and deletions run at once with no card.'));
+  for (const f of ['qwen', 'gemma', 'gemini']) {
+    assert.ok(systemPrompt(f, { suggest: true }).includes(SUGGEST_RULE), f);
+    assert.ok(!systemPrompt(f).includes(SUGGEST_RULE), f);
+  }
 });

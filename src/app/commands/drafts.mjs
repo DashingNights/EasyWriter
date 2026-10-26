@@ -1,5 +1,6 @@
 import { defaultFormat, pageOf } from '../../formats.mjs';
 import { bare } from '../../integrations/index.mjs';
+import { brief, pendingCount } from '../../suggest/core.mjs';
 import { migrateBoards } from '../../whiteboard.js';
 import { sortDrafts } from '../draft-order.mjs';
 import { draftTag, tagList } from '../drafts-meta.js';
@@ -16,6 +17,11 @@ const THREAD = 'project:3a7c9e1b-5d2f-4b8a-9c6e-1f0d2b4a6c8e'; // a project key 
 /** The draft `id` (the open one carries the live fields), or null. */
 const draftOf = (ctx, id) => (ctx.state.draft?.id === id ? ctx.state.draft : ctx.state.drafts.find((d) => d.id === id) ?? null);
 const titleOf = (ctx, id) => draftOf(ctx, id)?.title || 'Untitled draft';
+// The suggestions waiting in draft `d` (docs/plans/suggestions.md): the open draft's live count, else its summary's.
+const waiting = (ctx, d) => (ctx.state.draft?.id === d.id && ctx.editor ? pendingCount(ctx.editor.state.doc) : d.suggestions ?? 0);
+/** The suggestions waiting in TipTap JSON `doc` (a draft file's): its records' distinct ids. */
+const countOf = (doc) => new Set([...(doc?.attrs?.suggest?.attrs ?? []).map((r) => r.id),
+  ...(doc?.content ?? []).flatMap((b) => [b?.attrs?.suggest?.ins?.id, ...(b?.attrs?.suggest?.del ?? []).map((x) => x.id)])].filter(Boolean)).size;
 const folders = (ctx) => ctx.state.settings.folders || [];
 const folderOf = (ctx, id) => {
   const f = ctx.state.settings.draftFolders?.[id];
@@ -47,7 +53,7 @@ export const defs = [
       .filter((d) => !a.threadUrl || d.threadUrl === a.threadUrl)
       .map((d) => bare('draft', {
         id: d.id, title: d.title, threadUrl: d.threadUrl, updated: d.updated, pushedAt: d.pushedAt, format: d.format ?? null,
-        tag: draftTag(ctx.state.settings, d.id)?.id ?? null, folder: folderOf(ctx, d.id),
+        tag: draftTag(ctx.state.settings, d.id)?.id ?? null, folder: folderOf(ctx, d.id), suggestions: waiting(ctx, d),
       }, ctx.state.settings)),
   }),
   define({
@@ -65,7 +71,9 @@ export const defs = [
       const loaded = open ? { ...ctx.state.draft, doc: ctx.editor.getJSON() } : await ctx.api.drafts.load(a.draftId);
       if (!loaded) fail('not_found', `The draft ${a.draftId} could not be loaded`);
       // A draft not opened since the merge still holds whiteboards on disk: shown as the canvases it opens as (§6b Converted whiteboards).
-      const draft = open ? loaded : { ...loaded, doc: migrateBoards(loaded.doc, pageOf(loaded, ctx.state.settings).width) };
+      const doc = open ? loaded.doc : migrateBoards(loaded.doc, pageOf(loaded, ctx.state.settings).width);
+      // A suggestion record as {id, kind}, its old blocks left out.
+      const draft = { ...loaded, doc: brief(doc), suggestions: open ? pendingCount(ctx.editor.state.doc) : countOf(doc) };
       const out = bare('draft', a.images ? draft : ctx.lib.stripImages(draft), ctx.state.settings);
       return open ? { draft: out, rev: ctx.state.rev } : { draft: out };
     },

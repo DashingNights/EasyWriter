@@ -3,6 +3,7 @@ import { pathOfPos } from '../../doc-path.mjs';
 import { itemLines, listBody } from '../assistant/attach.mjs';
 import { boardPicture, drawMarks, markCentres, markSpots, PICTURE_SIDE, sizeText } from '../assistant/marks.mjs';
 import { viewportRect } from '../viewport.js';
+import { drawTheme } from '../../formats.mjs';
 import { target } from './board.mjs';
 import { define, fail } from './define.mjs';
 import { DRAFT_ID, ref } from './schema-defs.mjs';
@@ -56,9 +57,10 @@ async function renderView(ctx, numbered) {
   return { legend, ids, width, height, size: sizeText(width, height, vp.width, vp.height, 'view'), picture: 'next message', url };
 }
 
-/** Board `b` {w, h, bg, items} drawn from its data, every item marked unless not `numbered`; the legend starts with `head`. */
-async function renderBoard(ctx, b, head, numbered) {
-  const pic = await boardPicture({ w: b.w, h: b.h, bg: b.bg, items: b.items }, { theme: ctx.state.settings.theme === 'light' ? 'light' : 'dark', order: numbered ? b.items : [] });
+/** Board `b` {w, h, bg, items} drawn from its data in `theme` (a canvas: its draft's, light on a Document's paper; a library
+ * flowchart: the page theme), every item marked unless not `numbered`; the legend starts with `head`. */
+async function renderBoard(ctx, b, head, numbered, theme = ctx.state.settings.theme === 'light' ? 'light' : 'dark') {
+  const pic = await boardPicture({ w: b.w, h: b.h, bg: b.bg, items: b.items }, { theme, order: numbered ? b.items : [] });
   const legend = listBody(`${head} with ${b.items.length} item${b.items.length === 1 ? '' : 's'}`, lines(b.items));
   return { legend, ids: b.items.map((i) => i.id), width: pic.width, height: pic.height, size: pic.size, picture: 'next message', url: pic.url };
 }
@@ -92,7 +94,7 @@ export const defs = [
         const r = (await ctx.flows.loadFlow(a.flowId)) ?? fail('not_found', `No flowchart has the id ${a.flowId}. Call flow_library_list`, { flowId: a.flowId });
         return renderBoard(ctx, r.board, `Flowchart "${r.title}"`, a.marks);
       }
-      return a.path ? renderBoard(ctx, target(ctx, a.path).board, `Canvas at block [${a.path}]`, a.marks) : renderView(ctx, a.marks);
+      return a.path ? renderBoard(ctx, target(ctx, a.path).board, `Canvas at block [${a.path}]`, a.marks, drawTheme(ctx.state.draft, ctx.state.settings)) : renderView(ctx, a.marks);
     },
   }),
 ];

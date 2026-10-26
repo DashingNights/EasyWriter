@@ -97,3 +97,8 @@ test('findPlaybooks: commands.index q searches titles and words', () => {
   assert.deepEqual(findPlaybooks('rename', 'readonly').map((p) => p.title), ['Read only mode']);
   assert.ok(findPlaybooks('delete').length <= 2);
 });
+
+test('edit-draft-text: a result with suggested is done (docs/plans/suggestions.md)', () => {
+  const last = PLAYBOOKS.find((p) => p.id === 'edit-draft-text').text.split('\n').at(-1);
+  assert.match(last, /^Check: .*A result with suggested is done: it waits for the user\.$/);
+});

@@ -15,6 +15,8 @@ import {
 import { familyOf, systemPrompt } from './prompts.mjs';
 import { fix, lint, styleArgs, styleAsk } from './style-lint.mjs';
 import { endTurn } from './sessions.js';
+import { entries } from '../../suggest/core.mjs';
+import { decisions } from '../../suggest/extension.js';
 
 // The assistant's tool loop (SPEC §7i Tool loop; automation plan §13.1, §13.2 Tool calls): the model calls registry commands as
 // OpenAI tool calls through llama-server, one per request; each runs through invoke() as source 'agent:assistant' (schema,
@@ -83,7 +85,7 @@ export async function runTurn(session, userText, parts = []) {
     const render = tools.some((t) => t.function.name === 'view_render'); // the prompt's view_render line
     // Qwen Cloud boxes come in thousandths of the picture (2026-10-08, prompts.mjs THOUSANDTHS_RULE).
     const guide = await writingGuide(); // the writing guide (prompts.mjs GUIDE_RULE), read again every turn
-    const messages = [{ role: 'system', content: systemPrompt(family, { tools: tools.length > 0, uiControl: modeNow().uiControl, render, thousandths: qwen, guide }) }, ...history()];
+    const messages = [{ role: 'system', content: systemPrompt(family, { tools: tools.length > 0, uiControl: modeNow().uiControl, render, thousandths: qwen, guide, suggest: suggesting() }) }, ...history()];
     const asked = messages.findLastIndex((m) => m.role === 'user'); // the message being answered: this turn's requests only
     const content = messages[asked]?.content;
     let note = '';
@@ -223,7 +225,7 @@ export async function runTurn(session, userText, parts = []) {
         }
         if (res.error?.code === 'cancelled' || signal.aborted) return;
         ran.push({ write: !!def && guardWrite(def.id, def.risk), ok: res.ok });
-        if (ran.at(-1).write && res.ok) done = doneReply(STEP_LABELS[def.id] ?? def.title);
+        if (ran.at(-1).write && res.ok) done = doneReply(STEP_LABELS[def.id] ?? def.title, res.suggested);
         if (!gemini && readsAfterWrite(ran)) { // the change is made and the model only reads on: its summary is the reply
           addMessage({ role: 'assistant', text: done });
           return;
@@ -269,7 +271,7 @@ export async function runCliTurn(session, parts) {
     addMessage({ role: 'assistant', streaming: true });
     const end = await cliRun({
       prompt: withNote(situation(parts), content),
-      system: systemPrompt('gemini', { uiControl: modeNow().uiControl, render: true, guide: await writingGuide() }), // the cloud models' rules
+      system: systemPrompt('gemini', { uiControl: modeNow().uiControl, render: true, guide: await writingGuide(), suggest: suggesting() }), // the cloud models' rules
       session: session.cli?.provider === provider ? session.cli.id : '',
     }, session.signal, (e) => {
       if (e.type === 'tool_start') args.set(e.id, e.args);
@@ -289,6 +291,8 @@ export async function runCliTurn(session, parts) {
 }
 
 const modeNow = () => assistantMode(getState().settings?.assistant);
+// Edits wait as suggestions (docs/plans/suggestions.md) unless auto-approve is on; Read only makes none.
+const suggesting = () => assistantSettings().autoApproveEdits !== true && modeNow().permission !== 'readonly';
 const pictureAfterWrite = () => assistantSettings().pictureAfterWrite !== false && modeNow().permission !== 'readonly';
 
 /** The marked picture of the board that the successful board.* `call` changed (its path, or board.insert's new block) as a user
@@ -326,7 +330,7 @@ async function toolList(session, parts, family) {
   // commands_describe with the caret in text); the small models get the view's set. The cloud models also get computer use
   // (computer_act and the background window, §7i) in every view.
   const ids = family === 'gemini' && (key === 'editor' || key === 'board') ? [...VIEW_SETS.editor, ...VIEW_SETS.board, ...VIEW_SETS.none] : VIEW_SETS[key];
-  const tools = toolsFor(res.result, { ids: [...new Set([...CORE, ...ids, ...(family === 'gemini' ? [...COMPUTER, 'calls'] : [])])], $defs: MODEL_DEFS, form: 'model', family }).filter(allowed);
+  const tools = toolsFor(res.result, { ids: [...new Set([...CORE, ...ids, ...(family === 'gemini' ? [...COMPUTER, 'calls', 'suggestions.list', 'suggestions.resolve'] : [])])], $defs: MODEL_DEFS, form: 'model', family }).filter(allowed);
   return [...tools, ...[...session.described.values()].filter((d) => allowed(d) && !tools.some((t) => t.function.name === d.function.name))];
 }
 
@@ -405,6 +409,49 @@ async function runCall(session, call, tools) {
   return { res, pictures, line };
 }
 
+/** Step `id` of a suggesting call: its changes (`res.suggested` {group, changes}) with Reject (suggestions.resolve as the user, so
+ * an edited change asks first) and Show (suggestions.show on its group, opening its draft first); no Undo. The buttons go once
+ * the changes were decided: by this Reject (the line then says Rejected) or elsewhere (cards, keys, Ctrl+Z), found at the click. */
+function suggestedStep(id, res) {
+  const { group, changes } = res.suggested;
+  const draftId = res.draftId ?? getState().draft?.id ?? null;
+  const setStep = (patch) => patchMessage(id, (m) => ({ step: { ...m.step, ...patch } }));
+  const ours = (r) => r.ids.some((i) => changes.includes(i));
+  // The changes that still wait: the open draft's records, else (a draft in the background) those no decision names.
+  const waiting = () => {
+    const st = getState();
+    if (st.draft?.id === draftId) {
+      const live = new Set(st.editor ? entries(st.editor.state.doc).map((e) => e.id) : []);
+      return changes.filter((id) => live.has(id));
+    }
+    const done = new Set(decisions().flatMap((d) => d.ids));
+    return changes.filter((id) => !done.has(id));
+  };
+  const waits = () => waiting().length > 0;
+  setStep({
+    suggested: { group, changes, draftId },
+    reject: async () => {
+      const ids = waiting(); // the user may have decided some of them on a card already
+      if (!ids.length) return setStep({ reject: null, show: null });
+      const at = Date.now();
+      const r = await invoke({ id: 'suggestions.resolve', args: { action: 'reject', ids, ...(draftId && { draftId }) }, source: 'ui' });
+      if (!r.ok) return toast(r.error.message);
+      // Rejected only when this call rejected one of them (the decisions log), not when the user cancelled the confirm.
+      if (decisions().some((d) => d.at >= at && d.action === 'reject' && ours(d))) setStep({ reject: null, show: null, rejected: true });
+      else if (!waits()) setStep({ reject: null, show: null });
+    },
+    show: async () => {
+      if (!waits()) return setStep({ reject: null, show: null });
+      if (getState().draft?.id !== draftId) {
+        const o = await invoke({ id: 'drafts.open', args: { draftId }, source: 'ui' });
+        if (!o.ok) return toast(o.error.message);
+      }
+      const r = await invoke({ id: 'suggestions.show', args: { group }, source: 'ui' });
+      if (!r.ok) toast(r.error.message);
+    },
+  });
+}
+
 // The step line of a ui.invoke that ran: what was pressed (on which list row), in which area.
 const UI_STEPS = {
   click: (a, r) => `Pressed "${r.name}"`,
@@ -439,13 +486,14 @@ function steps(def, name, res, args, call, line, label = null) {
   });
 }
 
-/** The transcript line of one command: title, result or error, and Undo for a document change; `call` and `line`, its summary
- * for the model's later turns. */
+/** The transcript line of one command: title, result or error, and Undo for a document change, or Reject and Show for a change
+ * that waits as a suggestion (`res.suggested`, docs/plans/suggestions.md); `call` and `line`, its summary for the model's later turns. */
 function step(def, name, res, call, line, label = null) {
   const id = addMessage({
     role: 'step',
     step: { title: label ?? STEP_LABELS[def?.id] ?? def?.title ?? name, ok: res.ok, code: res.error?.code, undoSteps: res.undoSteps ?? 0, summary: res.ok ? (def.risk === 'read' ? '' : brief(res.result)) : res.error.message, call, line },
   });
+  if (res.ok && res.suggested?.changes?.length) return suggestedStep(id, res);
   // A background draft's step has no Undo: history.undo acts on the open draft (after opening it, Ctrl+Z undoes the step).
   if (!res.ok || def.undo !== 'doc' || !(res.undoSteps > 0) || res.draftId !== (getState().draft?.id ?? null)) return;
   const { rev, draftId } = res;

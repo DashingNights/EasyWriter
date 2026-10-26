@@ -1,5 +1,6 @@
 import { canvasEditor, openCanvasEditor } from '../../canvas.js';
 import { pathOfPos, posOfPath } from '../../doc-path.mjs';
+import { withCall } from '../../suggest/extension.js';
 import { define, fail, failGates } from './define.mjs';
 import { NO_ARGS, ref } from './schema-defs.mjs';
 import { scrollToBlock } from './ui.mjs';
@@ -44,14 +45,15 @@ export const defs = [
     notFor: 'saving',
     group: 'canvas',
     risk: 'write',
-    undo: 'none', // Done commits an open text edit: the user's own typing, not an agent's change
+    undo: 'none', // Done commits an open text edit (an agent's typing in it waits as a suggestion, docs/plans/suggestions.md)
     needs: ['view.editor', 'board.canvasMode'],
     args: NO_ARGS,
     result: { type: 'object', required: ['closed'] },
     examples: [{ args: {} }],
     busy,
-    run: () => {
-      (canvasEditor.get() ?? failGates(['board.canvasMode'])).close(true);
+    run: (ctx) => {
+      const session = canvasEditor.get() ?? failGates(['board.canvasMode']);
+      withCall(ctx.editor, ctx.suggest, 'exact', () => session.close(true)); // an agent's commit of the open text edit suggests
       return { closed: true };
     },
   }),

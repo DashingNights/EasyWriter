@@ -133,3 +133,9 @@ test("wake.forum: the open draft's project links a forum thread, untagged so it 
   assert.equal(can('wake.forum', null), false);
   assert.match(GATES['integration.forum'].fix, /Push to forum/);
 });
+
+test('draft.settled: no suggestion waits in the draft (docs/plans/suggestions.md)', () => {
+  assert.equal(can('draft.settled', { suggestions: 2 }), false);
+  assert.equal(can('draft.settled', {}), true);
+  assert.equal(can('draft.settled', { suggestions: 0 }), true);
+});

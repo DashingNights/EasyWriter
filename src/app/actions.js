@@ -7,16 +7,20 @@ import { canvasEditor, openCanvasEditor } from '../canvas.js';
 import { applyPreset } from '../extensions.js';
 import { kitOf, loadable } from '../editors.js';
 import { cleanTitle, copyTitle } from '../doc-utils.mjs';
+import { draftMarks } from '../draft-marks.js';
 import { draftTitle, wordCount } from '../export.js';
 import { newDocumentJson } from '../document/defaults.mjs';
 import { numberNewLists } from '../document/numbering.mjs';
-import { defaultFormat, FORMATS, formatOf, pageOf } from '../formats.mjs';
+import { defaultFormat, drawTheme, FORMATS, formatOf, pageOf } from '../formats.mjs';
 import { each, first, UI } from '../integrations/ui.js';
 import { legacyTopic } from '../thread-url.mjs';
+import { edited, entries, groups as groupsOf, META as SUGGEST_META } from '../suggest/core.mjs';
+import { activeOf, agentInputOpen, resolve as resolveChanges, setActive, setWindowEditor, setWorkerCall, workerIds } from '../suggest/extension.js';
 import { activeBoard, contentWidth, finishBoardEdits, migrateBoards } from '../whiteboard.js';
 import { captureSelection } from './assistant/capture.js';
 import { backgroundDraft, dropSession, flushSessions, handOver } from './assistant/sessions.js';
 import { installAgent } from './commands.js';
+import { scrollToBlock } from './commands/ui.mjs';
 import { openFind, openReplace } from './components/FindBar.jsx';
 import { notify, PasteNotice } from './components/Notices.jsx';
 import { dropDraft, moveBeside, sortDrafts } from './draft-order.mjs';
@@ -91,6 +95,122 @@ export function confirmDialog({ title, description = '', confirmText = 'OK', des
 }
 
 export const alertDialog = (title, description) => confirmDialog({ title, description, alert: true });
+
+// ---------------------------------------------------------------------------------------------
+// Suggestions (docs/plans/suggestions.md Accept, reject and undo)
+
+/** Accepts or rejects (`action`) the suggestions `sel` picks ({ids} | {group} | {all: true}) in `editor` (draft `draftId`), as
+ * `by` (a source). Every accept and reject path comes here: rejecting a change the user edited asks first. → the ids resolved,
+ * or null when the user kept them. */
+export async function resolveSuggestions(editor, draftId, sel, action, { by = 'ui' } = {}) {
+  if (!editor || editor.isDestroyed) return null;
+  const doc = editor.state.doc;
+  const pick = (e) => sel?.all || (sel?.group ? e.g === sel.group : sel?.ids?.includes(e.id));
+  const changes = entries(doc).filter(pick);
+  if (!changes.length) return [];
+  if (action === 'reject' && changes.some((e) => edited(doc, e.id)) && !(await confirmDialog({
+    title: changes.length > 1 ? 'Reject these suggestions?' : 'Reject this suggestion?',
+    description: 'You edited this suggestion. Rejecting it also removes your edits.',
+    confirmText: 'Reject',
+    destructive: true,
+  }))) return null;
+  if (editor.isDestroyed) return null;
+  return resolveChanges(editor, { ids: changes.map((e) => e.id) }, action, { by, draftId });
+}
+
+const NO_SUGGESTIONS = { groups: [], count: 0, active: null };
+let syncedDoc = null;
+
+/** The change in `list` (core.entries) whose blocks hold position `pos` (a deletion has no text to hold the caret). The end is
+ * strict: a block's end is the next block's start, where a node selection or gap cursor on that next block sits. */
+export const changeAt = (list, pos) => list.find((e) => e.nodes.some((n, k) => e.starts[k] <= pos && pos < e.starts[k] + n.nodeSize));
+
+/** Mirrors the open editor's waiting changes into state.suggestions (the cards, the status bar slot, the sidebar badge, tool
+ * search) after a transaction `tr` that changes the doc or the selection or carries the extension's meta; no `tr`: a new editor.
+ * The active change is the one under the caret when the caret moved there, else the last shown. */
+export function syncSuggestions(tr) {
+  const ed = state.editor;
+  if (tr && !tr.docChanged && !tr.selectionSet && tr.getMeta(SUGGEST_META) == null) return;
+  if (!ed || ed.isDestroyed) {
+    syncedDoc = null;
+    if (state.suggestions.count) setState({ suggestions: NO_SUGGESTIONS });
+    return;
+  }
+  const { doc, selection } = ed.state;
+  const list = entries(doc);
+  if (!list.length) {
+    syncedDoc = doc;
+    if (state.suggestions !== NO_SUGGESTIONS) setState({ suggestions: NO_SUGGESTIONS });
+    return;
+  }
+  let active = activeOf(ed.state);
+  const under = !tr || tr.selectionSet ? changeAt(list, selection.from) : null;
+  if (under && under.id !== active) {
+    const { id } = under;
+    active = id; // the decorations follow in a transaction of their own, after this one
+    queueMicrotask(() => !ed.isDestroyed && activeOf(ed.state) !== id && entries(ed.state.doc).some((e) => e.id === id) && setActive(ed, id));
+  }
+  if (!list.some((e) => e.id === active)) active = null;
+  const s = state.suggestions;
+  const same = doc === syncedDoc;
+  if (same && active === s.active) return;
+  syncedDoc = doc;
+  setState({ suggestions: { groups: same ? s.groups : groupsOf(doc), count: list.length, active } });
+}
+
+/** Makes change `id` of the open draft the active one and centres it in the page's viewport (a card row, a tab, Next, Previous). */
+export function showSuggestion(id) {
+  const ed = state.editor;
+  const e = ed && entries(ed.state.doc).find((x) => x.id === id);
+  if (!e) return false;
+  setActive(ed, id);
+  let pos = e.starts[0] ?? e.from;
+  if (e.kind === 'attr') pos = 0;
+  else if (e.kind === 'delete' && e.side === 'after') pos = e.from - (ed.state.doc.resolve(e.from).nodeBefore?.nodeSize ?? 0);
+  scrollToBlock(ed, Math.min(pos, Math.max(0, ed.state.doc.content.size - 1)));
+  return true;
+}
+
+/** Moves to the next (`dir` 1) or previous (-1) change in document order, wrapping; from the caret when none is active. */
+function stepSuggestion(dir) {
+  const ed = state.editor;
+  const list = ed ? entries(ed.state.doc) : [];
+  if (!list.length) return false;
+  let i = list.findIndex((e) => e.id === state.suggestions.active);
+  if (i < 0) {
+    const at = ed.state.selection.from;
+    i = dir > 0 ? list.findIndex((e) => e.kind !== 'attr' && e.from >= at) : list.findLastIndex((e) => e.kind === 'attr' || e.from < at);
+    if (i < 0) i = dir > 0 ? 0 : list.length - 1;
+  } else i = (i + dir + list.length) % list.length;
+  return showSuggestion(list[i].id);
+}
+export const nextSuggestion = () => stepSuggestion(1);
+export const previousSuggestion = () => stepSuggestion(-1);
+
+/** Accepts or rejects the changes `sel` picks in the open draft (resolveSuggestions); when the active change went, the first change
+ * left after it becomes active. */
+async function review(sel, action) {
+  const ed = state.editor;
+  if (!ed) return null;
+  const before = entries(ed.state.doc);
+  const at = before.findIndex((e) => e.id === state.suggestions.active);
+  const done = await resolveSuggestions(ed, state.draft?.id ?? null, sel, action);
+  if (!done?.length || ed.isDestroyed) return done;
+  const left = new Set(entries(ed.state.doc).map((e) => e.id));
+  if (at >= 0 && !left.has(before[at].id)) setActive(ed, before.slice(at + 1).find((e) => left.has(e.id))?.id ?? null);
+  return done;
+}
+const activeGroup = () => state.suggestions.groups.find((g) => g.changes.some((e) => e.id === state.suggestions.active))?.g;
+/** The review actions of the cards, the keys, the status bar and tool search: the active change, a group (default: the active
+ * change's), or every change in the draft. */
+export const acceptActive = () => state.suggestions.active && review({ ids: [state.suggestions.active] }, 'accept');
+export const rejectActive = () => state.suggestions.active && review({ ids: [state.suggestions.active] }, 'reject');
+export const acceptChange = (id) => review({ ids: [id] }, 'accept');
+export const rejectChange = (id) => review({ ids: [id] }, 'reject');
+export const acceptGroup = (g = activeGroup()) => g && review({ group: g }, 'accept');
+export const rejectGroup = (g = activeGroup()) => g && review({ group: g }, 'reject');
+export const acceptAll = () => review({ all: true }, 'accept');
+export const rejectAll = () => review({ all: true }, 'reject');
 
 // ---------------------------------------------------------------------------------------------
 // Settings, theme, zoom
@@ -177,7 +297,7 @@ function applyPage() {
 export function applyPageTheme() {
   const root = document.documentElement;
   const page = state.settings.theme === 'light' ? 'light' : 'dark';
-  const theme = formatOf(state.draft, state.settings)?.id === 'document' && state.view.type === 'editor' ? 'light' : page;
+  const theme = state.view.type === 'editor' ? drawTheme(state.draft, state.settings) : page;
   root.dataset.canvasTheme = page;
   if (root.dataset.theme === theme) return;
   root.dataset.theme = theme;
@@ -452,6 +572,8 @@ function mountEditor(doc, historyFile = null, keep = state.settings.historyLimit
   ed.on('transaction', ({ transaction, appendedTransactions }) => recordRev(transaction, appendedTransactions));
   // A Document's page setup changed (tr.setDocAttribute, undo too): the sheet follows.
   ed.on('transaction', ({ transaction }) => transaction.before.attrs.sect !== ed.state.doc.attrs.sect && applyPage());
+  ed.on('transaction', ({ transaction }) => syncSuggestions(transaction));
+  syncSuggestions();
   updateWordCount();
   renderSaveStatus(); // also re-renders the toolbar, which follows the new editor (useEditor)
   homeView(); // every draft opens with its page in the home view
@@ -538,9 +660,10 @@ export function saveOther(draft, ed, log) {
   return saveChain;
 }
 
+// `draft`: a draft (its marks read from its doc) or a summary entry (the background window's save, marks included).
 function upsertDraftEntry(draft) {
   const entry = { id: draft.id, title: draft.title, threadUrl: draft.threadUrl, updated: draft.updated, pushedAt: draft.pushedAt,
-    format: draft.format ?? null };
+    format: draft.format ?? null, ...(draft.doc ? draftMarks(draft.doc) : { suggestions: draft.suggestions ?? 0, flows: draft.flows ?? [] }) };
   setState({ drafts: [entry, ...state.drafts.filter((d) => d.id !== draft.id)].sort((a, b) => b.updated - a.updated) });
 }
 
@@ -947,6 +1070,8 @@ export async function changeSettings(values) {
 
 const WINDOW_ZOOM = { 'app.zoomIn': 1, 'app.zoomOut': -1, 'app.zoomReset': 0 };
 const PRESETS = [1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => `text.preset${n}`);
+const SUGGEST_ACTIONS = { 'suggest.next': nextSuggestion, 'suggest.previous': previousSuggestion, 'suggest.accept': acceptActive, 'suggest.reject': rejectActive };
+const SUGGEST_KEYS = Object.keys(SUGGEST_ACTIONS);
 const go = (e, fn) => {
   e.preventDefault();
   fn();
@@ -988,6 +1113,10 @@ function onKeyDown(e) {
     go(e, () => e.repeat || startNewDraft()); // from a workspace too, as the sidebar button
   } else if (!can('view.editor', state)) {
     // A workspace (§7g): no document shortcuts.
+  } else if (state.suggestions.count && keyAmong(SUGGEST_KEYS, e) && !e.target.closest?.('input, textarea, select')) {
+    // The open draft's waiting agent edits (docs/plans/suggestions.md Keys). An agent's keys never decide them (Open decision 11):
+    // the background window's input is all an agent's, and the main window's is while a computer.act or press scope is open.
+    go(e, agentInputOpen() || window.__worker ? () => {} : SUGGEST_ACTIONS[keyAmong(SUGGEST_KEYS, e)]);
   } else if (keyIs('text.link', e)) {
     go(e, openLinkDialog);
   } else if (keyIs('app.sidebar', e)) {
@@ -1115,6 +1244,7 @@ function bindStatic() {
 // Startup (main.jsx calls start() once <App/> is in the DOM)
 
 async function init() {
+  setWindowEditor(() => state.editor); // agent presses on the main window reach the open draft's editor (suggest/extension.js)
   setState({ settings: await api.settings.get() });
   bindStatic();
   applySettings();
@@ -1171,7 +1301,8 @@ function startGitHub() {
  * main, with the draft it holds (null: it could not load it) and release(), its last change saved before main closes it. */
 async function startWorker() {
   await openDraft(WORKER_DRAFT, { remember: false });
-  window.__worker = { draftId: state.draft?.id ?? null, release: () => { commitBoardEdit(); return saveNow(); } };
+  // setCall: the agent call each computer.act here belongs to, so its edits wait as that call's suggestions (null: none).
+  window.__worker = { draftId: state.draft?.id ?? null, release: () => { commitBoardEdit(); return saveNow(); }, setCall: setWorkerCall, callIds: workerIds };
 }
 
 /** The user's window follows the background window (§7i Background window): the draft it has (the sidebar badge, the chat

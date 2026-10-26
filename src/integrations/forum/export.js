@@ -3,6 +3,7 @@ import { flowSource } from '../../canvas.js';
 import { boardPicture, drawnColumnWidths, setColumnWidths } from '../../export.js';
 import { validFlow } from '../../flow/library.mjs';
 import { pageOf } from '../../formats.mjs';
+import { pendingCount } from '../../suggest/core.mjs';
 import { WB_BG } from '../../whiteboard.js';
 import { applyBaseStyles, replaceWhiteboards } from './post.mjs';
 
@@ -44,6 +45,8 @@ function sizedTablesJSON(editor) {
 
 /** Builds `{html, images}` of `draft`, shown in `editor`, for api.forum.push (SPEC §5). */
 export async function buildPayload(editor, settings, draft) {
+  // A suggestion waiting in the draft would go out with no record of it (docs/plans/suggestions.md, gate draft.settled).
+  if (pendingCount(editor.state.doc) > 0) throw new Error('Suggestions wait in this draft. Accept or reject them in the draft first.');
   const { doc, boards: nodes } = replaceWhiteboards(applyBaseStyles(sizedTablesJSON(editor), settings));
   const html = generateHTML(doc, editor.extensionManager.extensions);
   // A synced canvas exports what it shows: its library flowchart's live board; a missing record, its own attrs (the cache).

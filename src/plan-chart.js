@@ -410,7 +410,8 @@ export const PlanChart = Node.create({
   },
 
   renderHTML({ node }) {
-    return ['div', { 'data-plan-chart': '', 'data-json': JSON.stringify(node.attrs) }];
+    const { suggest, ...attrs } = node.attrs; // a suggestion's record never leaves the editor (copy, push)
+    return ['div', { 'data-plan-chart': '', 'data-json': JSON.stringify(attrs) }];
   },
 
   addCommands() {

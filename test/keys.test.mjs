@@ -116,3 +116,15 @@ test('Ctrl+N opens New draft everywhere and collides with nothing (N alone stays
   assert.equal(collisions(DEFS, b)['app.newDraft'], undefined);
   assert.deepEqual(DEFS.filter((d) => b[d.id].includes('Ctrl+N')).map((d) => d.id), ['app.newDraft']);
 });
+
+test('Suggestions: the four chords, no collisions, none an AltGr character; Ctrl+Alt+[ and ] warn as AltGr', () => {
+  const b = effective(DEFS);
+  assert.deepEqual(['suggest.next', 'suggest.previous', 'suggest.accept', 'suggest.reject'].map((id) => b[id]),
+    [['Ctrl+Alt+PageDown'], ['Ctrl+Alt+PageUp'], ['Ctrl+Alt+Enter'], ['Ctrl+Alt+Backspace']]);
+  assert.ok(DEFS.filter((d) => d.id.startsWith('suggest.')).every((d) => d.group === 'Suggestions' && d.scope === 'editor'));
+  assert.ok(GROUPS.includes('Suggestions'));
+  assert.deepEqual(collisions(DEFS, b), {});
+  for (const id of ['suggest.next', 'suggest.previous', 'suggest.accept', 'suggest.reject']) assert.equal(windowsUse(b[id][0]), null, id);
+  assert.equal(windowsUse('Ctrl+Alt+]').level, 'layout');
+  assert.equal(windowsUse('Ctrl+Alt+[').level, 'layout');
+});

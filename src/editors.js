@@ -11,6 +11,7 @@ import { ColumnDrag, forumExtensions, InactiveSelection, TEXT_KEYS, textKeys, TI
 import { Find } from './find.js';
 import { formatOf, pageOf } from './formats.mjs';
 import { PlanChart } from './plan-chart.js';
+import { Suggestions } from './suggest/extension.js';
 import { migrateBoards, WhiteboardPaste } from './whiteboard.js';
 
 // The Document's text shortcuts: the shared ids whose commands exist in its schema (no code, quote or code block; chain() on a
@@ -43,10 +44,13 @@ const DocumentKeys = textKeys({ ...Object.fromEntries(Object.entries(TEXT_KEYS).
   new Set([...TIPTAP_CHORDS, 'Ctrl+Enter']));
 
 /** The Document's editor: its own schema (document/schema.js) plus the shared app blocks and the keys. */
-const documentKit = (depth) => [...documentExtensions(depth), ColumnDrag, WhiteboardPaste, Canvas, PlanChart, CopyPicture, Find, InactiveSelection, DocumentKeys];
+const documentKit = (depth) => [...documentExtensions(depth), ColumnDrag, WhiteboardPaste, Canvas, PlanChart, CopyPicture, Find, InactiveSelection, DocumentKeys,
+  Suggestions];
+/** The forum post's editor: its extensions plus agent edits as suggestions (docs/plans/suggestions.md), which every kit carries. */
+const forumKit = (depth) => [...forumExtensions(depth), Suggestions];
 
 // Format id → the function that lists its editor extensions for an undo depth. The core page shares the forum post's.
-const EXTENSIONS = { 'forum-post': forumExtensions, page: forumExtensions, document: documentKit };
+const EXTENSIONS = { 'forum-post': forumKit, page: forumKit, document: documentKit };
 const kits = new Map();
 
 /** The kit of format `id`: {extensions(depth) (a fresh list per editor), schema, markdown (a MarkdownManager on JSON, so it

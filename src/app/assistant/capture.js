@@ -8,6 +8,8 @@ import { statusOf } from '../../plan/plan-model.mjs';
 import { planSource } from '../../plan-chart.js';
 import { formatOf } from '../../formats.mjs';
 import { situationNotes } from '../../integrations/index.mjs';
+import { entries } from '../../suggest/core.mjs';
+import { decisions } from '../../suggest/extension.js';
 import { activeBoard } from '../../whiteboard.js';
 import { selection } from '../commands.js';
 import { assistantMode } from '../commands/tool-sets.mjs';
@@ -41,7 +43,8 @@ function planOf(attrs) {
 
 /** Board {w, h, bg, items} as marks.mjs boardPicture draws it, the badges in the order `order` (the attachment's legend) → {url
  * (a PNG data URL), size (its size line, wave 2b: "1280 x 512 of a 1000 x 400 board"; `what` 'image' for an image)}. */
-const picture = (board, order, what) => boardPicture(board, { theme: getState().settings?.theme === 'light' ? 'light' : 'dark', order, what })
+// In the theme the board is drawn in (the root's data-theme: light on a Document's paper).
+const picture = (board, order, what) => boardPicture(board, { theme: document.documentElement.dataset.theme === 'light' ? 'light' : 'dark', order, what })
   .then((p) => ({ url: p.url, size: p.size }));
 
 export function captureSelection() {
@@ -132,25 +135,46 @@ export function situation(parts = [], viewKey = '') {
     scope,
     projectNote: situationNotes(draft, settings),
     permission,
+    suggest: permission === 'readonly' ? null : suggestLine(st, settings), // Read only edits nothing (loop.js suggesting)
     playbooks: google ? [] : pickPlaybooks({ parts, view: viewKey, permission }),
   });
+}
+
+/** The note's suggestions line (docs/plans/suggestions.md) while auto-approve is off: the open draft's waiting changes, the
+ * assistant's among them, and the changes of the assistant's that the user accepted or rejected since its last turn began
+ * (extension.js decisions; a withdrawal by the assistant itself does not count). null with auto-approve on. */
+function suggestLine(st, settings) {
+  if (settings.assistant?.autoApproveEdits === true) return null;
+  const waiting = st.editor && st.draft ? entries(st.editor.state.doc) : [];
+  const since = st.assistant?.lastTurnAt ?? st.assistant?.turn?.lastTurnAt ?? 0; // assistant.js send() keeps the previous turn's start
+  const theirs = decisions().filter((d) => d.at > since && d.author === 'agent:assistant' && d.by !== 'agent:assistant');
+  const count = (action) => theirs.filter((d) => d.action === action).reduce((n, d) => n + d.ids.length, 0);
+  return { waiting: waiting.length, mine: waiting.filter((e) => e.by === 'agent:assistant').length, accepted: count('accept'), rejected: count('reject') };
 }
 
 const OUTLINE_BLOCKS = 120; // blocks in the note's outline; a longer draft says how many more
 
 /** The open draft's top-level blocks for the situation note (Google AI): "[3] paragraph: The first words..." per block, a board as
- * "[6] canvas, 7 items, 1454 x 989", the start of its text cut at 100 characters with its length. */
+ * "[6] canvas, 7 items, 1454 x 989", the start of its text cut at 100 characters with its length; a block with a waiting
+ * suggestion ends "(pending: replace s7k2a1)" or "(pending: deleted before: 2 blocks s8m3q0)", as doc_get outline's pending. */
 function outlineLines(doc) {
   const out = [];
+  const kinds = new Map(entries(doc).map((e) => [e.id, e.kind]));
+  const pending = (r) => [
+    ...(r?.ins ? [`${kinds.get(r.ins.id) ?? 'insert'} ${r.ins.id}`] : []),
+    ...(r?.del ?? []).map((d) => `deleted ${d.side}: ${d.old.length} block${d.old.length === 1 ? '' : 's'} ${d.id}`),
+  ];
   doc.forEach((n, _, i) => {
     if (i >= OUTLINE_BLOCKS) return;
     const a = n.attrs ?? {};
+    const p = pending(a.suggest);
+    const mark = p.length ? ` (pending: ${p.join('; ')})` : '';
     if (Array.isArray(a.items)) {
-      out.push(`[${i}] ${n.type.name}, ${a.items.length} item${a.items.length === 1 ? '' : 's'}${a.w ? `, ${a.w} x ${a.h}` : ''}`);
+      out.push(`[${i}] ${n.type.name}, ${a.items.length} item${a.items.length === 1 ? '' : 's'}${a.w ? `, ${a.w} x ${a.h}` : ''}${mark}`);
       return;
     }
     const t = n.textContent.replace(/\s+/g, ' ').trim();
-    out.push(`[${i}] ${n.type.name}${n.type.name === 'heading' ? ` ${a.level}` : ''}${t ? `: ${t.length > 100 ? `${t.slice(0, 100)}... (${t.length} characters)` : t}` : ''}`);
+    out.push(`[${i}] ${n.type.name}${n.type.name === 'heading' ? ` ${a.level}` : ''}${t ? `: ${t.length > 100 ? `${t.slice(0, 100)}... (${t.length} characters)` : t}` : ''}${mark}`);
   });
   if (doc.childCount > OUTLINE_BLOCKS) out.push(`... ${doc.childCount - OUTLINE_BLOCKS} more blocks (doc_get outline lists them)`);
   return out;

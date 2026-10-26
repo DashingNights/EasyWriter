@@ -113,7 +113,8 @@ function Palette({ board, at }) {
   };
   return (
     <Dialog open modal={false} onOpenChange={(open) => !open && closeToolSearch()}>
-      <DialogContent {...CHROME} ref={(el) => place(el, at)} showCloseButton={false} onCloseAutoFocus={(e) => e.preventDefault()}
+      {/* data-agent-deny: agents run tools with tool.run, which refuses the entries only the user may run (headless false). */}
+      <DialogContent {...CHROME} data-agent-deny ref={(el) => place(el, at)} showCloseButton={false} onCloseAutoFocus={(e) => e.preventDefault()}
         className="top-auto left-auto translate-x-0 translate-y-0 gap-0 overflow-hidden rounded-(--radius-island) bg-island p-0 shadow-xl duration-(--motion-menus) sm:max-w-md data-flip:[&_[data-slot=command]]:flex-col-reverse data-flip:[&_[data-slot=command-input-wrapper]]:border-t data-flip:[&_[data-slot=command-input-wrapper]]:border-b-0">
         <DialogTitle className="sr-only">Tool search</DialogTitle>
         <DialogDescription className="sr-only">Type a tool name. Enter switches to it, Tab opens its options.</DialogDescription>

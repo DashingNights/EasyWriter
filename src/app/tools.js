@@ -1,7 +1,7 @@
 import { createElement as h, useEffect, useRef } from 'react';
 import { NodeSelection } from '@tiptap/pm/state';
 import {
-  ALargeSmall, AppWindow, BringToFront, CaseSensitive, ClipboardPaste, Copy, CopyPlus, Crop, Eraser, Eye, EyeOff, FilePlus, FileText, FolderInput, FolderPlus, Group, Heading1,
+  ALargeSmall, AppWindow, BadgeCheck, BringToFront, Check, CheckCheck, ChevronDown, ChevronUp, ListChecks, ListX, CaseSensitive, ClipboardPaste, Copy, CopyPlus, Crop, Eraser, Eye, EyeOff, FilePlus, FileText, FolderInput, FolderPlus, Group, Heading1,
   Heading2, Heading3, Globe, Heading4, Heading5, Heading6, ImagePlus, Layers, Lock, LockOpen, Magnet, MessagesSquare, MousePointer2, MoveHorizontal, PaintBucket, Palette, Pen, Pencil, Pilcrow, Pin, Puzzle, Redo2, Save,
   Replace, Scaling, Scissors, Search, MessageSquare, SendToBack, Settings, Shapes, SlidersHorizontal, SpellCheck, SquarePen, TableColumnsSplit, TableRowsSplit, Tag, Trash2,
   Type, Undo2, Ungroup, Workflow, X, PenLine,
@@ -15,7 +15,8 @@ import { FONTS, TEXT_COLORS } from '../extensions.js';
 import { KINDS } from '../flow/shapes.mjs';
 import { all } from '../integrations/ui.js';
 import {
-  applyPresetAt, canPaste, commitBoardEdit, copyDraft, cutDraft, deleteDraft, openSettings, pasteDraft, saveNow, startNewDraft, threadLabel,
+  acceptActive, acceptAll, acceptGroup, applyPresetAt, canPaste, commitBoardEdit, copyDraft, cutDraft, deleteDraft, nextSuggestion, openSettings,
+  pasteDraft, previousSuggestion, rejectActive, rejectAll, rejectGroup, saveNow, startNewDraft, threadLabel,
 } from './actions.js';
 import { assistantSettings, saveAssistant, toggleChat } from './assistant/assistant.js';
 import { closePanes, HOME, newTab, openPane, openPanes } from './browser.js';
@@ -52,13 +53,13 @@ import { PLAN_TOOLS } from './tools-plan.js';
 // what tool.run applies (commands/tool.mjs). ctx: see toolContext().
 
 /** What the entries look at: the editor `ed` with its toolbar definitions `T` (a Document's own, document/tools.js), the main column's `view` (§7g), the
- * `board` the search serves (null: the document) with its `snap`shot, the font presets, `flow`: flowchart mode (§7c), and
- * `block`: the node-selected block (selectedBlock). */
+ * `board` the search serves (null: the document) with its `snap`shot, the font presets, `flow`: flowchart mode (§7c),
+ * `block`: the node-selected block (selectedBlock), and `suggestions`: the open draft's waiting agent edits (their count). */
 export function toolContext(board) {
-  const { editor: ed, settings, view } = getState();
+  const { editor: ed, settings, view, suggestions } = getState();
   const snap = board && !board.destroyed ? board.getSnapshot() : null;
   return { ed, view, T: inDocument() ? documentTools(ed) : textTools(ed), board, snap, presets: settings?.presets ?? [], flow: flowchartMode(view, snap?.kind === 'canvas' ? board.attrs : null),
-    block: selectedBlock(ed, view) };
+    block: selectedBlock(ed, view), suggestions: suggestions.count };
 }
 
 /** The editor's node-selected block as the gates' `node` subject {type, attrs, kind, view}, null with a caret or text
@@ -82,8 +83,8 @@ function subjectOf(kind, c) {
     case 'doc': return c.ed && { inTable: c.ed.isActive('table') };
     case 'history': return c.snap ?? (c.ed && { canUndo: c.ed.can().undo(), canRedo: c.ed.can().redo() });
     case 'draft': {
-      const d = getState().draft;
-      return d && { ...d, threads: getState().settings?.threads };
+      const d = getState().draft; // the loaded file: its waiting suggestions are the live count (gate draft.settled)
+      return d && { ...d, threads: getState().settings?.threads, suggestions: getState().suggestions.count };
     }
     case 'settings': return getState().settings;
     case 'node': return c.block;
@@ -414,8 +415,40 @@ const APP = [
     options: () => h(FolderPick), keywords: ['folder', 'move', 'file', 'organise', 'organize', 'group', 'directory'] },
 ];
 
+// Agent edits waiting as suggestions (docs/plans/suggestions.md Tool search): shown while the open draft has some. Agents only
+// move between them (headless): accepting and rejecting is the user's (suggestions.resolve asks the user when an agent does it).
+// Each entry has its own verbs: shared ones tie in rankTool's exact-keyword tier, and ties keep registry order ("reject" would pick Next).
+const WORDS = ['suggestion', 'suggestions', 'suggest', 'review', 'track changes', 'tracked changes', 'comment', 'ai edits', 'assistant edits',
+  'agent edits', 'pending'];
+const ACCEPT = [...WORDS, 'accept', 'approve', 'keep'];
+const REJECT = [...WORDS, 'reject', 'decline', 'discard'];
+const waiting = (c) => c.suggestions > 0 && noBoard(c);
+const activeChange = (c) => waiting(c) && !!getState().suggestions.active;
+const SUGGEST = [
+  { id: 'suggestion-next', label: 'Next suggestion', group: 'Edit', icon: h(ChevronDown), key: 'suggest.next', needs: TEXT, also: waiting,
+    run: nextSuggestion, keywords: [...WORDS, 'next change'] },
+  { id: 'suggestion-previous', label: 'Previous suggestion', group: 'Edit', icon: h(ChevronUp), key: 'suggest.previous', needs: TEXT, also: waiting,
+    run: previousSuggestion, keywords: [...WORDS, 'previous change'] },
+  { id: 'suggestion-accept', label: 'Accept suggestion', group: 'Edit', icon: h(Check), key: 'suggest.accept', needs: TEXT, also: activeChange,
+    run: acceptActive, headless: false, keywords: ACCEPT },
+  { id: 'suggestion-reject', label: 'Reject suggestion', group: 'Edit', icon: h(X), key: 'suggest.reject', needs: TEXT, also: activeChange,
+    run: rejectActive, headless: false, keywords: REJECT },
+  { id: 'suggestion-group-accept', label: 'Accept suggestions from this request', group: 'Edit', icon: h(ListChecks), needs: TEXT, also: activeChange,
+    run: () => acceptGroup(), headless: false, keywords: [...ACCEPT, 'request'] },
+  { id: 'suggestion-group-reject', label: 'Reject suggestions from this request', group: 'Edit', icon: h(ListX), needs: TEXT, also: activeChange,
+    run: () => rejectGroup(), headless: false, keywords: [...REJECT, 'request'] },
+  { id: 'suggestions-accept-all', label: 'Accept all suggestions', group: 'Edit', icon: h(CheckCheck), needs: TEXT, also: waiting,
+    run: acceptAll, headless: false, keywords: ACCEPT },
+  { id: 'suggestions-reject-all', label: 'Reject all suggestions', group: 'Edit', icon: h(X), needs: TEXT, also: waiting,
+    run: rejectAll, headless: false, keywords: REJECT },
+  // Settings > Assistant > Permissions; headless false like that section's data-agent-deny: agents never change their own policy.
+  { id: 'auto-approve-edits', label: 'Auto-approve assistant edits', group: 'App', icon: h(BadgeCheck), toggle: true, headless: false,
+    active: () => assistantSettings().autoApproveEdits === true, run: () => saveAssistant({ autoApproveEdits: assistantSettings().autoApproveEdits !== true }),
+    keywords: ['auto approve', 'assistant edits', 'ai edits', 'agent edits', 'suggestions', 'track changes'] },
+];
+
 const TEXT_IDS = ['add-text', 'connector-label']; // flowchart mode's Text section (the shape kinds have their category)
-const TOOLS = [...CORE, ...DOC_TOOLS, ...APP, ...PLAN_TOOLS, ...FLOW_TOOLS, ...all('TOOLS')].map(withWhen).map((t) => (TEXT_IDS.includes(t.id) ? { ...t, category: 'text' } : t));
+const TOOLS = [...CORE, ...SUGGEST, ...DOC_TOOLS, ...APP, ...PLAN_TOOLS, ...FLOW_TOOLS, ...all('TOOLS')].map(withWhen).map((t) => (TEXT_IDS.includes(t.id) ? { ...t, category: 'text' } : t));
 
 /** Every entry in registry order, with one entry per font preset. */
 const allTools = (c) => [...TOOLS, ...c.presets.map((p, i) => withWhen({
