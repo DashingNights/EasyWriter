@@ -33,8 +33,9 @@ Model text drifts to the most probable structure: preview, three even sections, 
 |---|---|---|
 | Negative parallelism | "It's not X, it's Y." "Not just X but Y." | State Y. Mention X only if the reader actually believes X. |
 | Padded triads | "fast, reliable, and scalable" | List what exists. Two items is a list; so is four. |
-| Em dashes | "the gate — the key part — runs first" | Comma, colon, brackets or a new sentence. Default to none. |
+| Em dashes | "the gate — the key part — runs first" | A new sentence, brackets, a colon or a joining word (but, so, because). Default to none. |
 | Participle tails | "..., highlighting the need for X." | A new sentence with its own subject and verb, or cut it. |
+| Comma joins | "existing systems solve the parts, never the governed world"; "the build passed, the harness failed" | Join with the word that names the relation (but, and, so, because): "solve the parts but never the governed world". Or write two sentences. Lists, an opening clause and a real aside keep their commas. |
 | Nominalisations | "carry out an analysis of" | "analyse" |
 | Stock words | delve, tapestry, testament, pivotal, robust, seamless, landscape, realm, underscore, intricate, multifaceted, foster, navigate (figurative), unlock, elevate, empower, embark, journey (figurative), beacon, game-changer | The plain word, or the number behind it. |
 | Puffery | "stands as a testament to", "plays a vital role", "serves as" | "is", "has", or what it does. |
@@ -90,11 +91,12 @@ After:
 ## Check before sending
 
 1. Any em dash? Replace it.
-2. Any "not X, but Y" or "not just"? Rewrite it as the positive claim.
-3. Any list of three? Check that the third item is real.
-4. Any stock word from the table? Swap it.
-5. Does the last sentence or paragraph repeat an earlier one? Delete it.
-6. Any factual claim with no name, number or source? Add one or cut the claim.
-7. Three sentences in a row with the same length or opening? Change one.
-8. In replies: does the first line answer the question?
-9. Could this text be pasted into another conversation unchanged? Then it is too generic: add what is specific to this one.
+2. Any comma that joins two clauses or hangs a fragment on the end? Use but, and, so or because, or make two sentences.
+3. Any "not X, but Y" or "not just"? Rewrite it as the positive claim.
+4. Any list of three? Check that the third item is real.
+5. Any stock word from the table? Swap it.
+6. Does the last sentence or paragraph repeat an earlier one? Delete it.
+7. Any factual claim with no name, number or source? Add one or cut the claim.
+8. Three sentences in a row with the same length or opening? Change one.
+9. In replies: does the first line answer the question?
+10. Could this text be pasted into another conversation unchanged? Then it is too generic: add what is specific to this one.

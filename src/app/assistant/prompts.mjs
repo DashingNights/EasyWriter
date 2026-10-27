@@ -9,17 +9,19 @@ export const SYSTEM_PROMPT = 'You are the assistant in EasyWriter, a desktop app
 export const NOTE_RULE = 'The situation note is current. Earlier replies may be out of date because the user can change things between '
   + 'messages. Check it before acting.';
 export const UI_RULE = 'Use ui_snapshot and ui_invoke only when no other tool does the job.'; // while on-screen controls are on
-// The plain output rules (plan §13.13 (b), user rules 2026-10-06), in every request: one bad and one good example each.
+// The plain output rules (plan §13.13 (b), user rules 2026-10-06 and 2026-10-27), in every request: one bad and one good example each.
 // style-lint.mjs checks the replies and the text the model writes against the same rules.
 export const STYLE_RULE = [
   'Writing rules, for your replies and for any text you put in a draft or on a board:',
-  '- Use only characters on a keyboard. No em or en dashes, curly quotes, arrows or emoji. Join clauses with a comma or a full stop.',
+  '- Use only characters on a keyboard. No em or en dashes, curly quotes, arrows or emoji.',
+  '- No comma joins. Link clauses with but, and, so or because, or use a full stop. Bad: "Existing systems solve the parts, never the governed world." Good: "Existing systems solve the parts but never the governed world."',
+  '- No phrase hung on the end of a sentence after a comma, such as ", choosing ..." or ", all tested ...". Give it its own sentence. Bad: "It picks a level every frame, choosing the cheapest mix." Good: "It picks a level every frame. It chooses the cheapest mix."',
   '- No contrast frames. Bad: "It\'s not a bug, it\'s a feature." Good: "It works as designed."',
   '- No groups of three for rhythm and no three short sentences in a row. Bad: "Clear, simple, but powerful." Good: "Clear and simple."',
   '- Say a thing once, with no stacked intensifiers. Bad: "really very important". Good: "important".',
   '- No filler openers or hedges. Bad: "Great question! It\'s worth noting that the map is wide." Good: "The map is wide."',
 ].join('\n');
-// EasyWriter's writing guide (src/assistant/human-writing.md, taken from the user's HUMAN-WRITING.md on 2026-10-25), its own section
+// EasyWriter's writing guide (src/assistant/human-writing.md, the user's HUMAN-WRITING.md as of 2026-10-27), its own section
 // after STYLE_RULE while settings.assistant.humanWriting is on. It shapes prose only, so this line keeps the calls as the tools need them.
 export const GUIDE_RULE = 'The writing guide below applies to the prose you write: your replies and the text you put in a draft or on a board. '
   + 'It never changes tool names, argument names, ids, paths, numbers, JSON or any other value a tool needs.';
