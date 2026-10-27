@@ -18,11 +18,11 @@
     "smoke:agent": "npm run build && electron . --smoke --data-dir=.smoke-data --script=test/smoke/agent-basic.json",
     "smoke:forum": "npm run build && node -e \"const fs=require('fs'),d='.smoke-data/forum';fs.rmSync(d,{recursive:true,force:true});fs.mkdirSync(d,{recursive:true});fs.writeFileSync(d+'/settings.json',JSON.stringify({onboarded:true,demoSeeded:true,integrations:{forum:{enabled:true}},forumUrl:'https://forum.test'}))\" && electron . --smoke --data-dir=.smoke-data/forum --script=test/smoke/agent-forum.json",
     "smoke:document": "npm run build && node -e \"const fs=require('fs'),d='.smoke-data/document';fs.rmSync(d,{recursive:true,force:true});fs.mkdirSync(d,{recursive:true});fs.writeFileSync(d+'/settings.json',JSON.stringify({onboarded:true,demoSeeded:true}))\" && electron . --smoke --data-dir=.smoke-data/document --script=test/smoke/agent-document.json",
-    "shots": "npm run build && node -e \"const fs=require('fs'),d='.smoke-data/shots',p='3f1c2a9e-4b7d-4f1e-9c2a-7d5e1f0b8a21';fs.rmSync(d,{recursive:true,force:true});fs.mkdirSync(d+'/plans',{recursive:true});fs.copyFileSync('test/fixtures/plan-sample.json',d+'/plans/'+p+'.json');fs.writeFileSync(d+'/settings.json',JSON.stringify({onboarded:true,lastView:{type:'plan',planId:p,tab:'board'}}))\" && electron . --smoke --data-dir=.smoke-data/shots --script=docs/screenshots.json",
     "assistant:eval": "npm run build && electron test/assistant-eval/run.js",
     "assistant:matrix": "node test/assistant-eval/matrix.js",
     "test": "node --test \"test/*.test.*\"",
     "icon": "electron scripts/make-icon.js build/icon.svg build",
+    "readme-art": "npm run build && electron scripts/readme-art.js",
     "shortcuts": "powershell -NoProfile -ExecutionPolicy Bypass -File shortcuts.ps1",
     "dist": "npm run build && electron-builder --win --publish never",
     "release": "npm run build && electron-builder --win --publish always"
@@ -54,12 +54,17 @@
         "nsis",
         "zip"
       ],
-      "icon": "build/icon.ico"
+      "icon": "build/icon.ico",
+      "artifactName": "${productName}-Portable.${ext}"
     },
     "nsis": {
       "oneClick": false,
       "perMachine": false,
-      "allowToChangeInstallationDirectory": true
+      "allowToChangeInstallationDirectory": true,
+      "artifactName": "${productName}-Setup.${ext}",
+      "installerSidebar": "build/installerSidebar.bmp",
+      "uninstallerSidebar": "build/installerSidebar.bmp",
+      "installerHeader": "build/installerHeader.bmp"
     },
     "publish": [
       {

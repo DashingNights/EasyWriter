@@ -672,7 +672,9 @@ function downloadPortable() {
   return portableDownload ??= (async () => {
     const { version, yml } = portableOffer;
     fsSync.rmSync(UPDATE_DIR, { recursive: true, force: true }); // any half download or an older extracted update
-    const name = `EasyWriter-${version}-win.zip`;
+    // One name in every release, so the README can link to it. Copies before it look for EasyWriter-<version>-win.zip, which
+    // the release workflow uploads too.
+    const name = 'EasyWriter-Portable.zip';
     const zip = path.join(UPDATE_DIR, name);
     const fresh = path.join(UPDATE_DIR, 'new');
     const marker = path.join(UPDATE_DIR, 'version');
@@ -764,7 +766,7 @@ function runSmoke(win) {
 
 // --script=<file>: window.__agent.script(steps) once the app has started; per-step {req, res, pass} into smoke-agent.json;
 // exit 1 when a step fails its expect. Drafts persist into the data dir (only __smoke() sets state.smoke).
-// A step {"shot": "<file>.png"} (docs/screenshots.json, npm run shots) saves the 1600 x 900 window as that file: the steps
+// A step {"shot": "<file>.png"} saves the 1600 x 900 window as that file: the steps
 // before it run as one script, so "$steps[n]" counts from the last shot. It waits 1 s first, or "wait" ms (a notice fading out).
 async function runScript(win, outDir) {
   const steps = JSON.parse(await fs.readFile(path.resolve(SCRIPT), 'utf8'));

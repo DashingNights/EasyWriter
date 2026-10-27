@@ -858,9 +858,9 @@ function localPoint(wb, event) {
 
 // One new smart canvas (§6b) per image at `insertPos` or the selection (after a node-selected canvas): artboard = the
 // image's natural size (≤ 8000 px), the image at 0,0, displayed at most as wide as the page content. A video or GIF is a
-// media node instead.
-async function addImages(view, files, insertPos = null) {
-  if (view.state.schema.nodes.image) return addPictures(view, files, insertPos);
+// media node instead. A Document takes inline pictures, unless `canvas` (the tutorial's dog, which it then annotates).
+async function addImages(view, files, insertPos = null, canvas = false) {
+  if (view.state.schema.nodes.image && !canvas) return addPictures(view, files, insertPos);
   const images = (await Promise.all(files.map((f) => (isMedia(f) ? readMedia(f) : readImage(f))))).filter(Boolean);
   if (!images.length || view.isDestroyed) return;
   const { state } = view;
@@ -906,10 +906,10 @@ export function pictureSize(img, maxW) {
   return { width: w, height: h };
 }
 
-export function addImageFilesToEditor(editor, files) {
+export function addImageFilesToEditor(editor, files, { canvas = false } = {}) {
   const list = postFiles({ files });
   if (!list.length) return Promise.resolve();
-  return addImages(editor.view, list);
+  return addImages(editor.view, list, null, canvas);
 }
 
 // Undo / redo started from a board (also a canvas being edited) must not scroll the document to its text selection, which can be

@@ -1,85 +1,81 @@
-# Download
-Download installer: [EasyWriter-Setup-x.x.x.exe](https://github.com/DashingNights/EasyWriter/releases/latest) \
-Download Portable (school computers): [EasyWriter-x.x.x-win.zip](https://github.com/DashingNights/EasyWriter/releases/latest)
+<!-- The pictures in docs/img come from `npm run readme-art` (scripts/readme-art.js). Run it again when the app's look changes.
+     The download links name no version: every release has EasyWriter-Setup.exe and EasyWriter-Portable.zip. -->
 
-# EasyWriter
+<p align="center">
+  <img src="docs/img/banner.webp" width="100%" alt="EasyWriter. Write, draw and plan your project in one app.">
+</p>
 
-EasyWriter is a Windows desktop editor for project writing, with canvases, flowcharts and plans built in. Drafts belong to projects. An optional integration links projects to threads of an Invision Community forum.
+<p align="center">
+  <a href="https://github.com/DashingNights/EasyWriter/releases/latest/download/EasyWriter-Setup.exe"><img src="docs/img/download-installer.webp" height="56" alt="Download for Windows (installer)"></a>&nbsp;&nbsp;<a href="https://github.com/DashingNights/EasyWriter/releases/latest/download/EasyWriter-Portable.zip"><img src="docs/img/download-portable.webp" height="56" alt="Download the portable version (no install needed)"></a>
+</p>
 
-![The EasyWriter editor with the welcome draft open](docs/img/editor.png)
+<p align="center">
+  <a href="https://github.com/DashingNights/EasyWriter/releases/latest"><img src="https://img.shields.io/github/v/release/DashingNights/EasyWriter?label=latest&color=2563eb" alt="Latest version"></a><br>
+  Free, for Windows 10 and 11. It keeps itself up to date.<br>
+  <a href="https://github.com/DashingNights/EasyWriter/releases/latest">What's new</a> · <a href="#good-to-know">Installer or portable?</a>
+</p>
 
-## What it does
+EasyWriter is a Windows app for writing up your projects. Forum posts and documents hold canvases, flowcharts and plan charts next to their text, and an AI assistant can help anywhere in the app.
 
-- A rich text editor with headings, lists, quotes, code blocks and tables. Text presets apply a saved style in one click.
-- Canvases inside a draft for pictures, text and shapes.
-- Annotate screenshots. Drop a screenshot into a draft, then double-click the canvas it makes to draw and write over it.
-- Flowcharts whose connectors stay attached to their shapes. Keep them in the flowchart library to reuse them in other drafts.
-- A plan for each project, with a Kanban board, a backlog and a Gantt chart. A chart of the plan can go into a draft.
-- A browser with tabs inside the app, so your references stay next to the draft.
-- Dictation with Whisper, which runs on your own computer.
-- A chat assistant that can read and edit your drafts. It uses your own key for Qwen Cloud, Google Gemini or DeepSeek.
-- GitHub backup. Sign in with GitHub and EasyWriter keeps your drafts, plans and flowcharts in a private repository of your own.
+<p><img src="docs/img/feature-forum.webp" width="100%" alt="Forum posts: write them with the forum's own tools, such as boxes, tables, pictures and canvases, then push the post into your thread's reply box."></p>
+<p><img src="docs/img/feature-documents.webp" width="100%" alt="Documents: a page view and a ribbon of tools, as in a word processor, with a reference list in Harvard or IEEE."></p>
+<p><img src="docs/img/feature-assistant.webp" width="100%" alt="Assistant: asked to fix the grammar in a document, circle part of a map and start a checklist, it suggests the fixes in the text, adds notes to the map as suggestions and creates the checklist as a new draft. It works with the major AI providers."></p>
+<p><img src="docs/img/feature-canvas.webp" width="100%" alt="Canvas: paste a screenshot and mark it up with shapes, arrows and notes, inside your draft."></p>
+<p><img src="docs/img/feature-flow.webp" width="100%" alt="Flowcharts: move a box and its arrows follow. Flowcharts are kept in a library and can go into any draft."></p>
+<p><img src="docs/img/feature-plan.webp" width="100%" alt="Plan: a Kanban board, a backlog and a Gantt chart for every project, with your drafts on the cards."></p>
+<p><img src="docs/img/feature-more.webp" width="100%" alt="Also inside: a browser with tabs, dictation that runs on your PC, themes, GitHub backup, a quick access menu and a portable version. More features are coming soon."></p>
 
-On the first start EasyWriter opens a welcome draft that shows these features. Delete it from the sidebar when you no longer need it.
+## Good to know
 
-## Screenshots
+<details>
+<summary><b>Installer or portable?</b></summary>
 
-Screenshots from a real project draft on a canvas, with drawings and notes over them.
+Take the installer if you can install apps on your PC. Run `EasyWriter-Setup.exe` and follow the steps.
 
-![A canvas with annotated game screenshots](docs/img/annotate.png)
+Take the portable version on a PC that blocks installers, such as a school computer. Extract `EasyWriter-Portable.zip` anywhere you can save files, such as the Desktop or a USB stick, and run `EasyWriter.exe` inside it.
+</details>
 
-A smart canvas open in Canvas Mode, where it is edited in place.
+<details>
+<summary><b>Windows says it protected your PC</b></summary>
 
-![A smart canvas being edited in Canvas Mode](docs/img/smart-canvas.png)
+EasyWriter is not code-signed, so Windows SmartScreen may stop it the first time it runs. Click **More info**, then **Run anyway**.
+</details>
 
-A plan's Kanban board and Gantt chart inside a draft.
+<details>
+<summary><b>The download is blocked</b></summary>
 
-![Kanban and Gantt charts of a plan in a draft](docs/img/boards-in-post.png)
-
-The flowchart library, where flowcharts are drawn and kept for reuse.
-
-![The flowchart library editor](docs/img/flow.png)
-
-The Kanban board of a project's plan.
-
-![The Kanban board of a plan](docs/img/plan.png)
-
-The same plan as a Gantt chart, with the links between tasks.
-
-![The Gantt chart of a plan](docs/img/gantt.png)
-
-## Forum integration
-
-Turn it on in Settings > Integrations. It is off on a new install, and on for a profile that already links forum threads.
-
-- Link a project to a thread of an Invision Community forum. EasyWriter reads the thread's title and breadcrumb.
-- Push to forum fills the thread's reply box with the draft, canvases as pictures. You press Submit on the forum yourself.
-- Drafts get the forum post width (Settings > Forum) and the titled box insert.
-- The forum opens in its own window, which keeps your sign-in. Turning the integration off keeps the sign-in and every link.
-
-## Download
-
-Get EasyWriter from the [Releases page](https://github.com/DashingNights/EasyWriter/releases). There are two downloads.
-
-- **EasyWriter-Setup-x.y.z.exe** is the installer, for a normal PC. Run it and follow the steps.
-- **EasyWriter-x.y.z-win.zip** is the portable copy, for PCs that block installers. Extract it anywhere you can write to, such as the Desktop, and run EasyWriter.exe. Everything it saves, your drafts included, lives in the `data` folder next to EasyWriter.exe, so keep that folder when you move the app.
-
-EasyWriter is not code-signed, so Windows SmartScreen may warn you the first time you run it. Click **More info**, then **Run anyway**.
-
-You can also download the portable copy without the warning. Make an empty folder, type `cmd` in the File Explorer address bar of that folder and press Enter, then run this line. It gets version 0.1.0, which updates itself to the newest version after it starts.
+Some school networks block downloads in the browser. Make an empty folder, type `cmd` in the address bar of File Explorer in that folder and press Enter, then run this line. It downloads the portable version and extracts it there.
 
 ```
-curl.exe -L -o EasyWriter.zip https://github.com/DashingNights/EasyWriter/releases/download/v0.1.0/EasyWriter-0.1.0-win.zip && tar -xf EasyWriter.zip
+curl.exe -L -o EasyWriter.zip https://github.com/DashingNights/EasyWriter/releases/latest/download/EasyWriter-Portable.zip && tar -xf EasyWriter.zip
 ```
+</details>
 
-## Updates
+<details>
+<summary><b>Updates</b></summary>
 
-The installed copy and the portable copy both update themselves from GitHub Releases. When a new version has downloaded, EasyWriter shows a Restart button. It saves your open draft before it restarts.
+Both versions check for a new version and download it in the background. When it is ready, EasyWriter shows a Restart button, and it saves your open draft before it restarts. The [releases page](https://github.com/DashingNights/EasyWriter/releases) lists what changed in each version.
+</details>
 
-## Where your data lives
+<details>
+<summary><b>Where your work is saved</b></summary>
 
-- Installed copy: `%APPDATA%\EasyWriter`
-- Portable copy: the `data` folder next to EasyWriter.exe
+The installed version keeps everything in `%APPDATA%\EasyWriter`. The portable version keeps everything in the `data` folder next to `EasyWriter.exe`, so take that folder with you when you move the app.
+
+For a copy somewhere else, turn on GitHub backup. Your drafts, plans and flowcharts then go to a private repository of your own.
+</details>
+
+<details>
+<summary><b>Which AI providers the assistant works with</b></summary>
+
+ChatGPT and Claude through Codex and Claude Code, or Google Gemini, DeepSeek and Qwen with your own API key. Pick one in Settings. The assistant stays off until you do, and its edits wait as suggestions unless you let it apply them straight away.
+</details>
+
+<details>
+<summary><b>Which forums it works with</b></summary>
+
+Invision Community forums. Turn the forum integration on in Settings, link a project to your thread, and Push fills the thread's reply box with your draft, canvases as pictures. You press Submit on the forum yourself.
+</details>
 
 ## Build from source
 

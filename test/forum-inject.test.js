@@ -176,21 +176,21 @@ const payload = {
 
 test('STATUS_SCRIPT, describe and push scripts are valid JS', () => {
   new vm.Script(STATUS_SCRIPT);
-  new vm.Script(describeThreadsScript(['https://daf.staffs.ac.uk/topic/1-a/']));
+  new vm.Script(describeThreadsScript(['https://forum.example.com/topic/1-a/']));
   new vm.Script(buildPushScript(payload));
 });
 
 test('describe reads each topic page\'s breadcrumbs and leaves out pages without them', async () => {
   const crumbs = (...names) => JSON.stringify({ '@graph': [{ '@type': 'BreadcrumbList', itemListElement: names.map((name) => ({ item: { name } })) }] });
   const pages = {
-    'https://daf.staffs.ac.uk/topic/1-a/': crumbs('Home', '2025-26', 'Games Design', 'Level Design', 'Dev log'),
-    'https://daf.staffs.ac.uk/topic/2-b/': crumbs('Home'), // no access: only Home
+    'https://forum.example.com/topic/1-a/': crumbs('Home', '2025-26', 'Games Design', 'Level Design', 'Dev log'),
+    'https://forum.example.com/topic/2-b/': crumbs('Home'), // no access: only Home
   };
   const fetch = async (url) => (url in pages ? { ok: true, text: async () => pages[url] } : { ok: false, status: 404 });
   const DOMParser = class { parseFromString(text) { return { querySelectorAll: () => [{ textContent: text }] }; } };
-  const result = await vm.runInNewContext(describeThreadsScript([...Object.keys(pages), 'https://daf.staffs.ac.uk/topic/3-gone/']), { fetch, DOMParser });
+  const result = await vm.runInNewContext(describeThreadsScript([...Object.keys(pages), 'https://forum.example.com/topic/3-gone/']), { fetch, DOMParser });
   assert.deepEqual(JSON.parse(JSON.stringify(result)), { threads: [
-    { url: 'https://daf.staffs.ac.uk/topic/1-a/', title: 'Dev log', subject: 'Games Design', year: '2025-26', forum: 'Level Design' },
+    { url: 'https://forum.example.com/topic/1-a/', title: 'Dev log', subject: 'Games Design', year: '2025-26', forum: 'Level Design' },
   ] });
 });
 

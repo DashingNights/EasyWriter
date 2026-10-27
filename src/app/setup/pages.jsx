@@ -4,7 +4,7 @@
 // before `finish`, so the Assistant and dictation page (`helpers`, helpers.jsx) comes before them.
 import { useEffect, useRef, useState } from 'react';
 import { cn } from 'cn';
-import { CircleCheck, CloudOff, CloudUpload, ExternalLink, GraduationCap, History, Monitor, Moon, Smile, Sun, TriangleAlert, UserPlus, UserRoundCheck } from 'lucide-react';
+import { CircleCheck, CloudDownload, CloudOff, CloudUpload, ExternalLink, GraduationCap, History, Monitor, Moon, Smile, Sun, TriangleAlert, UserPlus, UserRoundCheck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
 import { Spinner } from '@/components/ui/spinner';
@@ -91,6 +91,55 @@ function Integrations() {
   const settings = useStore((s) => s.settings);
   const value = Object.fromEntries(INTEGRATIONS.map((i) => [i.id, { ...settings.integrations?.[i.id], enabled: enabled(settings, i.id) }]));
   return <IntegrationRows expandable value={value} onChange={(integrations) => changeSettings({ integrations })} />;
+}
+
+/** Someone who has used EasyWriter before (the user, 2026-10-27): a GitHub backup of theirs comes back to this computer
+ * (sign in, then GitHubRestore); without one, the backup is offered as to a new user. */
+function GitHubBefore({ next, setNav }) {
+  const [yes, setYes] = useState(null);
+  useEffect(() => setNav({ disabled: yes == null, go: () => next(yes ? 'github-restore-signin' : 'github') }), [yes]);
+  return <Choices label="Did you back up your drafts to GitHub?" value={yes} onChange={setYes}
+    options={[[true, 'Yes, bring them back', CloudDownload], [false, 'No', CloudOff]]} />;
+}
+
+/** The backup to bring back: a repository that holds one (an empty one is not it). Continue turns the backup on with it, and
+ * its first sync brings the drafts down and reloads the window, which opens the setup at the page after the backup's (saved
+ * first). A sync with nothing to bring down (no reload) goes on from here; a failed one says why and Continue tries again. */
+function GitHubRestore({ leave, onward, usedBefore, setNav }) {
+  const [st] = useGitHubStatus();
+  const login = st?.login;
+  const [repo, setRepo] = useState(() => getState().settings.github?.repo ?? '');
+  const { repos, loadRepos, check } = useRepos(login, repo);
+  const [pulling, setPulling] = useState(false);
+  const [error, setError] = useState('');
+  const ok = !!login && !!repo && !!check?.ok && !check.empty;
+  useEffect(() => setNav({
+    disabled: !ok || pulling,
+    label: 'Bring my drafts back',
+    go: async () => {
+      setError('');
+      setPulling(true);
+      try {
+        await saveSettings({ setup: { step: onward, usedBefore } });
+        const { onboarded, github } = getState().settings;
+        await saveSettings({ github: { ...github, ...(!onboarded && { intervalSec: 300, onClose: 'push' }), enabled: true, repo } });
+        await window.api.github.syncNow();
+        leave();
+      } catch (e) {
+        setError(ipcMessage(e));
+      }
+      setPulling(false);
+    },
+    skip: SKIP(leave),
+  }), [ok, repo, pulling]);
+  if (!st) return <p className="text-muted-foreground">Checking...</p>;
+  if (!login) return <p>Sign in with GitHub on the page before this one first.</p>;
+  return <>
+    <RepoPicker repo={repo} onPick={setRepo} repos={repos} loadRepos={loadRepos} check={check} />
+    {check?.ok && check.empty && <p className="text-muted-foreground" data-restore-empty>This one is empty. Pick the repository your drafts are backed up to.</p>}
+    {pulling && <p className="flex items-center gap-2 text-muted-foreground" data-restore-pulling><Spinner />Bringing your drafts back from GitHub</p>}
+    {error && <p className="text-destructive" data-restore-error>{error}</p>}
+  </>;
 }
 
 function GitHubAsk({ next, setNav }) {
@@ -217,24 +266,29 @@ function GitHubPick({ next, leave, setNav }) {
   return <RepoPicker repo={repo} onPick={setRepo} repos={repos} loadRepos={loadRepos} check={check} />;
 }
 
-/** The last page: Start writing. A new user gets the tutorial instead (Start the tutorial, or Skip the tutorial), which starts
- * once the setup has closed. */
+/** The last page: Start the tutorial, which starts once the setup has closed, or Skip the tutorial. Someone who has used
+ * EasyWriter before is told why it is worth it (the user, 2026-10-27: there may be new features). */
 function Finish({ usedBefore, finish, setNav }) {
-  const fresh = usedBefore === false;
-  useEffect(() => setNav(fresh
-    ? { label: 'Start the tutorial', go: async () => { await finish(); startTutorial(); }, skip: { label: 'Skip the tutorial', go: finish } }
-    : { label: 'Start writing', go: finish }), []);
-  if (!fresh) return null;
-  return <p className="flex items-center gap-2" data-tutorial-offer><GraduationCap className="size-5 shrink-0" />A short tutorial shows you how to make your first draft.</p>;
+  useEffect(() => setNav({ label: 'Start the tutorial', go: async () => { await finish(); startTutorial(); }, skip: { label: 'Skip the tutorial', go: finish } }), []);
+  return (
+    <p className="flex items-center gap-2" data-tutorial-offer>
+      <GraduationCap className="size-5 shrink-0" />
+      {usedBefore ? 'We recommend the tutorial. It shows what is new since you last used EasyWriter.' : 'A short tutorial shows you how EasyWriter works.'}
+    </p>
+  );
 }
 
-const github = (id, title, help, Page, branch) => ({ id, step: 'github', title, help, Page, branch });
+const github = (id, title, help, Page, branch, more) => ({ id, step: 'github', title, help, Page, branch, ...more });
 
 export const PAGES = [
   { id: 'welcome', title: 'Welcome to EasyWriter', help: 'A few questions to set up the app. You can change every answer later in Settings.', Page: Welcome },
   { id: 'scale', title: 'UI scale', help: "100% matches your computer's own scale. Drag the bar to make everything bigger or smaller.", Page: Scale },
   { id: 'theme', title: 'Theme', help: "System follows your computer's light or dark mode. You can fine-tune the theme's colours later in Settings > General.", Page: Theme },
   { id: 'integrations', title: 'Integrations', help: 'Optional. Click a row to read what it does.', Page: Integrations },
+  github('github-before', 'Did you back up to GitHub?', 'If your drafts are backed up to GitHub, EasyWriter can bring them back to this computer.', GitHubBefore,
+    false, { returning: true }),
+  github('github-restore-signin', 'Sign in with GitHub', 'EasyWriter asks GitHub for access to your private repositories.', GitHubSignIn, true, { then: 'github-restore' }),
+  github('github-restore', 'Pick your backup', 'Your drafts come back to this computer, and the backup carries on from here.', GitHubRestore, true),
   github('github', 'Back up your drafts to GitHub?', 'EasyWriter can push your drafts to a private GitHub repository of yours every few minutes.', GitHubAsk),
   github('github-warn', 'Skip the backup?', '', GitHubWarn, true),
   github('github-account', 'Do you have a GitHub account?', 'The backup goes to a repository in your GitHub account.', GitHubAccount),

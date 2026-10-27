@@ -120,8 +120,289 @@
 [data-tutorial-hand] { animation: tutorial-hand 4.5s infinite; }
 [data-tutorial-arrow] { animation: tutorial-press 4.5s infinite; }
 [data-tutorial-dot] { animation: tutorial-dot 4.5s infinite; }
-:root[data-still~="tutorial"] [data-tutorial-pointer] {
+/* A drag: in to the first line's start, press, drag to the last line's end (--tutorial-drag), let go and fade, 2.5 s in all,
+   then 3 s of nothing. */
+@keyframes tutorial-drag-hand {
+  0% { opacity: 0; translate: var(--tutorial-from); animation-timing-function: cubic-bezier(0.16, 1, 0.3, 1); }
+  5.455% { opacity: 1; }
+  10.909% { translate: 0 0; }
+  16.364% { translate: 0 0; animation-timing-function: cubic-bezier(0.65, 0, 0.35, 1); }
+  34.545% { translate: var(--tutorial-drag); }
+  36.364% { opacity: 1; animation-timing-function: ease-in-out; }
+  45.455%, 100% { opacity: 0; translate: var(--tutorial-drag); }
+}
+@keyframes tutorial-drag-press {
+  0%, 14.545% { scale: 1; animation-timing-function: ease-in; }
+  16.364%, 34.545% { scale: 0.8; animation-timing-function: ease-out; }
+  36.364%, 100% { scale: 1; }
+}
+[data-tutorial-pointer="drag"] [data-tutorial-hand] { animation: tutorial-drag-hand 5.5s infinite; }
+[data-tutorial-pointer="drag"] [data-tutorial-arrow] { animation: tutorial-drag-press 5.5s infinite; }
+/* A double-click, in step with lesson 3's 4 s light loop (Tutorial.jsx LOOP): while the light is on the canvas (1.6 s to 3.3 s)
+   the pointer comes in, rests, clicks twice with a burst each, and fades. */
+@keyframes tutorial-double-hand {
+  0%, 40% { opacity: 0; translate: var(--tutorial-from); animation-timing-function: cubic-bezier(0.16, 1, 0.3, 1); }
+  44.5% { opacity: 1; }
+  55% { translate: 0 0; }
+  69% { opacity: 1; animation-timing-function: ease-in-out; }
+  82.5%, 100% { opacity: 0; translate: 0 0; }
+}
+@keyframes tutorial-double-press {
+  0%, 60% { scale: 1; animation-timing-function: ease-in; }
+  62% { scale: 0.8; animation-timing-function: ease-out; }
+  64%, 65% { scale: 1; animation-timing-function: ease-in; }
+  67% { scale: 0.8; animation-timing-function: ease-out; }
+  69%, 100% { scale: 1; }
+}
+@keyframes tutorial-double-dot {
+  0%, 60% { opacity: 0; translate: 7px 0; scale: 1; animation-timing-function: cubic-bezier(0.16, 1, 0.3, 1); }
+  60.6% { opacity: 1; }
+  64.4% { opacity: 0; translate: 22px 0; scale: 0.4; }
+  64.5%, 65% { opacity: 0; translate: 7px 0; scale: 1; animation-timing-function: cubic-bezier(0.16, 1, 0.3, 1); }
+  65.6% { opacity: 1; }
+  70%, 100% { opacity: 0; translate: 22px 0; scale: 0.4; }
+}
+[data-tutorial-pointer="double"] [data-tutorial-hand] { animation: tutorial-double-hand 4s infinite; }
+[data-tutorial-pointer="double"] [data-tutorial-arrow] { animation: tutorial-double-press 4s infinite; }
+[data-tutorial-pointer="double"] [data-tutorial-dot] { animation: tutorial-double-dot 4s infinite; }
+/* A wiggle, a drag round an arc (the user, 2026-10-27): in to the rotate zone, press, drag 30 degrees one way and the other
+   round the box's middle (the hand's transform-origin, Tutorial.jsx), back, let go and fade, in step with the turning ghost.
+   The arrow turns back as the hand turns, so it stays upright. */
+@keyframes tutorial-wiggle-hand {
+  0% { opacity: 0; translate: var(--tutorial-from); animation-timing-function: cubic-bezier(0.16, 1, 0.3, 1); }
+  5.455% { opacity: 1; }
+  10.909% { translate: 0 0; }
+  16.364% { rotate: 0deg; animation-timing-function: ease-in-out; }
+  25.455% { rotate: 30deg; animation-timing-function: ease-in-out; }
+  34.545% { rotate: -30deg; animation-timing-function: ease-in-out; }
+  40% { rotate: 0deg; }
+  41.818% { opacity: 1; animation-timing-function: ease-in-out; }
+  50%, 100% { opacity: 0; translate: 0 0; rotate: 0deg; }
+}
+@keyframes tutorial-wiggle-press {
+  0%, 14.545% { scale: 1; animation-timing-function: ease-in; }
+  16.364% { scale: 0.8; rotate: 0deg; animation-timing-function: ease-in-out; }
+  25.455% { rotate: -30deg; animation-timing-function: ease-in-out; }
+  34.545% { rotate: 30deg; animation-timing-function: ease-in-out; }
+  40% { scale: 0.8; rotate: 0deg; animation-timing-function: ease-out; }
+  41.818%, 100% { scale: 1; rotate: 0deg; }
+}
+[data-tutorial-pointer="wiggle"] [data-tutorial-hand] { animation: tutorial-wiggle-hand 5.5s infinite; }
+[data-tutorial-pointer="wiggle"] [data-tutorial-arrow] { animation: tutorial-wiggle-press 5.5s infinite; }
+/* A drag's ghost (the user, 2026-10-27): what the drag would do, in step with the drag pointer (5.5 s). A box going from one
+   rect (--gx0 …) to another (--gx1 …), the box swinging 30 degrees each way, or an arrow drawn along its path. */
+[data-tutorial-ghost] {
+  pointer-events: none;
+  border: 2px dashed var(--ui-accent);
+  border-radius: 3px;
+  background: color-mix(in oklab, var(--ui-accent) 12%, transparent);
+}
+[data-tutorial-ghost="morph"] { animation: tutorial-ghost 5.5s infinite; }
+@keyframes tutorial-ghost {
+  0%, 10.909% { opacity: 0; left: var(--gx0); top: var(--gy0); width: var(--gw0); height: var(--gh0); }
+  16.364% { opacity: 1; left: var(--gx0); top: var(--gy0); width: var(--gw0); height: var(--gh0); animation-timing-function: cubic-bezier(0.65, 0, 0.35, 1); }
+  34.545% { left: var(--gx1); top: var(--gy1); width: var(--gw1); height: var(--gh1); }
+  45.455% { opacity: 1; }
+  52%, 100% { opacity: 0; left: var(--gx1); top: var(--gy1); width: var(--gw1); height: var(--gh1); }
+}
+[data-tutorial-ghost="turn"] { animation: tutorial-ghost-turn 5.5s infinite; }
+@keyframes tutorial-ghost-turn {
+  0%, 10.909% { opacity: 0; rotate: 0deg; }
+  16.364% { opacity: 1; rotate: 0deg; animation-timing-function: ease-in-out; }
+  25.455% { rotate: 30deg; animation-timing-function: ease-in-out; }
+  34.545% { rotate: -30deg; animation-timing-function: ease-in-out; }
+  40% { rotate: 0deg; }
+  45.455% { opacity: 1; }
+  52%, 100% { opacity: 0; rotate: 0deg; }
+}
+/* An arrow along its path (the box's arrow: down, then left): a dashed line drawn from its start while the pointer drags, its
+   mask's stroke uncovering it, the head shown as the drawing reaches it. */
+[data-tutorial-ghost="line"] {
+  border: 0;
+  border-radius: 0;
+  background: none;
+  animation: tutorial-ghost-fade 5.5s infinite;
+}
+[data-tutorial-ghost="line"] [data-draw] {
+  fill: none;
+  stroke: #fff;
+  stroke-width: 28;
+  stroke-dasharray: 1 1;
+  animation: tutorial-ghost-draw 5.5s infinite;
+}
+[data-tutorial-ghost="line"] [data-shaft] { fill: none; stroke: var(--ui-accent); stroke-width: 2; stroke-dasharray: 6 4; }
+[data-tutorial-ghost="line"] [data-head] { fill: var(--ui-accent); }
+@keyframes tutorial-ghost-fade {
+  0%, 16.364% { opacity: 0; }
+  17%, 45.455% { opacity: 1; }
+  52%, 100% { opacity: 0; }
+}
+@keyframes tutorial-ghost-draw {
+  0%, 16.364% { stroke-dashoffset: 1; animation-timing-function: cubic-bezier(0.65, 0, 0.35, 1); }
+  34.545%, 100% { stroke-dashoffset: 0; }
+}
+/* The type step's keycaps (Typing): the typed ones green with a pop, the next one lit; untouched, they type the word, one
+   letter every 0.32 s, over and over. */
+[data-tutorial-typing] kbd {
+  box-shadow: 0 3px 0 var(--border);
+  transition: translate 90ms ease-out, box-shadow 90ms ease-out, border-color 90ms, background-color 90ms;
+}
+[data-tutorial-typing] kbd[data-next] { border-color: var(--ui-accent); }
+[data-tutorial-typing] kbd[data-typed] {
+  translate: 0 1px;
+  box-shadow: 0 2px 0 var(--border);
+  border-color: var(--success);
+  background-color: color-mix(in oklab, var(--success) 16%, var(--card));
+  animation: tutorial-pop 0.35s ease-out;
+}
+[data-tutorial-typing][data-idle] kbd { animation: tutorial-key-type 2.4s infinite calc(var(--k) * 0.32s); }
+@keyframes tutorial-key-type {
+  0%, 9%, 22%, 100% { translate: 0 0; box-shadow: 0 3px 0 var(--border); border-color: var(--border); background-color: var(--card); }
+  13%, 18% { translate: 0 2px; box-shadow: 0 1px 0 var(--border); border-color: var(--ui-accent); background-color: color-mix(in oklab, var(--ui-accent) 18%, var(--card)); }
+}
+/* The card's own: a shake (Oh no!), the bin rocking before the canvas goes, the canvas shrinking away, the dog barking (its
+   picture shaking) and jumping for joy. Board items turn by `transform`, so these use the separate properties. */
+@keyframes tutorial-shake {
+  15%, 45%, 75% { transform: translateX(-6px) rotate(-1deg); }
+  30%, 60%, 90% { transform: translateX(6px) rotate(1deg); }
+}
+[data-tutorial-card][data-shake] { animation: tutorial-shake 0.6s ease-in-out 0.15s; }
+[data-tutorial-bin] { transform-origin: 50% 90%; animation: tutorial-bin 0.45s ease-in-out 1s 2; }
+@keyframes tutorial-bin {
+  25% { rotate: -14deg; }
+  75% { rotate: 14deg; }
+}
+.sc.tutorial-poof { animation: tutorial-poof 0.6s ease-in forwards; }
+@keyframes tutorial-poof {
+  35% { scale: 1.03; }
+  to { scale: 0.3; opacity: 0; }
+}
+.wb-item.tutorial-bark { transform-origin: 50% 85%; animation: tutorial-bark 1.1s ease-in-out; }
+@keyframes tutorial-bark {
+  10%, 60% { rotate: -4deg; scale: 1.03; }
+  20%, 70% { rotate: 4deg; }
+  30%, 80% { rotate: -2deg; scale: 1; }
+  40%, 90% { rotate: 2deg; }
+  50% { rotate: 0deg; }
+}
+.wb-item.tutorial-happy { transform-origin: 50% 100%; animation: tutorial-happy 1.2s ease-out; }
+@keyframes tutorial-happy {
+  15% { translate: 0 -16px; scale: 1.02 0.98; }
+  30%, 60%, 90% { translate: 0 0; scale: 1; }
+  45% { translate: 0 -10px; }
+  75% { translate: 0 -4px; }
+}
+/* A lesson's end card (Progress, the user 2026-10-27): the bar fills to the next lesson's place (0.9 s from 0.9 s, easing out),
+   rests, and the lesson's icon unlocks there from 2.05 s: its lock lifts away, the badge lights up with a pop, dots burst. */
+[data-tutorial-bar] { transform-origin: left; animation: tutorial-bar 0.9s cubic-bezier(0.22, 1, 0.36, 1) 0.9s both; }
+@keyframes tutorial-bar {
+  from { scale: 0 1; }
+}
+[data-tutorial-badge] { animation: tutorial-badge 0.5s ease-out 2.05s both; }
+@keyframes tutorial-badge {
+  0% { border-color: var(--border); color: var(--muted-foreground); background-color: var(--card); }
+  40% { scale: 1.2; }
+  100% { border-color: var(--ui-accent); color: var(--foreground); background-color: color-mix(in oklab, var(--ui-accent) 22%, var(--card)); }
+}
+[data-tutorial-lock] { animation: tutorial-unlock 0.35s ease-in 2.05s both; }
+@keyframes tutorial-unlock {
+  to { opacity: 0; translate: 0 -9px; rotate: -18deg; }
+}
+[data-tutorial-icon] { animation: tutorial-reveal 0.35s ease-out 2.2s both; }
+@keyframes tutorial-reveal {
+  from { opacity: 0; scale: 0.3; }
+}
+[data-tutorial-badge] [data-tutorial-burst] { background-color: var(--ui-accent); animation-delay: 2.2s; }
+/* The keys step's keycaps (Combo): a keycap goes down with its key; untouched, they play the chord every 2.6 s (the modifier
+   held, the key tapped). The chord done, they turn green with a pop. */
+[data-tutorial-combo] kbd {
+  box-shadow: 0 3px 0 var(--border);
+  transition: translate 90ms ease-out, box-shadow 90ms ease-out, border-color 90ms, background-color 90ms;
+}
+[data-tutorial-combo] kbd[data-down] {
+  translate: 0 2px;
+  box-shadow: 0 1px 0 var(--border);
+  border-color: var(--ui-accent);
+  background-color: color-mix(in oklab, var(--ui-accent) 18%, var(--card));
+}
+@keyframes tutorial-key-hold {
+  0%, 6%, 76%, 100% { translate: 0 0; box-shadow: 0 3px 0 var(--border); border-color: var(--border); background-color: var(--card); }
+  12%, 70% { translate: 0 2px; box-shadow: 0 1px 0 var(--border); border-color: var(--ui-accent); background-color: color-mix(in oklab, var(--ui-accent) 18%, var(--card)); }
+}
+@keyframes tutorial-key-tap {
+  0%, 36%, 54%, 100% { translate: 0 0; box-shadow: 0 3px 0 var(--border); border-color: var(--border); background-color: var(--card); }
+  40%, 48% { translate: 0 2px; box-shadow: 0 1px 0 var(--border); border-color: var(--ui-accent); background-color: color-mix(in oklab, var(--ui-accent) 18%, var(--card)); }
+}
+[data-tutorial-combo] kbd[data-demo="hold"] { animation: tutorial-key-hold 2.6s infinite; }
+[data-tutorial-combo] kbd[data-demo="tap"] { animation: tutorial-key-tap 2.6s infinite; }
+[data-tutorial-combo][data-done] kbd {
+  border-color: var(--success);
+  background-color: color-mix(in oklab, var(--success) 16%, var(--card));
+  animation: tutorial-pop 0.45s ease-out;
+}
+@keyframes tutorial-pop {
+  40% { scale: 1.1; }
+}
+/* A task's circle (Tick): ticked with a pop, its circle filling and its tick drawn; dots burst out of it (Burst). */
+[data-tutorial-tick] circle { fill: transparent; stroke: var(--muted-foreground); stroke-width: 1.5; }
+[data-tutorial-tick] path { fill: none; stroke: #fff; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 1; stroke-dashoffset: 1; }
+[data-tutorial-tick][data-done] { animation: tutorial-pop 0.45s ease-out var(--tick-delay, 0s) both; }
+[data-tutorial-tick][data-done] circle { fill: var(--success); stroke: var(--success); animation: tutorial-fill 0.25s ease-out var(--tick-delay, 0s) both; }
+[data-tutorial-tick][data-done] path { stroke-dashoffset: 0; animation: tutorial-draw 0.3s ease-out calc(var(--tick-delay, 0s) + 0.15s) both; }
+@keyframes tutorial-fill {
+  from { fill: transparent; stroke: var(--muted-foreground); }
+}
+@keyframes tutorial-draw {
+  from { stroke-dashoffset: 1; }
+}
+@keyframes tutorial-burst {
+  from { opacity: 1; translate: 7px 0; }
+  to { opacity: 0; translate: 17px 0; }
+}
+[data-tutorial-burst] { animation: tutorial-burst 0.55s cubic-bezier(0.16, 1, 0.3, 1) 0.1s both; }
+[data-tutorial-cheer] { animation: tutorial-pop 0.45s ease-out 0.1s both; }
+/* A drag that selected other text shakes the instruction. */
+@keyframes tutorial-nudge {
+  20%, 60% { translate: -4px 0; }
+  40%, 80% { translate: 4px 0; }
+}
+[data-tutorial-card] [data-nudge] { animation: tutorial-nudge 0.35s ease-in-out; }
+/* The second Ctrl+Space's hands (Hands, tutorial-lessons.jsx): the left one taps the keys, then the right one clicks the mouse. */
+@keyframes tutorial-tap {
+  0%, 30%, 60%, 100% { translate: 0 0; }
+  15%, 45% { translate: 0 3px; }
+}
+[data-tutorial-hands] [data-hand] { animation: tutorial-tap 1.6s ease-in-out infinite; }
+[data-tutorial-hands] [data-hand="right"] { animation-delay: 0.8s; }
+/* The ending (the user, 2026-10-27): the card turns out to be the assistant. Its icon spins in and the card glows. */
+@keyframes tutorial-spin-in {
+  from { scale: 0; rotate: -200deg; }
+  70% { scale: 1.35; }
+  to { scale: 1; rotate: 0deg; }
+}
+[data-tutorial-reveal] { animation: tutorial-spin-in 0.7s cubic-bezier(0.16, 1, 0.3, 1) both; }
+[data-tutorial-card][data-who] {
+  box-shadow: 0 0 0 2px color-mix(in oklab, var(--ui-accent) 70%, transparent), 0 0 32px 6px color-mix(in oklab, var(--ui-accent) 30%, transparent);
+}
+/* A talking scene's chevron, once its line is typed out: click for the next line. */
+@keyframes tutorial-more {
+  50% { translate: 0 3px; }
+}
+[data-tutorial-dialogue] [data-more] { animation: tutorial-more 0.9s ease-in-out infinite; }
+:root[data-still~="tutorial"] :is([data-tutorial-pointer], [data-tutorial-burst], [data-tutorial-ghost]) {
   display: none;
+}
+:root[data-still~="tutorial"] :is([data-tutorial-typing] kbd, [data-tutorial-bin], [data-tutorial-card][data-shake], .sc.tutorial-poof, .wb-item.tutorial-bark, .wb-item.tutorial-happy,
+  [data-tutorial-hands] [data-hand], [data-tutorial-reveal], [data-tutorial-dialogue] [data-more]) {
+  animation: none;
+}
+:root[data-still~="tutorial"] :is([data-tutorial-combo] kbd, [data-tutorial-tick], [data-tutorial-tick] *, [data-tutorial-cheer], [data-tutorial-card] [data-nudge]) {
+  animation: none;
+  transition: none;
+}
+:root[data-still~="tutorial"] :is([data-tutorial-bar], [data-tutorial-badge], [data-tutorial-lock], [data-tutorial-icon]) {
+  animation-duration: 0s;
+  animation-delay: 0s;
 }
 
 /* A dropdown's or drop-up's chevron turns over, with a turn, while its list is open (the user, 2026-10-26: everywhere). The

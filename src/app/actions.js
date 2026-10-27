@@ -409,13 +409,14 @@ export const afterNodeSel = (c) => c.command(({ tr }) => {
   return true;
 });
 
-/** Inserts a smart canvas after the selection and edits it in place. */
-export function insertCanvas() {
+/** Inserts a smart canvas after the selection and edits it in place; `{edit: false}` (the tutorial) leaves it closed. */
+export function insertCanvas(opts) {
   const ed = state.editor;
   if (!ed) return;
   // A Document's canvas starts at the text width (document.md App objects); a forum post keeps the 800 px default
   const attrs = formatOf(state.draft, state.settings)?.id === 'document' ? { dw: contentWidth(ed.view) } : undefined;
   afterNodeSel(ed.chain()).insertCanvas(attrs).run(); // not run(): focus() would pull focus back out of the canvas in a frame
+  if (opts?.edit === false) return;
   const $after = ed.state.doc.resolve(ed.state.selection.$from.before(1)); // insertBoard put the caret in the block after it
   openCanvasEditor(ed, $after.pos - $after.nodeBefore.nodeSize);
 }

@@ -7,7 +7,7 @@
 // window buttons (Windows'), a drag's edge autoscroll (it moves the view to where the drag is going), and sonner's toasts
 // under the OS's reduced motion even when reduce motion is off (sonner's own !important rule).
 export const MOTION = [
-  ['menus', 90, 'Menus', 'Menus, selects, popovers, quick tools and tool search opening'],
+  ['menus', 90, 'Menus', 'Menus, selects, popovers, the quick access menu and tool search opening'],
   ['tooltips', 90, 'Tooltips', 'Tooltips and hover hints'],
   ['dialogs', 160, 'Dialogs', 'Dialogs and their backdrop'],
   ['pages', 140, 'Pages', 'The editor and the plans and flowcharts pages fading in'],

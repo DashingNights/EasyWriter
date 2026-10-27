@@ -1,7 +1,7 @@
 {
   "version": 1,
   "id": "3f1c2a9e-4b7d-4f1e-9c2a-7d5e1f0b8a21",
-  "threadUrl": "https://daf.staffs.ac.uk/topic/88136-level-design-dev-thread/",
+  "threadUrl": "https://forum.example.com/topic/88136-level-design-dev-thread/",
   "title": "Level design dev thread",
   "seq": 6,
   "calendar": { "workdays": [1, 2, 3, 4, 5], "holidays": ["2026-12-25"], "weekOne": null },
@@ -31,7 +31,7 @@
       "labels": ["a1b2c3d"], "estimate": 3, "unit": "d", "start": "2026-10-05", "end": "2026-10-07", "milestone": false, "progress": 100,
       "parent": null, "deps": [],
       "checklist": [{ "id": "k1q8z3v", "text": "Greybox", "done": true }, { "id": "m2w7r4t", "text": "Lighting notes", "done": false }],
-      "draftId": null, "urls": [{ "id": "u3n8c5w", "url": "https://daf.staffs.ac.uk/topic/88136-x/#findComment-123", "title": "Feedback post" }],
+      "draftId": null, "urls": [{ "id": "u3n8c5w", "url": "https://forum.example.com/topic/88136-x/#findComment-123", "title": "Feedback post" }],
       "baseline": null, "completedAt": 1759600000000, "created": 1759600000000, "updated": 1759600000000
     },
     {

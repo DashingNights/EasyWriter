@@ -7,13 +7,13 @@ const shape = (id) => ({ id, type: 'shape', shape: 'rect', x: 0, y: 0, w: 10, h:
 
 test('parseFlow drops bad items and nested canvases, keeps rev, defaults sizes to 1200 × 675', () => {
   const r = parseFlow(JSON.stringify({
-    id: ID, title: 'Login', rev: 7, threadUrl: 'https://daf.staffs.ac.uk/topic/88136-level-design/',
+    id: ID, title: 'Login', rev: 7, threadUrl: 'https://forum.example.com/topic/88136-level-design/',
     board: { w: -1, h: 'x', frame: { x: 0, y: 0, w: 0, h: 5 }, bg: 'nope', items: [shape('a'), { id: 'b', type: 'shape' }, { id: 'c', type: 'canvas', x: 0, y: 0, w: 1, h: 1, aw: 1, ah: 1 }] },
   }));
   assert.equal(r.rev, 7);
   assert.deepEqual([r.board.w, r.board.h, r.board.frame, r.board.bg], [1200, 675, null, 'post']);
   assert.deepEqual(r.board.items.map((i) => i.id), ['a']);
-  assert.equal(r.threadUrl, 'https://daf.staffs.ac.uk/topic/88136-level-design/');
+  assert.equal(r.threadUrl, 'https://forum.example.com/topic/88136-level-design/');
 });
 
 test('parseFlow repairs the envelope and never throws', () => {

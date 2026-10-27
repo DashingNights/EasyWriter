@@ -22,3 +22,22 @@ jobs:
       - run: npx electron-builder --win --publish always
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # Portable copies from before EasyWriter-Portable.zip look for EasyWriter-<version>-win.zip in the latest release. Remove
+      # this step once none of them is left.
+      - name: Portable zip under its old name
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          v="${GITHUB_REF_NAME#v}"
+          cp release/EasyWriter-Portable.zip "release/EasyWriter-$v-win.zip"
+          gh release upload "$GITHUB_REF_NAME" "release/EasyWriter-$v-win.zip" --clobber
+      # The release's title, and which file to download above any notes it has (.github/release-download.md).
+      - name: Release title and download notes
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          body="$(gh release view "$GITHUB_REF_NAME" --json body --jq .body)"
+          if ! grep -q '^## Download' <<<"$body"; then printf '%s\n\n%s\n' "$(cat .github/release-download.md)" "$body" > notes.md; else printf '%s\n' "$body" > notes.md; fi
+          gh release edit "$GITHUB_REF_NAME" --title "EasyWriter ${GITHUB_REF_NAME#v}" --notes-file notes.md

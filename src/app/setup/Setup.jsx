@@ -1,8 +1,8 @@
 // The setup on the first start (docs/plans/onboarding.md): one modal dialog, a page at a time (pages.jsx PAGES, then the
 // SetupPages of the integrations that are on, then `finish`). It shows while settings.onboarded is not true, or after Run
 // setup again (state.setup); never in the background window (§7i) or the smoke sample run. Neither Escape nor a click
-// outside closes it. Each move saves settings.setup {step, usedBefore}, so a restart reopens it at that page; Start writing
-// saves onboarded: true.
+// outside closes it. Each move saves settings.setup {step, usedBefore}, so a restart reopens it at that page (and so does the
+// reload after a GitHub restore); the last page's Start the tutorial or Skip the tutorial saves onboarded: true.
 import { useEffect, useRef, useState } from 'react';
 import { cn } from 'cn';
 import { Button } from '@/components/ui/button';
@@ -25,15 +25,15 @@ export function Setup() {
 
 function Flow() {
   const settings = useStore((s) => s.settings);
+  const [id, setId] = useState(() => settings.setup?.step);
+  const [usedBefore, setUsedBefore] = useState(settings.setup?.usedBefore ?? null);
   // Integration pages (integrations/ui.js setupPages) after the app's own, before `finish`; each is a step of its own, its
-  // id prefixed with its integration's.
+  // id prefixed with its integration's. A `returning` page shows only to someone who has used EasyWriter before.
   const list = [
-    ...PAGES.slice(0, -1),
+    ...PAGES.slice(0, -1).filter((p) => usedBefore || !p.returning),
     ...setupPages(settings).map((p) => ({ id: `${p.integration}.${p.id}`, step: `${p.integration}.${p.id}`, title: p.title, help: p.help, Page: p.Page, integration: true })),
     PAGES.at(-1),
   ];
-  const [id, setId] = useState(() => settings.setup?.step);
-  const [usedBefore, setUsedBefore] = useState(settings.setup?.usedBefore ?? null);
   const history = useRef([]); // the pages Continue came from, for Back
   // What the page shown set for the bar, kept with its page's id, so a page never gets the last page's.
   const [nav, setNav] = useState({ at: null });
@@ -52,7 +52,8 @@ function Flow() {
     save(to);
   };
   const props = {
-    next: (to) => go(to ?? after(list, here)),
+    next: (to) => go(to ?? page.then ?? after(list, here)), // `then`: a page that goes on to a branch page
+
     back: () => go(history.current.pop() ?? before(list, here), false),
     setBusy: (on) => setBusy({ at: here, on: !!on }),
     setDone: (on) => setDone({ at: here, on: !!on }),
@@ -61,6 +62,7 @@ function Flow() {
   const own = page.integration ? {} : {
     setNav: (n) => setNav({ ...n, at: here }),
     leave: () => go(leave(list, here)),
+    onward: leave(list, here), // where leaving goes, saved before a GitHub restore reloads the window
     usedBefore,
     setUsedBefore: (v) => {
       setUsedBefore(v);

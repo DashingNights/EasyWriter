@@ -147,7 +147,7 @@ function Island({ open }) {
 
   return (
     <RailLayout.Provider value={layout}>
-      <div ref={ref} {...CHROME} data-quick-tools="" role="toolbar" aria-label="Quick tools" onMouseDown={keepFocus}
+      <div ref={ref} {...CHROME} data-quick-tools="" role="toolbar" aria-label="Quick access menu" onMouseDown={keepFocus}
         onPointerDownCapture={(e) => {
           inside.current = true;
           if (ref.current.contains(e.target)) pointerX.current = e.clientX; // not in its popups (they portal)

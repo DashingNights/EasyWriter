@@ -47,7 +47,7 @@ test('FLOW_VIEW_SET: described for the model, keyboard characters, within 9 700 
 
 test('flow.library.list, flow.library.get and flow.find on a stub store', async () => {
   const id = '5f0c2a9e-7b1d-4c3e-9a8f-1d2e3f4a5b6c';
-  const T = 'https://daf.staffs.ac.uk/topic/1-x/';
+  const T = 'https://forum.example.com/topic/1-x/';
   const shape = (sid, html) => ({ id: sid, type: 'shape', shape: 'diam', x: 0, y: 0, w: 100, h: 60, html });
   const record = {
     id, title: 'Door', rev: 3,

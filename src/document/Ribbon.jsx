@@ -719,7 +719,7 @@ export function DocIsland({ className }) {
 }
 
 /** The quick tools island's controls in a Document (QuickTools.jsx): style, font, size, B I U, colours, alignment, lists and
- * indents. `anchor`: the island, which the colour panels open beside. */
+ * indents, references and Insert canvas. `anchor`: the island, which the colour panels open beside. */
 export function DocumentQuickTools({ anchor }) {
   const ed = useEditor();
   const T = documentTools(ed);
@@ -750,6 +750,7 @@ export function DocumentQuickTools({ anchor }) {
         <ToolButton {...T.cite} />
         <ToolButton {...T.references} />
       </Group>
+      <Group><ToolButton {...T.canvas} /></Group>
     </GroupRows>
   );
 }

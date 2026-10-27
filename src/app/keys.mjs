@@ -184,7 +184,7 @@ export const DEFS = [
   general('edit.undo', 'Undo', ['Ctrl+Z']),
   general('edit.redo', 'Redo', ['Ctrl+Y', 'Ctrl+Shift+Z']),
   general('app.toolSearch', 'Tool search', ['Ctrl+Space']),
-  general('app.quickTools', 'Quick tools', ['Ctrl+Tab']),
+  general('app.quickTools', 'Quick access menu', ['Ctrl+Tab']),
   general('app.plans', 'Plans page', ['Ctrl+Alt+P']),
   general('app.browser', 'Browser page', ['Ctrl+Alt+B']),
   general('app.newDraft', 'New draft', ['Ctrl+N']),

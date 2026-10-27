@@ -1,12 +1,26 @@
+# Dependencies and build output (the release workflow builds from source)
 node_modules/
 dist/
 release/
+
+# Test runs: throwaway profiles and harnesses (.smoke-data), smoke outputs written to the repo root, smoke scripts, the
+# assistant's evaluation (its fixture is the owner's real drafts)
 .smoke-data/
-.vscode/
-*.log
 smoke-*
-docs/plans/eval-runs/
-test/assistant-eval/fixture/
+test/smoke/
+test/assistant-eval/
+
+# The owner's own tools and notes: Claude Code (worktrees, skills, local settings), the editor, the spec and plans
+.claude/
+.vscode/
 SPEC.md
 docs/plans/
-test/assistant-eval/
+
+# Keys and logs
+.env
+.env.*
+*.log
+
+# Windows
+Thumbs.db
+desktop.ini
