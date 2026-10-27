@@ -1,21 +1,23 @@
 <!-- The pictures in docs/img come from `npm run readme-art` (scripts/readme-art.js). Run it again when the app's look changes.
-     The download links name no version: every release has EasyWriter-Setup.exe and EasyWriter-Portable.zip. -->
+     The download links name no version: every release has EasyWriter-Setup.exe, EasyWriter-Portable.zip, EasyWriter-mac-arm64.dmg
+     and EasyWriter-mac-x64.dmg. -->
 
 <p align="center">
   <img src="docs/img/banner.webp" width="100%" alt="EasyWriter. Write, draw and plan your project in one app.">
 </p>
 
 <p align="center">
-  <a href="https://github.com/DashingNights/EasyWriter/releases/latest/download/EasyWriter-Setup.exe"><img src="docs/img/download-installer.webp" height="56" alt="Download for Windows (installer)"></a>&nbsp;&nbsp;<a href="https://github.com/DashingNights/EasyWriter/releases/latest/download/EasyWriter-Portable.zip"><img src="docs/img/download-portable.webp" height="56" alt="Download the portable version (no install needed)"></a>
+  <a href="https://github.com/DashingNights/EasyWriter/releases/latest/download/EasyWriter-Setup.exe"><img src="docs/img/download-installer.webp" height="56" alt="Download for Windows (installer)"></a>&nbsp;&nbsp;<a href="https://github.com/DashingNights/EasyWriter/releases/latest/download/EasyWriter-Portable.zip"><img src="docs/img/download-portable.webp" height="56" alt="Download the portable version for Windows (no install needed)"></a><br>
+  <a href="https://github.com/DashingNights/EasyWriter/releases/latest/download/EasyWriter-mac-arm64.dmg"><img src="docs/img/download-mac-arm64.webp" height="56" alt="Download for macOS (Apple silicon, M1 or later)"></a>&nbsp;&nbsp;<a href="https://github.com/DashingNights/EasyWriter/releases/latest/download/EasyWriter-mac-x64.dmg"><img src="docs/img/download-mac-x64.webp" height="56" alt="Download for macOS (Intel)"></a>
 </p>
 
 <p align="center">
   <a href="https://github.com/DashingNights/EasyWriter/releases/latest"><img src="https://img.shields.io/github/v/release/DashingNights/EasyWriter?label=latest&color=2563eb" alt="Latest version"></a><br>
-  Free, for Windows 10 and 11. It keeps itself up to date.<br>
-  <a href="https://github.com/DashingNights/EasyWriter/releases/latest">What's new</a> · <a href="#good-to-know">Installer or portable?</a>
+  Free, for Windows 10 and 11 or macOS 13 and later. It keeps itself up to date.<br>
+  <a href="https://github.com/DashingNights/EasyWriter/releases/latest">What's new</a> · <a href="#good-to-know">Which download?</a>
 </p>
 
-EasyWriter is a Windows app for writing up your projects. Forum posts and documents hold canvases, flowcharts and plan charts next to their text, and an AI assistant can help anywhere in the app.
+EasyWriter is a Windows and Mac app for writing up your projects. Forum posts and documents hold canvases, flowcharts and plan charts next to their text, and an AI assistant can help anywhere in the app.
 
 <p><img src="docs/img/feature-forum.webp" width="100%" alt="Forum posts: write them with the forum's own tools, such as boxes, tables, pictures and canvases, then push the post into your thread's reply box."></p>
 <p><img src="docs/img/feature-documents.webp" width="100%" alt="Documents: a page view and a ribbon of tools, as in a word processor, with a reference list in Harvard or IEEE."></p>
@@ -23,16 +25,18 @@ EasyWriter is a Windows app for writing up your projects. Forum posts and docume
 <p><img src="docs/img/feature-canvas.webp" width="100%" alt="Canvas: paste a screenshot and mark it up with shapes, arrows and notes, inside your draft."></p>
 <p><img src="docs/img/feature-flow.webp" width="100%" alt="Flowcharts: move a box and its arrows follow. Flowcharts are kept in a library and can go into any draft."></p>
 <p><img src="docs/img/feature-plan.webp" width="100%" alt="Plan: a Kanban board, a backlog and a Gantt chart for every project, with your drafts on the cards."></p>
-<p><img src="docs/img/feature-more.webp" width="100%" alt="Also inside: a browser with tabs, dictation that runs on your PC, themes, GitHub backup, a quick access menu and a portable version. More features are coming soon."></p>
+<p><img src="docs/img/feature-more.webp" width="100%" alt="Also inside: a browser with tabs, dictation on your PC or with macOS Dictation, themes, GitHub backup, a quick access menu and a portable version for Windows. More features are coming soon."></p>
 
 ## Good to know
 
 <details>
-<summary><b>Installer or portable?</b></summary>
+<summary><b>Which download?</b></summary>
 
-Take the installer if you can install apps on your PC. Run `EasyWriter-Setup.exe` and follow the steps.
+On Windows, take the installer if you can install apps on your PC. Run `EasyWriter-Setup.exe` and follow the steps.
 
 Take the portable version on a PC that blocks installers, such as a school computer. Extract `EasyWriter-Portable.zip` anywhere you can save files, such as the Desktop or a USB stick, and run `EasyWriter.exe` inside it.
+
+On a Mac, take Apple silicon for a Mac with an M1 chip or later, and Intel for an older Mac. About This Mac, in the Apple menu, shows which chip yours has. Open the `.dmg` file, drag EasyWriter to Applications and open it from there. The first time, macOS asks whether to open an app downloaded from the internet. Apple has checked EasyWriter, so click **Open**.
 </details>
 
 <details>
@@ -54,13 +58,13 @@ curl.exe -L -o EasyWriter.zip https://github.com/DashingNights/EasyWriter/releas
 <details>
 <summary><b>Updates</b></summary>
 
-Both versions check for a new version and download it in the background. When it is ready, EasyWriter shows a Restart button, and it saves your open draft before it restarts. The [releases page](https://github.com/DashingNights/EasyWriter/releases) lists what changed in each version.
+EasyWriter checks for a new version and downloads it in the background. When it is ready, EasyWriter shows a Restart button, and it saves your open draft before it restarts. On a Mac, keep EasyWriter in Applications so that it can update itself. The [releases page](https://github.com/DashingNights/EasyWriter/releases) lists what changed in each version.
 </details>
 
 <details>
 <summary><b>Where your work is saved</b></summary>
 
-The installed version keeps everything in `%APPDATA%\EasyWriter`. The portable version keeps everything in the `data` folder next to `EasyWriter.exe`, so take that folder with you when you move the app.
+The installed version keeps everything in `%APPDATA%\EasyWriter`. The portable version keeps everything in the `data` folder next to `EasyWriter.exe`, so take that folder with you when you move the app. On a Mac, everything is in `~/Library/Application Support/EasyWriter`.
 
 For a copy somewhere else, turn on GitHub backup. Your drafts, plans and flowcharts then go to a private repository of your own.
 </details>
@@ -79,14 +83,14 @@ Invision Community forums. Turn the forum integration on in Settings, link a pro
 
 ## Build from source
 
-You need Windows and Node.js 22 or newer.
+You need Node.js 22 or newer, on Windows or macOS.
 
 ```
 npm install
 npm start
 ```
 
-`npm start` builds the app and opens it. `npm run dist` builds the installer and the portable zip into the `release` folder.
+`npm start` builds the app and opens it. On Windows, `npm run dist` builds the installer and the portable zip into the `release` folder. The Mac app is built, signed and notarized on GitHub when a version is released.
 
 ## Licence
 

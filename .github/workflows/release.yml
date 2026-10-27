@@ -138,8 +138,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      # The release's title, and which file to download above any notes it has (.github/release-download.md, then
-      # .github/release-download-mac.md when the Mac job ran).
+      # The release's title, and which file to download above any notes it has (.github/release-download.md, without its Mac
+      # rows when the Mac job did not run).
       - name: Release title and download notes
         shell: bash
         env:
@@ -148,7 +148,7 @@ jobs:
         run: |
           body="$(gh release view "$GITHUB_REF_NAME" --json body --jq .body)"
           download="$(cat .github/release-download.md)"
-          if [ "$MAC" = success ]; then download="$(printf '%s\n\n%s' "$download" "$(cat .github/release-download-mac.md)")"; fi
+          if [ "$MAC" != success ]; then download="$(grep -v 'EasyWriter-mac-' <<<"$download")"; fi
           if ! grep -q '^## Download' <<<"$body"; then printf '%s\n\n%s\n' "$download" "$body" > notes.md; else printf '%s\n' "$body" > notes.md; fi
           gh release edit "$GITHUB_REF_NAME" --title "EasyWriter ${GITHUB_REF_NAME#v}" --notes-file notes.md
       - name: Publish release

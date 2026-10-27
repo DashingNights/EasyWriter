@@ -5,6 +5,7 @@
 // a flowchart and a plan) and is captured at 2x; banner pages lay the captures out and are captured in turn.
 //   npm run readme-art               everything
 //   npm run readme-art -- --layout   the banners again from the last captures, to work on their layout
+//   ... -- --media                    also the assistant's animation as media/assistant.mp4 and .gif (not published), to use elsewhere
 const fs = require('fs');
 const path = require('path');
 const { app, BrowserWindow, nativeImage } = require('electron');
@@ -14,6 +15,7 @@ const UD = path.join(ROOT, '.smoke-data', 'readme-art');
 const SHOTS = path.join(ROOT, '.smoke-data', 'readme-art-shots'); // kept for --layout
 const IMG = path.join(ROOT, 'docs', 'img');
 const LAYOUT = process.argv.includes('--layout');
+const MEDIA = process.argv.includes('--media');
 const VIEW = { width: 1440, height: 900 }; // the app's window in CSS px; captured at twice that
 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -404,7 +406,8 @@ const BANNERS = {
         <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:22px">
           ${[['MessagesSquare', 'Forum posts'], ['FileText', 'Documents'], ['Sparkles', 'AI assistant'], ['Frame', 'Canvases'], ['Workflow', 'Flowcharts'], ['SquareKanban', 'Plans']].map(([i, t]) =>
             `<span style="display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border-radius:999px;font-size:12.5px;font-weight:600;color:#dbe4ff;background:rgb(59 130 246 / 0.16);box-shadow:inset 0 0 0 1px rgb(147 180 255 / 0.25)">${icon(i, 13)}${t}</span>`).join('')}
-        </div></div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;margin-top:20px;font-size:14px;font-weight:600;color:#a8abb3">${icon('Monitor', 16)}Free for Windows and macOS</div></div>
       ${shot('forum', WHOLE, [372, 40], 600, { cls: 'tilt' })}
       ${shot('plan-gantt', planArea('plan-gantt', 126, 300), [336, 262], 300, { cls: 'tilt', style: 'border-radius:10px' })}
     </div>`,
@@ -430,11 +433,11 @@ const BANNERS = {
       <div class="text" style="left:44px;right:44px;top:30px"><div class="eyebrow">${icon('Sparkles', 16)}Also inside</div></div>
       <div class="text" style="left:44px;right:44px;top:64px;display:grid;grid-template-columns:repeat(3,1fr);gap:12px">
         ${[['Globe', 'Browser', 'Web pages in tabs, right beside your draft.'],
-          ['Mic', 'Dictation', 'Speak instead of typing. It runs on your PC.'],
+          ['Mic', 'Dictation', 'Speak instead of typing, on your PC or with macOS Dictation.'],
           ['Palette', 'Themes', 'Light or dark, with your own colours for panels and text.'],
           ['CloudUpload', 'Backup', 'Your drafts, plans and flowcharts in a private GitHub repository.'],
           ['Command', 'Quick access', 'One shortcut opens the tools for what you are working on.'],
-          ['Usb', 'Portable', 'Runs from a folder with no install, for school PCs.']].map(([i, t, l]) => `
+          ['Usb', 'Portable', 'A Windows copy that runs from a folder, for school PCs.']].map(([i, t, l]) => `
           <div style="padding:14px 15px 13px;border-radius:14px;background:rgb(255 255 255 / 0.045);box-shadow:inset 0 0 0 1px rgb(255 255 255 / 0.07)">
             <div style="width:32px;height:32px;border-radius:9px;display:grid;place-items:center;color:#fde68a;background:rgb(250 204 21 / 0.14)">${icon(i, 18)}</div>
             <div style="margin-top:10px;font-size:15.5px;font-weight:700">${t}</div>
@@ -443,7 +446,9 @@ const BANNERS = {
       <div class="text" style="left:0;right:0;bottom:22px;text-align:center;font-size:14.5px;font-weight:600;color:#fde68a">More features are coming soon.</div></div>`,
   }),
   'download-installer': () => button({ primary: true, iconName: 'Download', title: 'Download for Windows', sub: 'Installer' }),
-  'download-portable': () => button({ iconName: 'FolderArchive', title: 'Portable version', sub: 'No install needed' }),
+  'download-portable': () => button({ iconName: 'FolderArchive', title: 'Portable version', sub: 'Windows, no install needed' }),
+  'download-mac-arm64': () => button({ primary: true, iconName: 'Download', title: 'Download for macOS', sub: 'Apple silicon (M1 or later)' }),
+  'download-mac-x64': () => button({ iconName: 'Cpu', title: 'Download for macOS', sub: 'Intel' }),
 };
 
 /** A download button for the README (it links nowhere itself; the README wraps it in its link). */
@@ -516,8 +521,8 @@ function assistantBanner() {
 }
 
 /** Renders the animated `page` as frames at `fps` (its CSS animations stepped by hand) and encodes them with ffmpeg as an animated
- * WebP at `out`. */
-async function animate(win, page, out, { fps = 12, scale = 1.5 } = {}) {
+ * WebP at `out` (15 fps); with `media` ({mp4, gif} paths) also as a 30 fps video and a 15 fps GIF for use outside the README. */
+async function animate(win, page, out, { fps = 30, scale = 1.5, media = null } = {}) {
   const frames = path.join(UD, 'frames');
   fs.rmSync(frames, { recursive: true, force: true });
   fs.mkdirSync(frames, { recursive: true });
@@ -529,8 +534,14 @@ async function animate(win, page, out, { fps = 12, scale = 1.5 } = {}) {
     fs.writeFileSync(path.join(frames, `f${String(k).padStart(3, '0')}.png`), Buffer.from(data, 'base64'));
   }
   const { execFileSync } = require('child_process');
-  execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-framerate', String(fps), '-i', path.join(frames, 'f%03d.png'), '-c:v', 'libwebp_anim',
-    '-quality', '80', '-loop', '0', out]);
+  const ffmpeg = (...args) => execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-framerate', String(fps), '-i', path.join(frames, 'f%03d.png'), ...args]);
+  ffmpeg('-vf', 'fps=15', '-c:v', 'libwebp_anim', '-quality', '80', '-loop', '0', out);
+  if (!media) return;
+  // On the card's own colour: a video has no alpha, and a GIF's on-or-off alpha would leave jagged corners.
+  const [w, h] = [Math.round(page.w * scale), Math.round(page.h * scale)];
+  const flat = `color=c=0x0c0e13:s=${w}x${h}:r=${fps}[bg];[bg][0:v]overlay=shortest=1`;
+  ffmpeg('-filter_complex', `${flat},format=yuv420p`, '-c:v', 'libx264', '-crf', '18', '-preset', 'slow', '-movflags', '+faststart', media.mp4);
+  ffmpeg('-filter_complex', `${flat},fps=15,split[a][b];[a]palettegen=stats_mode=full[p];[b][p]paletteuse=dither=sierra2_4a`, '-loop', '0', media.gif);
 }
 
 // The installer's pictures, at their own size: the welcome page's sidebar (164 x 314) and the header of its other pages (150 x 57).
@@ -614,8 +625,10 @@ async function layout() {
   }
   fs.writeFileSync(path.join(IMG, 'social.jpg'), await render(win, BANNERS.banner(), { scale: 1, format: 'jpeg', zoom: 1.6, square: true }));
   console.log('wrote docs/img/social.jpg');
-  await animate(win, assistantBanner(), path.join(IMG, 'feature-assistant.webp'));
-  console.log('wrote docs/img/feature-assistant.webp');
+  const media = MEDIA && { mp4: path.join(ROOT, 'media', 'assistant.mp4'), gif: path.join(ROOT, 'media', 'assistant.gif') };
+  if (media) fs.mkdirSync(path.join(ROOT, 'media'), { recursive: true });
+  await animate(win, assistantBanner(), path.join(IMG, 'feature-assistant.webp'), { media });
+  console.log(`wrote docs/img/feature-assistant.webp${media ? ', media/assistant.mp4 and media/assistant.gif' : ''}`);
   for (const [name, page] of Object.entries(INSTALLER)) {
     fs.writeFileSync(path.join(ROOT, 'build', `${name}.bmp`), bmp(await render(win, page(), { scale: 1, format: 'png', bg: page().bg })));
     console.log('wrote', `build/${name}.bmp`);

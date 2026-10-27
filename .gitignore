@@ -10,6 +10,9 @@ smoke-*
 test/smoke/
 test/assistant-eval/
 
+# Exports for use outside the README (npm run readme-art -- --media)
+media/
+
 # The owner's own tools and notes: Claude Code (worktrees, skills, local settings), the editor, the spec and plans
 .claude/
 .vscode/
