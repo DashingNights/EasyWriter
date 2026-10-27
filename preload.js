@@ -33,6 +33,12 @@ contextBridge.exposeInMainWorld('api', {
     zoom: call('window.zoom'),
     titleBar: call('window.titleBar'),
     capture: call('window.capture'),
+    /** The Mac menu's Settings… (Cmd+,, main.js macMenu); returns the unsubscribe function. */
+    onSettings: (fn) => {
+      const listener = () => fn();
+      ipcRenderer.on('app.settings', listener);
+      return () => ipcRenderer.off('app.settings', listener);
+    },
   },
   // The main window's right-click: `editMenu.open` {misspelledWord, suggestions, linkURL, editFlags} for each; act(action) with
   // native | learn | copyLink | cut | copy | paste | pasteAndMatchStyle | selectAll. onOpen returns the unsubscribe function.
@@ -52,6 +58,7 @@ contextBridge.exposeInMainWorld('api', {
     transcribe: call('dictation.transcribe'),
     listModels: call('dictation.listModels'),
     deleteModel: call('dictation.deleteModel'),
+    system: call('dictation.system'), // 'start' | 'stop': macOS Dictation (Mac only)
     /** Install progress events; returns the unsubscribe function. */
     onProgress: (fn) => {
       const listener = (_e, p) => fn(p);
@@ -88,6 +95,14 @@ contextBridge.exposeInMainWorld('api', {
       const listener = (_e, p) => fn(p);
       ipcRenderer.on('browser.event', listener);
       return () => ipcRenderer.off('browser.event', listener);
+    },
+  },
+  // Globe+Tab and Globe+Space on a Mac (SPEC §7k, main.js watchGlobe): `key.globe` {code: Tab | Space, shift, ctrl, alt, meta, repeat}.
+  keys: {
+    onGlobe: (fn) => {
+      const listener = (_e, p) => fn(p);
+      ipcRenderer.on('key.globe', listener);
+      return () => ipcRenderer.off('key.globe', listener);
     },
   },
   // Local AI agents (SPEC §8 Agents): the gateway's calls run in the executor (commands.js); `agent.event` {type: call, rid,

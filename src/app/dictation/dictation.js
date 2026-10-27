@@ -1,7 +1,8 @@
 import { toast } from 'sonner';
-import { saveSettings } from '../actions.js';
+import { refocusEditor, saveSettings } from '../actions.js';
 import { motion } from '../motion.js';
 import { getState, setState, useStore } from '../store.js';
+import { MAC } from '../../platform.mjs';
 import { cleanText, commitPoint, DICTATION_DEFAULTS, encodeWav, hasSpeech, joinText, RATE } from './core.mjs';
 
 // Push-to-talk dictation (SPEC §7h): microphone capture, the transcription loop and the transcript pane's state. The right
@@ -22,8 +23,9 @@ const get = () => getState().dictation ?? IDLE;
 const set = (patch) => setState({ dictation: { ...get(), ...patch } });
 export const useDictation = () => useStore((s) => s.dictation ?? IDLE);
 export const dictationSettings = () => ({ ...DICTATION_DEFAULTS, ...getState().settings?.dictation });
-/** Whether settings.dictation can run (main's status ready, from the settings): installed, or the user's own server or files. */
-export const dictationReady = (d) => !!d && (!!d.installed || !!d.serverUrl?.trim() || (!!d.serverPath && !!d.modelPath));
+/** Whether settings.dictation can run (main's status ready, from the settings): installed, or the user's own server or files.
+ * Always on the Mac, whose own Dictation needs nothing from the app. */
+export const dictationReady = (d) => MAC || (!!d && (!!d.installed || !!d.serverUrl?.trim() || (!!d.serverPath && !!d.modelPath)));
 const message = (e) => String(e?.message || e).replace(/^Error invoking remote method '[^']+': (Error: )?/, '');
 
 let seqTimer = 0; // the playing sequence's end (close or reverse open)
@@ -65,10 +67,21 @@ export const minimize = (minimized) => (!minimized ? open() : hasText(get()) || 
 /** The mic button: opens the pane (restoring a minimized one with its transcript), or puts the open one away as Minimize
  * does. A click while it is closing keeps it open. */
 export function toggleDictation() {
+  if (MAC) return systemDictation(!get().recording);
   const d = get();
   if (d.closing) return set({ closing: false });
   if (!d.shown) return set({ ...IDLE, shown: true });
   minimize(!d.minimized);
+}
+
+/** The Mac (§7h Mac): macOS Dictation started or stopped. It types where the focus is (the editor unless a text field has it,
+ * e.g. the chat box), so no pane shows; `recording` only tints the mic buttons. ponytail: the system does not say when it
+ * stops (its own Done, Esc, the focus moving), so the tint can stay on until the next click; watch for the end if that confuses. */
+export function systemDictation(on) {
+  const el = document.activeElement;
+  if (on && !el?.isContentEditable && !['INPUT', 'TEXTAREA'].includes(el?.tagName)) refocusEditor();
+  set({ recording: on });
+  api.dictation.system(on ? 'start' : 'stop').catch(() => {});
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -185,6 +198,7 @@ async function finish(r) {
  * With `sink` (the chat panel's mic) the session's transcript goes to `sink({recording, committed, partial, error, done})` on
  * every change instead, and the pane is left as it is; `done: true` comes once, last. */
 export async function pttDown(sink = null) {
+  if (MAC) return systemDictation(true);
   pressed = true;
   const ready = await api.dictation.status().then((s) => s.ready, () => false);
   if (!ready) {
@@ -209,12 +223,14 @@ export async function pttDown(sink = null) {
 
 /** PTT released (anywhere: the button holds the pointer capture). */
 export function pttUp() {
+  if (MAC) return systemDictation(false);
   pressed = false;
   if (rec) finish(rec);
 }
 
 /** Starts the local server ahead of the first press (on hover); quiet when dictation is not installed. */
 export function warm() {
+  if (MAC) return;
   api.dictation.status().then((s) => s.ready && api.dictation.warm()).catch(() => {});
 }
 

@@ -134,6 +134,8 @@ const tar = (args) => new Promise((resolve, reject) => {
 /** Downloads what model `id` still needs (server, model, VAD model), sending `dictation.progress` events. */
 async function runInstall(id) {
   if (install) throw new Error('Dictation is already being installed.');
+  // The Mac uses macOS Dictation (§7h Mac); the download is the Windows build anyway.
+  if (process.platform === 'darwin') throw new Error('On a Mac, dictation uses macOS Dictation.');
   install = new AbortController();
   const { signal } = install;
   try {

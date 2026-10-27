@@ -10,7 +10,7 @@ import {
 import { dismissOnly } from '../../whiteboard.js';
 import { openLinkDialog, refocusEditor, run } from '../actions.js';
 import { openPane } from '../browser.js';
-import { keyLabel } from '../keybinds.js';
+import { fixedKey, keyLabel } from '../keybinds.js';
 import { getState, useEditor } from '../store.js';
 import { BLOCK_SECTIONS } from '../tool-rank.mjs';
 import { entryKey, listTools, toolContext } from '../tools.js';
@@ -111,8 +111,8 @@ export function DraftMenu() {
   const link = menu.linkURL && ed.isActive('link') ? menu.linkURL : null;
   const selected = !ed.state.selection.empty;
   const { canCut, canCopy, canPaste } = menu.editFlags;
-  const paste = [item('Paste', <ClipboardPaste />, 'Ctrl+V', act('paste'), canPaste),
-    item('Paste as plain text', <ClipboardType />, 'Ctrl+Shift+V', act('pasteAndMatchStyle'), canPaste)];
+  const paste = [item('Paste', <ClipboardPaste />, fixedKey('Ctrl+V'), act('paste'), canPaste),
+    item('Paste as plain text', <ClipboardType />, fixedKey('Ctrl+Shift+V'), act('pasteAndMatchStyle'), canPaste)];
   const table = ed.isActive('table') && (
     <DropdownMenuSub>
       <DropdownMenuSubTrigger><Table />Table</DropdownMenuSubTrigger>
@@ -131,8 +131,8 @@ export function DraftMenu() {
       <>
         {block.filter((t) => t.risk !== 'destructive').map((t) => t.el)}
         <DropdownMenuSeparator />
-        {item('Cut', <Scissors />, 'Ctrl+X', act('cut'))}
-        {item('Copy', <Copy />, 'Ctrl+C', act('copy'))}
+        {item('Cut', <Scissors />, fixedKey('Ctrl+X'), act('cut'))}
+        {item('Copy', <Copy />, fixedKey('Ctrl+C'), act('copy'))}
         <DropdownMenuSeparator />
         {block.filter((t) => t.risk === 'destructive').map((t) => t.el)}
       </>
@@ -141,8 +141,8 @@ export function DraftMenu() {
     body = (
       <>
         {T.picture?.alt != null && <>{item('Alt text...', <Captions />, '', editAltText)}<DropdownMenuSeparator /></>}
-        {item('Cut', <Scissors />, 'Ctrl+X', act('cut'), canCut)}
-        {item('Copy', <Copy />, 'Ctrl+C', act('copy'), canCopy)}
+        {item('Cut', <Scissors />, fixedKey('Ctrl+X'), act('cut'), canCut)}
+        {item('Copy', <Copy />, fixedKey('Ctrl+C'), act('copy'), canCopy)}
         {paste}
         <DropdownMenuSeparator />
         {tool('bold', 'Bold', <Bold />)}
@@ -187,7 +187,7 @@ export function DraftMenu() {
         </DropdownMenuSub>
         {table}
         <DropdownMenuSeparator />
-        {item('Select all', <TextSelect />, 'Ctrl+A', () => run((x) => x.selectAll()))}
+        {item('Select all', <TextSelect />, fixedKey('Ctrl+A'), () => run((x) => x.selectAll()))}
       </>
     );
   }

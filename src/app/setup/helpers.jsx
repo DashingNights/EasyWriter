@@ -23,6 +23,7 @@ import { spokenFields } from '../dictation/core.mjs';
 import { LanguageNotice, mb, ModelLevel, ModelPoints } from '../dictation/Dictation.jsx';
 import { cancelInstall, dictationReady, dictationSettings, install } from '../dictation/dictation.js';
 import { getState, useStore } from '../store.js';
+import { MAC } from '../../platform.mjs';
 import { AutoHeight, ipcMessage, pickCard, SUB_PLACE } from './shared.jsx';
 
 const keep = (e) => e.preventDefault();
@@ -291,7 +292,7 @@ function AssistantDialog({ onDone, onCancel }) {
 const CARDS = [
   ['assistant', 'Assistant', MessageSquare, 'Answers questions about your drafts and edits them, with the AI provider you pick.'],
   ['dictation', 'Dictation', Mic, 'Turns your speech into text. It runs on this computer, so no audio leaves it.'],
-];
+].filter(([id]) => !MAC || id !== 'dictation'); // the Mac has macOS Dictation, nothing to set up (§7h Mac)
 const OWN = 'It uses your own whisper.cpp, so it cannot be turned off here. Change that in Settings > Dictation.';
 
 export function Helpers() {

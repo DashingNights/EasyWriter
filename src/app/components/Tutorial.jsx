@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { canvasEditor } from '../../canvas.js';
 import { enabled } from '../../integrations/index.mjs';
 import { refocusEditor, saveSettings, toast } from '../actions.js';
-import { codeOf } from '../keys.mjs';
+import { codeOf, isMac, modsOf, partName, symbolOf } from '../keys.mjs';
 import { motion } from '../motion.js';
 import { getState, setState, useStore } from '../store.js';
 import { Help } from './Tip.jsx';
@@ -335,6 +335,8 @@ const Burst = () => DOTS.map((a) => (
 ));
 
 const KEYCAP = 'inline-flex h-10 min-w-12 items-center justify-center justify-self-center rounded-lg border bg-card px-3 font-sans text-sm font-medium';
+/** Modifier `m`'s keycap: as written on Windows, the symbol and the name on a Mac, as Apple's keycaps ("⌘ command"). */
+const capOf = (m) => (isMac() ? `${symbolOf(m)} ${partName(m).toLowerCase()}` : m);
 const Key = ({ label, down, demo }) => <kbd data-down={down || undefined} data-demo={demo} className={KEYCAP}>{label}</kbd>;
 
 const Stage = ({ n, on, done, children }) => (
@@ -357,7 +359,8 @@ function Combo({ chord, match, task, onDone }) {
     let finished = false;
     sense = (e) => {
       if (finished) return;
-      const held = { Ctrl: e.ctrlKey || e.metaKey, Alt: e.altKey, Shift: e.shiftKey };
+      const held = modsOf(e);
+      if (e.type === 'keyup') held.Fn = false; // Globe has no key events of its own: it is up once its chord's key is
       setDown((d) => ({ ...Object.fromEntries(mods.map((m) => [m, !!held[m]])), [key]: e.code === codeOf(key) ? e.type === 'keydown' : !!d?.[key] }));
       if (e.type !== 'keydown' || !match(e)) return;
       finished = true;
@@ -392,7 +395,7 @@ function Combo({ chord, match, task, onDone }) {
         <div className="col-span-full grid grid-cols-subgrid items-center rounded-2xl border bg-background/40 px-3 py-2.5">
           {!!mods.length && (
             <>
-              <span className="flex gap-1.5 justify-self-center">{mods.map((m) => <Key key={m} label={m} down={!!down?.[m]} demo={demo ? 'hold' : undefined} />)}</span>
+              <span className="flex gap-1.5 justify-self-center">{mods.map((m) => <Key key={m} label={capOf(m)} down={!!down?.[m]} demo={demo ? 'hold' : undefined} />)}</span>
               <span className="justify-self-center text-muted-foreground">+</span>
             </>
           )}

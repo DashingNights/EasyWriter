@@ -10,31 +10,52 @@ const path = require('path');
 
 const HOME = os.homedir();
 const WIN = process.platform === 'win32';
+const MAC = process.platform === 'darwin';
 const LOCAL = process.env.LOCALAPPDATA || path.join(HOME, 'AppData', 'Local');
 const ROAMING = process.env.APPDATA || path.join(HOME, 'AppData', 'Roaming');
 const KEY_VAR = 'EASYWRITER_ASSISTANT'; // the bridge's env: the key that makes its calls the in-app assistant's
 const SERVER = 'easywriter'; // the MCP server's name in the run: Claude names its tools mcp__easywriter__<tool>
-// The CLIs (settings.assistant.provider): the executable, the folders their installers use besides PATH, the settings fields,
-// how to install and sign in. Efforts from `claude --help` (2.1.274) and Codex's model_reasoning_effort values (0.154.0).
+// The CLIs (settings.assistant.provider): the executable, the folders their installers use besides PATH (`dirs(sys)`), the copy
+// an app brings (`app(sys)`), the settings fields, how to install and sign in. `sys` = {platform, arch, home, PATH} (here(); the
+// tests pass a Mac). Efforts from `claude --help` (2.1.274) and Codex's model_reasoning_effort values (0.154.0).
 const CLIS = {
   claude: {
     // label: the app name, then the CLI (the user, 2026-10-26, as ChatGPT (Codex)).
     label: 'Claude (Claude Code)', bin: 'claude', npm: '@anthropic-ai/claude-code', pathField: 'claudePath', modelField: 'claudeModel', effortField: 'claudeEffort',
-    dirs: [path.join(HOME, '.local', 'bin'), path.join(HOME, '.claude', 'local'), '/opt/homebrew/bin', '/usr/local/bin'],
-    // The Claude app for Windows keeps its own Claude Code in <appDir>/<version>/<build>/claude.exe; the newest one is used.
-    appDir: path.join(ROAMING, 'Claude', 'claude-code'),
-    // Not found: the Claude app brings Claude Code with it.
-    install: 'Download the Claude app for Windows, then open Settings again.', installUrl: 'https://claude.com/download',
-    login: 'Run claude in a terminal and sign in.',
+    // ~/.local/bin: the native installer's link.
+    dirs: (s) => [path.join(s.home, '.local', 'bin'), path.join(s.home, '.claude', 'local'), '/opt/homebrew/bin', '/usr/local/bin'],
+    // The Claude app keeps its own Claude Code per version, the newest one is used: on Windows <version>/<build>/claude.exe, on
+    // a Mac <version>/claude.app/Contents/MacOS/claude (from a GitHub issue, unverified).
+    app: (s) => (s.platform === 'darwin'
+      ? newestIn(path.join(s.home, 'Library', 'Application Support', 'Claude', 'claude-code'), path.join('claude.app', 'Contents', 'MacOS', 'claude'), false)
+      : newestIn(path.join(ROAMING, 'Claude', 'claude-code'), s.platform === 'win32' ? 'claude.exe' : 'claude')),
+    // Not found: the Claude app brings Claude Code with it on Windows; a Mac installs it in Terminal.
+    ...(MAC ? {
+      install: 'Install Claude Code in Terminal with curl -fsSL https://claude.ai/install.sh | bash, then open Settings again.', installUrl: 'https://code.claude.com/docs/en/setup',
+      login: 'Run claude in Terminal and sign in.',
+    } : {
+      install: 'Download the Claude app for Windows, then open Settings again.', installUrl: 'https://claude.com/download',
+      login: 'Run claude in a terminal and sign in.',
+    }),
     efforts: ['low', 'medium', 'high', 'xhigh', 'max'],
   },
   codex: {
     // label: the name the user knows it by (2026-10-26).
     label: 'ChatGPT (Codex)', bin: 'codex', npm: '@openai/codex', pathField: 'codexPath', modelField: 'codexModel', effortField: 'codexEffort',
-    dirs: [path.join(LOCAL, 'Programs', 'OpenAI', 'Codex', 'bin'), path.join(HOME, '.codex', 'packages', 'standalone', 'current', 'bin'), '/opt/homebrew/bin', '/usr/local/bin'],
-    // Not found: the ChatGPT app for Windows brings Codex with it (the user, 2026-10-26).
-    install: 'Download the ChatGPT app for Windows, then open Settings again.', installUrl: 'https://chatgpt.com/download/',
-    login: 'Run codex login in a terminal.',
+    // A Mac: ~/.local/bin, where Codex's install script links it.
+    dirs: (s) => [s.platform === 'darwin' ? path.join(s.home, '.local', 'bin') : path.join(LOCAL, 'Programs', 'OpenAI', 'Codex', 'bin'),
+      path.join(s.home, '.codex', 'packages', 'standalone', 'current', 'bin'), '/opt/homebrew/bin', '/usr/local/bin'],
+    // The Codex and ChatGPT apps' own copy on a Mac (unverified).
+    app: (s) => (s.platform !== 'darwin' ? null : ['/Applications', path.join(s.home, 'Applications')]
+      .flatMap((d) => ['Codex.app', 'ChatGPT.app'].map((a) => path.join(d, a, 'Contents', 'Resources', 'codex'))).find(isFile) ?? null),
+    // Not found: the ChatGPT app for Windows brings Codex with it (the user, 2026-10-26); a Mac installs it in Terminal (its README).
+    ...(MAC ? {
+      install: 'Install Codex in Terminal with curl -fsSL https://chatgpt.com/codex/install.sh | sh, then open Settings again.', installUrl: 'https://github.com/openai/codex',
+      login: 'Run codex login in Terminal.',
+    } : {
+      install: 'Download the ChatGPT app for Windows, then open Settings again.', installUrl: 'https://chatgpt.com/download/',
+      login: 'Run codex login in a terminal.',
+    }),
     efforts: ['minimal', 'low', 'medium', 'high', 'xhigh'],
   },
 };
@@ -59,37 +80,92 @@ function fromShim(id, cmd) {
   }
 }
 
-/** The executable of CLI `id`: settings.assistant's custom path when it is a file, else the first on PATH or in CLIS.dirs, or null.
- * Windows: an .exe, or the one behind an npm .cmd shim (fromShim). */
-function find(id, custom) {
-  const native = (f) => (WIN && /\.cmd$/i.test(f) ? fromShim(id, f) : f);
+/** The native Codex behind an npm install on a Mac: `<prefix>/bin/codex` links to the package's bin/codex.js (`#!/usr/bin/env
+ * node`), and the package holds vendor/<triple>/…/codex (maybe in a nested platform package, @openai/codex-darwin-arm64). Else
+ * `file` itself, which still runs with node on the merged PATH. */
+function fromLink(file, s) {
+  let real;
+  try { real = fs.realpathSync(file); } catch { return file; }
+  if (!/\.js$/i.test(real)) return file;
+  const pkg = path.dirname(path.dirname(real));
+  const triple = s.arch === 'arm64' ? 'aarch64-apple-darwin' : 'x86_64-apple-darwin';
+  try {
+    const hit = fs.readdirSync(pkg, { recursive: true }).map(String).find((f) => {
+      const p = f.split(/[\\/]/);
+      const i = p.indexOf('vendor');
+      return i >= 0 && p[i + 1] === triple && p.at(-1) === 'codex' && isFile(path.join(pkg, f));
+    });
+    return hit ? path.join(pkg, hit) : file;
+  } catch {
+    return file;
+  }
+}
+
+/** The executable of CLI `id` on `s` (here()): settings.assistant's custom path when it is a file, else the first on s.PATH (the
+ * login shell's PATH, then the app's) or in CLIS.dirs, else the copy an app brings, or null. Windows: an .exe, or the one behind
+ * an npm .cmd shim (fromShim); a Mac: an npm-linked codex resolves to its native binary (fromLink). */
+function find(id, custom, s = here()) {
+  const win = s.platform === 'win32';
+  const native = (f) => (win && /\.cmd$/i.test(f) ? fromShim(id, f) : s.platform === 'darwin' && id === 'codex' ? fromLink(f, s) : f);
   const own = str(custom);
   if (own) return isFile(own) ? native(own) : null;
-  const names = WIN ? [`${CLIS[id].bin}.exe`, `${CLIS[id].bin}.cmd`] : [CLIS[id].bin];
-  for (const dir of [...(process.env.PATH || '').split(path.delimiter).filter(Boolean), ...CLIS[id].dirs]) {
+  const names = win ? [`${CLIS[id].bin}.exe`, `${CLIS[id].bin}.cmd`] : [CLIS[id].bin];
+  for (const dir of [...(s.PATH || '').split(path.delimiter).filter(Boolean), ...CLIS[id].dirs(s)]) {
     for (const name of names) {
       const file = path.join(dir, name);
       const exe = isFile(file) && native(file);
       if (exe) return exe;
     }
   }
-  return CLIS[id].appDir ? newestIn(CLIS[id].appDir, names[0]) : null;
+  return CLIS[id].app(s);
 }
 
-/** The newest `<dir>/<version>/<build>/<name>` by version number, else null. */
-function newestIn(dir, name) {
+/** The newest `<dir>/<version>/<build>/<name>` by version number (`build` false: `<dir>/<version>/<name>`), else null. A
+ * claude-code-vm folder holds a Linux binary and is skipped. */
+function newestIn(dir, name, build = true) {
   const list = (d) => { try { return fs.readdirSync(d); } catch { return []; } };
   const parts = (v) => v.split('.').map((n) => Number(n) || 0);
   const newer = (a, b) => { const x = parts(a), y = parts(b); for (let i = 0; i < Math.max(x.length, y.length); i++) if ((x[i] ?? 0) !== (y[i] ?? 0)) return (y[i] ?? 0) - (x[i] ?? 0); return 0; };
-  for (const v of list(dir).sort(newer)) {
+  for (const v of list(dir).filter((v) => v !== 'claude-code-vm').sort(newer)) {
+    if (!build) { if (isFile(path.join(dir, v, name))) return path.join(dir, v, name); continue; }
     for (const b of list(path.join(dir, v))) if (isFile(path.join(dir, v, b, name))) return path.join(dir, v, b, name);
   }
   return null;
 }
 
+// The PATH of the user's login shell (a Mac). An app started from Finder gets /usr/bin:/bin:/usr/sbin:/sbin, without Homebrew,
+// ~/.local/bin or node. Only PATH is taken: an ANTHROPIC_API_KEY exported in .zshrc would make `claude -p` bill that key
+// instead of the user's subscription.
+const MARK = '__EASYWRITER_PATH__'; // around the PATH, since interactive startup files may print banners
+let shellPath = ''; // the login PATH once read
+let shellRead = null; // Promise of it, once per app run
+
+/** The PATH between the first two MARK lines of the login shell's output, else ''. Pure. */
+function pathBetween(out) {
+  const p = String(out ?? '').split(MARK);
+  return p.length >= 3 ? p[1].trim() : '';
+}
+
+/** Reads the login shell's PATH once (`$SHELL -ilc`, 5 s); '' when not a Mac or it fails, so find keeps the app's PATH. */
+function loginPath() {
+  if (!MAC) return Promise.resolve('');
+  shellRead ??= new Promise((resolve) => {
+    execFile(process.env.SHELL || '/bin/zsh', ['-ilc', `echo ${MARK}; /usr/bin/printenv PATH; echo ${MARK}`],
+      { timeout: 5000, maxBuffer: 1 << 20, env: { ...process.env, DISABLE_AUTO_UPDATE: 'true', ZSH_TMUX_AUTOSTART: 'false' } },
+      (e, out) => resolve(shellPath = pathBetween(out)));
+  });
+  return shellRead;
+}
+
+/** This machine for find; PATH = the login shell's PATH (once read), then the app's. */
+const here = () => ({ platform: process.platform, arch: process.arch, home: HOME, PATH: [shellPath, process.env.PATH].filter(Boolean).join(path.delimiter) });
+
+/** The app's env, with the merged PATH on a Mac once the login PATH is read, so a `#!/usr/bin/env node` CLI finds node. */
+const envWithPath = () => (shellPath ? { ...process.env, PATH: here().PATH } : process.env);
+
 /** Runs `file args` → {code, out, err}, killed after `ms`. */
 const quick = (file, args, ms = 10000) => new Promise((resolve) => {
-  execFile(file, args, { timeout: ms, windowsHide: true, maxBuffer: 1 << 20 }, (e, out, err) => resolve({ code: e ? (e.code ?? 1) : 0, out: String(out), err: String(err) }));
+  execFile(file, args, { timeout: ms, windowsHide: true, maxBuffer: 1 << 20, env: envWithPath() }, (e, out, err) => resolve({ code: e ? (e.code ?? 1) : 0, out: String(out), err: String(err) }));
 });
 
 /** Codex's models: its models_cache.json (CODEX_HOME, else ~/.codex) lists the ones the signed-in account can pick. */
@@ -123,6 +199,7 @@ const probes = new Map(); // `${id}|${file}` → Promise of the probe, kept a mi
  * hint, models: [[id, label]], efforts}. */
 async function probe(id, a = {}, fresh = false) {
   const c = CLIS[id];
+  await loginPath();
   const file = find(id, a[c.pathField]);
   const base = { id, label: c.label, path: file, models: id === 'claude' ? CLAUDE_MODELS : codexModels(), efforts: c.efforts };
   if (!file) return { ...base, version: '', signedIn: false, account: '', state: 'not_found', hint: c.install, url: c.installUrl ?? null };
@@ -267,7 +344,7 @@ function killTree(child) {
 /** Starts one run of CLI `id` at `file` in folder `cwd` with `args`, the prompt on stdin and the bridge key in its env; each event
  * → `emit`; one `done` or `error` ends it (an exit without either → error with stderr's end). → {kill}. */
 function run({ id, file, args, cwd, prompt, key, emit }) {
-  const child = spawn(file, args, { cwd, env: { ...process.env, [KEY_VAR]: key }, windowsHide: true, detached: !WIN, stdio: ['pipe', 'pipe', 'pipe'] });
+  const child = spawn(file, args, { cwd, env: { ...envWithPath(), [KEY_VAR]: key }, windowsHide: true, detached: !WIN, stdio: ['pipe', 'pipe', 'pipe'] });
   const st = {};
   let ended = false;
   let err = '';
@@ -302,4 +379,4 @@ function run({ id, file, args, cwd, prompt, key, emit }) {
   return { st, kill: () => { ended = true; killTree(child); } };
 }
 
-module.exports = { CLIS, KEY_VAR, isCli, find, newestIn, probe, signInOf, codexModels, claudeArgs, codexArgs, parseClaude, parseCodex, run, killTree };
+module.exports = { CLIS, KEY_VAR, isCli, find, newestIn, pathBetween, probe, signInOf, codexModels, claudeArgs, codexArgs, parseClaude, parseCodex, run, killTree };

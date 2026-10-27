@@ -4,31 +4,34 @@ import { Plus, RotateCcw, TriangleAlert, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Kbd } from '@/components/ui/kbd';
-import { chordOf, collisions, DEFS, effective, GROUPS, windowsUse } from '../keys.mjs';
+import { chordOf, chordText, collisions, DEFS, effective, GROUPS, isMac, osUse } from '../keys.mjs';
 import { IconButton } from './Tip.jsx';
 
 // Settings > Keybinds (SPEC §7k): every binding of the registry with its chords. A chord button records a new chord in its place,
-// + adds one, x removes one, the reset arrow brings the defaults back. Warnings (Windows's own use of a chord, and two bindings
-// on one chord where both can act) show under the row and never block Save.
+// + adds one, x removes one, the reset arrow brings the defaults back. Warnings (the system's own use of a chord, Windows's or
+// macOS's, and two bindings on one chord where both can act) show under the row and never block Save.
 
 const DEFAULTS = effective(DEFS);
 const BY_ID = Object.fromEntries(DEFS.map((d) => [d.id, d]));
 // Where a plain typing key is harmless: these handlers already ignore keys typed into a text box.
 const NO_TYPING_WARNING = ['board', 'plan', 'flows'];
 
-/** The warnings of binding `d` with chords `keys` ([] when none): Windows's use of a chord the user chose (the defaults are the
- * app's known choices) and the other bindings on the same chord. */
+const OS = isMac() ? 'macOS' : 'Windows';
+
+/** The warnings of binding `d` with chords `keys` ([] when none): the system's use of a chord the user chose (the defaults are
+ * the app's known choices) and the other bindings on the same chord. */
 function warningsOf(d, keys, clashes) {
   const out = [];
   for (const chord of keys) {
     if (DEFAULTS[d.id].includes(chord)) continue;
-    const w = windowsUse(chord);
+    const w = osUse(chord);
     if (!w || (w.level === 'typing' && NO_TYPING_WARNING.includes(d.scope))) continue;
-    out.push(w.level === 'system' ? `Windows uses ${chord} (it ${w.what}), so the app never gets this key.`
-      : w.level === 'standard' ? `In Windows ${chord} ${w.what}. This keybind takes it over in the app.`
-        : `${chord} ${w.what}.`);
+    const c = chordText(chord);
+    out.push(w.level === 'system' ? `${OS} uses ${c} (it ${w.what}), so the app never gets this key.`
+      : w.level === 'standard' ? `In ${OS} ${c} ${w.what}. This keybind takes it over in the app.`
+        : `${c} ${w.what}.`);
   }
-  for (const c of clashes ?? []) out.push(`${c.chord} is also ${BY_ID[c.id].label} (${BY_ID[c.id].group}).`);
+  for (const c of clashes ?? []) out.push(`${chordText(c.chord)} is also ${BY_ID[c.id].label} (${BY_ID[c.id].group}).`);
   return out;
 }
 
@@ -36,10 +39,10 @@ function warningsOf(d, keys, clashes) {
 function Chord({ chord, recording, onRecord, onRemove }) {
   return (
     <Kbd className={cn('inline-flex items-center p-0', recording && 'ring-2 ring-ring')}>
-      <button type="button" className="px-1.5 py-0.5" aria-label={recording ? 'Press the new keys' : `Change ${chord}`} onClick={onRecord}>
-        {recording ? 'Press keys...' : chord}
+      <button type="button" className="px-1.5 py-0.5" aria-label={recording ? 'Press the new keys' : `Change ${chordText(chord)}`} onClick={onRecord}>
+        {recording ? 'Press keys...' : chordText(chord)}
       </button>
-      <button type="button" className="px-1 text-muted-foreground hover:text-foreground" aria-label={`Remove ${chord}`} onClick={onRemove}><X className="size-3" /></button>
+      <button type="button" className="px-1 text-muted-foreground hover:text-foreground" aria-label={`Remove ${chordText(chord)}`} onClick={onRemove}><X className="size-3" /></button>
     </Kbd>
   );
 }

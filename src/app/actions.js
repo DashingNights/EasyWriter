@@ -28,6 +28,7 @@ import { dropDraft, moveBeside, sortDrafts } from './draft-order.mjs';
 import { defaultTag, draftTag, pruneMap, tagDraft } from './drafts-meta.js';
 import { initBrowser } from './browser.js';
 import { keyAmong, keyIs, setKeybinds } from './keybinds.js';
+import { keybindsKey } from './keys.mjs';
 import { flushFlows, initFlows, insertFlowchartDialog } from './flows.js';
 import { can } from './gates.mjs';
 import * as history from './history.js';
@@ -280,7 +281,7 @@ addEventListener('storage', (e) => e.key === PALETTE_KEY && (document.getElement
 
 function applySettings() {
   const s = state.settings;
-  setKeybinds(s.keybinds); // §7k
+  setKeybinds(s[keybindsKey()]); // §7k
   applyUiTheme();
   if (!WORKER) applyPalette(s.palette);
   applyMotion(s);
@@ -1164,6 +1165,18 @@ function onKeyDown(e) {
   }
 }
 
+/** Globe+Tab or Globe+Space on a Mac (main.js watchGlobe; the page never sees the Globe key): a key press and release at the
+ * focus, with fnKey set, so every key reader (this handler, the tutorial, the keybind recorder) sees Fn+Tab or Fn+Space. */
+function globeKey({ code, shift, ctrl, alt, meta, repeat }) {
+  const el = document.activeElement || document.body;
+  for (const type of ['keydown', 'keyup']) {
+    const e = new KeyboardEvent(type, { code, key: code === 'Tab' ? 'Tab' : ' ', shiftKey: shift, ctrlKey: ctrl, altKey: alt, metaKey: meta,
+      repeat, bubbles: true, cancelable: true, composed: true, modifierFn: true });
+    Object.defineProperty(e, 'fnKey', { value: true });
+    el.dispatchEvent(e);
+  }
+}
+
 function onBeforeUnload(e) {
   if (state.syncReload) return; // GitHub backup: the files on disk are newer than anything in memory
   commitBoardEdit();
@@ -1261,6 +1274,7 @@ function bindStatic() {
   bindPanZoom($('#editor-area'), $('#page-wrap'), setZoom, (pct) => setState({ zoomPct: Math.round(pct) }));
   $('#editor-area').addEventListener('pointerdown', marginClick);
   window.addEventListener('keydown', onKeyDown, true);
+  api.keys?.onGlobe(globeKey);
   window.addEventListener('pointermove', (e) => { pointer = { x: e.clientX, y: e.clientY }; }, true);
   window.addEventListener('beforeunload', onBeforeUnload);
   // Entering canvas edit mode shows the notice pill (§6b); leaving it, like every other mode change, shows nothing.
@@ -1289,6 +1303,7 @@ async function init() {
   initBrowser();
   watchWorker();
   api.update.onEvent(onUpdateEvent);
+  api.window.onSettings(() => openSettings());
   // The demo draft (samples/demo.js) is no longer created on a new profile (docs/plans/onboarding.md); the flag is still set
   // once, so a profile reads the same to an older build, which would otherwise seed it.
   if (!state.settings.demoSeeded && !SMOKE) await saveSettings({ demoSeeded: true }).catch(() => {});

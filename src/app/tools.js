@@ -42,7 +42,7 @@ import { getState, useStore } from './store.js';
 import { blockKind, flowchartMode } from './tool-rank.mjs';
 import { showPage } from './views.js';
 import { keyLabel } from './keybinds.js';
-import { SHAPE_KEYS } from './keys.mjs';
+import { chordText, osChord, SHAPE_KEYS } from './keys.mjs';
 import { FLOW_TOOLS } from './tools-flow.js';
 import { PLAN_TOOLS } from './tools-plan.js';
 
@@ -479,7 +479,7 @@ const allTools = (c) => [...TOOLS, ...c.presets.map((p, i) => withWhen({
 }))];
 
 /** The chord an entry shows: its binding's (§7k keybinds), else its fixed widget key. */
-export const entryKey = (t) => (t.key ? keyLabel(t.key) : t.shortcut);
+export const entryKey = (t) => (t.key ? keyLabel(t.key) : t.shortcut && chordText(osChord(t.shortcut))); // a fixed Ctrl+V is ⌘V on a Mac
 
 /** The entries that apply to `c` (toolContext()), in registry order. */
 export const listTools = (c) => allTools(c).filter((t) => t.when(c));

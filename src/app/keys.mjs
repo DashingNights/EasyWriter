@@ -1,9 +1,24 @@
-// Keybinds (SPEC §7k): the app's rebindable shortcuts, pure and import-free (Node-tested; main.js imports it too).
+// Keybinds (SPEC §7k): the app's rebindable shortcuts, pure (Node-tested; main.js imports it too).
 //
 // A chord is a string of modifiers and one key, in this order: "Ctrl+Alt+Shift+K". Keys are named from KeyboardEvent.code
 // (the physical key, so a layout's AltGr or Shift symbols do not change it): letters and digits as themselves, Numpad keys as
 // "Num1", "Num+", arrows as "Left", "Right", "Up", "Down", and the rest by the names in NAMES. Meta (the Windows key) counts as
 // Ctrl, as the app's handlers always did; Windows keeps Win+ chords for itself.
+//
+// On a Mac the chord has Apple's modifier order with Globe first: "Fn+Ctrl+Alt+Shift+Cmd+K". Ctrl is Control, Alt is Option and
+// Cmd is Command (metaKey); Fn is Globe, which Electron never sees: main.js hears Globe+Tab and Globe+Space through
+// native/globe and the renderer replays them as key events with fnKey set (actions.js globeKey). The Mac has its own defaults
+// (keysFor) and its own overrides (settings.keybindsMac, keybindsKey).
+
+import { MAC } from '../platform.mjs';
+
+let mac = MAC;
+/** Mac mode on or off (the Node tests try both on any platform). */
+export function setMac(on) {
+  mac = !!on;
+}
+export const isMac = () => mac;
+const MODS = () => (mac ? ['Fn', 'Ctrl', 'Alt', 'Shift', 'Cmd'] : ['Ctrl', 'Alt', 'Shift']);
 
 const NAMES = {
   Space: 'Space', Tab: 'Tab', Enter: 'Enter', NumpadEnter: 'NumEnter', Escape: 'Esc', Backspace: 'Backspace', Delete: 'Del', Insert: 'Ins',
@@ -34,27 +49,114 @@ export function codeOf(name) {
   return CODES[name] ?? null;
 }
 
+/** The modifiers held in key event `e` (as chordOf takes it): {Ctrl, Alt, Shift} on Windows, where Meta counts as Ctrl;
+ * {Fn, Ctrl, Alt, Shift, Cmd} on a Mac. */
+export function modsOf(e) {
+  const [ctrl, meta] = [!!(e.ctrlKey ?? e.control), !!(e.metaKey ?? e.meta)];
+  const rest = { Alt: !!(e.altKey ?? e.alt), Shift: !!(e.shiftKey ?? e.shift) };
+  return mac ? { Fn: e.fnKey === true || !!e.getModifierState?.('Fn'), Ctrl: ctrl, ...rest, Cmd: meta } : { Ctrl: ctrl || meta, ...rest };
+}
+
 /** The chord of a key event ({code, ctrlKey, metaKey, altKey, shiftKey}, a DOM KeyboardEvent or Electron's before-input-event
  * input with {code, control, meta, alt, shift}), or null for a lone modifier. */
 export function chordOf(e) {
   const key = keyName(e.code);
   if (!key) return null;
-  const ctrl = !!(e.ctrlKey ?? e.control) || !!(e.metaKey ?? e.meta);
-  const alt = !!(e.altKey ?? e.alt);
-  const shift = !!(e.shiftKey ?? e.shift);
-  return `${ctrl ? 'Ctrl+' : ''}${alt ? 'Alt+' : ''}${shift ? 'Shift+' : ''}${key}`;
+  const held = modsOf(e);
+  return [...MODS().filter((m) => held[m]), key].join('+');
 }
 
-/** Chord `chord` in canonical form (modifier order and names fixed), or null when it is not a chord. */
-export function normalize(chord) {
+/** Chord `chord` split: {mods (lower case), key}, or null. */
+function parse(chord) {
   if (typeof chord !== 'string' || !chord) return null;
   const parts = chord.split('+');
   // "Num+": its "+" belongs to the key name.
   if (chord.endsWith('Num+')) parts.splice(-2, 2, 'Num+');
   const key = parts.pop();
-  const mods = new Set(parts.map((p) => p.toLowerCase()));
-  if (![...mods].every((m) => ['ctrl', 'alt', 'shift'].includes(m)) || !codeOf(key)) return null;
-  return `${mods.has('ctrl') ? 'Ctrl+' : ''}${mods.has('alt') ? 'Alt+' : ''}${mods.has('shift') ? 'Shift+' : ''}${key}`;
+  return codeOf(key) ? { mods: new Set(parts.map((p) => p.toLowerCase())), key } : null;
+}
+const build = (order, mods, key) => [...order.filter((m) => mods.has(m.toLowerCase())), key].join('+');
+
+/** Chord `chord` in canonical form (modifier order and names fixed), or null when it is not a chord. */
+export function normalize(chord) {
+  const c = parse(chord);
+  const order = MODS();
+  if (!c || ![...c.mods].every((m) => order.some((o) => o.toLowerCase() === m))) return null;
+  return build(order, c.mods, c.key);
+}
+
+const TYPED = ['-', '=', '[', ']', '\\', ';', "'", ',', '.', '/', '`'];
+const types = (key) => /^[A-Z0-9]$/.test(key) || TYPED.includes(key); // a letter, a digit or punctuation
+
+/** Windows chord `chord` as the Mac has it: Ctrl becomes Cmd; Alt with a letter, digit or punctuation (Option types a
+ * character there) becomes Ctrl+Cmd. */
+function toMac(chord) {
+  const c = parse(chord);
+  if (!c) return chord;
+  const mods = new Set(c.mods);
+  if (mods.delete('ctrl')) mods.add('cmd');
+  else if (mods.has('alt') && types(c.key)) {
+    mods.delete('alt');
+    mods.add('ctrl').add('cmd');
+  }
+  return build(['Fn', 'Ctrl', 'Alt', 'Shift', 'Cmd'], mods, c.key);
+}
+
+/** Windows chord `chord` on this platform (a fixed key a tool shows, src/app/tools.js entryKey). */
+export const osChord = (chord) => (mac ? toMac(chord) : chord);
+
+// The Mac's own defaults where the rule (toMac) gives a chord macOS takes, one that types, or a Mac app's habit differs.
+const MAC_KEYS = {
+  'app.toolSearch': ['Fn+Space', 'Ctrl+Shift+Space'],
+  'app.quickTools': ['Fn+Tab', 'Ctrl+Tab'],
+  'edit.redo': ['Shift+Cmd+Z', 'Cmd+Y'],
+  'app.replace': ['Ctrl+H'], // Cmd+H hides the app
+  'app.devtools': ['Alt+Cmd+I'],
+  'document.indent': ['Ctrl+Shift+M'], // Cmd+M minimizes the window
+  'document.outdent': ['Shift+Cmd+M'],
+  'document.clearParagraph': ['Alt+Cmd+Q'], // Cmd+Q quits
+  'document.pageBreak': ['Cmd+Enter'],
+  'text.subscript': ['Ctrl+Cmd+-'],
+  'text.superscript': ['Ctrl+Cmd+='],
+  'text.strike': ['Shift+Cmd+X'],
+  'plan.board': ['Cmd+1'],
+  'plan.backlog': ['Cmd+2'],
+  'plan.gantt': ['Cmd+3'],
+  'browser.back': ['Cmd+['],
+  'browser.forward': ['Cmd+]'],
+  'browser.reload': ['Cmd+R'], // the F keys are media keys on a Mac
+  'suggest.next': ['Alt+Cmd+Down'],
+  'suggest.previous': ['Alt+Cmd+Up'],
+  'suggest.accept': ['Alt+Cmd+Enter'],
+  'suggest.reject': ['Alt+Cmd+Backspace'],
+};
+
+/** Binding `d`'s default chords on this platform. */
+export const keysFor = (d) => (mac ? MAC_KEYS[d.id] ?? d.keys.map(toMac) : d.keys);
+
+/** The settings key this platform stores its overrides under. */
+export const keybindsKey = () => (mac ? 'keybindsMac' : 'keybinds');
+
+// ---------------------------------------------------------------------------------------------
+// Display. Windows shows the chord as it is; a Mac shows Apple's symbols with no plus signs ("⇧⌘Z"), and its sentences name the
+// keys Command, Option, Control and Globe.
+
+const SYMBOLS = {
+  Fn: '🌐', Ctrl: '⌃', Alt: '⌥', Shift: '⇧', Cmd: '⌘', Enter: '↩', Backspace: '⌫', Del: '⌦', Esc: '⎋', Tab: '⇥', Left: '←', Right: '→',
+  Up: '↑', Down: '↓', PageUp: '⇞', PageDown: '⇟', Home: '↖', End: '↘',
+};
+const PART_NAMES = { Fn: 'Globe', Ctrl: 'Control', Alt: 'Option', Cmd: 'Command' };
+
+/** Chord or chord part `part` as a Mac shows it (a modifier's or a key's symbol), else as it is. */
+export const symbolOf = (part) => (mac ? SYMBOLS[part] ?? part : part);
+
+/** Chord part `part` (a modifier or a key) named in a sentence. */
+export const partName = (part) => (mac ? PART_NAMES[part] ?? part : part);
+
+/** Chord `chord` as the app shows it. */
+export function chordText(chord) {
+  const c = mac && parse(chord);
+  return c ? [...MODS().filter((m) => c.mods.has(m.toLowerCase())), c.key].map(symbolOf).join('') : chord;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -103,6 +205,57 @@ export function windowsUse(chord) {
   return null;
 }
 
+// What macOS does with a chord, as WINDOWS: `system` (macOS takes it first) and `standard` (a Mac convention the binding takes over).
+const MACOS = new Map([
+  ...WIN('system', 'opens Spotlight', 'Cmd+Space'),
+  ...WIN('system', 'opens a Finder search', 'Alt+Cmd+Space'),
+  ...WIN('system', 'opens the emoji and symbols viewer', 'Ctrl+Cmd+Space'),
+  ...WIN('system', 'switches apps', 'Cmd+Tab', 'Shift+Cmd+Tab'),
+  ...WIN('system', "switches the app's windows", 'Cmd+`'),
+  ...WIN('system', 'hides the app', 'Cmd+H'),
+  ...WIN('system', 'hides the other apps', 'Alt+Cmd+H'),
+  ...WIN('system', 'minimizes the window', 'Cmd+M'),
+  ...WIN('system', 'quits the app', 'Cmd+Q'),
+  ...WIN('system', 'locks the screen', 'Ctrl+Cmd+Q'),
+  ...WIN('system', 'shows or hides the Dock', 'Alt+Cmd+D'),
+  ...WIN('system', 'opens Force Quit', 'Alt+Cmd+Esc'),
+  ...WIN('system', 'takes a screenshot', 'Shift+Cmd+3', 'Shift+Cmd+4', 'Shift+Cmd+5'),
+  ...WIN('system', 'opens Mission Control', 'Ctrl+Up'),
+  ...WIN('system', "shows the app's windows", 'Ctrl+Down'),
+  ...WIN('system', 'switches desktops', 'Ctrl+Left', 'Ctrl+Right'),
+  ...WIN('system', 'turns full screen on or off', 'Ctrl+Cmd+F'),
+  ...WIN('system', 'switches the input source once a second one is on', 'Ctrl+Space', 'Ctrl+Alt+Space'),
+  ...WIN('standard', 'copies', 'Cmd+C'),
+  ...WIN('standard', 'cuts', 'Cmd+X'),
+  ...WIN('standard', 'pastes', 'Cmd+V'),
+  ...WIN('standard', 'selects all', 'Cmd+A'),
+  ...WIN('standard', 'undoes', 'Cmd+Z'),
+  ...WIN('standard', 'redoes', 'Shift+Cmd+Z'),
+  ...WIN('standard', 'moves the text cursor by a word', 'Alt+Left', 'Alt+Right'),
+  ...WIN('standard', 'moves the text cursor to the end of the line or the text', 'Cmd+Left', 'Cmd+Right', 'Cmd+Up', 'Cmd+Down'),
+  ...WIN('standard', 'deletes a word', 'Alt+Backspace'),
+  ...WIN('standard', 'deletes to the start of the line', 'Cmd+Backspace'),
+  ...WIN('standard', 'moves or edits text in text boxes', ...'AEKDFBNPTHOYLV'.split('').map((k) => `Ctrl+${k}`)),
+  ...WIN('standard', 'opens Raycast, Alfred or the ChatGPT app by default', 'Alt+Space'),
+]);
+
+/** What macOS does with `chord`, as windowsUse: also 'typing' for Option (Alt) with a letter, digit or punctuation. */
+export function macUse(chord) {
+  const c = normalize(chord);
+  if (!c) return null;
+  if (MACOS.has(c)) return MACOS.get(c);
+  const { mods, key } = parse(c);
+  const others = [...mods].filter((m) => m !== 'shift' && m !== 'alt');
+  if (!others.length && !mods.has('alt') && (types(key) || key === 'Space')) {
+    return { level: 'typing', what: 'types in text boxes, so it works only where no text box has the focus' };
+  }
+  if (!others.length && mods.has('alt') && types(key)) return { level: 'typing', what: 'types a character in text boxes' };
+  return null;
+}
+
+/** What this platform does with `chord` (macUse or windowsUse). */
+export const osUse = (chord) => (mac ? macUse(chord) : windowsUse(chord));
+
 // ---------------------------------------------------------------------------------------------
 // Scopes: where a binding listens. Two bindings collide when they share a chord and their scopes can be active at once.
 
@@ -124,7 +277,7 @@ const overlaps = (a, b) => a === 'global' || b === 'global' || OVERLAP[a]?.inclu
 export function effective(defs, overrides = {}) {
   const out = {};
   for (const d of defs) {
-    const own = Array.isArray(overrides?.[d.id]) ? overrides[d.id] : d.keys;
+    const own = Array.isArray(overrides?.[d.id]) ? overrides[d.id] : keysFor(d);
     out[d.id] = [...new Set(own.map(normalize).filter(Boolean))];
   }
   return out;
@@ -150,7 +303,7 @@ export function overridesOf(defs, binds) {
   const out = {};
   for (const d of defs) {
     const own = binds[d.id] ?? [];
-    const def = d.keys.map(normalize);
+    const def = keysFor(d).map(normalize);
     if (own.length !== def.length || own.some((c, i) => c !== def[i])) out[d.id] = own;
   }
   return out;

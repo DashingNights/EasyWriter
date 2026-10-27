@@ -57,6 +57,31 @@
       "icon": "build/icon.ico",
       "artifactName": "${productName}-Portable.${ext}"
     },
+    "mac": {
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "icon": "build/icon.svg",
+      "artifactName": "${productName}-mac-${arch}.${ext}",
+      "category": "public.app-category.productivity",
+      "minimumSystemVersion": "13.0",
+      "hardenedRuntime": true,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist",
+      "forceCodeSigning": true,
+      "notarize": true,
+      "extendInfo": {
+        "NSMicrophoneUsageDescription": "EasyWriter uses the microphone when you dictate.",
+        "NSLocalNetworkUsageDescription": "EasyWriter connects to devices on your network when you open their pages."
+      },
+      "extraResources": [
+        {
+          "from": "native/globe/globe.node",
+          "to": "globe.node"
+        }
+      ]
+    },
     "nsis": {
       "oneClick": false,
       "perMachine": false,

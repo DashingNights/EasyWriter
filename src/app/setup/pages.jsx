@@ -11,6 +11,7 @@ import { Spinner } from '@/components/ui/spinner';
 import { enabled, INTEGRATIONS } from '../../integrations/index.mjs';
 import { changeSettings, saveSettings } from '../actions.js';
 import { getState, useStore } from '../store.js';
+import { MAC } from '../../platform.mjs';
 import { scalePercent } from './flow.mjs';
 import { Helpers } from './helpers.jsx';
 import { GitHubMark } from '../components/brands.jsx';
@@ -295,6 +296,6 @@ export const PAGES = [
   github('github-repo', 'Create a private repository', 'EasyWriter backs up to an empty private repository of yours.', GitHubRepo),
   github('github-signin', 'Sign in with GitHub', 'EasyWriter asks GitHub for access to your private repositories.', GitHubSignIn),
   github('github-pick', 'Pick the repository', 'Choose the private repository you created.', GitHubPick),
-  { id: 'helpers', title: 'Assistant and dictation', help: 'Optional. Turn one on to set it up.', Page: Helpers },
+  { id: 'helpers', title: MAC ? 'Assistant' : 'Assistant and dictation', help: MAC ? 'Optional. Turn it on to set it up.' : 'Optional. Turn one on to set it up.', Page: Helpers },
   { id: 'finish', title: "You're all set", Page: Finish },
 ].map((p) => ({ step: p.id, ...p }));

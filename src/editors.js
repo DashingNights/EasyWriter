@@ -8,6 +8,7 @@ import { Canvas } from './canvas.js';
 import { documentExtensions } from './document/schema.js';
 import { CopyPicture } from './export.js';
 import { ColumnDrag, forumExtensions, InactiveSelection, TEXT_KEYS, textKeys, TIPTAP_CHORDS } from './extensions.js';
+import { osChord } from './app/keys.mjs';
 import { Find } from './find.js';
 import { formatOf, pageOf } from './formats.mjs';
 import { PlanChart } from './plan-chart.js';
@@ -41,7 +42,7 @@ const DOCUMENT_KEYS = {
 };
 // Ctrl+Enter is HardBreak's Mod-Enter too: moved off Page break, it does nothing rather than break the line.
 const DocumentKeys = textKeys({ ...Object.fromEntries(Object.entries(TEXT_KEYS).filter(([id]) => !NOT_IN_DOCUMENT.has(id))), ...DOCUMENT_KEYS },
-  new Set([...TIPTAP_CHORDS, 'Ctrl+Enter']));
+  new Set([...TIPTAP_CHORDS, osChord('Ctrl+Enter')]));
 
 /** The Document's editor: its own schema (document/schema.js) plus the shared app blocks and the keys. */
 const documentKit = (depth) => [...documentExtensions(depth), ColumnDrag, WhiteboardPaste, Canvas, PlanChart, CopyPicture, Find, InactiveSelection, DocumentKeys,

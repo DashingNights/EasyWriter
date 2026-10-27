@@ -23,7 +23,8 @@ import { insertFlowchartDialog } from '../flows.js';
 import { can } from '../gates.mjs';
 import { insertPlanChartDialog } from '../plans.js';
 import { openCitePicker, openReferences } from '../references.js';
-import { keyLabel, withKey } from '../keybinds.js';
+import { keyLabel, keysOf, withKey } from '../keybinds.js';
+import { isMac } from '../keys.mjs';
 import { BAR, BoardTools, RailLayout } from './board/BoardRail.jsx';
 import { CHROME, keepFocus as keepBoardFocus, useBoard, useSnapshot } from './board/controls.jsx';
 import { getState, useEditor, useStore } from '../store.js';
@@ -242,9 +243,10 @@ export const TableTools = ({ T, ed, all }) => {
   );
 };
 
-/** The presets menu's tooltip: their keys when they are Alt+1 to Alt+9 (the defaults), else where to see them. */
-const presetsTitle = () => ([1, 2, 3, 4, 5, 6, 7, 8, 9].every((n) => keyLabel(`text.preset${n}`) === `Alt+${n}`)
-  ? 'Apply a font preset (Alt+1 to Alt+9)' : 'Apply a font preset (keys in Settings > Keybinds)');
+/** The presets menu's tooltip: their keys when they are the defaults (Alt+1 to Alt+9, Ctrl+Cmd+1 to 9 on a Mac), else where
+ * to see them. */
+const presetsTitle = () => ([1, 2, 3, 4, 5, 6, 7, 8, 9].every((n) => keysOf(`text.preset${n}`)[0] === `${isMac() ? 'Ctrl+Cmd+' : 'Alt+'}${n}`)
+  ? `Apply a font preset (${keyLabel('text.preset1')} to ${keyLabel('text.preset9')})` : 'Apply a font preset (keys in Settings > Keybinds)');
 
 /** Font presets dropdown: apply one (by its key, §7k), last entry "Manage presets…". `side` 'top' in the bottom island. */
 export function PresetsMenu({ disabled, side }) {

@@ -6,8 +6,8 @@ import { Button } from '@/components/ui/button';
 import { canvasEditor } from '../../canvas.js';
 import { addImageFilesToEditor } from '../../whiteboard.js';
 import { closeQuickTools, closeToolSearch, insertCanvas, saveSettings, toggleToolSearch } from '../actions.js';
-import { chordOf } from '../keys.mjs';
-import { keyIs, keyLabel } from '../keybinds.js';
+import { chordOf, chordText, DEFS, isMac, keysFor, partName } from '../keys.mjs';
+import { keyIs, keysOf } from '../keybinds.js';
 import { motion } from '../motion.js';
 import { getState, setState } from '../store.js';
 import { tap } from './Tutorial.jsx';
@@ -476,7 +476,7 @@ function Hands() {
       </div>
       <div className="grid justify-items-center gap-1.5">
         <span className="relative"><Mouse className="size-9" /><Hand data-hand="right" className="absolute -top-3 left-2 size-5 text-foreground" /></span>
-        Right hand on the mouse
+        {isMac() ? 'Right hand on the mouse or trackpad' : 'Right hand on the mouse'}
       </div>
     </div>
   );
@@ -556,11 +556,17 @@ export function lessons({ format, from }) {
   for (const k of Object.keys(ids)) delete ids[k];
   swing = [0, 0];
   const post = format === 'forum-post';
-  const holdFor = (chord) => { const keys = chord.split('+'); return keys.length > 1 ? `Hold ${keys.slice(0, -1).join(' and ')}, then press ${keys.at(-1)}` : `Press ${chord}`; };
-  const chord = keyLabel('app.quickTools') || 'Ctrl+Tab';
+  // A binding's canonical chord (the platform's default when it is unbound); the copy names its keys as the platform does.
+  const chordFor = (id) => keysOf(id)[0] || keysFor(DEFS.find((d) => d.id === id))[0];
+  const holdFor = (chord) => {
+    const keys = chord.split('+').map(partName);
+    return keys.length > 1 ? `Hold ${keys.slice(0, -1).join(' and ')}, then press ${keys.at(-1)}` : `Press ${keys[0]}`;
+  };
+  const chord = chordFor('app.quickTools');
   const hold = holdFor(chord);
   const quick = (e) => keyIs('app.quickTools', e);
-  const find = keyLabel('app.toolSearch') || 'Ctrl+Space';
+  const find = chordFor('app.toolSearch');
+  const paste = isMac() ? 'Cmd+V' : 'Ctrl+V';
   const h3 = post ? '[cmdk-item][data-value="h3"]' : '[cmdk-item][data-value="doc-style-Heading3"]';
   const tabs = [['Home', 'Home has the font and paragraph tools.'], ['Insert', 'Insert adds pictures and tables.'], ['Layout', 'Layout sets up the page.'],
     ['View', 'View changes how the page shows.']];
@@ -592,7 +598,7 @@ export function lessons({ format, from }) {
     { lesson: 1, kind: 'keys', target: lineDoms, text: true, avoid: menuSpace, chord, match: quick, onChord: () => openMenu(dragEnd()),
       task: 'Open the quick access menu', say: hold, help: 'You can change these keys in Settings > Keybinds.' },
     { lesson: 1, kind: 'look', button: 'Got it', target: '[data-quick-tools]', hold: holdMenu(dragEnd), say: 'This is the quick access menu',
-      line: `${chord} opens it at your pointer. It holds the tools for what you are working on.`, help: 'Escape or a click outside it closes it.' },
+      line: `${chordText(chord)} opens it at your pointer. It holds the tools for what you are working on.`, help: 'Escape or a click outside it closes it.' },
     { lesson: 1, target: '[data-quick-tools] :is([aria-label^="Bullet list"], [aria-label^="Bullets"])', hold: holdMenu(dragEnd),
       say: `Click ${post ? 'Bullet list' : 'Bullets'}`, help: 'It turns the selected lines into a bulleted list.' },
     { lesson: 1, kind: 'look', end: true, next: 2, enter: closeQuickTools, target: listDoms, text: true, say: 'Well done',
@@ -606,7 +612,7 @@ export function lessons({ format, from }) {
     { lesson: 2, kind: 'auto', over: true, bin: true, enter: () => canvasEditor.get()?.close(true), target: lastCanvas, say: 'Let me clear this up for you…',
       script: [[1300, () => lastCanvas()?.classList.add('tutorial-poof')], [1950, clearCanvas], [2350, (go) => go()]] },
     { lesson: 2, kind: 'look', target: '[data-tutorial-card]', near: endLine, Widget: DogPanel, say: 'Copy this picture', help: 'It goes into your draft next.' },
-    { lesson: 2, kind: 'keys', enter: caretToEnd, target: endLine, chord: 'Ctrl+V', match: (e) => chordOf(e) === 'Ctrl+V', onChord: pasteDog,
+    { lesson: 2, kind: 'keys', enter: caretToEnd, target: endLine, chord: paste, match: (e) => chordOf(e) === paste, onChord: pasteDog,
       task: 'Paste the picture', say: 'Paste it here', help: 'The text cursor waits on a new line for it.' },
     { lesson: 2, kind: 'watch', target: pageOf, clip: '#editor-area', loop: lastCanvas, allow: lastCanvas, done: openedPicture,
       say: 'Double-click the picture', task: 'Open the picture',
@@ -676,7 +682,7 @@ export function lessons({ format, from }) {
     { lesson: 4, kind: 'auto', enter: menuInCanvas, hold: holdMenu(menuBelowDog, boardOf), target: '[data-quick-tools]', say: 'The quick access menu',
       line: 'In a canvas it holds the canvas tools.', script: [[3200, (go) => go()]] },
     { lesson: 4, kind: 'look', button: 'Next', enter: leaveCanvas, target: pageOf, clip: '#editor-area', say: 'Many more tools',
-      line: `Press ${chord} wherever you are to see them.` },
+      line: `Press ${chordText(chord)} wherever you are to see them.` },
     ...ribbonSteps,
     { lesson: 4, kind: 'look', button: 'Next', enter: () => { fewerTools(); openSearch(); }, target: search, say: 'Tool search',
       line: 'Every tool in EasyWriter is in here. They work together, and you can search for any of them.', script: [[700, scrollTools]] },

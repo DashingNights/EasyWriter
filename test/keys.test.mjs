@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { kindOf } from '../src/flow/shapes.mjs';
-import { chordOf, codeOf, collisions, DEFS, effective, GROUPS, keyName, normalize, overridesOf, SHAPE_KEYS, windowsUse } from '../src/app/keys.mjs';
+import { chordOf, chordText, codeOf, collisions, DEFS, effective, GROUPS, keybindsKey, keyName, macUse, normalize, osUse, overridesOf, partName, setMac,
+  SHAPE_KEYS, windowsUse } from '../src/app/keys.mjs';
 
 test('chordOf names the physical key with modifiers in a fixed order; Meta counts as Ctrl; a lone modifier is no chord', () => {
   assert.equal(chordOf({ code: 'KeyP', ctrlKey: true, altKey: true }), 'Ctrl+Alt+P');
@@ -128,3 +129,79 @@ test('Suggestions: the four chords, no collisions, none an AltGr character; Ctrl
   assert.equal(windowsUse('Ctrl+Alt+]').level, 'layout');
   assert.equal(windowsUse('Ctrl+Alt+[').level, 'layout');
 });
+
+// Mac mode (setMac): the tests run on Windows, so each Mac test turns it on and back off.
+const onMac = (fn) => () => {
+  setMac(true);
+  try { fn(); } finally { setMac(false); }
+};
+
+test('Mac chordOf: Apple order with Globe first, Meta is Cmd, Fn from fnKey or getModifierState', onMac(() => {
+  assert.equal(chordOf({ code: 'KeyK', ctrlKey: true, altKey: true, shiftKey: true, metaKey: true, fnKey: true }), 'Fn+Ctrl+Alt+Shift+Cmd+K');
+  assert.equal(chordOf({ code: 'KeyA', shiftKey: true, metaKey: true }), 'Shift+Cmd+A');
+  assert.equal(chordOf({ code: 'KeyA', ctrlKey: true }), 'Ctrl+A');
+  assert.equal(chordOf({ code: 'Equal', meta: true, alt: true }), 'Alt+Cmd+='); // Electron's before-input-event input
+  assert.equal(chordOf({ code: 'Tab', fnKey: true }), 'Fn+Tab'); // the Globe event actions.js replays
+  assert.equal(chordOf({ code: 'Space', getModifierState: (m) => m === 'Fn' }), 'Fn+Space');
+  assert.equal(chordOf({ code: 'MetaLeft', metaKey: true }), null);
+}));
+
+test('Mac normalize takes Cmd and Fn and fixes their order; Windows still refuses them', () => {
+  assert.equal(normalize('Cmd+Shift+Z'), null);
+  setMac(true);
+  try {
+    assert.equal(normalize('Cmd+Shift+Z'), 'Shift+Cmd+Z');
+    assert.equal(normalize('cmd+fn+ctrl+K'), 'Fn+Ctrl+Cmd+K');
+    assert.equal(normalize('Cmd+Num+'), 'Cmd+Num+');
+    assert.equal(normalize('Win+V'), null);
+  } finally { setMac(false); }
+});
+
+test('Mac defaults: Ctrl becomes Cmd, Alt+character becomes Ctrl+Cmd, the exceptions, no collisions, none taken by macOS', onMac(() => {
+  const b = effective(DEFS);
+  assert.deepEqual([b['app.save'], b['app.plans'], b['app.zoomIn'], b['board.select'], b['board.arrow']],
+    [['Cmd+S'], ['Alt+Cmd+P'], ['Cmd+=', 'Shift+Cmd+=', 'Cmd+Num+'], ['V'], ['Shift+L']]);
+  assert.deepEqual([b['text.preset1'], b['text.preset9']], [['Ctrl+Cmd+1'], ['Ctrl+Cmd+9']]);
+  assert.deepEqual([b['app.toolSearch'], b['app.quickTools'], b['edit.redo'], b['app.replace'], b['browser.reload'], b['suggest.reject']],
+    [['Fn+Space', 'Ctrl+Shift+Space'], ['Fn+Tab', 'Ctrl+Tab'], ['Shift+Cmd+Z', 'Cmd+Y'], ['Ctrl+H'], ['Cmd+R'], ['Alt+Cmd+Backspace']]);
+  for (const d of DEFS) for (const k of b[d.id]) {
+    assert.ok(normalize(k), `${d.id} ${k}`);
+    assert.notEqual(macUse(k)?.level, 'system', `${d.id} ${k}`);
+    if (!['board', 'plan', 'flows'].includes(d.scope)) assert.notEqual(macUse(k)?.level, 'typing', `${d.id} ${k}`);
+  }
+  assert.deepEqual(collisions(DEFS, b), {});
+  assert.deepEqual(overridesOf(DEFS, b), {});
+  assert.equal(keybindsKey(), 'keybindsMac');
+}));
+
+test('chordText: Windows as it is; a Mac in Apple symbols with no plus signs; part names', () => {
+  assert.equal(chordText('Ctrl+Shift+Z'), 'Ctrl+Shift+Z');
+  assert.equal(partName('Alt'), 'Alt');
+  assert.equal(keybindsKey(), 'keybinds');
+  setMac(true);
+  try {
+    assert.equal(chordText('Shift+Cmd+Z'), '⇧⌘Z');
+    assert.equal(chordText('Fn+Space'), '🌐Space');
+    assert.equal(chordText('Fn+Ctrl+Alt+Shift+Cmd+Enter'), '🌐⌃⌥⇧⌘↩');
+    assert.equal(chordText('Cmd+Num+'), '⌘Num+');
+    assert.equal(chordText('Alt+Cmd+Backspace'), '⌥⌘⌫');
+    assert.deepEqual(['Cmd', 'Alt', 'Ctrl', 'Fn', 'Shift', 'Tab'].map(partName), ['Command', 'Option', 'Control', 'Globe', 'Shift', 'Tab']);
+  } finally { setMac(false); }
+});
+
+test('macUse: system, standard and Option typing chords; osUse picks the platform', onMac(() => {
+  assert.equal(macUse('Cmd+Space').level, 'system');
+  assert.equal(macUse('Ctrl+Space').level, 'system');
+  assert.equal(macUse('Shift+Cmd+4').level, 'system');
+  assert.equal(macUse('Cmd+C').level, 'standard');
+  assert.equal(macUse('Ctrl+E').level, 'standard');
+  assert.equal(macUse('Alt+Space').level, 'standard');
+  assert.equal(macUse('Alt+E').level, 'typing');
+  assert.equal(macUse('Alt+Shift+2').level, 'typing');
+  assert.equal(macUse('T').level, 'typing');
+  assert.equal(macUse('Alt+Cmd+P'), null);
+  assert.equal(macUse('Fn+Tab'), null);
+  assert.equal(osUse('Cmd+Q').level, 'system');
+  setMac(false);
+  assert.equal(osUse('Alt+Tab').level, 'system');
+}));

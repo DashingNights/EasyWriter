@@ -5,6 +5,7 @@ import { ArrowLeft, ArrowRight, Check, ExternalLink, GripHorizontal, Minus, Plus
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { anchorPanel, dragPanel, placePanel } from '../assistant/panel.mjs';
+import { MAC } from '../../platform.mjs';
 import { withKey } from '../keybinds.js';
 import {
   activateTab, browserKey, closePane, closeTab, DEFAULT_ZOOM, defaultPlace, HOME, newTab, openPane, openPanes, placePane, raisePane, toUrl, updateTab, views,
@@ -278,7 +279,7 @@ function GoogleSignInBar({ tab, floating }) {
   return (
     <div className={cn('flex shrink-0 items-center gap-2 bg-muted/50 px-3 py-1.5 text-xs', floating ? 'mb-1.5 rounded-md border' : 'border-b')}>
       <span className="min-w-0 flex-1 text-muted-foreground">
-        {running ? 'Waiting for the sign-in window. Close it when you have signed in.' : 'Google does not allow sign-in inside apps.'}
+        {running ? `Waiting for the sign-in window. ${MAC ? 'Quit the browser with ⌘Q' : 'Close it'} when you have signed in.` : 'Google does not allow sign-in inside apps.'}
       </span>
       <Button size="xs" disabled={running} onMouseDown={keepFocus} onClick={() => signInWithChrome(tab.id)}>Sign in with Chrome</Button>
     </div>

@@ -7,17 +7,25 @@ const { app, session } = require('electron');
 const { spawn } = require('child_process');
 const path = require('path');
 const fs = require('fs');
+const os = require('os');
 
+const MAC = process.platform === 'darwin';
 const CHROME = ['Google', 'Chrome', 'Application', 'chrome.exe'];
 const EDGE = ['Microsoft', 'Edge', 'Application', 'msedge.exe'];
+// A Mac: the binary inside the app bundle, spawned directly (`open -a` would hand the URL to the Chrome already running).
+const MAC_CHROME = ['Google Chrome.app', 'Contents', 'MacOS', 'Google Chrome'];
+const MAC_EDGE = ['Microsoft Edge.app', 'Contents', 'MacOS', 'Microsoft Edge'];
 const BASES = () => [process.env.ProgramFiles, process.env['ProgramFiles(x86)'], process.env.LOCALAPPDATA].filter(Boolean);
 
-/** The first installed Chrome, else Edge (Google accepts Edge): {exe, name}. null if neither is found. */
-function findBrowser() {
-  for (const parts of [CHROME, EDGE]) {
-    for (const base of BASES()) {
+/** The first installed Chrome, else Edge (Google accepts Edge): {exe, name}. null if neither is found. The
+ * platform, home folder and file check are a test seam. */
+function findBrowser({ platform = process.platform, home = os.homedir(), exists = fs.existsSync } = {}) {
+  const mac = platform === 'darwin';
+  const bases = mac ? ['/Applications', path.join(home, 'Applications')] : BASES();
+  for (const parts of mac ? [MAC_CHROME, MAC_EDGE] : [CHROME, EDGE]) {
+    for (const base of bases) {
       const exe = path.join(base, ...parts);
-      if (fs.existsSync(exe)) return { exe, name: parts === CHROME ? 'Chrome' : 'Edge' };
+      if (exists(exe)) return { exe, name: parts === CHROME || parts === MAC_CHROME ? 'Chrome' : 'Edge' };
     }
   }
   return null;
@@ -126,11 +134,14 @@ async function chromeSignIn(opts = {}) {
         '--disable-features=DeviceBoundSessions,EnableBoundSessionCredentials', opts.url || SIGN_IN_URL],
       { stdio: 'ignore', windowsHide: false });
     opts.onLaunch?.(signIn);
-    // A dedicated --user-data-dir runs its own browser process, which exits when the user closes its window (checked by the
-    // harness). One that exits at once handed off to a sign-in window left open by an earlier run (the app closed mid-flow).
+    // A dedicated --user-data-dir runs its own browser process (next to the user's own Chrome), which exits when the user closes
+    // its window (checked by the harness); on a Mac closing the last window does not quit it, so the user quits it with ⌘Q. One
+    // that exits at once handed off to a sign-in window left open by an earlier run (the app closed mid-flow).
     const spawnError = await new Promise((resolve) => { signIn.on('exit', () => resolve(null)); signIn.on('error', resolve); });
     if (spawnError) return { ok: false, error: `Could not start ${found.name}.` };
-    if (Date.now() - started < HANDOFF_MS) return { ok: false, error: 'The sign-in window is already open. Sign in there, close it, then try again.' };
+    if (Date.now() - started < HANDOFF_MS) return { ok: false, error: MAC
+      ? `The sign-in window is already open. Sign in there, quit ${found.name} with ⌘Q, then try again.`
+      : 'The sign-in window is already open. Sign in there, close it, then try again.' };
 
     const cookies = await exportCookies(found, profile);
     const ses = session.fromPartition('persist:browser');

@@ -1,5 +1,5 @@
 'use strict';
-const { app, BrowserWindow, clipboard, ipcMain, Menu, nativeTheme, net, session, shell } = require('electron');
+const { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeTheme, net, session, shell } = require('electron');
 const path = require('path');
 const fs = require('fs/promises');
 const { pathToFileURL } = require('url');
@@ -27,9 +27,10 @@ const argValue = (name) => process.argv.find((a) => a.startsWith(`--${name}=`))?
 const SCRIPT = argValue('script'); // smoke: run this command script (SPEC §8) instead of the sample
 const DATA_DIR = argValue('data-dir'); // a profile of its own (smoke:agent's throwaway one); set before ready
 // A portable copy (the zip, for PCs that block installers) keeps everything in its own folder. The NSIS install has an
-// uninstaller next to the exe and an unzipped copy does not. Dev runs are never portable.
+// uninstaller next to the exe and an unzipped copy does not. Dev runs are never portable, and neither is the Mac (its data
+// would land inside the signed app bundle; it updates through electron-updater only).
 const EXE_DIR = path.dirname(process.execPath);
-const PORTABLE = app.isPackaged && !fsSync.existsSync(path.join(EXE_DIR, 'Uninstall EasyWriter.exe'));
+const PORTABLE = app.isPackaged && process.platform === 'win32' && !fsSync.existsSync(path.join(EXE_DIR, 'Uninstall EasyWriter.exe'));
 const DATA = path.join(EXE_DIR, 'data');
 // Test runs (smoke, and harnesses with a throwaway --data-dir) stay behind the user's windows (src/test-window.js).
 const testWindow = (SMOKE || DATA_DIR) && require('./src/test-window.js');
@@ -108,7 +109,7 @@ const DEFAULT_SETTINGS = {
   browserIdleOpacity: 70,
   browserNotchFloor: true, // the unfocused pane's notch stays at 40% or more
   browserAutoTab: false, // the browser page opens a Google tab when it has none
-  keybinds: {}, // §7k: {bindingId: [chord]} for the bindings changed from their defaults (src/app/keys.mjs)
+  keybinds: {}, // §7k: {bindingId: [chord]} for the bindings changed from their defaults (src/app/keys.mjs); a Mac's are keybindsMac
   github: github.DEFAULTS, // the GitHub backup (SPEC §4b)
   demoSeeded: false, // set once on the first start (actions.js init); no longer seeds the demo draft, so an older build does not either
   // On by default (the user, 2026-10-26): updates download in the background and install on quit (a portable copy on Restart);
@@ -165,7 +166,7 @@ function setSettings(partial) {
     if ('uiScale' in partial) applyUiScale(mainWin, merged.uiScale);
     if ('spellCheck' in partial && mainWin && !mainWin.isDestroyed()) mainWin.webContents.session.setSpellCheckerEnabled(merged.spellCheck !== false);
     if ('uiTheme' in partial) applyNativeTheme(merged.uiTheme);
-    if ('keybinds' in partial) refreshKeys(merged);
+    if ('keybinds' in partial || 'keybindsMac' in partial) refreshKeys(merged);
     // Settings > MCP turns the gateway on or off live; the assistant on Claude Code or Codex keeps its pipe open
     if (('agent' in partial || 'assistant' in partial) && !SMOKE) agentServer.sync(merged);
     if ('github' in partial && !SMOKE) github.configure(merged);
@@ -295,12 +296,12 @@ const onlyIf = (id) => (channel, fn) => handle(channel, async (...args) => {
 });
 forum.register(onlyIf('forum'), { getSettings, icon: ICON, focusApp: () => mainWin && !mainWin.isDestroyed() && mainWin.focus() });
 // Window zoom (settings.uiScale): a Chromium zoom level in Electron's old View menu steps of 0.5, -3…5 (0 = 100 %). The window
-// controls scale with the title strip.
+// controls scale with the title strip (Windows; the Mac's traffic lights keep their place).
 const zoomLevel = (v) => Math.max(-3, Math.min(5, Math.round(Number(v) * 2) / 2 || 0));
 function applyUiScale(win, level) {
   if (!win || win.isDestroyed()) return;
   win.webContents.setZoomLevel(zoomLevel(level));
-  win.setTitleBarOverlay({ height: Math.round(TITLE_BAR.height * win.webContents.getZoomFactor()) });
+  if (process.platform !== 'darwin') win.setTitleBarOverlay({ height: Math.round(TITLE_BAR.height * win.webContents.getZoomFactor()) });
 }
 // dir 1 in, -1 out, 0 reset: the renderer sends it for Ctrl+= / Ctrl+- / Ctrl+0 (the main window has no menu). Saved as
 // settings.uiScale, so Settings shows it and the next start opens at it. → the new settings.
@@ -309,7 +310,7 @@ handle('window.zoom', (dir) => setSettings({ uiScale: dir ? mainWin.webContents.
 const HEX = /^#[0-9a-f]{6}$/i;
 handle('window.titleBar', ({ color, symbolColor } = {}) => {
   if (!HEX.test(color) || !HEX.test(symbolColor)) throw new Error('title bar colours must be #rrggbb');
-  mainWin.setTitleBarOverlay({ color, symbolColor });
+  if (process.platform !== 'darwin') mainWin.setTitleBarOverlay({ color, symbolColor }); // the Mac has no overlay colours
   mainWin.setBackgroundColor(color); // what shows in a resize or restore before the page repaints
 });
 // The page as the user sees it (§8 view.render): the whole window's content as PNG bytes; the renderer crops its viewport.
@@ -362,6 +363,10 @@ handle('references.fetch', async ({ url, accept } = {}) => {
 handle('editMenu.act', (act) => (menuParams || EDIT_ACTS.includes(act)) && editMenuAct(act));
 // Push-to-talk dictation (§7h): dictation.status|install|cancel|warm|transcribe, the local whisper server, mic permission.
 dictation.register(handle, getSettings, () => mainWin);
+// On the Mac, macOS Dictation in place of Whisper (§7h Mac): it types where the focus is. startDictation: / stopDictation: are
+// undocumented NSApplication actions (kitty sends them the same way); untested here, as nobody has a Mac to run it on.
+handle('dictation.system', (action) => process.platform === 'darwin'
+  && Menu.sendActionToFirstResponder(action === 'stop' ? 'stopDictation:' : 'startDictation:'));
 // Local assistant (agent-automation plan §13.2): assistant.status|install|cancel|warm|stop|delete|chat|cancelChat, llama-server.
 assistant.register(handle, getSettings, () => mainWin, setSettings);
 // Computer use (§7i): computer.act|open|close|pane, screenshots and input for this window and the offscreen background window.
@@ -480,7 +485,7 @@ let keys = null;
 let chords = { devtools: new Set(), browser: new Set() };
 function refreshKeys(settings) {
   if (!keys) return;
-  const b = keys.effective(keys.DEFS, settings.keybinds);
+  const b = keys.effective(keys.DEFS, settings[keys.keybindsKey()]); // keybindsMac on a Mac
   chords = {
     devtools: new Set(b['app.devtools']),
     browser: new Set(Object.entries(b).filter(([id]) => id.startsWith('browser.')).flatMap(([, c]) => c)),
@@ -491,13 +496,31 @@ async function loadKeys() {
   refreshKeys(await getSettings());
 }
 
+// Globe+Tab and Globe+Space on a Mac (§7k): Electron never sees the Globe key, so native/globe (an AppKit key monitor, built in CI
+// and shipped as Resources/globe.node) reports them, and the renderer replays them as key events (actions.js globeKey). Without
+// the addon only the second chords (Ctrl+Tab, Ctrl+Shift+Space) work.
+// ponytail: only Tab and Space are watched, and they are swallowed even when unbound; add keys to globe.mm if a binding needs more.
+function watchGlobe(win) {
+  if (process.platform !== 'darwin') return;
+  try {
+    require(path.join(app.isPackaged ? process.resourcesPath : path.join(__dirname, 'native', 'globe'), 'globe.node')).start((packed) => {
+      if (win.isDestroyed()) return;
+      const bit = (n) => !!(packed & (1 << n));
+      win.webContents.send('key.globe', { code: (packed & 0xff) === 48 ? 'Tab' : 'Space', shift: bit(8), ctrl: bit(9), alt: bit(10), meta: bit(11), repeat: bit(12) });
+    });
+  } catch (e) {
+    console.error('globe', e);
+  }
+}
+
 // ---------------------------------------------------------------------------------------------
 // Main window
 
 // Custom frame (§4): no native title bar and no menu. The renderer's title strip (34 px with its 1 px bottom border, app.css
 // .titlebar) is the drag region; the Window Controls Overlay draws the native minimize / maximize / close buttons over its
 // right end, 33 px tall so the border runs on under them. Colours: the theme's --card / --card-foreground (app.css) until the
-// renderer sends the strip's own (window.titleBar).
+// renderer sends the strip's own (window.titleBar). On the Mac the overlay only reports the room left of the traffic lights
+// (env(titlebar-area-x)), which sit centred in the strip.
 const TITLE_BAR = { color: '#262626', symbolColor: '#e6e6e6', height: 33 };
 const TITLE_BAR_LIGHT = { color: '#ffffff', symbolColor: '#1f1f1f' };
 
@@ -505,6 +528,46 @@ const TITLE_BAR_LIGHT = { color: '#ffffff', symbolColor: '#1f1f1f' };
 // and prefers-color-scheme in every page (the in-app browser's too, and the renderer's first frame, main.jsx).
 function applyNativeTheme(uiTheme) {
   nativeTheme.themeSource = uiTheme === 'light' || uiTheme === 'system' ? uiTheme : 'dark';
+}
+
+// The Mac's menu bar (removeMenu does nothing there): the app menu, Edit and Window. No View menu, so no Reload or DevTools
+// keys, and no Close (Cmd+W closes the in-app browser's tab). The renderer's own keydown handlers run first.
+function macMenu() {
+  Menu.setApplicationMenu(Menu.buildFromTemplate([
+    { role: 'appMenu', submenu: [
+      { role: 'about' },
+      { type: 'separator' },
+      { label: 'Settings…', accelerator: 'Cmd+,', click: () => mainWin?.webContents.send('app.settings') },
+      { type: 'separator' },
+      { role: 'services' },
+      { type: 'separator' },
+      { role: 'hide' }, { role: 'hideOthers' }, { role: 'unhide' },
+      { type: 'separator' },
+      { role: 'quit' },
+    ] },
+    { label: 'Edit', submenu: [ // AppKit adds Start Dictation and Emoji & Symbols to a menu titled Edit
+      { role: 'undo' }, { role: 'redo' },
+      { type: 'separator' },
+      { role: 'cut' }, { role: 'copy' }, { role: 'paste' }, { role: 'pasteAndMatchStyle' }, { role: 'delete' }, { role: 'selectAll' },
+    ] },
+    { role: 'windowMenu', submenu: [{ role: 'minimize' }, { role: 'zoom' }] },
+  ]));
+}
+
+// A Mac copy run from the DMG or a translocated folder: updates only install from /Applications, so ask to move it there.
+// moveToApplicationsFolder relaunches the app; it returns false when the user cancels and throws when the move fails.
+async function offerMoveToApplications() {
+  if (process.platform !== 'darwin' || !app.isPackaged || SMOKE || DATA_DIR || app.isInApplicationsFolder()) return;
+  const { response } = await dialog.showMessageBox({
+    type: 'question',
+    message: 'Move EasyWriter to Applications?',
+    detail: 'Updates only install from the Applications folder.',
+    buttons: ['Move', 'Not now'],
+    defaultId: 0,
+    cancelId: 1,
+  });
+  if (response !== 0) return;
+  try { app.moveToApplicationsFolder(); } catch (e) { console.error('move to Applications', e); }
 }
 
 function createMainWindow() {
@@ -517,6 +580,7 @@ function createMainWindow() {
     icon: ICON,
     titleBarStyle: 'hidden',
     titleBarOverlay: bar,
+    ...(process.platform === 'darwin' && { trafficLightPosition: { x: 12, y: 10 } }), // 14 px lights centred in 34 px
     backgroundColor: bar.color,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -530,12 +594,16 @@ function createMainWindow() {
   const wc = win.webContents;
   // No menu, so Alt, Alt+key and F10 open nothing. Of its accelerators Blink handles the Edit keys (Ctrl+Z / Y / X / C / V / A)
   // itself and the renderer the window zoom (§7); Reload has no key (it would run beforeunload, which saves and closes the
-  // window). DevTools has its keybind (default Ctrl+Shift+I, §7k).
+  // window). DevTools has its keybind (default Ctrl+Shift+I, §7k). The Mac keeps an application menu (macMenu).
   win.removeMenu();
   wc.on('before-input-event', (event, input) => {
     if (input.type === 'keyDown' && chords.devtools.has(keys?.chordOf(input))) { // the Developer tools keybind (§7k)
       event.preventDefault();
       wc.toggleDevTools();
+    } else if (process.platform === 'darwin' && input.type === 'keyDown' && keys?.chordOf(input) === 'Cmd+,') {
+      // The Mac's Settings… (macMenu): the editor claims Cmd+, (TipTap's subscript Mod-,), so the menu would never see it.
+      event.preventDefault();
+      wc.send('app.settings');
     }
   });
 
@@ -812,7 +880,12 @@ if (!SMOKE && !app.requestSingleInstanceLock()) {
       s.setPermissionCheckHandler((_wc, p) => allowed(p));
     }
     applyNativeTheme((await getSettings()).uiTheme);
+    if (process.platform === 'darwin') {
+      macMenu();
+      await offerMoveToApplications();
+    }
     mainWin = createMainWindow();
+    watchGlobe(mainWin);
     if (testWindow) testWindow.keepBehind(mainWin);
     if (SMOKE) {
       mainWin.showInactive();
@@ -820,7 +893,7 @@ if (!SMOKE && !app.requestSingleInstanceLock()) {
     } else {
       mainWin.once('ready-to-show', () => {
         mainWin.show();
-        dictation.warmAtStart();
+        if (process.platform !== 'darwin') dictation.warmAtStart(); // the Mac uses macOS Dictation (§7h Mac)
         setTimeout(() => assistant.autoWarm(), 10000); // §13.2 Warm-up and idle: after whisper, once the window has painted
         if (app.isPackaged) checkForUpdates();
       });

@@ -466,6 +466,7 @@
    drag region takes every click inside it that no no-drag element covers. */
 .titlebar {
   height: 34px;
+  padding-left: calc(env(titlebar-area-x, 0px) + 10px); /* 10 px, and on the Mac the traffic lights first */
   padding-right: calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw));
   -webkit-app-region: drag;
 }

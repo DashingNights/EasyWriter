@@ -434,14 +434,15 @@ function sync(settings) {
 const assistantLink = () => ({ command: process.execPath, args: [BRIDGE, `--pipe=${pipePath()}`], key: KEY });
 
 /** Settings > MCP: whether it is on, the URL while the port listens or the reason it does not, and the stdio
- * command (the app's own executable run as Node, so no Node install is needed). */
+ * command (the app's own executable run as Node, so no Node install is needed). null on a Mac copy outside /Applications
+ * (the DMG or a translocated folder), whose path changes between launches. */
 function status() {
   return {
     on: port !== null, // settings.agent.enabled (the pipe alone may be open for the assistant on a CLI)
     port,
     url: httpServer?.listening ? `http://127.0.0.1:${port}/mcp` : null,
     error: httpError,
-    stdio: { command: process.execPath, args: [BRIDGE, `--pipe=${pipePath()}`], env: { ELECTRON_RUN_AS_NODE: '1' } },
+    stdio: process.platform === 'darwin' && app.isPackaged && !app.isInApplicationsFolder() ? null : { command: process.execPath, args: [BRIDGE, `--pipe=${pipePath()}`], env: { ELECTRON_RUN_AS_NODE: '1' } },
   };
 }
 

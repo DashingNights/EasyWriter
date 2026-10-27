@@ -14,7 +14,7 @@ import { CopyPicture, drawnColumnWidths, setColumnWidths } from './export.js';
 import { Find } from './find.js';
 import { FONT_SIZES, FONTS, HIGHLIGHTS, presetChain, TEXT_COLORS } from './format.mjs';
 import { keyAmong } from './app/keybinds.js';
-import { chordOf } from './app/keys.mjs';
+import { chordOf, osChord } from './app/keys.mjs';
 
 export { FONT_SIZES, FONTS, HIGHLIGHTS, TEXT_COLORS }; // defined in format.mjs, which the command catalogue imports too
 
@@ -386,10 +386,11 @@ export const TEXT_KEYS = {
   'text.alignRight': (c) => c.setTextAlign('right'),
   'text.alignJustify': (c) => c.setTextAlign('justify'),
 };
-// TipTap's chords for those commands (StarterKit, TextAlign, Subscript, Superscript; Mod-B and the like also take Shift).
+// TipTap's chords for those commands (StarterKit, TextAlign, Subscript, Superscript; Mod-B and the like also take Shift). Its Mod is
+// Cmd on a Mac (osChord), so the physical Control keys stay the Mac's text keys there.
 export const TIPTAP_CHORDS = new Set(['Ctrl+Z', 'Ctrl+Y', 'Ctrl+Shift+Z', 'Ctrl+B', 'Ctrl+Shift+B', 'Ctrl+I', 'Ctrl+Shift+I', 'Ctrl+U', 'Ctrl+Shift+U',
   'Ctrl+Shift+S', 'Ctrl+E', 'Ctrl+Alt+C', 'Ctrl+Shift+8', 'Ctrl+Shift+7', 'Ctrl+,', 'Ctrl+.', 'Ctrl+Shift+L', 'Ctrl+Shift+E', 'Ctrl+Shift+R',
-  'Ctrl+Shift+J', ...[0, 1, 2, 3, 4, 5, 6].map((n) => `Ctrl+Alt+${n}`)]);
+  'Ctrl+Shift+J', ...[0, 1, 2, 3, 4, 5, 6].map((n) => `Ctrl+Alt+${n}`)].map(osChord));
 
 /** The text shortcuts of a format's editor: `map` {keybind id: (chain) => chain} runs a chord bound to one of its ids; a chord in
  * `chords` (TipTap's own for those commands) that the user has moved does nothing. */

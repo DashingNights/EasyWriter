@@ -16,12 +16,13 @@ import { AgentAsk } from '../components/AgentAsk.jsx';
 import { IconButton, Tip } from '../components/Tip.jsx';
 import { joinText } from '../dictation/core.mjs';
 import { DictationButton, hold } from '../dictation/Dictation.jsx';
-import { dictationReady, pttDown, pttUp, warm as warmDictation } from '../dictation/dictation.js';
+import { dictationReady, pttDown, pttUp, toggleDictation, useDictation, warm as warmDictation } from '../dictation/dictation.js';
 import { can } from '../gates.mjs';
 import { keyIs } from '../keybinds.js';
 import { motion } from '../motion.js';
 import { getState, setState, useStore, WORKER } from '../store.js';
 import { viewportRect } from '../viewport.js';
+import { MAC } from '../../platform.mjs';
 // LOCAL LLM (commented out 2026-10-07): BACKENDS, cancelInstall, closeInstall, install, openInstall, size.
 import {
   ASSISTANT_DEFAULTS, clearPending, closeChat, CTX, MODEL_FIELD, modelChoices, newChat, pickModel, refreshStatus, saveAssistant, send, setThinking, stop, EFFORTS,
@@ -294,6 +295,7 @@ function ChatPanel({ islandRef, closing, onClosed }) {
   const stick = useRef(true); // kept at the end while text streams, unless the user scrolled up
   const [mic, setMic] = useState(null); // the mic's dictation session {recording, error, ...}, kept until the next press
   const dictation = useRef(null); // the waveform's session in the text box (dictateInto), until the final text replaces it
+  const macMic = useDictation().recording; // the Mac: macOS Dictation is on (dictation.js systemDictation)
   const held = useRef(false); // the mic is held: closing the panel meanwhile releases it (the button's capture is lost unseen)
   const s = a.status;
   const srv = s?.server;
@@ -461,6 +463,14 @@ function ChatPanel({ islandRef, closing, onClosed }) {
     if (dictation.current?.working()) setLocked(true);
     else edRef.current?.view.focus();
   };
+  // The Mac (§7h Mac): a click starts macOS Dictation in the text box (it types there), the next one stops it.
+  const micToggle = () => {
+    if (!macMic) {
+      wake();
+      edRef.current?.view.focus();
+    }
+    toggleDictation();
+  };
 
   // Images pasted or dropped into the box or the panel, or picked with the Attach button, into the tray (MAX_IMAGES a message).
   const addImages = async (files) => {
@@ -589,9 +599,9 @@ function ChatPanel({ islandRef, closing, onClosed }) {
             </div>
           )}
           <form className="flex shrink-0 items-end gap-1 p-1" onSubmit={(e) => { e.preventDefault(); submit(); }}>
-            <IconButton size="regular" label="Hold to dictate into the message" tip={{ side: 'top' }} pressed={!!mic?.recording}
-              disabled={locked} onPointerEnter={warmDictation} {...hold(micDown, micUp)}
-              className={cn(mic?.recording && 'bg-destructive/20 text-destructive hover:bg-destructive/25 hover:text-destructive')}>
+            <IconButton size="regular" label={MAC ? 'Dictate into the message' : 'Hold to dictate into the message'} tip={{ side: 'top' }} pressed={MAC ? macMic : !!mic?.recording}
+              disabled={locked} onPointerEnter={warmDictation} {...(MAC ? { onMouseDown: keep, onClick: micToggle } : hold(micDown, micUp))}
+              className={cn((MAC ? macMic : mic?.recording) && 'bg-destructive/20 text-destructive hover:bg-destructive/25 hover:text-destructive')}>
               <Mic />
             </IconButton>
             <IconButton size="regular" label="Attach an image" tip={{ side: 'top' }} disabled={locked} onMouseDown={keep}

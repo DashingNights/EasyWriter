@@ -8,7 +8,7 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuShortcut, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { boardMenu, itemCopied } from '../../../whiteboard.js';
-import { keyLabel } from '../../keybinds.js';
+import { fixedKey, keyLabel } from '../../keybinds.js';
 import { can, GATES } from '../../gates.mjs';
 import { createPrefab } from '../../prefabs.js';
 import { CHROME, refocus, useSnapshot } from './controls.jsx';
@@ -64,7 +64,7 @@ export function BoardMenu() {
       <DropdownMenuSeparator />
       {item('Cut', Scissors, keyLabel('board.cut'), () => board.copyItem(true))}
       {item('Copy', Copy, keyLabel('board.copy'), () => board.copyItem())}
-      {item('Paste', ClipboardPaste, 'Ctrl+V', () => board.pasteItem(), itemCopied())}
+      {item('Paste', ClipboardPaste, fixedKey('Ctrl+V'), () => board.pasteItem(), itemCopied())}
       {item('Duplicate', CopyPlus, keyLabel('board.duplicate'), () => board.duplicate())}
       {item('Delete', Trash2, keyLabel('board.delete'), () => board.removeItem())}
       <DropdownMenuSeparator />

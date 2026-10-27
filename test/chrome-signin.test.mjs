@@ -11,7 +11,17 @@ Module._resolveFilename = function (request, ...rest) {
   return realResolve.call(this, request, ...rest);
 };
 require.cache['electron-stub'] = { id: 'electron-stub', filename: 'electron-stub', loaded: true, exports: { app: {}, session: {} } };
-const { toElectronCookie } = require('../src/chrome-signin.js');
+const { toElectronCookie, findBrowser } = require('../src/chrome-signin.js');
+const path = require('node:path');
+
+test('findBrowser on a Mac: Chrome, else Edge, in /Applications or ~/Applications, the binary inside the bundle', () => {
+  const at = (...files) => ({ platform: 'darwin', home: '/Users/k', exists: (f) => files.includes(f) });
+  const chrome = path.join('/Users/k', 'Applications', 'Google Chrome.app', 'Contents', 'MacOS', 'Google Chrome');
+  const edge = path.join('/Applications', 'Microsoft Edge.app', 'Contents', 'MacOS', 'Microsoft Edge');
+  assert.equal(findBrowser(at()), null);
+  assert.deepEqual(findBrowser(at(edge)), { exe: edge, name: 'Edge' });
+  assert.deepEqual(findBrowser(at(edge, chrome)), { exe: chrome, name: 'Chrome' });
+});
 
 test('secure domain cookie with leading dot keeps domain and maps sameSite/expiry', () => {
   const { details, skip } = toElectronCookie({ name: 'SID', value: 'abc', domain: '.google.com', path: '/', secure: true, httpOnly: true, sameSite: 'None', expires: 1800000000 });

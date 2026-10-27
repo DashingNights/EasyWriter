@@ -216,3 +216,49 @@ test('newestIn: the Claude app keeps Claude Code per version and build; the newe
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('pathBetween: the login shell\'s PATH between the markers, banners around it ignored; no markers → empty', () => {
+  const { pathBetween } = require('../src/assistant/cli.js');
+  assert.equal(pathBetween('Welcome back!\n__EASYWRITER_PATH__\n/opt/homebrew/bin:/usr/bin:/bin\n__EASYWRITER_PATH__\nbye\n'), '/opt/homebrew/bin:/usr/bin:/bin');
+  assert.equal(pathBetween('zsh: command not found: compinit\n'), '');
+  assert.equal(pathBetween('__EASYWRITER_PATH__\n/usr/bin\n'), ''); // cut off before the second marker
+  assert.equal(pathBetween(undefined), '');
+});
+
+test('find on a Mac: PATH first, then the installers\' folders, then the app copies; an npm-linked codex resolves to its binary', () => {
+  const fs = require('fs');
+  const os = require('os');
+  const path = require('path');
+  const { find } = require('../src/assistant/cli.js');
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ew-mac-'));
+  const put = (...p) => { const f = path.join(home, ...p); fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, ''); return f; };
+  const mac = (PATH = '', arch = 'arm64') => ({ platform: 'darwin', arch, home, PATH });
+  try {
+    assert.equal(find('claude', '', mac()), null);
+    // The Claude app's copy: <version>/claude.app/Contents/MacOS/claude, newest by number; claude-code-vm is skipped.
+    const app = ['Library', 'Application Support', 'Claude', 'claude-code'];
+    put(...app, '1.9.0', 'claude.app', 'Contents', 'MacOS', 'claude');
+    const newest = put(...app, '1.10.0', 'claude.app', 'Contents', 'MacOS', 'claude');
+    put(...app, 'claude-code-vm', 'claude.app', 'Contents', 'MacOS', 'claude');
+    assert.equal(find('claude', '', mac()), newest);
+    const local = put('.local', 'bin', 'claude');
+    assert.equal(find('claude', '', mac()), local);
+    const onPath = put('brew', 'bin', 'claude');
+    assert.equal(find('claude', '', mac([path.join(home, 'nothing'), path.dirname(onPath)].join(path.delimiter))), onPath);
+    // Codex: the ChatGPT app's copy under ~/Applications, then ~/.local/bin (its install script) before it.
+    const chatgpt = put('Applications', 'ChatGPT.app', 'Contents', 'Resources', 'codex');
+    assert.equal(find('codex', '', mac()), chatgpt);
+    const script = put('.local', 'bin', 'codex');
+    assert.equal(find('codex', '', mac()), script);
+    // npm: <prefix>/bin/codex links to bin/codex.js; the binary is in the nested platform package.
+    const pkg = ['lib', 'node_modules', '@openai', 'codex'];
+    const js = put(...pkg, 'bin', 'codex.js');
+    const arm = put(...pkg, 'node_modules', '@openai', 'codex-darwin-arm64', 'vendor', 'aarch64-apple-darwin', 'bin', 'codex');
+    assert.equal(find('codex', js, mac()), arm);
+    assert.equal(find('codex', js, mac('', 'x64')), js); // no Intel binary: the script, which runs with node on PATH
+    put(...pkg, 'node_modules', '@openai', 'codex-darwin-x64', 'vendor', 'x86_64-apple-darwin', 'bin', 'codex');
+    assert.match(find('codex', js, mac('', 'x64')), /x86_64-apple-darwin[\\/]bin[\\/]codex$/);
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});

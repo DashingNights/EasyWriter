@@ -26,13 +26,14 @@ import { LanguageNotice, mb, ModelFiles } from '../dictation/Dictation.jsx';
 import { openInstall } from '../dictation/dictation.js';
 import { defaultTag, draftsWithTag, pruneMap, tagList } from '../drafts-meta.js';
 import { DEFAULT_PAGE_WIDTH } from '../../formats.mjs';
+import { MAC } from '../../platform.mjs';
 import { INTEGRATIONS } from '../../integrations/index.mjs';
 import { copy, GitHubCode, IntegrationRows, ipcMessage, RepoPicker, useGitHubStatus, useRepos } from '../setup/shared.jsx';
 import { GitHubMark } from './brands.jsx';
 import { settingsSections } from '../../integrations/ui.js';
 import { columnsFollowing } from '../plans.js';
 import { getState, useStore } from '../store.js';
-import { DEFS, effective, overridesOf } from '../keys.mjs';
+import { DEFS, effective, keybindsKey, overridesOf } from '../keys.mjs';
 import { ColorSwatch } from './board/controls.jsx';
 import { FormDialog } from './FormDialog.jsx';
 import { KeybindsSection } from './KeybindsSection.jsx';
@@ -284,6 +285,19 @@ function AddLanguage({ list, onChange }) {
         </Command>
       </PopoverContent>
     </Popover>
+  );
+}
+
+/** Settings > Dictation on the Mac (SPEC §7h Mac): macOS Dictation in place of the Whisper controls. */
+function MacDictation() {
+  return (
+    <div className="flex items-center gap-1" data-dictation-mac>
+      macOS Dictation types where the cursor is. Turn it on in System Settings &gt; Keyboard &gt; Dictation.
+      <Help>
+        Add English and Cantonese (Hong Kong) there under Languages. Press the Globe key twice to start it, or use the mic
+        button or {withKey('Hold to dictate', 'app.dictate')}.
+      </Help>
+    </div>
   );
 }
 
@@ -921,7 +935,7 @@ function AgentsSection({ enabled, setEnabled, port, setPort }) {
   const [st, setSt] = useState(null);
   useEffect(() => { window.api.agent.status().then(setSt, () => {}); }, []);
   const url = `http://127.0.0.1:${port}/mcp`;
-  const stdio = st && JSON.stringify({ mcpServers: { easywriter: st.stdio } }, null, 2);
+  const stdio = st?.stdio && JSON.stringify({ mcpServers: { easywriter: st.stdio } }, null, 2);
   const unsaved = st && (enabled !== st.on || (enabled && Number(port) !== st.port));
   const state = !st ? 'Checking...' : !st.on ? 'Off' : st.url ? `Listening on port ${st.port}` : st.error ?? 'Starting...';
   return (
@@ -953,7 +967,7 @@ function AgentsSection({ enabled, setEnabled, port, setPort }) {
         <Label className="self-start pt-2 text-muted-foreground">Stdio config</Label>
         <div className="grid gap-1.5">
           <pre className="max-h-48 max-w-[36rem] overflow-auto rounded-md border bg-muted/40 p-2 font-mono text-xs select-text" data-agent-stdio>
-            {stdio ?? 'Checking...'}
+            {stdio ?? (st ? 'Move EasyWriter to Applications to use this. Its path changes until then.' : 'Checking...')}
           </pre>
           <div className="flex items-center gap-2">
             <Button type="button" variant="outline" size="sm" disabled={!stdio} onClick={() => copy(stdio)}>Copy</Button>
@@ -1115,7 +1129,7 @@ export function SettingsDialog({ settings: s, section, onClose }) {
   const [autoTab, setAutoTab] = useState(!!s.browserAutoTab);
   const [notchFloor, setNotchFloor] = useState(s.browserNotchFloor !== false);
   const [autoUpdate, setAutoUpdate] = useState(!!s.autoUpdate);
-  const [keybinds, setKeybinds] = useState(() => effective(DEFS, s.keybinds));
+  const [keybinds, setKeybinds] = useState(() => effective(DEFS, s[keybindsKey()]));
   const [github, setGithub] = useState(() => {
     const g = { enabled: false, repo: '', intervalSec: 300, onClose: 'ask', ...s.github };
     return { enabled: g.enabled, repo: g.repo, onClose: g.onClose, minutes: String(g.intervalSec / 60) };
@@ -1235,7 +1249,7 @@ export function SettingsDialog({ settings: s, section, onClose }) {
     browserAutoTab: autoTab,
     browserNotchFloor: notchFloor,
     autoUpdate,
-    keybinds: overridesOf(DEFS, keybinds), // §7k: only the changed bindings
+    [keybindsKey()]: overridesOf(DEFS, keybinds), // §7k: only the changed bindings, a Mac's under keybindsMac
     github: { enabled: github.enabled, repo: github.repo, onClose: github.onClose, intervalSec: Math.round(Number(github.minutes) * 60) },
   });
 
@@ -1297,7 +1311,7 @@ export function SettingsDialog({ settings: s, section, onClose }) {
             </div>
           </Section>
 
-          <Section id="motion" title="Motion" hint="Auto follows Animation effects in the Windows settings">
+          <Section id="motion" title="Motion" hint={MAC ? 'Auto follows Reduce motion in the macOS settings' : 'Auto follows Animation effects in the Windows settings'}>
             <MotionSection />
           </Section>
 
@@ -1358,8 +1372,8 @@ export function SettingsDialog({ settings: s, section, onClose }) {
             </div>
           </Section>}
 
-          {show('dictation') && <Section id="dictation" title="Dictation" hint="The mic button at the bottom right opens it">
-            <DictationSection value={dictation} onChange={setDictation} />
+          {show('dictation') && <Section id="dictation" title="Dictation" hint={`The mic button at the bottom right ${MAC ? 'starts' : 'opens'} it`}>
+            {MAC ? <MacDictation /> : <DictationSection value={dictation} onChange={setDictation} />}
           </Section>}
 
           {show('assistant') && <Section id="assistant" title="Assistant" hint={withKey('The chat button', 'app.assistant')}>
