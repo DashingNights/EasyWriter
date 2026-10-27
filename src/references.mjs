@@ -415,6 +415,35 @@ export function fromCsl(c) {
   };
 }
 
+/** A DSpace item (a university repository's REST API, /server/api/core/items/{uuid}) → its details: dc.title,
+ * dc.contributor.author (Family, Given), dc.date.issued; a thesis, dissertation, book or report is a book, an article sits in
+ * dc.relation.ispartof. */
+export function fromDspace(o) {
+  const m = (k) => (o?.metadata?.[k] ?? []).map((x) => clean(x?.value)).filter(Boolean);
+  const kind = m('dc.type')[0] ?? '';
+  const type = /thesis|dissertation|book|report/i.test(kind) ? 'book' : /article/i.test(kind) ? 'article' : /chapter|conference|proceedings/i.test(kind) ? 'chapter' : 'web';
+  const people = m('dc.contributor.author');
+  return {
+    type, title: m('dc.title')[0] ?? clean(o?.name), authors: (people.length ? people : m('dc.creator')).map(familyFirst), ...dateOf(m('dc.date.issued')[0]),
+    container: type === 'article' || type === 'chapter' ? m('dc.relation.ispartof')[0] ?? '' : '', publisher: m('dc.publisher')[0] ?? '',
+    doi: doiOf(m('dc.identifier.doi')[0]),
+  };
+}
+// DSpace 7 and later send an empty app shell (<ds-app>) at an item's link (/items/{uuid}, /entities/{type}/{uuid}) or its handle
+// (/handle/{prefix}/{suffix}); the item is in its REST API. ponytail: the API at /server, DSpace's default.
+const DSPACE_ITEM = /\/(?:items|entities\/[^/]+)\/([0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12})/i;
+const DSPACE_HANDLE = /\/handle\/(\d[\d.]*\/[^/?#]+)/;
+const dspaceApi = (url) => {
+  try {
+    const u = new URL(url);
+    const item = u.pathname.match(DSPACE_ITEM);
+    const handle = u.pathname.match(DSPACE_HANDLE);
+    return item ? `${u.origin}/server/api/core/items/${item[1]}` : handle ? `${u.origin}/server/api/pid/find?id=${encodeURIComponent(handle[1])}` : '';
+  } catch {
+    return '';
+  }
+};
+
 /** What was pasted: {arxiv, url} for an arXiv id or link, {doi} for a DOI (bare, doi: or a doi.org link), {url} for another
  * web address (https:// added to a bare domain), else null. */
 export function parseInput(text) {
@@ -447,9 +476,11 @@ const nonEmpty = (o) => Object.fromEntries(Object.entries(o).filter(([, v]) => (
 
 /** The details of the source at `text` (a link, a DOI or an arXiv id), read through get(url, accept) → {ok, status, url, type,
  * body}: the page's citation tags, then for a DOI (pasted, on the page or in the link) doi.org's record, which wins where both
- * have a field (arXiv's own page is complete, so an arXiv paper skips it). A web page or a site's own article without authors takes the site's name.
- * Resolves {source (cleanSource, accessed `today`, the pasted link kept), problem: a sentence when something could not be read,
- * else ''}; throws when `text` is no link, DOI or arXiv id. */
+ * have a field. An arXiv paper reads it only when its page lists a journal's or conference's DOI: the published version is cited
+ * then, at its DOI in place of the arXiv link (the user, 2026-10-27); else it stays a preprint. A web page or a site's own
+ * article without authors takes the site's name. Resolves {source (cleanSource, accessed `today`, the pasted link kept but for a
+ * published arXiv paper), problem: a sentence when something could not be read, else ''}; throws when `text` is no link, DOI or
+ * arXiv id. */
 export async function lookup(text, { get, today }) {
   const q = parseInput(text);
   if (!q) throw new Error('Paste a link, a DOI or an arXiv id.');
@@ -458,14 +489,21 @@ export async function lookup(text, { get, today }) {
   let problem = '';
   if (q.url) {
     const r = await read(q.url);
-    if (r.ok && /html|xml/i.test(r.type ?? '')) page = parseMeta(r.body, r.url || q.url);
+    if (r.ok && /<ds-app\b/i.test(r.body ?? '')) { // a DSpace repository: its shell's title is "DSpace"
+      const api = dspaceApi(r.url || q.url);
+      const j = api ? await read(api, 'application/json') : {};
+      try {
+        if (j.ok) page = fromDspace(JSON.parse(j.body));
+      } catch {}
+    } else if (r.ok && /html|xml/i.test(r.type ?? '')) page = parseMeta(r.body, r.url || q.url);
     else if (r.ok) problem = `The link is not a web page. ${FILL}`;
     else if (r.status === 401 || r.status === 403) problem = `The site did not let EasyWriter read the page. ${FILL}`;
     else problem = r.status ? `The site answered with error ${r.status}. ${FILL}` : `The site could not be reached. ${FILL}`;
   }
   const doi = q.doi || page.doi || (q.url ? doiInLink(q.url) : '');
   let record = {};
-  if (doi && !q.arxiv && !page.arxiv) {
+  const arxiv = q.arxiv || page.arxiv;
+  if (doi && (!arxiv || !/^10\.48550\//.test(doi))) { // not arXiv's own DOI, which has nothing the page lacks
     const r = await read(`https://doi.org/${doi}`, CSL);
     try {
       if (r.ok) record = fromCsl(JSON.parse(r.body));
@@ -474,7 +512,9 @@ export async function lookup(text, { get, today }) {
     else if (!q.url) problem = `doi.org has no record of ${doi}. ${FILL}`;
   }
   const { site = '', ...found } = { ...nonEmpty(page), ...nonEmpty(record) };
-  const source = cleanSource({ type: 'web', ...found, ...(q.arxiv && { type: 'preprint', arxiv: q.arxiv }), url: q.url ?? '', doi, accessed: today });
+  const published = arxiv && record.title;
+  const source = cleanSource({ type: 'web', ...found, ...(q.arxiv && !published && { type: 'preprint', arxiv: q.arxiv }),
+    url: published ? '' : q.url ?? '', doi, accessed: today });
   // A web page or a site's own article (not a journal's) without authors takes the site's name.
   if (!source.authors.length && site && (source.type === 'web' || (source.type === 'article' && source.container === site))) {
     source.authors = [site.replace(/\s+(?:documentation|docs)$/i, '')]; // "Convai Documentation" → Convai

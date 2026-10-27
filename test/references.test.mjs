@@ -181,6 +181,28 @@ test('lookup: page tags; a DOI page that blocks the app falls back to doi.org; a
   assert.equal(calls.find(([u]) => u === 'https://doi.org/10.1145/123.456')[1], 'application/vnd.citationstyles.csl+json');
   const web = await lookup('https://platform.claude.com/docs/en/about-claude/pricing', { get, today: at });
   assert.deepEqual([web.source.type, web.source.authors, web.source.title], ['web', ['Anthropic'], 'Pricing']);
+  // An arXiv paper since published (CALYPSO): its page's DOI is read at doi.org and the published version cited at its DOI.
+  pages['https://arxiv.org/abs/2308.07540'] = { ok: true, status: 200, type: 'text/html', body: ARXIV_HTML.replace('2411.00114" />', '2308.07540" /><meta name="citation_doi" content="10.1609/aiide.v19i1.27534" />') };
+  pages['https://doi.org/10.1609/aiide.v19i1.27534'] = { ok: true, status: 200, type: 'application/json', body: JSON.stringify({ type: 'article-journal',
+    title: "CALYPSO: LLMs as Dungeon Masters' Assistants", author: [{ family: 'Zhu', given: 'Andrew' }], issued: { 'date-parts': [[2023, 10, 6]] },
+    'container-title': 'Proceedings of the AAAI Conference on Artificial Intelligence and Interactive Digital Entertainment', volume: '19', issue: '1' }) };
+  const cal = await lookup('https://ar5iv.labs.arxiv.org/html/2308.07540', { get, today: at });
+  assert.deepEqual([cal.problem, cal.source.type, cal.source.container.slice(0, 31), cal.source.volume, cal.source.doi, cal.source.url],
+    ['', 'article', 'Proceedings of the AAAI Confere', '19', '10.1609/aiide.v19i1.27534', '']);
+  // A DSpace repository (repository.upenn.edu, 2026-10-27): the old link redirects to an empty app shell; the REST API has the item.
+  const ITEM = '3052aa84-cf1a-4ff1-98cf-41314d25532c';
+  const SHELL = { ok: true, status: 200, type: 'text/html', url: `https://repository.upenn.edu/items/${ITEM}`, body: '<head><title>DSpace</title></head><body><ds-app></ds-app></body>' };
+  pages['https://repository.upenn.edu/edissertations/435'] = SHELL;
+  pages[`https://repository.upenn.edu/server/api/core/items/${ITEM}`] = { ok: true, status: 200, type: 'application/hal+json', body: JSON.stringify({ metadata: {
+    'dc.title': [{ value: 'Perceptually Driven Simulation' }], 'dc.contributor.author': [{ value: 'Sunshine-Hill, Ben' }], 'dc.contributor.advisor': [{ value: 'Norman I. Badler' }],
+    'dc.date.issued': [{ value: '2011-12-21' }], 'dc.type': [{ value: 'Dissertation/Thesis' }] } }) };
+  const thesis = await lookup('https://repository.upenn.edu/edissertations/435', { get, today: at });
+  assert.deepEqual([thesis.problem, thesis.source.type, thesis.source.title, thesis.source.authors, thesis.source.year, thesis.source.url],
+    ['', 'book', 'Perceptually Driven Simulation', ['Sunshine-Hill, Ben'], '2011', 'https://repository.upenn.edu/edissertations/435']);
+  pages['https://other.example.edu/handle/123/45'] = { ...SHELL, url: 'https://other.example.edu/handle/123/45' }; // its API offline
+  const shell = await lookup('https://other.example.edu/handle/123/45', { get, today: at });
+  assert.ok(calls.some(([u]) => u === 'https://other.example.edu/server/api/pid/find?id=123%2F45'), 'a handle goes through pid/find');
+  assert.deepEqual([shell.source.title, shell.problem.startsWith('The page has no citation details')], ['', true]); // never "DSpace"
   const off = await lookup('https://example.org/x', { get, today: at });
   assert.match(off.problem, /could not be reached/);
   assert.equal(off.source.url, 'https://example.org/x');

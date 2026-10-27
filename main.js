@@ -317,14 +317,26 @@ handle('window.capture', () => mainWin.webContents.capturePage().then((img) => i
 // References (docs/plans/references.md): one GET of a pasted link or of doi.org for a source's details → {ok, status, url, type,
 // body}. A session of its own, in memory, so no sign-in of the app's other pages goes along; http and https only, 15 s, at most
 // 2 MB of text read. Its user agent is Chrome's without the Electron and app names, which some sites refuse (unity.com: 403).
+// `url` is where the redirects ended: session.fetch leaves res.url empty, so they are followed through webRequest.
 let refsSession = null;
+const refsMoved = new Map(); // a redirected link → where it went
 handle('references.fetch', async ({ url, accept } = {}) => {
   const u = new URL(url);
   if (u.protocol !== 'https:' && u.protocol !== 'http:') throw new Error('Only http and https links can be read');
   if (!refsSession) {
     refsSession = session.fromPartition('references');
     refsSession.setUserAgent(refsSession.getUserAgent().replace(/ (?:Electron|EasyWriter)\/\S+/gi, ''));
+    refsSession.webRequest.onBeforeRedirect((d) => refsMoved.set(d.url, d.redirectURL));
   }
+  const landed = () => {
+    let at = u.href;
+    for (let i = 0; i < 20 && refsMoved.has(at); i++) {
+      const next = refsMoved.get(at);
+      refsMoved.delete(at);
+      at = next;
+    }
+    return at;
+  };
   try {
     const res = await refsSession.fetch(u.href, { cache: 'no-store', signal: AbortSignal.timeout(15000),
       headers: { accept: typeof accept === 'string' ? accept : 'text/html,application/xhtml+xml,*/*;q=0.8' } });
@@ -340,7 +352,7 @@ handle('references.fetch', async ({ url, accept } = {}) => {
       }
       reader.cancel().catch(() => {});
     }
-    return { ok: res.ok, status: res.status, url: res.url, type, body: Buffer.concat(chunks).toString('utf8') };
+    return { ok: res.ok, status: res.status, url: res.url || landed(), type, body: Buffer.concat(chunks).toString('utf8') };
   } catch (e) {
     return { ok: false, status: 0, url: u.href, type: '', body: '', error: e.message };
   }
