@@ -34,7 +34,7 @@ const state = {
   citePicker: null,  // { x, y } — the open citation picker (References.jsx; references.js openCitePicker): the text cursor's place
   find: null,        // { n, seed } — the open find bar (FindBar.jsx): n +1 per Ctrl+F (focuses it again), seed: a query to start with
   setup: false,      // Run setup again (actions.js runSetup): the setup shows although settings.onboarded is true (setupOpen)
-  tour: null,        // { step } — the open tour (Onboarding.jsx): the index of its shown step in STEPS
+  tutorial: null,    // { step, format, from } — the running tutorial (Tutorial.jsx): its step, its draft's format, the draft open at its start
   view: { type: 'editor' }, // the main column (§7g): {type:'editor'} | {type:'plan', planId, tab} | {type:'flows', flowId} | {type:'browser'}
   browser: { tabs: [], active: null }, // the in-app browser's tabs (§7j; browser.js), mirrored into settings.browser
   planUi: { selection: [], focusId: null, filter: '', options: {} }, // the plan workspace (§7f): selected / focused cards, filter text, label / priority / hide-done filters

@@ -4,8 +4,7 @@
 // before `finish`, so the Assistant and dictation page (`helpers`, helpers.jsx) comes before them.
 import { useEffect, useRef, useState } from 'react';
 import { cn } from 'cn';
-import { CloudOff, CloudUpload, Copy, ExternalLink, GraduationCap, History, LogIn, Monitor, Moon, Smile, Sun, TriangleAlert } from 'lucide-react';
-import { Badge } from '@/components/ui/badge';
+import { CircleCheck, CloudOff, CloudUpload, ExternalLink, GraduationCap, History, Monitor, Moon, Smile, Sun, TriangleAlert, UserPlus, UserRoundCheck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
 import { Spinner } from '@/components/ui/spinner';
@@ -14,7 +13,10 @@ import { changeSettings, saveSettings } from '../actions.js';
 import { getState, useStore } from '../store.js';
 import { scalePercent } from './flow.mjs';
 import { Helpers } from './helpers.jsx';
-import { copy, IntegrationRows, ipcMessage, RepoPicker, useGitHubStatus, useRepos } from './shared.jsx';
+import { GitHubMark } from '../components/brands.jsx';
+import { Help } from '../components/Tip.jsx';
+import { startTutorial } from '../components/Tutorial.jsx';
+import { GitHubCode, IntegrationRows, ipcMessage, pickCard, RepoPicker, useGitHubStatus, useRepos } from './shared.jsx';
 
 const JOIN = 'https://docs.github.com/en/account-and-profile/how-tos/account-management/creating-an-account-on-github';
 const NEW_REPO = 'https://github.com/new';
@@ -25,7 +27,7 @@ function Choices({ label, value, onChange, options }) {
     <div role="radiogroup" aria-label={label} className={cn('grid gap-3', options.length === 3 ? 'grid-cols-3' : 'grid-cols-2')}>
       {options.map(([v, text, Icon, picture]) => (
         <button key={String(v)} type="button" role="radio" aria-checked={value === v} data-choice={String(v)} onClick={() => onChange(v)}
-          className="flex flex-col items-center gap-2 rounded-md border p-4 text-center outline-none hover:bg-accent/60 focus-visible:ring-[3px] focus-visible:ring-ring/50 aria-checked:border-primary aria-checked:bg-accent/60">
+          className={cn(pickCard(value === v, value != null), 'flex flex-col items-center gap-2 p-4 text-center')}>
           {picture}
           <span className="flex items-center gap-2 font-medium">{Icon && <Icon className="size-4" />}{text}</span>
         </button>
@@ -111,10 +113,10 @@ function GitHubAccount({ leave, setNav }) {
   const [has, setHas] = useState(null);
   useEffect(() => setNav({ disabled: has == null, label: has === false ? 'I have an account now' : undefined, skip: SKIP(leave) }), [has]);
   return <>
-    <Choices label="Do you have a GitHub account?" value={has} onChange={setHas} options={[[true, 'Yes'], [false, 'No']]} />
-    {has === false && <div className="grid gap-2">
-      <p>Create one on GitHub, then come back here.</p>
-      <div><Button asChild variant="outline" size="sm"><a href={JOIN} target="_blank" rel="noreferrer"><ExternalLink />Create a GitHub account</a></Button></div>
+    <Choices label="Do you have a GitHub account?" value={has} onChange={setHas} options={[[true, 'Yes', UserRoundCheck], [false, 'No', UserPlus]]} />
+    {has === false && <div className="flex animate-page-in items-center gap-1.5">
+      <Button asChild variant="outline" size="sm"><a href={JOIN} target="_blank" rel="noreferrer"><GitHubMark />Create a GitHub account<ExternalLink className="opacity-50" /></a></Button>
+      <Help>Create one on GitHub, then come back here.</Help>
     </div>}
   </>;
 }
@@ -128,12 +130,13 @@ function GitHubRepo({ leave, setNav }) {
       <li>Give it a name you will recognise, for example easywriter-backup.</li>
       <li>Add nothing to it. Leave README, .gitignore and licence off, so it stays empty.</li>
     </ol>
-    <div><Button asChild variant="outline" size="sm"><a href={NEW_REPO} target="_blank" rel="noreferrer"><ExternalLink />Open github.com/new</a></Button></div>
+    <div><Button asChild variant="outline" size="sm"><a href={NEW_REPO} target="_blank" rel="noreferrer"><GitHubMark />Open github.com/new<ExternalLink className="opacity-50" /></a></Button></div>
   </>;
 }
 
-/** GitHub's device flow, as Settings > GitHub backup runs it: the code goes on the clipboard and GitHub's page opens; once
- * the user has entered it, the setup moves on by itself. Leaving the page while it waits cancels it. */
+/** GitHub's device flow, as Settings > GitHub backup runs it: the page asks for a code as it shows, and its button copies the
+ * code and opens GitHub's page (GitHubCode). Once the user has entered it, the setup moves on by itself. Leaving the page
+ * while it waits cancels it; after Cancel or a failure, Sign in with GitHub asks again. */
 function GitHubSignIn({ next, leave, setNav }) {
   const [st, setSt] = useGitHubStatus();
   const [code, setCode] = useState(null);
@@ -141,11 +144,17 @@ function GitHubSignIn({ next, leave, setNav }) {
   const [error, setError] = useState('');
   const live = useRef(true);
   const waiting = useRef(false);
+  const asked = useRef(false);
   useEffect(() => () => {
     live.current = false;
     if (waiting.current) window.api.github.logout(); // cancels the login that is waiting
   }, []);
   useEffect(() => setNav({ disabled: !st?.login, skip: SKIP(leave) }), [st?.login]);
+  useEffect(() => {
+    if (!st || st.login || !st.configured || asked.current) return;
+    asked.current = true;
+    start();
+  }, [st]);
   const start = async () => {
     setError('');
     setStarting(true);
@@ -168,25 +177,19 @@ function GitHubSignIn({ next, leave, setNav }) {
       setStarting(false);
     }
   };
-  if (!st) return <p className="text-muted-foreground">Checking...</p>;
-  if (st.login) return <p data-github-login>{`Signed in as ${st.login}.`}</p>;
-  if (!st.configured) return <p className="text-muted-foreground">This build has no GitHub app ID, so it cannot sign in. Skip the backup for now.</p>;
-  if (code) return (
-    <div className="grid gap-3">
-      <p>Enter this code on GitHub if it is not filled in. It is on your clipboard.</p>
-      <div className="flex items-center gap-2">
-        <code data-github-code className="rounded-md border bg-muted/40 px-3 py-1 font-mono text-2xl tracking-widest select-text">{code.userCode}</code>
-        <Button variant="outline" size="sm" onClick={() => copy(code.userCode)}><Copy />Copy</Button>
-      </div>
-      <p className="flex items-center gap-2 text-muted-foreground"><Spinner />Waiting for you to sign in on GitHub</p>
-      <div><Button variant="ghost" size="sm" onClick={() => window.api.github.logout()}>Cancel</Button></div>
-    </div>
-  );
   return (
-    <div className="grid gap-2">
-      <p>GitHub opens in your browser. Sign in there and enter the code shown here.</p>
-      <div><Button disabled={starting} onClick={start}><LogIn />Sign in with GitHub</Button></div>
-      {error && <p className="text-destructive" data-github-error>{error}</p>}
+    <div className="grid content-start" data-github-signin>
+      {!st ? <p className="text-muted-foreground">Checking...</p>
+        : st.login ? <p className="flex items-center gap-2" data-github-login><CircleCheck className="size-4 text-success" />{`Signed in as ${st.login}`}</p>
+          : !st.configured ? <p className="text-muted-foreground">This build has no GitHub app ID, so it cannot sign in. Skip the backup for now.</p>
+            : code ? <GitHubCode code={code} onCancel={() => window.api.github.logout()} />
+              : (
+                <div className="grid justify-items-start gap-2">
+                  {starting || !asked.current ? <p className="flex items-center gap-2 text-muted-foreground"><Spinner />Getting a code from GitHub</p>
+                    : <Button onClick={start}><GitHubMark />Sign in with GitHub</Button>}
+                  {error && <p className="text-destructive" data-github-error>{error}</p>}
+                </div>
+              )}
     </div>
   );
 }
@@ -214,19 +217,15 @@ function GitHubPick({ next, leave, setNav }) {
   return <RepoPicker repo={repo} onPick={setRepo} repos={repos} loadRepos={loadRepos} check={check} />;
 }
 
+/** The last page: Start writing. A new user gets the tutorial instead (Start the tutorial, or Skip the tutorial), which starts
+ * once the setup has closed. */
 function Finish({ usedBefore, finish, setNav }) {
-  useEffect(() => setNav({ label: 'Start writing', go: finish }), []);
-  if (usedBefore !== false) return null;
-  return (
-    <button type="button" disabled data-tutorial className="flex items-center gap-3 rounded-md border p-3 text-left disabled:opacity-60">
-      <GraduationCap className="size-5 shrink-0" />
-      <span className="grid gap-0.5">
-        <span className="font-medium">Take the tutorial</span>
-        <span className="text-xs text-muted-foreground">A short walk through writing your first draft.</span>
-      </span>
-      <Badge className="ml-auto">Coming soon</Badge>
-    </button>
-  );
+  const fresh = usedBefore === false;
+  useEffect(() => setNav(fresh
+    ? { label: 'Start the tutorial', go: async () => { await finish(); startTutorial(); }, skip: { label: 'Skip the tutorial', go: finish } }
+    : { label: 'Start writing', go: finish }), []);
+  if (!fresh) return null;
+  return <p className="flex items-center gap-2" data-tutorial-offer><GraduationCap className="size-5 shrink-0" />A short tutorial shows you how to make your first draft.</p>;
 }
 
 const github = (id, title, help, Page, branch) => ({ id, step: 'github', title, help, Page, branch });

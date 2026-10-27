@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { cn } from 'cn';
-import { Mic, MicOff, Minimize2 } from 'lucide-react';
+import { ArrowDown, Check, Mic, MicOff, Minimize2 } from 'lucide-react';
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter,
   AlertDialogHeader, AlertDialogTitle,
@@ -9,15 +9,15 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { refocusEditor, setupOpen } from '../actions.js';
-import { IconButton, Tip } from '../components/Tip.jsx';
+import { Help, IconButton, Tip } from '../components/Tip.jsx';
 import { keyIs, withKey } from '../keybinds.js';
 import { motion } from '../motion.js';
 import { getState, useStore } from '../store.js';
 import { viewportRect } from '../viewport.js';
-import { LANGUAGES } from './core.mjs';
+import { knowsCantonese, languageName, spoken } from './core.mjs';
 import {
-  cancelInstall, CLOSE_STEPS, closeInstall, deleteModel, dictationReady, install, level, minimize, modelInUse, pttDown, pttUp,
-  toggleDictation, useDictation, warm,
+  cancelInstall, CLOSE_STEPS, closeInstall, deleteModel, dictationReady, dictationSettings, install, level, minimize, modelInUse,
+  pttDown, pttUp, toggleDictation, useDictation, warm,
 } from './dictation.js';
 
 // Push-to-talk dictation chrome (SPEC §7h), mounted in the main column's area (App.jsx): the bottom column over the toolbar
@@ -27,6 +27,42 @@ import {
 const rem = () => parseFloat(getComputedStyle(document.documentElement).fontSize) || 13;
 const keep = (e) => e.preventDefault(); // buttons that never take the focus from the editor
 export const mb = (bytes) => `${Math.max(1, Math.round(bytes / 1048576))} MB`;
+
+// Each model (dictation-main.js MODELS) as a level of three bars, full for Best quality down to one for Base, and three points: a
+// tick for what it does well, an arrow down for what it costs (the user, 2026-10-26: an arrow, not an X).
+const MODEL_LOOK = {
+  'large-v3-turbo-q5_0': [3, [[1, 'Most accurate'], [1, 'Best with names and other languages'], [0, 'Slower, needs about 1 GB of memory']]],
+  small: [2, [[1, 'Accurate for everyday dictation'], [1, 'Quick on most computers'], [0, 'More mistakes than Best quality']]],
+  base: [1, [[1, 'Smallest and fastest'], [0, 'Often mishears words'], [0, 'Struggles with accents and noise']]],
+};
+
+/** A model's level: Lucide's battery without the bump on its right (the user, 2026-10-26), its bars filled to the level. Nothing
+ * for a model not in MODEL_LOOK. */
+export function ModelLevel({ id, className }) {
+  const n = MODEL_LOOK[id]?.[0];
+  if (!n) return null;
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden
+      data-level={n} className={cn('size-4 shrink-0', className)}>
+      <rect x="4" y="6" width="16" height="12" rx="2" />
+      {[8, 12, 16].slice(0, n).map((x) => <path key={x} d={`M${x} 10v4`} />)}
+    </svg>
+  );
+}
+
+/** A model's three points, in a row unless `className` lays them out otherwise. */
+export function ModelPoints({ id, className }) {
+  return (
+    <ul className={cn('flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-muted-foreground', className)} data-model-points>
+      {(MODEL_LOOK[id]?.[1] ?? []).map(([good, text]) => (
+        <li key={text} className="flex items-start gap-1" data-point={good ? 'good' : 'cost'}>
+          {good ? <Check aria-hidden className="mt-px size-3.5 shrink-0 text-success" /> : <ArrowDown aria-hidden className="mt-px size-3.5 shrink-0 text-warning" />}
+          <span><span className="sr-only">{good ? 'Good: ' : 'Downside: '}</span>{text}</span>
+        </li>
+      ))}
+    </ul>
+  );
+}
 const isHoldKey = (e) => (e.key === ' ' || e.key === 'Enter') && !e.repeat;
 
 /** Hold handlers for a button: pointer (captured, so a release anywhere ends it) and Space / Enter. */
@@ -233,6 +269,25 @@ const Radio = ({ name, value, checked, onChange, children }) => (
   </label>
 );
 
+/** When `list` (core.mjs spoken) has 粵語 and `model` lacks it (Small, Base): why, and a switch to the model that has it.
+ * `models`: main's status().models. */
+export function LanguageNotice({ model, list, models, onSwitch }) {
+  const current = models.find((m) => m.id === model);
+  const large = models.find((m) => knowsCantonese(m.id));
+  if (!list.includes('yue') || knowsCantonese(model) || !current || !large) return null;
+  return (
+    <div className="grid justify-items-start gap-1.5 rounded-md border border-primary/60 p-2.5" role="status" data-language-notice>
+      <span className="flex items-center gap-1">
+        The {current.label} model does not support 粵語. The {large.label} model does.
+        <Help>With {current.label}, 粵語 is transcribed as Chinese, and some words can come out in Mandarin.</Help>
+      </span>
+      <Button type="button" variant="outline" size="sm" onClick={() => onSwitch(large.id)} data-language-switch>
+        <ModelLevel id={large.id} />Switch to {large.label}
+      </Button>
+    </div>
+  );
+}
+
 /** First-use setup: what is downloaded, the model (the stored one preselected, Small by default; each one's pros and cons),
  * English or Automatic. */
 function InstallForm({ open }) {
@@ -266,7 +321,7 @@ function InstallForm({ open }) {
     closeInstall(null);
   };
   const total = status ? status.missing.reduce((n, m) => n + m.bytes, 0) : 0;
-  const other = !['en', 'auto'].includes(open.language) && LANGUAGES.find(([code]) => code === open.language);
+  const other = !['en', 'auto'].includes(open.language) && [open.language, languageName(open.language)];
   const pct = progress?.total ? Math.round((progress.received / progress.total) * 100) : 0;
   return (
     <Dialog open onOpenChange={(o) => !o && cancel()}>
@@ -287,8 +342,8 @@ function InstallForm({ open }) {
           <legend className="mb-0.5 text-xs font-medium text-muted-foreground">Model</legend>
           {(status?.models ?? []).map((m, i) => (
             <Radio key={m.id} name="dictation-model" value={m.id} checked={model === m.id} onChange={setModel}>
-              <span>{m.label} ({mb(m.bytes)}){i === 0 && ', the default'}{m.downloaded && ', downloaded'}</span>
-              <span className="text-xs text-muted-foreground">{m.note}</span>
+              <span className="flex items-center gap-1.5"><ModelLevel id={m.id} />{m.label} ({mb(m.bytes)}){i === 0 && ', the default'}{m.downloaded && ', downloaded'}</span>
+              <ModelPoints id={m.id} />
             </Radio>
           ))}
           <p className="text-xs text-muted-foreground">
@@ -307,6 +362,8 @@ function InstallForm({ open }) {
             </span>
           </Radio>
           <p className="text-xs text-muted-foreground">Both can be changed later in Settings, which lists every language the model knows.</p>
+          <LanguageNotice model={model} list={spoken({ language, languages: dictationSettings().languages })} models={status?.models ?? []}
+            onSwitch={setModel} />
         </fieldset>
         {busy && (
           <div className="grid gap-1" role="status">

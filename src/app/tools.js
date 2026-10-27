@@ -2,7 +2,7 @@ import { createElement as h, useEffect, useRef } from 'react';
 import { NodeSelection } from '@tiptap/pm/state';
 import {
   ALargeSmall, AppWindow, BadgeCheck, BringToFront, Check, CheckCheck, ChevronDown, ChevronUp, ListChecks, ListX, CaseSensitive, ClipboardPaste, Copy, CopyPlus, Crop, Eraser, Eye, EyeOff, FilePlus, FileText, FolderInput, FolderPlus, Group, Heading1,
-  Heading2, Heading3, Globe, Heading4, Heading5, Heading6, ImagePlus, Layers, Lock, LockOpen, Magnet, MessagesSquare, MousePointer2, MoveHorizontal, PaintBucket, Palette, Pen, Pencil, Pilcrow, Pin, Puzzle, Redo2, Save,
+  Heading2, Heading3, Globe, GraduationCap, Heading4, Heading5, Heading6, ImagePlus, Layers, Lock, LockOpen, Magnet, MessagesSquare, MousePointer2, MoveHorizontal, PaintBucket, Palette, Pen, Pencil, Pilcrow, Pin, Puzzle, Redo2, Save,
   Replace, Scaling, Scissors, Search, MessageSquare, SendToBack, Settings, Shapes, SlidersHorizontal, SpellCheck, SquarePen, TableColumnsSplit, TableRowsSplit, Tag, Trash2,
   Type, Undo2, Ungroup, WandSparkles, Workflow, X, PenLine, BookMarked, Hash, ScrollText, TextQuote,
 } from 'lucide-react';
@@ -33,6 +33,7 @@ import { openFind, openReplace } from './components/FindBar.jsx';
 import { ReferenceStyle } from './components/References.jsx';
 import { toggleSpellCheck } from './components/StatusBar.jsx';
 import { BlockSelect, FontSelect, NONE, SizeSelect, Swatches, textTools, ToolButton, ToolSelect } from './components/Toolbar.jsx';
+import { startTutorial } from './components/Tutorial.jsx';
 import { draftTag, tagList } from './drafts-meta.js';
 import { openFlows } from './flows.js';
 import { can, GATES } from './gates.mjs';
@@ -391,6 +392,9 @@ const APP = [
   // Settings > General Run setup again: the first start's setup from its first page (src/app/setup).
   { id: 'setup', label: 'Run setup again', group: 'App', icon: h(WandSparkles), run: runSetup, headless: false,
     keywords: ['setup', 'onboarding', 'first start', 'wizard'] },
+  // Settings > General Start the tutorial (components/Tutorial.jsx).
+  { id: 'tutorial', label: 'Start the tutorial', group: 'App', icon: h(GraduationCap), run: startTutorial, headless: false,
+    keywords: ['tutorial', 'tour', 'lesson', 'learn', 'guide', 'how to', 'getting started'] },
   { id: 'assistant', label: 'Assistant', group: 'App', icon: h(MessageSquare), key: 'app.assistant', run: () => toggleChat(), headless: false,
     keywords: ['assistant', 'chat', 'ai', 'ask', 'help', 'bot', 'model', 'llm', 'local ai', 'agent', 'copilot', 'assistent', 'asistant'] },
   { id: 'spell-check', label: 'Spell check', group: 'App', icon: h(SpellCheck), toggle: true, active: () => getState().settings?.spellCheck ?? true,

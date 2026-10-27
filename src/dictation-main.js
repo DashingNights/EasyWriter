@@ -273,19 +273,29 @@ function warmAtStart() {
   }, 2000);
 }
 
-/** WAV bytes → the text (settings.dictation.language: a whisper code or 'auto'). */
+/** WAV bytes → the text, in the languages settings.dictation lists (core.mjs whisperLanguages). With two or more, an Automatic
+ * pass first; when it settles on another language, again with the likeliest listed one. */
 async function transcribe(wav) {
   if (!ArrayBuffer.isView(wav)) throw new Error('transcribe takes the WAV file as bytes');
   const c = await config();
-  const form = new FormData();
-  form.append('file', new Blob([wav], { type: 'audio/wav' }), 'speech.wav');
-  form.append('response_format', 'json');
-  form.append('temperature', '0');
-  form.append('language', c.d.language || 'en');
-  const res = await fetch(`${await serverUrl(c)}/inference`, { method: 'POST', body: form, signal: AbortSignal.timeout(120000) });
-  const json = await res.json().catch(() => ({}));
-  if (!res.ok || json.error) throw new Error(json.error || `the whisper server answered HTTP ${res.status}`);
-  return String(json.text ?? '');
+  const { whisperLanguages, retryLanguage } = await import('./app/dictation/core.mjs');
+  const { codes, prompt } = whisperLanguages(c.d, path.basename(c.model));
+  const ask = async (language, verbose) => {
+    const form = new FormData();
+    form.append('file', new Blob([wav], { type: 'audio/wav' }), 'speech.wav');
+    form.append('response_format', verbose ? 'verbose_json' : 'json'); // verbose: the language probabilities, one more encoder pass
+    form.append('temperature', '0');
+    form.append('language', language);
+    if (prompt) form.append('prompt', prompt);
+    const res = await fetch(`${await serverUrl(c)}/inference`, { method: 'POST', body: form, signal: AbortSignal.timeout(120000) });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok || json.error) throw new Error(json.error || `the whisper server answered HTTP ${res.status}`);
+    return json;
+  };
+  if (codes.length < 2) return String((await ask(codes[0] ?? 'auto')).text ?? '');
+  const first = await ask('auto', true);
+  const again = retryLanguage(codes, first.language_probabilities);
+  return String((again ? await ask(again) : first).text ?? '');
 }
 
 // ---------------------------------------------------------------------------------------------

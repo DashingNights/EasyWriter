@@ -3,7 +3,7 @@
 // their undo history, plans, flowcharts, prefabs, their pictures and the drafts' metadata from settings. Login is GitHub's device flow; the
 // token is kept encrypted (safeStorage) in github-token.json. github-sync.json holds the last synced commit and each file's
 // blob SHA at that commit, the base of a three-way merge per file.
-const { app, clipboard, dialog, net, safeStorage, shell } = require('electron');
+const { app, dialog, net, safeStorage } = require('electron');
 const path = require('path');
 const os = require('os');
 const fs = require('fs/promises');
@@ -84,7 +84,8 @@ async function post(url, body) {
   return res.json();
 }
 
-/** Starts GitHub's device flow and opens its page in the browser → {userCode, uri}; loginWait() resolves once the user entered it. */
+/** Starts GitHub's device flow → {userCode, uri, url}; loginWait() resolves once the user entered it. The page opens nothing: its
+ * button copies the code and then opens `url` (the user, 2026-10-26: a browser opening by itself covers the code and the app). */
 async function login() {
   if (!CLIENT_ID) throw new Error('This build has no GitHub app ID (EASYWRITER_GITHUB_CLIENT_ID).');
   if (loginRun) loginRun.cancelled = true;
@@ -94,11 +95,8 @@ async function login() {
   run.done = poll(run, r);
   run.done.catch(() => {});
   // GitHub returns no verification_uri_complete. Its device page keeps a user_code parameter through the sign-in redirect, so the
-  // page is opened with it in case GitHub fills the boxes from it, and the code is put on the clipboard so a paste fills them
-  // otherwise (the user, 2026-10-26: no copying the code by hand).
-  clipboard.writeText(r.user_code);
-  shell.openExternal(`${r.verification_uri}?user_code=${encodeURIComponent(r.user_code)}`);
-  return { userCode: r.user_code, uri: r.verification_uri };
+  // page opens with it in case GitHub fills the boxes from it; the code is on the clipboard by then so a paste fills them otherwise.
+  return { userCode: r.user_code, uri: r.verification_uri, url: `${r.verification_uri}?user_code=${encodeURIComponent(r.user_code)}` };
 }
 
 async function poll(run, { device_code, interval = 5, expires_in = 900 }) {

@@ -235,14 +235,15 @@ export function closeInstall(result) {
   open?.resolve(result);
 }
 
-/** Downloads what `model` needs; on success saves settings.dictation and resolves the dialog. Throws the error message. */
-export async function install(model, language) {
+/** Downloads what `model` needs; on success saves settings.dictation and resolves the dialog. Throws the error message.
+ * `languages`: the ones Automatic picks from (core.mjs spoken), the saved ones unless given. */
+export async function install(model, language, languages = dictationSettings().languages) {
   try {
     await api.dictation.install(model);
   } catch (e) {
     throw new Error(message(e));
   }
-  const result = { installed: true, model, language };
+  const result = { installed: true, model, language, languages };
   await saveSettings({ dictation: { ...dictationSettings(), ...result } });
   closeInstall(result);
   toast('Dictation is ready. The mic button at the bottom right opens it.');

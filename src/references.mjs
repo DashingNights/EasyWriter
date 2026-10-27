@@ -222,10 +222,27 @@ const decode = (s) => s.replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (m, e) => {
 });
 const clean = (s) => decode(String(s ?? '').replace(/<[^>]+>/g, '')).replace(/\s+/g, ' ').trim();
 
-/** "Ilya Borovikov" → "Borovikov, Ilya"; a name with a comma, or of one word, stays. */
+/** Lowercase words at the end of the given names go to the family name: arXiv and DataCite split a name at its last word,
+ * so "Diego de las Casas" arrives as "Casas, Diego de las" → "de las Casas, Diego". A name without a comma stays. */
+const particles = (a) => {
+  const i = a.indexOf(',');
+  if (i < 0) return a;
+  const family = [a.slice(0, i).trim()];
+  const given = a.slice(i + 1).trim().split(' ');
+  while (given.length > 1 && /^\p{Ll}/u.test(given.at(-1))) family.unshift(given.pop());
+  return family.length > 1 ? `${family.join(' ')}, ${given.join(' ')}` : a;
+};
+// ponytail: word lists. A byline word that makes a name an organisation ("Associated Press", "Unity Technologies"), and the
+// degrees a byline may end with ("Catharine Paddock, Ph.D.").
+const ORG = /\b(?:Press|Staff|Team|Technolog(?:y|ies)|Inc|Ltd|LLC|Corp|Corporation|Company|Games|Studios?|News|Labs?|Group|University|Institute|Foundation|Association|Editors?|Editorial|Desk|Agency|Media|Magazine|Network|Society|Council|Committee|Department|Ministry|Organi[sz]ation|Entertainment|Software|Systems|Research|Cent(?:er|re)|Bureau|Wire|Reporters?|Writers?)\b/;
+const DEGREE = /,?\s+(?:Ph\.?\s?D|M\.?D|M\.?Sc|MPH|MBA|D\.?Phil|R\.?N)\.?$/i;
+/** "Ilya Borovikov" → "Borovikov, Ilya", "Diego de las Casas" → "de las Casas, Diego"; a name of one word or an organisation's
+ * stays. */
 const familyFirst = (name) => {
-  const w = name.split(' ');
-  return name.includes(',') || w.length < 2 ? name : `${w.at(-1)}, ${w.slice(0, -1).join(' ')}`;
+  const n = name.replace(DEGREE, '');
+  const w = n.split(' ');
+  if (!n.includes(',') && ORG.test(n)) return n;
+  return particles(n.includes(',') || w.length < 2 ? n : `${w.at(-1)}, ${w.slice(0, -1).join(' ')}`);
 };
 /** A byline of several people ("Ann Lee, Bo Chan and Cy Diaz") as one name each; one name (also "Lee, Ann") stays whole. */
 const splitNames = (s) => {
@@ -265,7 +282,8 @@ function jsonLd(html) {
       continue;
     }
     const nodes = [data].flat().flatMap((n) => [n, ...(Array.isArray(n?.['@graph']) ? n['@graph'] : [])]);
-    const n = nodes.find((x) => LD_TYPES.test(typeOf(x)) && (x.headline || x.name));
+    const named = nodes.filter((x) => LD_TYPES.test(typeOf(x)) && (x.headline || x.name));
+    const n = named.find((x) => /Article|BlogPosting/.test(typeOf(x))) ?? named[0]; // a graph's WebPage has no author
     if (!n) continue;
     const authors = [n.author].flat().filter(Boolean).map((a) => (/Organization/.test(typeOf(a)) ? ldName(a) : familyFirst(ldName(a)))).filter(Boolean);
     return { title: clean(n.headline || n.name), authors, date: n.datePublished, site: ldName(n.isPartOf) || ldName(n.publisher),
@@ -274,8 +292,54 @@ function jsonLd(html) {
   return {};
 }
 
-/** The details a page's head gives (citation_* Highwire tags, Dublin Core, Open Graph, JSON-LD, <title>), plus `site`. */
-export function parseMeta(html) {
+const letters = (s) => fold(String(s ?? '')).replace(/[^a-z0-9]/g, '');
+const HOME = /^(?:home|home ?page|welcome)$/i;
+/** A page title without the site's name around it: "Pricing | OpenAI API" → "Pricing", "GitHub - owner/repo" → "owner/repo",
+ * "HYBRID AI — In-Game Inferencing SDK documentation" → "HYBRID AI". A part names the site when it is `site`, is in the domain
+ * name, says documentation, or (at the end, four words at most) starts with the domain's name ("Roblox Creator Hub"). After
+ * " | " or " · " only the first part stays. A home page's title is the site's name ("Inworld AI – Realtime AI for …" → "Inworld
+ * AI"). → {title, site: the part taken off that named the site, else ''}. */
+function trimTitle(title, site = '', url = '') {
+  let host = '';
+  let label = '';
+  let home = false;
+  try {
+    const u = new URL(url);
+    const labels = u.hostname.replace(/^www\d*\./, '').split('.');
+    host = letters(labels.join(''));
+    label = letters(labels.at(-2) && /^(?:co|com|ac|org|gov|net)$/.test(labels.at(-2)) && labels.length > 2 ? labels.at(-3) : labels.at(-2) ?? '');
+    home = !u.pathname.replace(/\/+$/, '') && !u.search;
+  } catch {}
+  const bits = title.split(/\s+([|·•–—-])\s+/);
+  const parts = bits.filter((_, i) => i % 2 === 0);
+  const seps = bits.filter((_, i) => i % 2);
+  if (parts.length < 2) return { title, site: home ? title : '' };
+  // A brand names the site ("Hugging Face", "Roblox Creator Hub"); a part that only says documentation comes off but names nothing.
+  const brand = (p, end) => {
+    const l = letters(p);
+    return l.length > 3 && (l === letters(site) || host.includes(l) || (end && label.length > 3 && l.startsWith(label) && p.split(' ').length <= 4));
+  };
+  const names = (p, end) => brand(p, end) || /\b(?:documentation|docs)\b/i.test(p);
+  if (home) {
+    const b = parts.find((p) => brand(p, true));
+    return { title: b ?? parts.find((p) => !HOME.test(p)) ?? title, site: b ?? '' };
+  }
+  const off = [];
+  while (parts.length > 1 && names(parts.at(-1), true)) off.push([parts.pop(), true]), seps.pop();
+  while (parts.length > 1 && names(parts[0], false)) off.push([parts.shift(), false]), seps.shift();
+  const bar = seps.findIndex((s) => s === '|' || s === '·' || s === '•');
+  const keep = bar < 0 ? parts.length : bar + 1;
+  return { title: parts.slice(0, keep).map((p, i) => (i ? `${seps[i - 1]} ${p}` : p)).join(' '), site: off.find(([p, end]) => brand(p, end))?.[0] ?? '' };
+}
+
+// A repository page's owner and name: github.com/owner/repo, huggingface.co/owner/model (also datasets/ and spaces/).
+const REPO = /^https?:\/\/(?:www\.)?(?:github\.com|gitlab\.com|codeberg\.org|huggingface\.co(?:\/(?:datasets|spaces))?)\/([^/?#]+)\/([^/?#]+)/i;
+// Other names a page gives its publication date ("nv-pub-date", "publish-date", "parsely-pub-date").
+const PUB_DATE = /(?:^|[-_:.])pub(?:lish(?:ed)?|lication)?[-_:.]?(?:date|time)$/;
+
+/** The details a page's head gives (citation_* Highwire tags, Dublin Core, Open Graph, JSON-LD, <title>), plus `site`. `url`, the
+ * page's link, helps take the site's name off the title, and gives a repository's owner and name. */
+export function parseMeta(html, url = '') {
   const head = String(html).slice(0, 600000);
   const meta = new Map();
   for (const [, attrs] of head.matchAll(/<meta\b([^>]*)>/gi)) {
@@ -287,29 +351,42 @@ export function parseMeta(html) {
   }
   const first = (...keys) => keys.map((k) => meta.get(k)?.[0]).find(Boolean) ?? '';
   const ld = jsonLd(head);
-  const site = first('og:site_name', 'citation_publisher', 'dc.publisher', 'application-name') || ld.site || '';
-  let title = first('citation_title', 'dc.title', 'og:title', 'twitter:title') || ld.title || clean(head.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1]);
-  const tail = site && [' - ', ' | ', ' – ', ' — ', ' · '].map((sep) => sep + site).find((t) => title.toLowerCase().endsWith(t.toLowerCase()));
-  if (tail && title.length > tail.length) title = title.slice(0, -tail.length); // "Pricing - Claude Docs" → "Pricing"
-  const people = (key) => (meta.get(key) ?? []).flatMap(splitNames).map(familyFirst);
+  let site = first('og:site_name', 'citation_publisher', 'dc.publisher', 'application-name', 'apple-mobile-web-app-title') || ld.site || '';
+  // A scholarly title is the paper's own; the others often carry the site's name, which names the site when nothing else does.
+  let title = first('citation_title', 'dc.title');
+  if (!title) {
+    const t = trimTitle(first('og:title', 'twitter:title') || ld.title || clean(head.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1]), site, url);
+    title = t.title;
+    site ||= t.site;
+  }
+  const people = (key) => (meta.get(key) ?? []).filter((a) => !/^https?:/.test(a)).flatMap(splitNames).map(familyFirst);
+  const patent = first('citation_patent_number'); // Google Patents: the inventors, and the grant date after the filing date
   let authors = people('citation_author');
   if (!authors.length) authors = people('dc.creator');
+  if (!authors.length && patent) authors = (meta.get('dc.contributor') ?? []).filter((a) => !ORG.test(a)).map(familyFirst);
+  if (!authors.length) authors = people('article:author');
   if (!authors.length) authors = ld.authors ?? [];
-  if (!authors.length) authors = people('author').filter((a) => !/^https?:/.test(a));
+  if (!authors.length) authors = people('author');
+  const repo = url.match(REPO);
+  if (repo && title.toLowerCase().startsWith(`${repo[1]}/${repo[2]}`.toLowerCase())) {
+    authors = [repo[1]]; // "art-from-the-machine/Mantella: Mantella is a Skyrim mod" → art-from-the-machine, Mantella
+    title = title.slice(repo[1].length + 1, repo[1].length + 1 + repo[2].length);
+  }
+  const pubKey = [...meta.keys()].find((k) => PUB_DATE.test(k));
   const arxiv = first('citation_arxiv_id').replace(/v\d+$/, '');
   const journal = first('citation_journal_title');
   const book = first('citation_conference_title', 'citation_inbook_title', 'citation_book_title');
   const article = !!journal || /article/i.test(first('og:type')) || !!ld.article;
   const type = arxiv ? 'preprint' : journal ? 'article' : book ? 'chapter' : article ? 'article' : 'web';
-  const { year, date } = dateOf(first('citation_publication_date', 'citation_date', 'citation_online_date', 'dc.date', 'article:published_time',
-    'datepublished', 'date') || ld.date);
+  const { year, date } = dateOf((patent && meta.get('dc.date')?.at(-1)) || first('citation_publication_date', 'citation_date', 'citation_online_date',
+    'dc.date', 'article:published_time', 'datepublished', 'date', pubKey) || ld.date);
   const [from, to] = [first('citation_firstpage'), first('citation_lastpage')];
   return {
     type, authors, year, date, title, site, arxiv,
     container: journal || book || (type === 'article' ? site : ''),
     volume: first('citation_volume'), issue: first('citation_issue'), pages: from && to && to !== from ? `${from}–${to}` : from,
     publisher: first('citation_publisher', 'dc.publisher'),
-    doi: doiOf(first('citation_doi', 'prism.doi', 'bepress_citation_doi', 'dc.identifier')),
+    doi: doiOf(first('citation_doi', 'prism.doi', 'bepress_citation_doi', 'dc.identifier', 'doi')),
   };
 }
 
@@ -317,6 +394,8 @@ export function parseMeta(html) {
 const CSL_TYPES = {
   'article-journal': 'article', 'article-magazine': 'article', 'article-newspaper': 'article', 'post-weblog': 'article', post: 'article',
   'paper-conference': 'chapter', chapter: 'chapter', 'entry-encyclopedia': 'chapter', 'entry-dictionary': 'chapter',
+  'book-chapter': 'chapter', 'book-section': 'chapter', 'proceedings-article': 'chapter', // Crossref's own names
+
   book: 'book', monograph: 'book', report: 'book', thesis: 'book', 'posted-content': 'preprint', article: 'preprint',
   webpage: 'web', dataset: 'web', software: 'web',
 };
@@ -324,13 +403,15 @@ const CSL_TYPES = {
 /** The details of a CSL JSON record (doi.org with Accept: application/vnd.citationstyles.csl+json). */
 export function fromCsl(c) {
   const text = (v) => clean([v].flat()[0]);
-  const [y, m, d] = (c.issued ?? c.published ?? c['published-print'] ?? c['published-online'])?.['date-parts']?.[0] ?? [];
+  // Springer chapters have issued [[null]]; their date is only in created (when the DOI was registered), the last resort.
+  const [y, m, d] = [c.issued, c.published, c['published-print'], c['published-online'], c.created]
+    .map((x) => x?.['date-parts']?.[0]).find((p) => p?.[0]) ?? [];
   return {
     type: CSL_TYPES[c.type] ?? (text(c['container-title']) ? 'article' : 'web'),
-    authors: (c.author ?? []).map((a) => clean(a.literal) || [clean(a.family), clean(a.given)].filter(Boolean).join(', ')).filter(Boolean),
+    authors: (c.author ?? []).map((a) => clean(a.literal) || particles([clean(a.family), clean(a.given)].filter(Boolean).join(', '))).filter(Boolean),
     year: y ? String(y) : '', date: y && m && d ? `${y}-${pad(m)}-${pad(d)}` : '',
     title: text(c.title), container: text(c['container-title']), volume: text(c.volume), issue: text(c.issue),
-    pages: text(c.page).replace(/(\d)-(\d)/, '$1–$2'), place: text(c['publisher-place']), publisher: text(c.publisher), doi: text(c.DOI),
+    pages: text(c.page).replace(/(\d)-(\d)/, '$1–$2'), place: text(c['publisher-place'] ?? c['publisher-location']), publisher: text(c.publisher), doi: text(c.DOI),
   };
 }
 
@@ -340,15 +421,17 @@ export function parseInput(text) {
   let s = String(text ?? '').trim();
   const doi = s.match(/^(?:doi:\s*|(?:https?:\/\/)?(?:dx\.)?doi\.org\/)?(10\.\d{4,9}\/\S+)$/i);
   if (doi) {
+    let d = doi[1];
     try {
-      return { doi: decodeURIComponent(doi[1]) };
-    } catch {
-      return { doi: doi[1] };
-    }
+      d = decodeURIComponent(d);
+    } catch {}
+    const ax = d.match(/^10\.48550\/arxiv\.(\d{4}\.\d{4,5})(?:v\d+)?$/i); // arXiv's own DOI reads as its id
+    return ax ? { arxiv: ax[1], url: `https://arxiv.org/abs/${ax[1]}` } : { doi: d };
   }
   if (!/^https?:\/\//i.test(s) && /^[\w-]+(\.[\w-]+)+(\/\S*)?$/.test(s) && !/^\d+\.\d+$/.test(s)) s = `https://${s}`;
   const ax = s.match(/^(?:arxiv:\s*)?(\d{4}\.\d{4,5})(?:v\d+)?$/i)
-    || s.match(/^https?:\/\/(?:www\.|export\.)?arxiv\.org\/(?:abs|pdf|html)\/(\d{4}\.\d{4,5})(?:v\d+)?(?:\.pdf)?\/?$/i);
+    || s.match(/^https?:\/\/(?:www\.|export\.|ar5iv\.labs\.|ar5iv\.)?arxiv\.org\/(?:abs|pdf|html)\/(\d{4}\.\d{4,5})(?:v\d+)?(?:\.pdf)?\/?$/i)
+    || s.match(/^https?:\/\/ar5iv\.org\/(?:abs|html)\/(\d{4}\.\d{4,5})(?:v\d+)?\/?$/i);
   if (ax) return { arxiv: ax[1], url: `https://arxiv.org/abs/${ax[1]}` };
   if (!/^https?:\/\//i.test(s)) return null;
   try {
@@ -364,7 +447,7 @@ const nonEmpty = (o) => Object.fromEntries(Object.entries(o).filter(([, v]) => (
 
 /** The details of the source at `text` (a link, a DOI or an arXiv id), read through get(url, accept) → {ok, status, url, type,
  * body}: the page's citation tags, then for a DOI (pasted, on the page or in the link) doi.org's record, which wins where both
- * have a field (arXiv's own page is complete, so an arXiv paper skips it). A web page without authors takes its site's name.
+ * have a field (arXiv's own page is complete, so an arXiv paper skips it). A web page or a site's own article without authors takes the site's name.
  * Resolves {source (cleanSource, accessed `today`, the pasted link kept), problem: a sentence when something could not be read,
  * else ''}; throws when `text` is no link, DOI or arXiv id. */
 export async function lookup(text, { get, today }) {
@@ -375,7 +458,7 @@ export async function lookup(text, { get, today }) {
   let problem = '';
   if (q.url) {
     const r = await read(q.url);
-    if (r.ok && /html|xml/i.test(r.type ?? '')) page = parseMeta(r.body);
+    if (r.ok && /html|xml/i.test(r.type ?? '')) page = parseMeta(r.body, r.url || q.url);
     else if (r.ok) problem = `The link is not a web page. ${FILL}`;
     else if (r.status === 401 || r.status === 403) problem = `The site did not let EasyWriter read the page. ${FILL}`;
     else problem = r.status ? `The site answered with error ${r.status}. ${FILL}` : `The site could not be reached. ${FILL}`;
@@ -392,7 +475,10 @@ export async function lookup(text, { get, today }) {
   }
   const { site = '', ...found } = { ...nonEmpty(page), ...nonEmpty(record) };
   const source = cleanSource({ type: 'web', ...found, ...(q.arxiv && { type: 'preprint', arxiv: q.arxiv }), url: q.url ?? '', doi, accessed: today });
-  if (source.type === 'web' && !source.authors.length && site) source.authors = [site];
-  if (!source.title && !problem) problem = `The page has no citation details. ${FILL}`;
+  // A web page or a site's own article (not a journal's) without authors takes the site's name.
+  if (!source.authors.length && site && (source.type === 'web' || (source.type === 'article' && source.container === site))) {
+    source.authors = [site.replace(/\s+(?:documentation|docs)$/i, '')]; // "Convai Documentation" → Convai
+  }
+  if (!source.title && !problem) problem = `The page has no citation details. Paste its DOI if it has one, or fill in the details yourself.`;
   return { source, problem };
 }

@@ -1,5 +1,6 @@
 import { createContext, useContext, useRef, useState } from 'react';
 import { cn } from 'cn';
+import { CircleQuestionMark } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { withKey } from '../keybinds.js';
@@ -45,4 +46,21 @@ export function IconButton({ label, keybind, size = 'compact', pressed, reveal, 
   );
   if (Slot) button = <Slot asChild>{button}</Slot>;
   return <Tip title={text} stop {...tip}>{button}</Tip>;
+}
+
+/** The (?) beside a title or control: what would be a line of small print under it, in a tooltip on hover or keyboard focus.
+ * A dialog that focuses it on opening (after a click) leaves it shut: the preventDefault skips Radix's own focus handler.
+ * `tipClassName`: more classes for the tooltip (the tutorial's card raises it over the tutorial's dim). */
+export function Help({ children, label = 'More information', className, tipClassName }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button type="button" aria-label={label} data-help onFocus={(e) => !e.currentTarget.matches(':focus-visible') && e.preventDefault()}
+          className={cn('inline-flex size-5 shrink-0 items-center justify-center rounded-full text-muted-foreground outline-none hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50', className)}>
+          <CircleQuestionMark className="size-3.5" />
+        </button>
+      </TooltipTrigger>
+      <TooltipContent side="top" className={cn('max-w-72 text-left text-pretty', tipClassName)}>{children}</TooltipContent>
+    </Tooltip>
+  );
 }

@@ -136,9 +136,10 @@ function Field({ label, value, parse, done, className }) {
 
 /** A colour swatch (§6c) opening an RGBA picker: the 6 recent colours, a saturation / brightness area, hue and opacity sliders,
  * hex and R G B A fields. A recent colour applies at once and closes the picker.
- * `live`: onChange on every change (tool settings); otherwise once, when the picker closes (item colours). Escape puts the
- * colour back as it was. Focus then returns to the board. */
-export function ColorSwatch({ board, title, value, live = false, onChange }) {
+ * `live`: onChange on every change (tool settings); otherwise once, when the picker closes (item colours), and `onPreview` on
+ * every change meanwhile. Escape puts the colour back as it was. `alpha` false: no opacity, every colour opaque (Settings).
+ * `label`: the accessible name, when it is not the tooltip `title`. Focus then returns to `board`; with none, to the swatch. */
+export function ColorSwatch({ board, title, label = title, value, live = false, alpha = true, onChange, onPreview }) {
   const [open, setOpen] = useState(false);
   const [c, setC] = useState(() => toHsva(value));
   const start = useRef(value);
@@ -147,17 +148,18 @@ export function ColorSwatch({ board, title, value, live = false, onChange }) {
   }, [value, open]);
   const hex = hexOf(c);
   const [r, g, b] = rgbOf(c);
+  const show = live ? onChange : onPreview; // what each change calls
   const set = (patch) => {
-    const next = { ...c, ...patch };
+    const next = { ...c, ...patch, ...(!alpha && { a: 1 }) };
     setC(next);
-    if (live) onChange(hexOf(next));
+    show?.(hexOf(next));
   };
   // keep: `final` stays (a changed colour applies, if not live already, and becomes a recent one); else the start comes back.
   const close = (keep, final = hex) => {
     setOpen(false);
     if (!keep) {
       setC(toHsva(start.current));
-      if (live) onChange(start.current);
+      show?.(start.current);
       return;
     }
     if (final === hexOf(toHsva(start.current))) return;
@@ -165,6 +167,7 @@ export function ColorSwatch({ board, title, value, live = false, onChange }) {
     remember(final);
   };
   const recent = (x) => {
+    if (!alpha) x = x.slice(0, 7);
     setC(toHsva(x));
     if (live) onChange(x);
     close(true, x);
@@ -185,13 +188,13 @@ export function ColorSwatch({ board, title, value, live = false, onChange }) {
     }}>
       <Tip title={title} {...CHROME}>
         <PopoverTrigger asChild>
-          <button type="button" aria-label={title} className="size-8 shrink-0 cursor-pointer rounded-md border border-input bg-transparent p-1 dark:bg-input/30">
+          <button type="button" aria-label={label} className="size-8 shrink-0 cursor-pointer rounded-md border border-input bg-transparent p-1 dark:bg-input/30">
             <span className="block size-full rounded-sm" style={{ background: `linear-gradient(${hex}, ${hex}), ${CHECKS}` }} />
           </button>
         </PopoverTrigger>
       </Tip>
       <PopoverContent {...CHROME} className="flex w-56 flex-col gap-2 p-2" onOpenAutoFocus={(e) => e.preventDefault()}
-        onCloseAutoFocus={refocus(board)} onEscapeKeyDown={(e) => { e.preventDefault(); close(false); }}>
+        onCloseAutoFocus={board ? refocus(board) : undefined} onEscapeKeyDown={(e) => { e.preventDefault(); close(false); }}>
         <div className="grid grid-cols-6 gap-1">
           {Array.from({ length: RECENT }, (_, k) => recentColors[k]).map((x, k) => (x ? (
             <Tip key={k} title={x} {...CHROME}>
@@ -204,15 +207,15 @@ export function ColorSwatch({ board, title, value, live = false, onChange }) {
           style={{ background: `linear-gradient(to top, #000, transparent), linear-gradient(to right, #fff, hsl(${c.h} 100% 50%))` }} />
         <Pick label="Hue" at={[c.h / 360, 0.5]} onPick={(x) => set({ h: x * 360 })} className="h-3"
           style={{ background: 'linear-gradient(to right, #f00, #ff0, #0f0, #0ff, #00f, #f0f, #f00)' }} />
-        <Pick label="Opacity" at={[c.a, 0.5]} onPick={(a) => set({ a })} className="h-3"
-          style={{ background: `linear-gradient(to right, transparent, rgb(${r} ${g} ${b})), ${CHECKS}` }} />
+        {alpha && <Pick label="Opacity" at={[c.a, 0.5]} onPick={(a) => set({ a })} className="h-3"
+          style={{ background: `linear-gradient(to right, transparent, rgb(${r} ${g} ${b})), ${CHECKS}` }} />}
         <Field label="Hex" value={hex} done={done}
           parse={(t) => /^#?([0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i.test(t) && set(toHsva(t.startsWith('#') ? t : `#${t}`))} />
-        <div className="grid grid-cols-4 gap-1 text-center text-xs text-muted-foreground">
+        <div className={cn('grid gap-1 text-center text-xs text-muted-foreground', alpha ? 'grid-cols-4' : 'grid-cols-3')}>
           {['R', 'G', 'B'].map((l, k) => <Field key={l} label={l} value={String([r, g, b][k])} parse={channel(k)} done={done} />)}
-          <Field label="A (opacity %)" value={String(Math.round(c.a * 100))} done={done}
-            parse={(t) => /^\d{1,3}$/.test(t) && Number(t) <= 100 && set({ a: Number(t) / 100 })} />
-          {['R', 'G', 'B', 'A %'].map((l) => <span key={l}>{l}</span>)}
+          {alpha && <Field label="A (opacity %)" value={String(Math.round(c.a * 100))} done={done}
+            parse={(t) => /^\d{1,3}$/.test(t) && Number(t) <= 100 && set({ a: Number(t) / 100 })} />}
+          {['R', 'G', 'B', ...(alpha ? ['A %'] : [])].map((l) => <span key={l}>{l}</span>)}
         </div>
       </PopoverContent>
     </Popover>

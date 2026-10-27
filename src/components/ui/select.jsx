@@ -34,12 +34,15 @@ const triggerClass = (size, className) => cn(
   size === "xs" ? "h-6 gap-1 px-2 text-xs" : "h-8",
   className)
 
+// `up`: the list opens above (SelectContent side="top"), so the chevron points up; app.css turns it over while open.
 function SelectTrigger({
   className,
   size = "sm",
+  up = false,
   children,
   ...props
 }) {
+  const Chevron = up ? ChevronUpIcon : ChevronDownIcon
   return (
     <SelectPrimitive.Trigger
       data-slot="select-trigger"
@@ -48,7 +51,7 @@ function SelectTrigger({
       {...props}>
       {children}
       <SelectPrimitive.Icon asChild>
-        <ChevronDownIcon className="size-4 opacity-50" />
+        <Chevron className="size-4 opacity-50" />
       </SelectPrimitive.Icon>
     </SelectPrimitive.Trigger>
   );

@@ -54,10 +54,13 @@ function TextTools({ anchor }) {
         <ToolButton {...T.rule} />
       </Group>
       <Group>
+        <ToolButton {...T.cite} />
+        <ToolButton {...T.references} />
+      </Group>
+      <Group>
         <TableTools T={T} ed={ed} />
         {box && <ToolButton {...T.box} />}
         <ToolButton {...T.link} />
-        <ToolButton {...T.cite} />
         <ToolButton {...T.canvas} />
         <ToolButton {...T.flowchart} />
         <ToolButton {...T.planChart} />

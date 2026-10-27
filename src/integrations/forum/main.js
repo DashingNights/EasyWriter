@@ -2,7 +2,7 @@
 // The forum (SPEC §1, §4), main-process side: the forum window on its own session (PARTITION, which keeps the sign-in), the
 // hidden worker windows, the inject.js scripts run on the forum's pages, and the import's downloads. main.js registers the
 // forum.* channels through register(); this module never calls ipcMain itself.
-const { BrowserWindow, dialog, session } = require('electron');
+const { BrowserWindow, dialog, nativeTheme, session, WebContentsView } = require('electron');
 const { buildPushScript, describeThreadsScript, postsScript, STATUS_SCRIPT } = require('./inject.js');
 
 const PARTITION = 'persist:daf';
@@ -10,7 +10,7 @@ const LOGGED_OUT = { loggedIn: false, memberId: 0, name: null, profileUrl: null 
 // A topic URL of any forum (src/thread-url.mjs THREAD_KEY without the project half); isTopicOf adds the site check.
 const TOPIC_RE = /^https:\/\/[^/\s]+\/topic\/\d+\S*$/;
 
-const opts = { getSettings: null, icon: undefined }; // from register()
+const opts = { getSettings: null, icon: undefined, focusApp: null }; // from register()
 let forumWin = null;
 
 const forumWebPreferences = () => ({
@@ -20,9 +20,47 @@ const forumWebPreferences = () => ({
   sandbox: true,
 });
 
+// The spinner over the forum window while a page loads, in the app's colours (#1a1a1a / #e6e6e6 dark, white / #1f1f1f light).
+const coverPage = (dark) => `data:text/html;charset=utf-8,${encodeURIComponent(`<!doctype html><meta charset="utf-8"><style>
+html,body{margin:0;height:100%;background:${dark ? '#1a1a1a' : '#ffffff'};color:${dark ? '#e6e6e6' : '#1f1f1f'};font:13px system-ui,sans-serif}
+body{display:grid;place-items:center}div{display:grid;justify-items:center;gap:12px;opacity:.75}
+i{width:28px;height:28px;border:3px solid currentColor;border-right-color:transparent;border-radius:50%;animation:r .8s linear infinite}
+@keyframes r{to{transform:rotate(360deg)}}@media (prefers-reduced-motion:reduce){i{animation:none}}
+</style><div><i></i>Loading the forum…</div>`)}`;
+
+/** Lays the spinner over `win` from the start of each main-frame navigation until its page has loaded or failed (the user,
+ * 2026-10-27: the sign-in sat on a blank page for about 10 s). A child view, so the forum page itself is never touched. */
+function coverWhileLoading(win) {
+  const cover = new WebContentsView();
+  cover.webContents.loadURL(coverPage(nativeTheme.shouldUseDarkColors)).catch(() => {});
+  const wc = win.webContents;
+  let on = false;
+  const fit = () => {
+    const [width, height] = win.getContentSize();
+    cover.setBounds({ x: 0, y: 0, width, height });
+  };
+  const set = (show) => {
+    if (show === on || win.isDestroyed()) return;
+    on = show;
+    if (show) {
+      fit();
+      win.contentView.addChildView(cover);
+    } else win.contentView.removeChildView(cover);
+  };
+  wc.on('did-start-navigation', (d) => d.isMainFrame && !d.isSameDocument && set(true));
+  wc.on('did-finish-load', () => set(false));
+  wc.on('did-fail-load', (_e, _code, _desc, _url, isMainFrame) => isMainFrame && set(false));
+  wc.on('did-stop-loading', () => set(false));
+  win.on('resize', fit);
+  win.on('closed', () => cover.webContents.close());
+}
+
 function getForumWindow() {
   if (forumWin && !forumWin.isDestroyed()) return forumWin;
-  const win = new BrowserWindow({ width: 1500, height: 1000, title: 'Forum', icon: opts.icon, webPreferences: forumWebPreferences() });
+  // Hidden until present(), in the app's background, with the spinner while its pages load.
+  const win = new BrowserWindow({ width: 1500, height: 1000, title: 'Forum', icon: opts.icon, show: false,
+    backgroundColor: nativeTheme.shouldUseDarkColors ? '#1a1a1a' : '#ffffff', webPreferences: forumWebPreferences() });
+  coverWhileLoading(win);
   // SSO popups open as child windows; they inherit the opener's session (persist:daf).
   win.webContents.setWindowOpenHandler(() => ({ action: 'allow', overrideBrowserWindowOptions: { parent: win } }));
   // A forum beforeunload handler would otherwise silently cancel loadURL and window close (and app.quit).
@@ -41,6 +79,12 @@ function getForumWindow() {
   });
   forumWin = win;
   return win;
+}
+
+/** Shows the forum window and brings it forward; the spinner covers it until the page about to load is there. */
+function present(win) {
+  win.show();
+  win.focus();
 }
 
 // Loads url and resolves on the main frame's did-finish-load (aborted loads, e.g. redirects, keep waiting).
@@ -199,9 +243,12 @@ async function forumLogin() {
       if (done || wc.isDestroyed()) return;
       try {
         const status = await wc.executeJavaScript(STATUS_SCRIPT, true);
-        if (status && status.loggedIn && !done) {
+        if (status && status.loggedIn && onForum(site, wc.getURL()) && !done) {
           finish(status);
-          wc.loadURL(`${site}/`).catch(() => {});
+          // Signed in and back on the forum: the window closes by itself and the app comes back to the front (the user,
+          // 2026-10-26: nobody knows to close it).
+          win.close();
+          opts.focusApp?.();
         }
       } catch {
         // Page mid-navigation; the next tick or load event retries.
@@ -216,8 +263,7 @@ async function forumLogin() {
     win.on('closed', onClosed);
     wc.on('did-finish-load', check);
     wc.on('did-navigate', check);
-    win.show();
-    win.focus();
+    present(win);
     wc.loadURL(`${site}/login/`).catch(() => {});
   });
 }
@@ -229,7 +275,7 @@ async function forumPush(payload) {
       return { ok: false, error: 'invalid thread URL' };
     }
     const win = getForumWindow();
-    win.show();
+    present(win);
     await loadAndWait(win, payload.threadUrl);
     const wc = win.webContents;
     // Logged out → redirected to SSO (never run the draft there) or the guest view.
@@ -270,16 +316,15 @@ async function forumOpen(url) {
   const site = await forumSite();
   if (!onForum(site, url)) throw new Error('not a URL of the forum site');
   const win = getForumWindow();
-  win.show();
-  win.focus();
+  present(win);
   await loadAndWait(win, url);
   return true;
 }
 
 /** Registers the forum.* channels through `handle(channel, fn)` (main.js's sender check). `getSettings` reads settings.json;
  * `icon` is the forum window's icon. */
-function register(handle, { getSettings, icon }) {
-  Object.assign(opts, { getSettings, icon });
+function register(handle, { getSettings, icon, focusApp }) {
+  Object.assign(opts, { getSettings, icon, focusApp });
   handle('forum.status', forumStatus);
   handle('forum.login', forumLogin);
   handle('forum.describe', forumDescribe);

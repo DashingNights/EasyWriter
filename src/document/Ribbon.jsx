@@ -677,18 +677,11 @@ function HomeTab({ T, ed }) {
 
 // The picked tab outlives the island: it unmounts while a canvas is edited and remounts when the navigation pane opens or closes.
 let lastTab = 'home';
-let showTab = null; // the mounted island's tab setter
-
-/** Shows the island's tab `v` now, or when the island next mounts (the tour's Insert steps, onboarding-steps.jsx `island`). */
-export function showIslandTab(v) {
-  lastTab = v;
-  showTab?.(v);
-}
 
 /** The Document's tools island (App.jsx Rail, in place of the board rail while no canvas is being edited; forum posts keep the
  * bottom toolbar): a fixed width at the editor area's left edge, below the browser's tab strip, its body scrolling (wheel, no
  * scrollbar, as the rail) when the area is short. Tooltips open right of their control; lists and menus open under it. Its tabs keep the editor's focus: a press picks the tab without focusing it. data-ribbon tells
- * the bottom-island readers (Chat.jsx useFrame, Onboarding.jsx place) that it is not the bottom island. `className`: more
+ * the bottom-island reader (Chat.jsx useFrame) that it is not the bottom island. `className`: more
  * classes (App: pointer events beside the navigation pane). actions.js viewDoc keeps the sheet clear of it. */
 export function DocIsland({ className }) {
   const ed = useEditor();
@@ -696,10 +689,6 @@ export function DocIsland({ className }) {
   const island = useRef(null);
   const [picked, pick] = useState(lastTab);
   const setTab = (v) => pick((lastTab = v));
-  useEffect(() => {
-    showTab = pick;
-    return () => { showTab = null; };
-  }, []);
   const T = documentTools(ed);
   const tabs = [...TABS, ...(ed?.isActive('table') ? [['table', 'Table']] : []), ...(T.picture.alt != null ? [['picture', 'Picture']] : [])];
   const tab = tabs.some(([v]) => v === picked) ? picked : 'home'; // a contextual tab that went away
@@ -757,7 +746,10 @@ export function DocumentQuickTools({ anchor }) {
         <ToolButton {...T.outdent} />
         <ToolButton {...T.indent} />
       </Group>
-      <Group><ToolButton {...T.cite} /></Group>
+      <Group>
+        <ToolButton {...T.cite} />
+        <ToolButton {...T.references} />
+      </Group>
     </GroupRows>
   );
 }

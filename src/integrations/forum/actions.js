@@ -26,7 +26,8 @@ import { kitOf } from '../../editors.js';
 import { FORMATS } from '../../formats.mjs';
 import { enabled } from '../index.mjs';
 import { buildPayload } from './export.js';
-import { fillPlaceholders, placeholderUrls, postTitle, postToDoc } from './import.mjs';
+import { fillPlaceholders, pictureCanvas, placeholderUrls, postTitle, postToDoc } from './import.mjs';
+import { contentWidth, DEFAULT_WIDTH } from '../../whiteboard.js';
 import { hasForum, normalizeThread as normalizeTopic, siteOf, slugTitle, topicId, topicOf } from './topic.mjs';
 
 export { buildPayload }; // export.preview and push.prepare (forum/commands.mjs), and the smoke hook (app/actions.js __smoke)
@@ -167,7 +168,10 @@ export async function login() {
   setState({ loggingIn: true });
   try {
     state.status = await service.login();
-    if (state.status.loggedIn) describeUnnamed();
+    if (state.status.loggedIn) {
+      toast(`Signed in to the forum as ${state.status.name || `member ${state.status.memberId}`}`); // the forum window closed by itself
+      describeUnnamed();
+    }
   } catch (e) {
     await alertDialog('Login failed', String(e.message || e));
   } finally {
@@ -379,6 +383,20 @@ const dataUrlOf = (blob) => new Promise((resolve, reject) => {
   reader.readAsDataURL(blob);
 });
 
+/** A downloaded file as fill() takes it: a picture as {src, w, h} (its natural size), so it becomes a canvas; a video or GIF,
+ * or a picture that does not decode, as its data URL, so it stays a media node (whiteboard.js isMedia). */
+async function pictureOf(src, type) {
+  if (!type.startsWith('image/') || type === 'image/gif') return src;
+  const img = new Image();
+  img.src = src;
+  try {
+    await img.decode();
+  } catch {
+    return src;
+  }
+  return img.naturalWidth && img.naturalHeight ? { src, w: img.naturalWidth, h: img.naturalHeight } : src;
+}
+
 /** The placeholder URLs of draft `id`: its file's, and the open editor's while it is the open draft (the two differ until the
  * editor's next save). [] when the draft is gone, null when its file could not be read. */
 async function pendingUrls(id) {
@@ -394,7 +412,8 @@ async function pendingUrls(id) {
   return [...new Set([...placeholderUrls(file.doc ?? {}), ...open])];
 }
 
-/** Puts `files` ({url: data URL}) in draft `id`'s placeholders: another draft loaded, patched and saved; the open draft in one
+/** Puts `files` ({url: a picture {src, w, h}, or a video's or GIF's data URL}) in draft `id`'s placeholders, a picture as a
+ * smart canvas (import.mjs fillPlaceholders): another draft loaded, patched and saved; the open draft in one
  * transaction outside the undo history, saved at once, also when it opened while its file was patched (it may have loaded the
  * old file). A fill that still gets lost (the draft switched while it landed) leaves the placeholder, which the next pass sees. */
 async function fill(id, files) {
@@ -402,14 +421,21 @@ async function fill(id, files) {
     const doc = (await window.api.drafts.load(id))?.doc;
     // ponytail: load, then save through updateDraft; an edit to that draft landing in between (the background window) is lost.
     // Lock per draft if that window starts editing imported drafts while they download.
-    if (doc) await updateDraft(id, { doc: fillPlaceholders(doc, files) });
+    if (doc) await updateDraft(id, { doc: fillPlaceholders(doc, files, DEFAULT_WIDTH) });
   }
   const { draft, editor } = getState();
   if (draft?.id !== id || !editor) return;
   const tr = editor.state.tr;
+  const width = contentWidth(editor.view);
+  const found = [];
   editor.state.doc.descendants((node, pos) => {
-    if (node.type.name === 'media' && files[node.attrs.src]) tr.setNodeMarkup(pos, null, { ...node.attrs, src: files[node.attrs.src] });
+    if (node.type.name === 'media' && files[node.attrs.src]) found.push({ node, pos });
   });
+  for (const { node, pos } of found.reverse()) { // from the end, so a canvas in place of a placeholder moves no later position
+    const f = files[node.attrs.src];
+    if (typeof f === 'string') tr.setNodeMarkup(pos, null, { ...node.attrs, src: f });
+    else tr.replaceWith(pos, pos + node.nodeSize, editor.schema.nodeFromJSON(pictureCanvas(f, width)));
+  }
   if (!tr.docChanged) return;
   editor.view.dispatch(tr.setMeta('addToHistory', false));
   await saveNow(); // not the 800 ms autosave: openDraft may replace this editor before then
@@ -479,7 +505,7 @@ async function downloadPass() {
     await Promise.all(w.urls.map(async (url) => {
       try {
         const { type, data } = await service.download(url);
-        const file = await dataUrlOf(new Blob([data], { type }));
+        const file = await pictureOf(await dataUrlOf(new Blob([data], { type })), type);
         filled = filled.then(() => fill(w.id, { [url]: file })).catch(() => {});
       } catch {
         failed++;

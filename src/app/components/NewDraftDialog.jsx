@@ -17,7 +17,7 @@ const COMING = [{ id: 'presentation', label: 'Presentation', Icon: Presentation 
 
 function Choice({ id, label, Icon, disabled, pick, children }) {
   return (
-    <ToggleGroupItem value={id} disabled={disabled} aria-disabled={disabled || undefined} onFocus={() => pick(id)}
+    <ToggleGroupItem value={id} disabled={disabled} aria-disabled={disabled || undefined} onFocus={() => pick(id)} data-new-draft-format={id}
       className="h-auto w-24 flex-col gap-1 py-2 text-xs">
       <Icon className="size-5" />
       {label}

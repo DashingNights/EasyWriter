@@ -15,6 +15,7 @@ export const MOTION = [
   ['panel', 280, 'Assistant panel', 'The chat panel opening and closing'],
   // The transcript card's growth; the minimize and restore sequences have their own lengths (dictation.js CLOSE_STEPS).
   ['pane', 300, 'Dictation pane', 'Minimizing and restoring it, and the transcript growing'],
+  ['tutorial', 700, 'Tutorial', "The tutorial's light moving to the next step and its pointer showing the click"],
   ['notices', 1000, 'Notices', 'Notices above the toolbar fading out, and toasts'],
   ['controls', 150, 'Controls', 'Hover, focus and on or off changes of buttons, switches and fields'],
   ['status', 150, 'Status', 'Spinners, pulses, progress bars, the Deny countdown and blinking carets'],

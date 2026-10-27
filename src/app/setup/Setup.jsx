@@ -4,13 +4,16 @@
 // outside closes it. Each move saves settings.setup {step, usedBefore}, so a restart reopens it at that page; Start writing
 // saves onboarded: true.
 import { useEffect, useRef, useState } from 'react';
+import { cn } from 'cn';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import { setupPages } from '../../integrations/ui.js';
 import { refocusEditor, saveSettings, setupOpen } from '../actions.js';
+import { Help } from '../components/Tip.jsx';
 import { setState, useStore } from '../store.js';
 import { after, before, leave, resumeAt, stepLabel } from './flow.mjs';
 import { PAGES } from './pages.jsx';
+import { AutoHeight, SETUP_PLACE } from './shared.jsx';
 
 const FOCUSABLE = 'button:not(:disabled), [href], input:not(:disabled), [tabindex]:not([tabindex="-1"])';
 const keep = (e) => e.preventDefault();
@@ -26,7 +29,7 @@ function Flow() {
   // id prefixed with its integration's.
   const list = [
     ...PAGES.slice(0, -1),
-    ...setupPages(settings).map((p) => ({ id: `${p.integration}.${p.id}`, step: `${p.integration}.${p.id}`, title: p.title, Page: p.Page, integration: true })),
+    ...setupPages(settings).map((p) => ({ id: `${p.integration}.${p.id}`, step: `${p.integration}.${p.id}`, title: p.title, help: p.help, Page: p.Page, integration: true })),
     PAGES.at(-1),
   ];
   const [id, setId] = useState(() => settings.setup?.step);
@@ -85,7 +88,7 @@ function Flow() {
   // GitHub pages wait for github.status), or sets Continue from an effect, gets it once it shows, while the focus still
   // sits on nothing, the dialog or Continue.
   useEffect(() => {
-    const box = body.current?.parentElement;
+    const box = body.current?.closest('[data-setup]');
     const place = (force) => {
       if (!force && ![document.body, box, cont.current].includes(document.activeElement)) return watch.disconnect();
       const el = body.current?.querySelector(FOCUSABLE);
@@ -110,15 +113,20 @@ function Flow() {
     <Dialog open>
       <DialogContent showCloseButton={false} onEscapeKeyDown={keep} onInteractOutside={keep} onCloseAutoFocus={refocusEditor}
         {...(!page.help && { 'aria-describedby': undefined })} data-setup={here}
-        className="max-h-[88vh] gap-4 overflow-y-auto rounded-island bg-island p-5 text-sm sm:max-w-[36rem]">
+        className={cn('gap-4 overflow-y-auto rounded-island bg-island p-5 text-sm sm:max-w-[36rem]', SETUP_PLACE)}>
         <div className="grid gap-1.5">
           <p className="text-xs text-muted-foreground" data-setup-step>{stepLabel(list, here)}</p>
-          <DialogTitle className="text-lg">{page.title}</DialogTitle>
-          {page.help && <DialogDescription>{page.help}</DialogDescription>}
+          <div className="flex items-center gap-1.5">
+            <DialogTitle className="text-lg">{page.title}</DialogTitle>
+            {page.help && <Help>{page.help}</Help>}
+          </div>
+          {page.help && <DialogDescription className="sr-only">{page.help}</DialogDescription>}
         </div>
-        <div ref={body} key={here} className="grid gap-3">
-          <Page {...props} {...own} />
-        </div>
+        <AutoHeight>
+          <div ref={body} key={here} className="grid animate-page-in content-start gap-3">
+            <Page {...props} {...own} />
+          </div>
+        </AutoHeight>
         <div className="flex items-center gap-2">
           {here !== list[0].id && <Button variant="ghost" size="sm" disabled={working} onClick={props.back}>Back</Button>}
           <div className="ml-auto flex items-center gap-2">

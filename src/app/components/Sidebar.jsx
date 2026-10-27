@@ -424,7 +424,7 @@ function Drafts() {
         <CardAction className="flex">
           <IconButton label="New folder" className="text-muted-foreground" onClick={async () => setRenaming(await newFolder())}><FolderPlus /></IconButton>
           <Tip title={withKey('New draft', 'app.newDraft')}>
-            <Button variant="ghost" size="xs" className="text-muted-foreground" onClick={startNewDraft}><Plus />New draft</Button>
+            <Button variant="ghost" size="xs" className="text-muted-foreground" data-new-draft onClick={startNewDraft}><Plus />New draft</Button>
           </Tip>
         </CardAction>
       </CardHeader>

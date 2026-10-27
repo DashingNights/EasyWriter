@@ -4,7 +4,7 @@
 // assistant's card and dialogs: as in Settings > Assistant, the assistant never changes its own provider or policy.
 import { useEffect, useRef, useState } from 'react';
 import { cn } from 'cn';
-import { MessageSquare, Mic } from 'lucide-react';
+import { AudioLines, Eye, Globe, MessageCircleQuestion, MessageSquare, Mic, ShieldCheck, Zap } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -15,43 +15,51 @@ import { Switch } from '@/components/ui/switch';
 import { saveSettings } from '../actions.js';
 import { ASSISTANT_DEFAULTS, saveAssistant } from '../assistant/assistant.js';
 import {
-  assistantFields, CLI, pathValue, PERMISSION_HINT, PERMISSIONS, Pick, PROVIDER, ProviderFields, providerOf, PROVIDERS, SUGGEST_HINT,
-  useAssistantStatus,
+  assistantFields, CLI, pathValue, PERMISSION_HINT, PERMISSIONS, Pick, PROVIDER, ProviderFields, providerOf, PROVIDERS, SpokenLanguages,
+  SUGGEST_HINT, useAssistantStatus,
 } from '../components/SettingsDialog.jsx';
-import { LANGUAGES } from '../dictation/core.mjs';
-import { mb } from '../dictation/Dictation.jsx';
+import { Help } from '../components/Tip.jsx';
+import { spokenFields } from '../dictation/core.mjs';
+import { LanguageNotice, mb, ModelLevel, ModelPoints } from '../dictation/Dictation.jsx';
 import { cancelInstall, dictationReady, dictationSettings, install } from '../dictation/dictation.js';
 import { getState, useStore } from '../store.js';
-import { ipcMessage } from './shared.jsx';
+import { AutoHeight, ipcMessage, pickCard, SUB_PLACE } from './shared.jsx';
 
 const keep = (e) => e.preventDefault();
 const assistantOf = (s) => ({ ...ASSISTANT_DEFAULTS, ...s?.assistant });
 // Dictation on the user's own whisper.cpp (Settings > Dictation, advanced) is ready without an install, so this page cannot turn it off.
 const ownServer = (d) => !!d?.serverUrl?.trim() || (!!d?.serverPath && !!d?.modelPath);
 
-/** A choice card in a radiogroup: a title, an optional badge and a line under it. */
-function Option({ checked, onPick, title, badge, line, ...rest }) {
-  return (
-    <button type="button" role="radio" aria-checked={checked} onClick={onPick} {...rest}
-      className="grid gap-0.5 rounded-md border p-3 text-left outline-none hover:bg-accent/60 focus-visible:ring-[3px] focus-visible:ring-ring/50 aria-checked:border-primary aria-checked:bg-accent/60">
-      <span className="flex items-center gap-2 font-medium">{title}{badge && <Badge>{badge}</Badge>}</span>
-      {line && <span className="text-xs text-muted-foreground">{line}</span>}
+/** A choice card in a radiogroup: an icon, a title, a badge, small text at the end of the title row (`aside`), what goes under
+ * it (`children`), and `help` behind a (?) in its corner. */
+function Option({ checked, onPick, icon, title, badge, aside, help, children, ...rest }) {
+  const card = (
+    <button type="button" role="radio" aria-checked={checked} onClick={onPick} {...rest} className={cn(pickCard(checked), 'grid w-full gap-1 p-3 text-left')}>
+      <span className={cn('flex items-center gap-2 font-medium', help && 'pr-6')}>
+        {icon}{title}{badge && <Badge>{badge}</Badge>}
+        {aside && <span className="ml-auto text-xs font-normal text-muted-foreground">{aside}</span>}
+      </span>
+      {children}
     </button>
   );
+  return help ? <div className="relative">{card}<Help className="absolute top-2.5 right-2.5">{help}</Help></div> : card;
 }
 
-/** The dialog over the setup: title, help, body and a bar. Escape is Cancel; a click outside does nothing. */
+/** The dialog over the setup: the title with its help behind a (?), the body, which grows and shrinks smoothly at the top, and
+ * its buttons (`bar`) at the bottom, 2rem under the setup's Continue (SUB_PLACE). Escape is Cancel; a click outside does
+ * nothing. */
 function Sub({ title, help, bar, onCancel, children, ...rest }) {
   return (
     <Dialog open onOpenChange={(o) => !o && onCancel()}>
       <DialogContent showCloseButton={false} onInteractOutside={keep} {...rest}
-        className="max-h-[88vh] gap-4 overflow-y-auto rounded-island bg-island p-5 text-sm sm:max-w-[40rem]">
-        <div className="grid gap-1.5">
+        className={cn('gap-4 overflow-y-auto rounded-island bg-island p-5 text-sm sm:max-w-[40rem]', SUB_PLACE)}>
+        <div className="flex items-center gap-1.5">
           <DialogTitle className="text-lg">{title}</DialogTitle>
-          <DialogDescription>{help}</DialogDescription>
+          <Help>{help}</Help>
+          <DialogDescription className="sr-only">{help}</DialogDescription>
         </div>
-        {children}
-        <div className="flex items-center gap-2">{bar}</div>
+        <AutoHeight><div className="grid gap-4">{children}</div></AutoHeight>
+        <div className="flex items-center justify-end gap-2" data-sub-bar>{bar}</div>
       </DialogContent>
     </Dialog>
   );
@@ -60,12 +68,13 @@ function Sub({ title, help, bar, onCancel, children, ...rest }) {
 // ---------------------------------------------------------------------------------------------
 // Dictation
 
-/** The model (dictation-main.js MODELS, largest first, Small preselected), the language (Default English, or one picked,
- * Automatic first; the side touched last is used) and the existing install with its progress. Cancel stops a download. */
+/** The model (dictation-main.js MODELS, largest first, Small preselected), the languages (Default English, or the ones picked,
+ * none = Automatic; the side touched last is used; 粵語 on Small or Base offers Best quality) and the existing install with its
+ * progress. Cancel stops a download. */
 function DictationDialog({ onDone, onCancel }) {
   const [model, setModel] = useState('small');
   const [side, setSide] = useState('default'); // 'default' (English) | 'pick'
-  const [picked, setPicked] = useState('auto');
+  const [picked, setPicked] = useState([]);
   const [status, setStatus] = useState(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -78,13 +87,13 @@ function DictationDialog({ onDone, onCancel }) {
     return () => { on = false; };
   }, [model]);
   useEffect(() => window.api.dictation.onProgress(setProgress), []);
-  const language = side === 'default' ? 'en' : picked;
+  const { language, languages } = spokenFields(side === 'default' ? ['en'] : picked);
   const start = async () => {
     setBusy(true);
     setProgress(null);
     setError('');
     try {
-      await install(model, language); // saves settings.dictation installed, with this model and language
+      await install(model, language, languages); // saves settings.dictation installed, with this model and these languages
       if (live.current) onDone();
     } catch (e) {
       if (!live.current) return;
@@ -99,29 +108,43 @@ function DictationDialog({ onDone, onCancel }) {
   const total = status ? status.missing.reduce((n, m) => n + m.bytes, 0) : 0;
   const pct = progress?.total ? Math.round((progress.received / progress.total) * 100) : 0;
   const models = [...(status?.models ?? [])].sort((x, y) => y.bytes - x.bytes);
-  const container = (id) => cn('grid content-start gap-2 rounded-md border p-3', side === id ? 'border-primary' : 'opacity-60');
+  const container = (id) => cn(pickCard(side === id), 'grid content-start gap-2 p-3');
   return (
-    <Sub title="Set up dictation" help="Pick a model and the language you speak, then install it. It runs with whisper.cpp."
+    <Sub title="Set up dictation" help="Pick a model and the languages you speak, then install it. It runs on this computer with whisper.cpp, so no audio leaves it."
       onCancel={cancel} data-setup-dialog="dictation"
       bar={<>
-        <Button variant="ghost" size="sm" className="ml-auto" onClick={cancel}>Cancel</Button>
+        <Button variant="ghost" size="sm" onClick={cancel}>Cancel</Button>
         <Button size="sm" disabled={busy || !status} onClick={start} data-dictation-install data-agent-risk={total ? 'approval' : undefined}>
           {error ? 'Try again' : total ? `Download and install (${mb(total)})` : 'Use this model'}
         </Button>
       </>}>
       <fieldset disabled={busy} className="grid gap-2">
-        <legend className="mb-1 text-xs font-medium text-muted-foreground">Model</legend>
-        <div role="radiogroup" aria-label="Dictation model" className="grid gap-2">
-          {!status && !error && <p className="text-muted-foreground">Checking...</p>}
+        <legend className="mb-1 flex items-center gap-1.5 text-xs font-medium text-muted-foreground"><AudioLines className="size-3.5" />Model</legend>
+        <div role="radiogroup" aria-label="Dictation model" className="grid grid-cols-3 gap-2">
+          {!status && !error && <p className="col-span-3 text-muted-foreground">Checking...</p>}
           {models.map((m) => (
-            <Option key={m.id} data-model={m.id} checked={model === m.id} autoFocus={model === m.id} onPick={() => setModel(m.id)}
-              title={`${m.label} (${mb(m.bytes)})${m.downloaded ? ', downloaded' : ''}`} badge={m.id === 'small' && 'Recommended'}
-              line={m.note.replace(/^Recommended\.\s*/, '')} />
+            <button key={m.id} type="button" role="radio" aria-checked={model === m.id} data-model={m.id} autoFocus={model === m.id}
+              onClick={() => setModel(m.id)} className={cn(pickCard(model === m.id), 'relative flex flex-col gap-2 px-3 pt-4 pb-3 text-left')}>
+              {/* On the top edge, so every card's icon and name line up (the user, 2026-10-26). */}
+              {m.id === 'small' && <Badge className="absolute -top-2.5 left-1/2 -translate-x-1/2">Recommended</Badge>}
+              <span className="grid justify-items-center gap-1">
+                <ModelLevel id={m.id} className="size-6" />
+                <span className="font-medium">{m.label}</span>
+              </span>
+              <ModelPoints id={m.id} className="grid gap-1" />
+              <span className="mt-auto text-xs text-muted-foreground">{mb(m.bytes)}{m.downloaded && ', downloaded'}</span>
+            </button>
           ))}
         </div>
       </fieldset>
       <fieldset disabled={busy} className="grid gap-2">
-        <legend className="mb-1 text-xs font-medium text-muted-foreground">Language</legend>
+        <legend className="mb-1 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+          <Globe className="size-3.5" />Language
+          <Help>
+            The side you touched last is used. With two or more languages, dictation picks the likeliest of them each time. With none,
+            it detects any language, and a short phrase can come out in another one.
+          </Help>
+        </legend>
         <div role="radiogroup" aria-label="Dictation language" className="grid grid-cols-2 gap-3">
           <div className={container('default')} data-language-side="default" onPointerDown={() => setSide('default')}>
             <button type="button" role="radio" aria-checked={side === 'default'} onClick={() => setSide('default')}
@@ -130,14 +153,11 @@ function DictationDialog({ onDone, onCancel }) {
           </div>
           <div className={container('pick')} data-language-side="pick" onPointerDown={() => setSide('pick')}>
             <button type="button" role="radio" aria-checked={side === 'pick'} onClick={() => setSide('pick')}
-              className="rounded-sm text-left font-medium outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50">Pick a language</button>
-            <Pick label="Language" value={picked} className="w-full" options={[['auto', 'Automatic'], ...LANGUAGES]}
-              onChange={(v) => { setPicked(v); setSide('pick'); }} />
+              className="rounded-sm text-left font-medium outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50">Pick your languages</button>
+            <SpokenLanguages value={picked} onChange={(list) => { setPicked(list); setSide('pick'); }} />
           </div>
         </div>
-        <p className="text-xs text-muted-foreground">
-          The side you touched last is used. Automatic detects the language each time, and a short phrase can come out in another one.
-        </p>
+        {side === 'pick' && <LanguageNotice model={model} list={picked} models={status?.models ?? []} onSwitch={setModel} />}
       </fieldset>
       {busy && (
         <div className="grid gap-1" role="status" data-dictation-progress>
@@ -160,6 +180,7 @@ function DictationDialog({ onDone, onCancel }) {
 
 const API = '(API)';
 const MISSING = '(not installed)';
+const PERMISSION_ICONS = { standard: ShieldCheck, ask: MessageCircleQuestion, readonly: Eye, all: Zap };
 
 /** The provider and its fields as Settings > Assistant has them, and the writing guide (on). Save checks it: an API key
  * through the provider's models list (assistant.checkKey, no tokens spent), Claude Code or Codex through Settings' Test. Then
@@ -167,7 +188,7 @@ const MISSING = '(not installed)';
 function AssistantDialog({ onDone, onCancel }) {
   const [a, setA] = useState(() => {
     const saved = assistantOf(getState().settings);
-    return { ...saved, provider: saved.provider === 'none' ? 'qwen' : providerOf(saved) };
+    return { ...saved, provider: providerOf(saved) };
   });
   const edit = (patch) => setA((v) => ({ ...v, ...patch }));
   const [status, recheck] = useAssistantStatus(a);
@@ -183,8 +204,7 @@ function AssistantDialog({ onDone, onCancel }) {
     }
   }, []);
   useEffect(() => setError(''), [a.provider]);
-  const options = PROVIDERS.filter(([id]) => id !== 'none')
-    .map(([id, label]) => [id, PROVIDER[id] ? `${label} ${API}` : missing[id] ? `${label} ${MISSING}` : label]);
+  const options = PROVIDERS.map(([id, label]) => [id, id === 'none' ? 'Pick a provider' : PROVIDER[id] ? `${label} ${API}` : missing[id] ? `${label} ${MISSING}` : label]);
   const check = async () => {
     setChecking(true);
     setError('');
@@ -221,22 +241,21 @@ function AssistantDialog({ onDone, onCancel }) {
     <Sub title="What may the assistant do?" help="You can change this later in Settings > Assistant." onCancel={onCancel} data-setup-dialog="assistant-permission" data-agent-deny
       bar={<>
         <Button variant="ghost" size="sm" onClick={() => setPage('provider')}>Back</Button>
-        <Button variant="ghost" size="sm" className="ml-auto" onClick={onCancel}>Cancel</Button>
+        <Button variant="ghost" size="sm" onClick={onCancel}>Cancel</Button>
         <Button size="sm" disabled={checking} onClick={done} data-assistant-done>Done</Button>
       </>}>
-      <div role="radiogroup" aria-label="Assistant permissions" className="grid gap-2">
+      <div role="radiogroup" aria-label="Assistant permissions" className="grid grid-cols-2 gap-2">
         {PERMISSIONS.map(([id, label]) => {
           const hint = (a.autoApproveEdits ? PERMISSION_HINT : SUGGEST_HINT)[id];
+          const Icon = PERMISSION_ICONS[id];
           return <Option key={id} data-permission={id} checked={a.permission === id} onPick={() => edit({ permission: id })}
-            title={label} line={hint.startsWith(`${label}. `) ? hint.slice(label.length + 2) : hint} />;
+            icon={<Icon className="size-4 shrink-0" />} title={label} help={hint.startsWith(`${label}. `) ? hint.slice(label.length + 2) : hint} />;
         })}
       </div>
-      <div className="flex items-start gap-2">
-        <Switch id="setup-auto" className="mt-0.5" checked={a.autoApproveEdits === true} onCheckedChange={(on) => edit({ autoApproveEdits: on })} />
-        <div className="grid gap-0.5">
-          <Label htmlFor="setup-auto">Auto-approve assistant edits</Label>
-          <span className="text-xs text-muted-foreground">When this is off, the assistant's edits wait in the draft as suggestions until you accept or reject them.</span>
-        </div>
+      <div className="flex items-center gap-2">
+        <Switch id="setup-auto" checked={a.autoApproveEdits === true} onCheckedChange={(on) => edit({ autoApproveEdits: on })} />
+        <Label htmlFor="setup-auto">Auto-approve assistant edits</Label>
+        <Help>When this is off, the assistant's edits wait in the draft as suggestions until you accept or reject them.</Help>
       </div>
       {error && <p className="text-destructive" data-assistant-error>{error}</p>}
     </Sub>
@@ -246,8 +265,8 @@ function AssistantDialog({ onDone, onCancel }) {
       onCancel={onCancel} data-setup-dialog="assistant" data-agent-deny
       bar={<>
         {checking && <span className="flex items-center gap-2 text-muted-foreground"><Spinner />{CLI[a.provider] ? 'Testing...' : 'Checking the key...'}</span>}
-        <Button variant="ghost" size="sm" className="ml-auto" onClick={onCancel}>Cancel</Button>
-        <Button size="sm" disabled={checking} onClick={check} data-assistant-save>Save</Button>
+        <Button variant="ghost" size="sm" onClick={onCancel}>Cancel</Button>
+        <Button size="sm" disabled={checking || a.provider === 'none'} onClick={check} data-assistant-save>Save</Button>
       </>}>
       <div className="grid gap-1.5">
         <div className="flex items-center gap-2">
@@ -256,12 +275,10 @@ function AssistantDialog({ onDone, onCancel }) {
         </div>
         <ProviderFields value={a} edit={edit} status={status} recheck={recheck} />
       </div>
-      <div className="flex items-start gap-2">
-        <Checkbox id="setup-guide" className="mt-0.5" checked={a.humanWriting !== false} onCheckedChange={(v) => edit({ humanWriting: v === true })} />
-        <div className="grid gap-0.5">
-          <Label htmlFor="setup-guide">Follow the human writing guide</Label>
-          <span className="text-xs text-muted-foreground">Sends EasyWriter's writing guide with every message. It adds about 2,000 tokens to each request.</span>
-        </div>
+      <div className="flex items-center gap-2">
+        <Checkbox id="setup-guide" checked={a.humanWriting !== false} onCheckedChange={(v) => edit({ humanWriting: v === true })} />
+        <Label htmlFor="setup-guide">Follow the human writing guide</Label>
+        <Help>Sends EasyWriter's writing guide with every message. It adds about 2,000 tokens to each request.</Help>
       </div>
       {error && <p className="text-destructive" data-assistant-error>{error}</p>}
     </Sub>
@@ -275,7 +292,7 @@ const CARDS = [
   ['assistant', 'Assistant', MessageSquare, 'Answers questions about your drafts and edits them, with the AI provider you pick.'],
   ['dictation', 'Dictation', Mic, 'Turns your speech into text. It runs on this computer, so no audio leaves it.'],
 ];
-const OWN = 'It uses your own whisper.cpp. Change that in Settings > Dictation.';
+const OWN = 'It uses your own whisper.cpp, so it cannot be turned off here. Change that in Settings > Dictation.';
 
 export function Helpers() {
   const settings = useStore((s) => s.settings);
@@ -297,9 +314,10 @@ export function Helpers() {
             <span className="flex size-9 items-center justify-center rounded-md bg-accent"><Icon className="size-5" /></span>
             <Switch id={`setup-${id}`} checked={on[id] || open === id} disabled={id === 'dictation' && own} onCheckedChange={(v) => flip(id, v)} />
           </div>
-          <div className="grid gap-0.5">
+          <div className="flex items-center gap-1.5">
             <Label htmlFor={`setup-${id}`} className="font-medium">{name}</Label>
-            <span className="text-xs text-muted-foreground" data-helper-line>{id === 'dictation' && own ? OWN : line}</span>
+            {id === 'dictation' && own && <Badge variant="secondary" data-helper-own>Your own whisper.cpp</Badge>}
+            <Help>{id === 'dictation' && own ? OWN : line}</Help>
           </div>
         </div>
       ))}

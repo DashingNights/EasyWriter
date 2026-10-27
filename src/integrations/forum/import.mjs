@@ -372,10 +372,23 @@ export function placeholderUrls(doc) {
   return [...urls];
 }
 
-/** `doc` with every placeholder of a URL in `files` ({url: data URL}) holding that file. `doc` is not changed. */
-export function fillPlaceholders(doc, files) {
+/** A smart canvas holding picture `src` (natural size `w` × `h`, at most 8000 px a side) at 0,0, shown at most `width` wide:
+ * what pasting a picture makes (whiteboard.js addImages). */
+export function pictureCanvas({ src, w, h }, width) {
+  const k = Math.min(1, 8000 / Math.max(w, h));
+  const [W, H] = [Math.max(1, Math.round(w * k)), Math.max(1, Math.round(h * k))];
+  const id = Math.random().toString(36).slice(2, 9).padEnd(7, '0');
+  return { type: 'canvas', attrs: { w: W, h: H, dw: Math.min(W, width), frame: { x: 0, y: 0, w: W, h: H, item: id }, bg: 'post',
+    items: [{ id, type: 'image', src, x: 0, y: 0, w: W, h: H }] } };
+}
+
+/** `doc` with every placeholder of a URL in `files` holding that file: a picture ({src, w, h}) becomes a smart canvas shown at
+ * most `width` wide, as a pasted one does (the user, 2026-10-27); a video or GIF (a data URL) stays a media node. `doc` is not
+ * changed. */
+export function fillPlaceholders(doc, files, width) {
   const visit = (n) => {
-    if (isPlaceholder(n) && files[n.attrs.src]) return { ...n, attrs: { ...n.attrs, src: files[n.attrs.src] } };
+    const f = isPlaceholder(n) && files[n.attrs.src];
+    if (f) return typeof f === 'string' ? { ...n, attrs: { ...n.attrs, src: f } } : pictureCanvas(f, width);
     return n.content ? { ...n, content: n.content.map(visit) } : n;
   };
   return visit(doc);

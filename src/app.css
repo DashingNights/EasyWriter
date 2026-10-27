@@ -94,6 +94,46 @@
   animation: none !important;
 }
 
+/* The tutorial (app/components/Tutorial.jsx): the light's rim, and its pointer once every 4.5 s. The pointer comes in from
+   --tutorial-from and fades in (0.6 s), rests on the target (0.2 s), clicks with a burst of dots and fades out slowly, 1.5 s
+   in all, then waits 3 s (the user, 2026-10-27). It does not show while the tutorial's motion is off. */
+[data-tutorial-glow] {
+  box-shadow: 0 0 0 2px color-mix(in oklab, var(--ui-accent) 70%, transparent), 0 0 24px 4px color-mix(in oklab, var(--ui-accent) 35%, transparent);
+}
+@keyframes tutorial-hand {
+  0% { opacity: 0; translate: var(--tutorial-from); animation-timing-function: cubic-bezier(0.16, 1, 0.3, 1); }
+  6% { opacity: 1; }
+  13.333% { translate: 0 0; }
+  22.222% { opacity: 1; animation-timing-function: ease-in-out; }
+  33.333%, 100% { opacity: 0; translate: 0 0; }
+}
+@keyframes tutorial-press {
+  0%, 17.778% { scale: 1; animation-timing-function: ease-in; }
+  20% { scale: 0.8; animation-timing-function: ease-out; }
+  23.333%, 100% { scale: 1; }
+}
+@keyframes tutorial-dot {
+  0%, 17.778% { opacity: 0; translate: 7px 0; scale: 1; animation-timing-function: cubic-bezier(0.16, 1, 0.3, 1); }
+  19% { opacity: 1; }
+  28%, 100% { opacity: 0; translate: 24px 0; scale: 0.4; }
+}
+[data-tutorial-hand] { animation: tutorial-hand 4.5s infinite; }
+[data-tutorial-arrow] { animation: tutorial-press 4.5s infinite; }
+[data-tutorial-dot] { animation: tutorial-dot 4.5s infinite; }
+:root[data-still~="tutorial"] [data-tutorial-pointer] {
+  display: none;
+}
+
+/* A dropdown's or drop-up's chevron turns over, with a turn, while its list is open (the user, 2026-10-26: everywhere). The
+   trigger says it is open: Radix gives Select a combobox and Popover / DropdownMenu triggers aria-haspopup, all with
+   aria-expanded; a trigger of our own sets the same two attributes. A disclosure (aria-expanded alone) keeps its own chevron. */
+:is([aria-haspopup]:not([aria-haspopup="false"]), [role="combobox"]) :is(svg.lucide-chevron-down, svg.lucide-chevron-up) {
+  transition: rotate var(--motion-menus) ease;
+}
+:is([aria-haspopup]:not([aria-haspopup="false"]), [role="combobox"])[aria-expanded="true"] :is(svg.lucide-chevron-down, svg.lucide-chevron-up) {
+  rotate: 180deg;
+}
+
 @theme inline {
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);

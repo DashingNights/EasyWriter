@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import { cn } from "cn"
-import { CheckIcon, ChevronDownIcon } from "lucide-react"
+import { CheckIcon, ChevronDownIcon, ChevronUpIcon } from "lucide-react"
 
 import { Input } from "@/components/ui/input"
 import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover"
@@ -22,6 +22,7 @@ function Combobox({ value, text, options, onType, onCommit, onPick, onDone, onOp
   const list = React.useId()
   const xs = size === "xs"
   const show = (o) => { if (o && !open) onOpen?.(); setOpen(o) }
+  const Chevron = contentProps?.side === "top" ? ChevronUpIcon : ChevronDownIcon // points the way the list opens
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverAnchor asChild>
@@ -37,9 +38,9 @@ function Combobox({ value, text, options, onType, onCommit, onPick, onDone, onOp
               e.preventDefault(); drop.current = e.key === "Escape"; e.currentTarget.blur(); onDone()
             }} />
           {unit && <span className={cn("pointer-events-none absolute inset-y-0 flex items-center text-muted-foreground", xs ? "right-6 text-xs" : "right-7 text-sm")}>{unit}</span>}
-          <button type="button" tabIndex={-1} aria-label={`${props["aria-label"]} list`} onMouseDown={(e) => e.preventDefault()}
+          <button type="button" tabIndex={-1} aria-label={`${props["aria-label"]} list`} aria-haspopup="listbox" aria-expanded={open} onMouseDown={(e) => e.preventDefault()}
             onClick={() => show(!open)} className={cn("absolute inset-y-0 right-0 grid place-items-center", xs ? "w-6" : "w-7")}>
-            <ChevronDownIcon className="size-4 opacity-50" />
+            <Chevron className="size-4 opacity-50" />
           </button>
         </div>
       </PopoverAnchor>

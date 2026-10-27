@@ -1,12 +1,14 @@
 import { startTransition, useCallback, useEffect, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
 import { toast } from 'sonner';
-import { ArrowDown, ArrowUp, Bot, CloudUpload, Globe, Keyboard, MessageSquare, Mic, Monitor, Moon, Plus, Puzzle, SlidersHorizontal, Sparkles, Sun, Tags, Trash2, Type } from 'lucide-react';
+import { ArrowDown, ArrowUp, Bot, Check, ChevronDown, CloudUpload, ExternalLink, Globe, Keyboard, MessageSquare, Mic, Monitor, Moon, Plus, Puzzle, SlidersHorizontal, Sparkles, Sun, Tags, Trash2, Type, X } from 'lucide-react';
 // import { Badge } from '@/components/ui/badge'; // LOCAL LLM (commented out 2026-10-07): the model file row's state
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Slider } from '@/components/ui/slider';
 import { Switch } from '@/components/ui/switch';
@@ -19,21 +21,23 @@ import { applyPalette, changeSettings, confirmDialog, PALETTE, runSetup, saveSet
 import { ASSISTANT_DEFAULTS, saveAssistant } from '../assistant/assistant.js';
 import QWEN_MODELS from '../../assistant/qwen-models.json';
 import { ADVANCED, NUMBERS } from '../../assistant/advanced.js';
-import { DICTATION_DEFAULTS, LANGUAGES } from '../dictation/core.mjs';
-import { mb, ModelFiles } from '../dictation/Dictation.jsx';
+import { DICTATION_DEFAULTS, englishName, findLanguages, languageName, REGIONS, spoken, spokenFields } from '../dictation/core.mjs';
+import { LanguageNotice, mb, ModelFiles } from '../dictation/Dictation.jsx';
 import { openInstall } from '../dictation/dictation.js';
 import { defaultTag, draftsWithTag, pruneMap, tagList } from '../drafts-meta.js';
 import { DEFAULT_PAGE_WIDTH } from '../../formats.mjs';
 import { INTEGRATIONS } from '../../integrations/index.mjs';
-import { copy, IntegrationRows, ipcMessage, RepoPicker, useGitHubStatus, useRepos } from '../setup/shared.jsx';
+import { copy, GitHubCode, IntegrationRows, ipcMessage, RepoPicker, useGitHubStatus, useRepos } from '../setup/shared.jsx';
+import { GitHubMark } from './brands.jsx';
 import { settingsSections } from '../../integrations/ui.js';
 import { columnsFollowing } from '../plans.js';
 import { getState, useStore } from '../store.js';
 import { DEFS, effective, overridesOf } from '../keys.mjs';
+import { ColorSwatch } from './board/controls.jsx';
 import { FormDialog } from './FormDialog.jsx';
 import { KeybindsSection } from './KeybindsSection.jsx';
-import { startTour } from './Onboarding.jsx';
-import { IconButton, Tip } from './Tip.jsx';
+import { startTutorial } from './Tutorial.jsx';
+import { Help, IconButton } from './Tip.jsx';
 
 const NONE = '-'; // Radix Select items need a non-empty value: stands for '' (default font, no highlight)
 const BLANK = { name: '', fontFamily: '', size: 100, color: 'root', highlight: '', bold: false, italic: false, underline: false };
@@ -46,7 +50,8 @@ const sizeValue = (v) => String(FONT_SIZES.includes(Number(v)) ? Number(v) : FON
 // The window zoom levels (settings.uiScale, main.js zoomLevel): Chromium's, 1.2 ** level of 100 %, in steps of 0.5.
 const UI_SCALES = Array.from({ length: 17 }, (_, i) => -3 + i / 2).map((l) => [String(l), `${Math.round(1.2 ** l * 100)}%`]);
 
-/** UI scale: applied and saved at once, as Ctrl+= / Ctrl+- / Ctrl+0 do (main.js window.zoom), so it shows their changes too. */
+/** UI scale: applied and saved at once, as Ctrl+= / Ctrl+- / Ctrl+0 do (main.js window.zoom), so it shows their changes too.
+ * Cancel puts it back (AT_ONCE), theirs too. */
 function UiScale() {
   const value = useStore((s) => String(s.settings?.uiScale ?? 0));
   return <>
@@ -71,9 +76,9 @@ function UiTheme() {
   </>;
 }
 
-// The palette of the theme in effect (settings.palette, actions.js PALETTE): a colour shows at once and is saved a moment after
-// the last change (at the latest when Settings closes); only the colours changed are kept, so the others follow the theme.
-// Reset drops the theme's.
+// The palette of the theme in effect (settings.palette, actions.js PALETTE), in the app's colour picker (§6c, opaque): a colour
+// shows while it is picked and is saved when its picker closes; only the colours changed are kept, so the others follow the
+// theme. Reset drops the theme's. Cancel puts the palette back as Settings found it (AT_ONCE).
 const readPalette = () => {
   const css = getComputedStyle(document.documentElement);
   return Object.fromEntries(PALETTE.map(([key]) => [key, css.getPropertyValue(`--${key}`).trim()]));
@@ -83,44 +88,32 @@ function UiPalette() {
   const theme = useStore((s) => (s.uiDark ? 'dark' : 'light'));
   const changed = useStore((s) => !!s.settings?.palette?.[theme]);
   const [values, setValues] = useState(readPalette);
-  const timer = useRef(0);
-  const pending = useRef(null); // shown, not saved yet
-  const latest = useRef(null); // the last one shown: the store has it only once its save is back
-  const settings = useStore((s) => s.settings);
-  const save = () => {
-    if (pending.current) saveSettings({ palette: pending.current }); // already shown: applying the save could show an older pick
-    pending.current = null;
-  };
+  const latest = useRef(null); // the last one saved: the store has it only once its save is back
   useEffect(() => setValues(readPalette()), [theme]);
-  useEffect(() => () => { clearTimeout(timer.current); save(); }, []);
-  // Another settings change before the save re-applies the saved palette (applySettings): show the pick again.
-  useEffect(() => { if (pending.current) applyPalette(pending.current); }, [settings]);
   const current = () => latest.current ?? getState().settings.palette ?? {};
-  const write = (palette, wait) => {
-    applyPalette(palette);
-    pending.current = latest.current = palette;
-    clearTimeout(timer.current);
-    timer.current = setTimeout(save, wait);
-  };
-  const edit = (key, value) => {
+  const pick = (key, value) => {
     const all = current();
-    setValues((v) => ({ ...v, [key]: value }));
-    write({ ...all, [theme]: { ...all[theme], [key]: value } }, 250);
+    return { ...all, [theme]: { ...all[theme], [key]: value } };
+  };
+  const save = (palette) => {
+    applyPalette(palette); // shown before its save is back, so the swatches read it
+    latest.current = palette;
+    setValues(readPalette());
+    saveSettings({ palette });
   };
   const reset = () => {
     const { [theme]: _, ...rest } = current();
-    write(rest, 0);
-    setValues(readPalette());
+    save(rest);
   };
   return <>
     <Label className="text-muted-foreground">{theme === 'dark' ? 'Dark palette' : 'Light palette'}</Label>
     <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
       {PALETTE.map(([key, label, title]) => (
-        <Tip key={key} title={title}>
-          <label className="flex cursor-pointer items-center gap-1.5 text-xs">
-            <input type="color" className={SWATCH} value={values[key]} onChange={(e) => edit(key, e.target.value)} />{label}
-          </label>
-        </Tip>
+        <label key={key} className="flex cursor-pointer items-center gap-1.5 text-xs" data-palette={key}>
+          <ColorSwatch title={title} label={label} value={values[key]} alpha={false}
+            onPreview={(v) => applyPalette(pick(key, v))} onChange={(v) => save(pick(key, v))} />
+          {label}
+        </label>
       ))}
       <Button type="button" variant="outline" size="sm" disabled={!changed} onClick={reset}>Reset</Button>
     </div>
@@ -208,9 +201,91 @@ const readRow = (r, i) => ({
 const tagRow = (t) => ({ key: ++rowKey, id: t.id, name: t.name, color: t.color });
 const readTag = (r, i) => ({ id: r.id, name: r.name.trim() || `Tag ${i + 1}`, color: r.color });
 const URL_RE = /^https?:\/\/\S+$/;
-const languageOptions = [['auto', 'Automatic'], ...LANGUAGES];
 export const pathValue = (v) => v.trim().replace(/^"(.*)"$/, '$1'); // "Copy as path" quotes it
 const FIELDS = 'grid grid-cols-[8rem_auto] items-center justify-start gap-x-3 gap-y-2'; // label column | control
+
+/** The languages the user speaks (core.mjs spoken): each with Remove, then Add a language. None shows as Automatic. */
+export function SpokenLanguages({ value: list, onChange }) {
+  return (
+    <div className="flex flex-wrap items-center gap-1.5" data-dictation-languages>
+      {list.length ? list.map((code) => (
+        <Button key={code} type="button" variant="outline" size="sm" className="h-7 gap-1 px-2" aria-label={`Remove ${languageName(code)}`}
+          data-language={code} onClick={() => onChange(list.filter((c) => c !== code))}>{languageName(code)}<X /></Button>
+      )) : <span className="text-muted-foreground">Automatic (any language)</span>}
+      <AddLanguage list={list} onChange={onChange} />
+    </div>
+  );
+}
+
+/** Add a language: every language whisper knows, grouped by where it is spoken (core.mjs REGIONS), each in its own name with
+ * its English one, and the regions in a column beside the list: a click jumps to one, and the one at the top of the list is
+ * marked. Typing searches any of its names (Cantonese finds 粵語) as one list. A click adds or removes one and closes the list,
+ * its search cleared. Modal, so the setup's or Settings' dialog leaves the wheel to the list (it blocks scrolling outside it). */
+function AddLanguage({ list, onChange }) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const [at, setAt] = useState(REGIONS[0][0]); // the region at the top of the list
+  const listRef = useRef(null);
+  const searching = !!query.trim();
+  const groups = searching ? [['', findLanguages(query)]] : REGIONS;
+  const close = () => {
+    setOpen(false);
+    setQuery(''); // the next language is searched from scratch
+    setAt(REGIONS[0][0]);
+  };
+  const toggle = (code) => {
+    onChange(list.includes(code) ? list.filter((c) => c !== code) : [...list, code]);
+    close(); // the next one is the user's own click on Add a language (the user, 2026-10-26)
+  };
+  const top = (region) => listRef.current?.querySelector(`[data-language-region="${region}"]`)?.offsetTop ?? Infinity;
+  const jump = (region) => {
+    listRef.current.scrollTop = top(region);
+    setAt(region);
+  };
+  const follow = () => {
+    const el = listRef.current;
+    const last = el.scrollTop + el.clientHeight >= el.scrollHeight - 2; // a short last region never reaches the top
+    setAt(last ? REGIONS.at(-1)[0] : REGIONS.map(([r]) => r).findLast((r) => top(r) <= el.scrollTop + 8) ?? REGIONS[0][0]);
+  };
+  return (
+    <Popover modal open={open} onOpenChange={(o) => (o ? setOpen(true) : close())}>
+      <PopoverTrigger asChild>
+        <Button type="button" variant="outline" size="sm" className="h-7 px-2" aria-label="Add a language"><Globe />Add a language<ChevronDown className="opacity-50" /></Button>
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-[26rem] p-0">
+        <Command shouldFilter={false} className="bg-transparent">
+          <CommandInput placeholder="Search, for example Cantonese" value={query} onValueChange={setQuery} />
+          <div className="flex">
+            {!searching && (
+              <nav aria-label="Regions" className="grid w-28 shrink-0 content-start gap-0.5 border-r p-1" data-language-regions>
+                {REGIONS.map(([region]) => (
+                  <button key={region} type="button" onClick={() => jump(region)} aria-current={at === region || undefined} data-region={region}
+                    className="rounded-sm px-2 py-1.5 text-left text-sm text-muted-foreground outline-none hover:bg-accent/60 hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 aria-[current]:bg-accent/60 aria-[current]:text-foreground">
+                    {region}
+                  </button>
+                ))}
+              </nav>
+            )}
+            <CommandList ref={listRef} onScroll={searching ? undefined : follow} className="relative max-h-72 min-w-0 flex-1">
+              <CommandEmpty>No language found.</CommandEmpty>
+              {groups.map(([region, langs]) => (
+                <CommandGroup key={region} heading={region || undefined} data-language-region={region || undefined}>
+                  {langs.map(([code, name]) => (
+                    <CommandItem key={code} value={`${region}:${code}`} data-language-option={code} onSelect={() => toggle(code)}>
+                      <Check className={list.includes(code) ? '' : 'invisible'} />
+                      <span className="truncate">{name}</span>
+                      {englishName(code) !== name && <span className="ml-auto truncate text-xs text-muted-foreground">{englishName(code)}</span>}
+                    </CommandItem>
+                  ))}
+                </CommandGroup>
+              ))}
+            </CommandList>
+          </div>
+        </Command>
+      </PopoverContent>
+    </Popover>
+  );
+}
 
 /** Settings > Dictation (SPEC §7h): status and install, model, the downloaded models, language, microphone; under Advanced,
  * an existing whisper.cpp in place of the downloads. `value` is the dialog's copy of settings.dictation. */
@@ -246,8 +321,15 @@ function DictationSection({ value: d, onChange }) {
       <Pick label="Dictation model" value={d.model} onChange={(model) => edit({ model })} options={models} className="w-72" />
       <Label className="self-start pt-0.5 text-muted-foreground">Downloaded</Label>
       <ModelFiles selected={d.model} version={checked} onChange={(patch) => { if (patch) edit(patch); setChecked((n) => n + 1); }} />
-      <Label className="text-muted-foreground">Language</Label>
-      <Pick label="Dictation language" value={d.language} onChange={(language) => edit({ language })} options={languageOptions} className="w-44" />
+      <Label className="self-start pt-1.5 text-muted-foreground">Languages</Label>
+      <div className="grid max-w-md gap-1.5">
+        <SpokenLanguages value={spoken(d)} onChange={(list) => edit(spokenFields(list))} />
+        <span className="text-xs text-muted-foreground">
+          With one language, dictation always uses it. With more, it picks the likeliest of them each time.
+        </span>
+        {!d.modelPath.trim() && !d.serverUrl.trim() &&
+          <LanguageNotice model={d.model} list={spoken(d)} models={status?.models ?? []} onSwitch={(model) => edit({ model })} />}
+      </div>
       <Label className="text-muted-foreground">Microphone</Label>
       <Pick label="Microphone" value={mics.some((m) => m.deviceId === d.micId) ? d.micId : ''} onChange={(micId) => edit({ micId })} className="w-72"
         options={[['', 'System default'], ...mics.map((m, i) => [m.deviceId, m.label || `Microphone ${i + 1}`])]} />
@@ -289,7 +371,7 @@ function DictationSection({ value: d, onChange }) {
 // settings.assistant.permission (the executor's policy for the assistant, SPEC §8 Policy) and its line under the select.
 export const PERMISSIONS = [['standard', 'Standard'], ['ask', 'Ask first'], ['readonly', 'Read only'], ['all', 'Allow all']];
 // settings.assistant.provider (2026-10-08); 'none' turns the assistant off (no chat button, no shortcut).
-export const PROVIDERS = [['none', 'None'], ['qwen', 'Qwen Cloud'], ['google', 'Google AI (Gemini)'], ['deepseek', 'DeepSeek'], ['claude', 'Claude (Claude Code)'], ['codex', 'ChatGPT (Codex)']];
+export const PROVIDERS = [['none', 'None'], ['codex', 'ChatGPT (Codex)'], ['claude', 'Claude (Claude Code)'], ['deepseek', 'DeepSeek'], ['google', 'Google AI (Gemini)'], ['qwen', 'Qwen Cloud']];
 // Claude Code and Codex (SPEC §7i Coding CLIs): the user's installed CLI with its own sign-in; its path, model and effort fields.
 export const CLI = {
   claude: { path: 'claudePath', model: 'claudeModel', effort: 'claudeEffort', label: 'Claude (Claude Code)' },
@@ -326,6 +408,10 @@ function CliSetup({ value: a, edit, status, recheck }) {
         <Label htmlFor="set-asst-cli-path" className="w-16 text-muted-foreground">Program</Label>
         <Input id="set-asst-cli-path" className="h-8 w-[28rem]" spellCheck={false} placeholder={c?.path ?? `Found on PATH`}
           value={a[f.path]} onChange={(e) => edit({ [f.path]: e.target.value })} />
+        <Help>
+          {f.label} runs on your computer with its own sign-in. It gets EasyWriter's tools and none of its own, and your messages
+          and drafts go to its provider.
+        </Help>
       </div>
       <span className="max-w-[36rem] text-xs text-muted-foreground" data-cli-found>
         {!c ? 'Looking for it...' : c.state === 'not_found' ? (
@@ -352,12 +438,8 @@ function CliSetup({ value: a, edit, status, recheck }) {
       </div>
       <div className="flex items-center gap-2" data-cli-test>
         <Button type="button" size="sm" variant="outline" disabled={c?.state !== 'ready' || test?.running} onClick={runTest}>Test</Button>
-        <span className="text-xs text-muted-foreground">{testLine || 'Runs one short turn on your plan.'}</span>
+        {testLine ? <span className="text-xs text-muted-foreground">{testLine}</span> : <Help>Runs one short turn on your plan.</Help>}
       </div>
-      <span className="max-w-[36rem] text-xs text-muted-foreground">
-        {f.label} runs on your computer with its own sign-in. It gets EasyWriter's tools and none of its own, and your messages
-        and drafts go to its provider.
-      </span>
     </div>
   );
 }
@@ -502,6 +584,15 @@ export function ProviderFields({ value: a, edit, status, recheck }) {
       <Label htmlFor="set-asst-key" className="w-16 text-muted-foreground">API key</Label>
       <Input id="set-asst-key" type="password" className="h-8 w-80" autoComplete="off" spellCheck={false} placeholder={p.from}
         value={a[p.key]} onChange={(e) => edit({ [p.key]: e.target.value })} />
+      <Help>
+        Your messages, drafts and board pictures go to {p.label} with this key.
+        {provider === 'qwen' && ` To stay on the free tier, turn on Free quota only for each model on the Free Tier page. Calls then stop
+          when a model's free quota runs out instead of being billed. Each model has its own quota, valid for 90 days.`}
+      </Help>
+      {provider === 'qwen' && (
+        <a href="https://home.qwencloud.com/benefits" target="_blank" rel="noreferrer" data-qwen-free
+          className="flex items-center gap-1 text-xs text-muted-foreground underline hover:text-foreground"><ExternalLink className="size-3" />Free Tier page</a>
+      )}
     </div>
     {provider === 'qwen' ? <QwenModels value={a} edit={edit} /> : (
       <div className="flex items-center gap-2">
@@ -509,16 +600,6 @@ export function ProviderFields({ value: a, edit, status, recheck }) {
         <Input id="set-asst-model" className="h-8 w-80" spellCheck={false} placeholder={p.model0}
           value={a[p.model]} onChange={(e) => edit({ [p.model]: e.target.value })} />
       </div>
-    )}
-    <span className="max-w-[36rem] text-xs text-muted-foreground">
-      Your messages, drafts and board pictures go to {p.label} with this key.
-    </span>
-    {provider === 'qwen' && (
-      <span className="max-w-[36rem] text-xs text-muted-foreground" data-qwen-free>
-        To stay on the free tier, turn on Free quota only for each model on
-        the <a href="https://home.qwencloud.com/benefits" target="_blank" rel="noreferrer" className="underline">Free Tier page</a>.
-        Calls then stop when a model's free quota runs out instead of being billed. Each model has its own quota, valid for 90 days.
-      </span>
     )}
   </>;
 }
@@ -547,7 +628,7 @@ function AssistantSection({ value: a, onChange }) {
     edit({ panel: null });
     saveAssistant({ panel: null });
   };
-  // Saved at once: the executor reads them at the assistant's next call.
+  // Saved at once: the executor reads them at the assistant's next call. Cancel puts them back (AT_ONCE).
   const savePermission = (patch) => {
     edit(patch);
     saveAssistant(patch);
@@ -830,8 +911,6 @@ function AssistantSection({ value: a, onChange }) {
 //   );
 // }
 
-const SWATCH = 'size-8 shrink-0 cursor-pointer rounded-md border border-input bg-transparent p-1 dark:bg-input/30 [&::-webkit-color-swatch]:rounded-sm [&::-webkit-color-swatch]:border-0 [&::-webkit-color-swatch-wrapper]:p-0';
-
 // The section nav: one entry per <Section> in the dialog, in the same order ([id, nav label, icon]).
 const AGENT_PORT = 47823; // settings.agent.port when unset (main's src/agent-server.js PORT)
 
@@ -890,8 +969,8 @@ const SECTIONS = [['general', 'General', SlidersHorizontal], ['motion', 'Motion'
   ['assistant', 'Assistant', MessageSquare], ['agents', 'MCP', Bot], ['browser', 'Browser', Globe], ['keybinds', 'Keybinds', Keyboard],
   ['integrations', 'Integrations', Puzzle], ['github', 'GitHub backup', CloudUpload]];
 
-/** Settings > GitHub backup (SPEC §4b). Logging in and out happens at once (GitHub's device flow: main opens GitHub's page and
- * the user enters the code shown here); the rest is saved with Save. The picked repository is checked at once, and
+/** Settings > GitHub backup (SPEC §4b). Logging in and out happens at once (GitHub's device flow: GitHubCode copies the code
+ * and opens GitHub's page, where the user enters it); the rest is saved with Save. The picked repository is checked at once, and
  * `setProblem` gets why it cannot be used ('' when it can). Push now syncs with the saved settings. */
 function GitHubSection({ value: g, onChange, setProblem }) {
   const edit = (patch) => onChange({ ...g, ...patch });
@@ -932,15 +1011,9 @@ function GitHubSection({ value: g, onChange, setProblem }) {
             <span className="text-sm">{login}</span>
             <Button type="button" variant="outline" size="sm" onClick={logout}>Log out</Button>
           </div>
-        ) : code ? (
-          <div className="flex items-center gap-2 text-sm">
-            Paste <code className="rounded-md border bg-muted/40 px-2 py-0.5 font-mono text-base select-text">{code.userCode}</code> on GitHub if it is not filled in. It is on your clipboard.
-            <Button type="button" variant="outline" size="sm" onClick={() => copy(code.userCode)}>Copy</Button>
-            <Button type="button" variant="ghost" size="sm" onClick={logout}>Cancel</Button>
-          </div>
-        ) : (
+        ) : code ? <GitHubCode code={code} onCancel={logout} /> : (
           <div className="flex items-center gap-2">
-            <Button type="button" variant="outline" size="sm" disabled={!st.configured || starting} onClick={startLogin}>Log in with GitHub...</Button>
+            <Button type="button" variant="outline" size="sm" disabled={!st.configured || starting} onClick={startLogin}><GitHubMark />Log in with GitHub...</Button>
             {!st.configured && <span className="text-xs text-muted-foreground">This build has no GitHub app ID.</span>}
           </div>
         )}
@@ -1002,8 +1075,26 @@ function Section({ id, title, hint, lead, children }) {
   );
 }
 
-/** Settings + presets manager, scrolled to `section` (a SECTIONS id) when given. Closes with the settings patch, or null. */
+// What Settings saves at once instead of with Save, so the app shows it or the assistant's next call reads it: the UI scale,
+// theme, palette and motion, and the assistant's permissions and chat panel place. Cancel (or Escape) puts them back as they
+// were when it opened; main writes settings in order, so that lands after any of those saves still on its way.
+const AT_ONCE = ['uiScale', 'uiTheme', 'palette', 'reduceMotion', 'motion'];
+const AT_ONCE_ASSISTANT = ['permission', 'autoApproveEdits', 'uiControl', 'pictureAfterWrite', 'humanWriting', 'panel'];
+const undoAtOnce = (s) => {
+  const was = { ...ASSISTANT_DEFAULTS, ...s.assistant };
+  changeSettings({
+    ...Object.fromEntries(AT_ONCE.map((k) => [k, s[k]])),
+    assistant: { ...getState().settings.assistant, ...Object.fromEntries(AT_ONCE_ASSISTANT.map((k) => [k, was[k]])) },
+  });
+};
+
+/** Settings + presets manager, scrolled to `section` (a SECTIONS id) when given. Closes with the settings patch, or null
+ * (Cancel, which undoes what it saved at once). */
 export function SettingsDialog({ settings: s, section, onClose }) {
+  const close = (values) => {
+    if (!values) undoAtOnce(s);
+    onClose(values);
+  };
   // Known ids only: settings.set refuses others, and main keeps a stored flag this build does not know.
   const [ints, setInts] = useState(() => Object.fromEntries(INTEGRATIONS.map((i) => [i.id, { ...s.integrations?.[i.id], enabled: s.integrations?.[i.id]?.enabled === true }])));
   // Integrations' own sections (integrations/ui.js), after GitHub: each shows, checks and saves only while its integration is
@@ -1100,10 +1191,10 @@ export function SettingsDialog({ settings: s, section, onClose }) {
     if (el && section) jump(section, true);
   }, []);
 
-  // "Show the tour" saves like Save (its error shown and the tour not started when a field is invalid), then Settings closes
-  // and the tour starts. A plain button, not a submit button: Enter in a field must not start the tour. The flag is set only for
-  // the click's own submit (dispatched synchronously); one the browser blocks (a number field out of range) must not leave it set.
-  const tour = useRef(false);
+  // "Start the tutorial" saves like Save (its error shown and the tutorial not started when a field is invalid), then Settings
+  // closes and the tutorial starts. A plain button, not a submit button: Enter in a field must not start it. The flag is set only
+  // for the click's own submit (dispatched synchronously); one the browser blocks (a number field out of range) must not leave it set.
+  const tutorial = useRef(false);
   const setup = useRef(false); // Run setup again: the same, then the setup opens
   const validate = () => {
     const problem = shown.map((x) => x.check(extra[x.id])).find(Boolean);
@@ -1150,8 +1241,8 @@ export function SettingsDialog({ settings: s, section, onClose }) {
 
   return (
     // Fixed height, centred in the room below the 34 px title strip (+17 px) with a 1rem margin; only the right column scrolls.
-    <FormDialog title="Settings" okText="Save" validate={validate} onClose={onClose}
-      result={() => { if (tour.current) startTour(); if (setup.current) runSetup(); return result(); }}
+    <FormDialog title="Settings" okText="Save" validate={validate} onClose={close}
+      result={() => { if (tutorial.current) startTutorial(); if (setup.current) runSetup(); return result(); }}
       className="top-[calc(50%_+_17px)] h-[min(60rem,calc(100vh_-_34px_-_2rem))] p-6 sm:max-w-[min(68rem,calc(100vw_-_2rem))] *:data-[slot=dialog-close]:top-5 *:data-[slot=dialog-close]:right-5 [&>form]:gap-4">
       <div className="grid min-h-0 grid-cols-[11rem_minmax(0,1fr)] gap-6">
         <nav aria-label="Settings sections" className="flex flex-col gap-1">
@@ -1188,9 +1279,9 @@ export function SettingsDialog({ settings: s, section, onClose }) {
                   onChange={(e) => setHistoryLimit(e.target.value)} />
                 <span className="text-xs text-muted-foreground">Steps kept per draft, also after closing the app (0 = none after closing)</span>
               </div>
-              <Label className="text-muted-foreground">Tour</Label>
+              <Label className="text-muted-foreground">Tutorial</Label>
               <div>
-                <Button type="button" variant="outline" size="sm" onClick={(e) => { tour.current = true; e.currentTarget.form.requestSubmit(); tour.current = false; }}>Show the tour</Button>
+                <Button type="button" variant="outline" size="sm" onClick={(e) => { tutorial.current = true; e.currentTarget.form.requestSubmit(); tutorial.current = false; }}>Start the tutorial</Button>
               </div>
               <Label className="text-muted-foreground">Setup</Label>
               <div>
@@ -1247,9 +1338,7 @@ export function SettingsDialog({ settings: s, section, onClose }) {
             <div className="grid gap-1">
               {tagRows.map((r, i) => (
                 <div key={r.key} className="flex items-center gap-1">
-                  <Tip title="Tag colour">
-                    <input type="color" aria-label="Tag colour" className={SWATCH} value={r.color} onChange={(e) => editTag(r.key, { color: e.target.value })} />
-                  </Tip>
+                  <ColorSwatch title="Tag colour" value={r.color} alpha={false} onChange={(color) => editTag(r.key, { color })} />
                   <Input aria-label="Tag name" className="h-8 w-44" placeholder={`Tag ${i + 1}`} value={r.name} onChange={(e) => editTag(r.key, { name: e.target.value })} />
                   <IconButton size="regular" label="Move up" disabled={!i} onClick={() => moveTag(i, -1)}><ArrowUp /></IconButton>
                   <IconButton size="regular" label="Move down" disabled={i === tagRows.length - 1} onClick={() => moveTag(i, 1)}><ArrowDown /></IconButton>

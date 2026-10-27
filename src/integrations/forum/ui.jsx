@@ -2,7 +2,7 @@
 // call through the actions namespace, never a bare imported binding: this module can be evaluated inside the
 // app/actions.js cycle, before forum/actions.js has run. The same goes for the app/* imports below: read only at render or call.
 import { useEffect, useRef, useState } from 'react';
-import { CircleCheck, Download, ExternalLink, Link2, LogIn, MessageSquareText, MessagesSquare, Plus, RotateCw, Send, Undo2, X } from 'lucide-react';
+import { CircleCheck, Download, ExternalLink, Link2, MessageSquareText, MessagesSquare, Plus, RotateCw, Send, Undo2, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { DropdownMenuItem, DropdownMenuSeparator } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
@@ -11,7 +11,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Spinner } from '@/components/ui/spinner';
 import { openDraft, openSettings, threadLabel } from '../../app/actions.js';
 import { FormDialog } from '../../app/components/FormDialog.jsx';
-import { IconButton, Tip } from '../../app/components/Tip.jsx';
+import { MicrosoftMark } from '../../app/components/brands.jsx';
+import { Help, IconButton, Tip } from '../../app/components/Tip.jsx';
 import { PALETTE } from '../../app/commands/palette.mjs';
 import { ipcMessage } from '../../app/setup/shared.jsx';
 import { can } from '../../app/gates.mjs';
@@ -150,21 +151,6 @@ function ForumSection({ value, onChange }) {
   );
 }
 
-/** The tour's Projects step: what a forum thread does, and the forum's sign-in once a project has one (settings.forumUrl). */
-function TourProjects() {
-  const forum = useStore((s) => hasForum(s.settings));
-  const status = useStore((s) => s.status);
-  const loggingIn = useStore((s) => s.loggingIn);
-  return (
-    <>
-      <p className="basis-full">A project can link a forum thread, and Push on its row then fills that thread's reply box with the open draft.</p>
-      {forum && (status.loggedIn
-        ? <span className="text-xs text-muted-foreground">{`Logged in as ${status.name || `member ${status.memberId}`}`}</span>
-        : <Button size="sm" variant="outline" disabled={loggingIn} onClick={actions.login}>Log in...</Button>)}
-    </>
-  );
-}
-
 const count = (n, one) => `${n} ${n === 1 ? one : `${one}s`}`;
 
 /** The setup's forum page (docs/plans/onboarding.md, Forum import), shown while the forum is on: the user lists the links of
@@ -243,7 +229,6 @@ function SetupThreads({ next, setBusy, setDone }) {
 
   return (
     <div className="grid gap-3" data-forum-setup={phase}>
-      <p className="text-muted-foreground">Optional. Paste the full link of each forum thread you write in, and each one becomes a project.</p>
       {editable && (
         <form className="flex items-center gap-2" onSubmit={add}>
           <Input aria-label="Forum thread link" spellCheck={false} className="h-8 flex-1" placeholder={THREAD_HINT} value={text} aria-invalid={!!bad || undefined}
@@ -252,24 +237,27 @@ function SetupThreads({ next, setBusy, setDone }) {
         </form>
       )}
       {bad && <p className="text-destructive" data-forum-bad>{bad}</p>}
+      {/* At most three rows high; more scroll, so a long list does not push the setup off the window. */}
       {links.length > 0 && (
-        <ul className="grid gap-1.5" data-forum-threads>
-          {links.map((u) => {
-            const t = projectOf(u);
-            return (
-              <li key={u} title={u} className="flex h-8 items-center gap-2 rounded-md border pr-1 pl-3">
-                <span className="min-w-0 flex-1 truncate">{t ? threadLabel(t) : u}</span>
-                {editable && <IconButton label="Remove thread" onClick={() => setLinks(links.filter((x) => x !== u))}><X /></IconButton>}
-              </li>
-            );
-          })}
-        </ul>
+        <div className="max-h-[6.75rem] overflow-y-auto" data-forum-threads>
+          <ul className="grid gap-1.5">
+            {links.map((u) => {
+              const t = projectOf(u);
+              return (
+                <li key={u} title={u} className="flex h-8 items-center gap-2 rounded-md border pr-1 pl-3">
+                  <span className="min-w-0 flex-1 truncate">{t ? threadLabel(t) : u}</span>
+                  {editable && <IconButton label="Remove thread" onClick={() => setLinks(links.filter((x) => x !== u))}><X /></IconButton>}
+                </li>
+              );
+            })}
+          </ul>
+        </div>
       )}
       {error && <p className="text-destructive" data-forum-error>{error}</p>}
       {phase === 'list' && (
-        <div className="flex items-center gap-3">
-          <Button size="sm" disabled={!links.length} onClick={signIn}><LogIn />Sign in to the forum</Button>
-          <span className="text-xs text-muted-foreground">The forum window opens, where you sign in with your Microsoft account.</span>
+        <div className="flex items-center gap-1.5">
+          <Button size="sm" disabled={!links.length} onClick={signIn}><MicrosoftMark />Sign in to the forum</Button>
+          <Help>The forum window opens, where you sign in with your Microsoft account. It closes by itself once you are in.</Help>
         </div>
       )}
       {(phase === 'checking' || phase === 'waiting') && (
@@ -287,9 +275,15 @@ function SetupThreads({ next, setBusy, setDone }) {
       {phase === 'linking' && <p className="flex items-center gap-2"><Spinner />Adding the threads as projects</p>}
       {phase === 'ask' && (
         <div className="grid gap-2">
-          {status.loggedIn && <p className="text-muted-foreground">{`Signed in as ${status.name || `member ${status.memberId}`}.`}</p>}
-          <p className="font-medium">Import your earlier posts in these threads as drafts?</p>
-          <p className="text-muted-foreground">Your own posts become drafts, marked pushed and tagged Done.</p>
+          {status.loggedIn && (
+            <p className="flex items-center gap-2" data-forum-signed-in>
+              <CircleCheck className="size-4 text-success" />{`Signed in as ${status.name || `member ${status.memberId}`}`}
+            </p>
+          )}
+          <p className="flex items-center gap-1.5 font-medium">
+            Import your earlier posts in these threads as drafts?
+            <Help>Your own posts become drafts, marked pushed and tagged Done.</Help>
+          </p>
           <div className="flex gap-2">
             <Button autoFocus size="sm" data-agent-risk="approval" onClick={importNow}>Yes</Button>
             <Button variant="outline" size="sm" onClick={() => { setDone(true); next(); }}>No</Button>
@@ -298,8 +292,10 @@ function SetupThreads({ next, setBusy, setDone }) {
       )}
       {(phase === 'importing' || phase === 'done') && (
         <div className="grid gap-1">
-          <p className="flex items-center gap-2" data-forum-progress>{phase === 'importing' && <Spinner />}{summary}</p>
-          {(phase === 'importing' || result.downloads > 0) && <p className="text-muted-foreground">Pictures and videos download in the background, so you can start writing now.</p>}
+          <p className="flex items-center gap-2" data-forum-progress>
+            {phase === 'importing' ? <Spinner /> : <CircleCheck className="size-4 text-success" />}{summary}
+            {(phase === 'importing' || result.downloads > 0) && <Help>Pictures and videos download in the background, so you can start writing now.</Help>}
+          </p>
         </div>
       )}
     </div>
@@ -333,9 +329,8 @@ export default {
   DraftRowBadge,
   DraftRowActions,
   DraftMenuItems,
-  TourProjects,
   // The setup's page after Assistant and dictation while the forum is on (integrations/ui.js setupPages).
-  SetupPages: [{ id: 'threads', title: 'Add your forum threads', Page: SetupThreads }],
+  SetupPages: [{ id: 'threads', title: 'Add your forum threads', help: 'Optional. Paste the full link of each forum thread you write in, and each one becomes a project.', Page: SetupThreads }],
   FORMS: { forumNewProject: ForumNewProjectDialog, projectThread: ProjectThreadDialog, chooseThread: ChooseThreadDialog },
   // tools.js: the integration.forum gate hides them while the forum is off. Push runs push() itself (push.prepare's gates): through
   // the executor it would get the 300 s timeout while the confirm and the upload wait. push-wake is Push to forum while the

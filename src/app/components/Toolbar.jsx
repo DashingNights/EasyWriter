@@ -126,23 +126,23 @@ export function ToolButton({ title, onClick, active, disabled, children }) {
   );
 }
 
-/** A select with its tooltip; `contentProps` go to the list (its placement). */
-export function ToolSelect({ title, value, onChange, placeholder, size = 'sm', className, disabled, contentProps, children }) {
+/** A select with its tooltip; `contentProps` go to the list (its placement). `up`: the list opens above, its chevron points up. */
+export function ToolSelect({ title, value, onChange, placeholder, size = 'sm', className, disabled, up, contentProps, children }) {
   return (
     <Select value={value} onValueChange={onChange} disabled={disabled}>
       <Tip title={title}>
-        <SelectTrigger size={size} aria-label={title} className={cn('gap-1 px-2', className)}>
+        <SelectTrigger size={size} up={up} aria-label={title} className={cn('gap-1 px-2', className)}>
           <SelectValue placeholder={placeholder} />
         </SelectTrigger>
       </Tip>
-      <SelectContent onCloseAutoFocus={refocusEditor} {...contentProps}>{children}</SelectContent>
+      <SelectContent onCloseAutoFocus={refocusEditor} {...(up && { side: 'top' })} {...contentProps}>{children}</SelectContent>
     </Select>
   );
 }
 
-// The block style, font and size selects over textTools(ed) `T`.
-export const BlockSelect = ({ T }) => (
-  <ToolSelect title="Block style" placeholder="Style" className="w-30" value={T.block.value} onChange={T.block.set} disabled={T.block.disabled}>
+// The block style, font and size selects over textTools(ed) `T`; `up` in the bottom island, where they open above.
+export const BlockSelect = ({ T, up }) => (
+  <ToolSelect title="Block style" placeholder="Style" className="w-30" up={up} value={T.block.value} onChange={T.block.set} disabled={T.block.disabled}>
     <SelectItem value="p">Paragraph</SelectItem>
     {/* Each heading shown at a size like its own (list only; the trigger keeps the toolbar's size). */}
     {[1, 2, 3, 4, 5, 6].map((l) => (
@@ -153,15 +153,15 @@ export const BlockSelect = ({ T }) => (
   </ToolSelect>
 );
 
-export const FontSelect = ({ T }) => (
-  <ToolSelect title="Font" className="w-38" value={T.font.value} onChange={T.font.set} disabled={T.font.disabled}>
+export const FontSelect = ({ T, up }) => (
+  <ToolSelect title="Font" className="w-38" up={up} value={T.font.value} onChange={T.font.set} disabled={T.font.disabled}>
     <SelectItem value={NONE}>Default font</SelectItem>
     {FONTS.map((f) => <SelectItem key={f.css} value={f.css} style={{ fontFamily: cssFamily(f.css) }}>{f.label}</SelectItem>)}
   </ToolSelect>
 );
 
-export const SizeSelect = ({ T }) => (
-  <ToolSelect title="Font size" className="w-18" value={T.size.value} onChange={T.size.set} disabled={T.size.disabled}>
+export const SizeSelect = ({ T, up }) => (
+  <ToolSelect title="Font size" className="w-18" up={up} value={T.size.value} onChange={T.size.set} disabled={T.size.disabled}>
     {FONT_SIZES.map((n) => <SelectItem key={n} value={String(n)}>{`${n}%`}</SelectItem>)}
   </ToolSelect>
 );
@@ -246,17 +246,17 @@ export const TableTools = ({ T, ed, all }) => {
 const presetsTitle = () => ([1, 2, 3, 4, 5, 6, 7, 8, 9].every((n) => keyLabel(`text.preset${n}`) === `Alt+${n}`)
   ? 'Apply a font preset (Alt+1 to Alt+9)' : 'Apply a font preset (keys in Settings > Keybinds)');
 
-/** Font presets dropdown: apply one (by its key, §7k), last entry "Manage presets…". */
-export function PresetsMenu({ disabled }) {
+/** Font presets dropdown: apply one (by its key, §7k), last entry "Manage presets…". `side` 'top' in the bottom island. */
+export function PresetsMenu({ disabled, side }) {
   const presets = useStore((s) => s.settings?.presets) ?? [];
   return (
     <DropdownMenu>
       <Tip title={presetsTitle()}>
         <DropdownMenuTrigger asChild disabled={disabled}>
-          <Button variant="ghost" size="sm" aria-label="Font presets" disabled={disabled} onMouseDown={keepFocus}><Palette /><ChevronDown className="opacity-50" /></Button>
+          <Button variant="ghost" size="sm" aria-label="Font presets" disabled={disabled} onMouseDown={keepFocus}><Palette />{side === 'top' ? <ChevronUp className="opacity-50" /> : <ChevronDown className="opacity-50" />}</Button>
         </DropdownMenuTrigger>
       </Tip>
-      <DropdownMenuContent align="start" onCloseAutoFocus={refocusEditor}>
+      <DropdownMenuContent side={side} align="start" onCloseAutoFocus={refocusEditor}>
         {presets.map((p, i) => (
           <DropdownMenuItem key={p.id || i} onSelect={() => applyPresetAt(i)}>
             {p.name || `Preset ${i + 1}`}
@@ -354,9 +354,9 @@ export function Toolbar() {
           </Group>
           <Group>
             <SelectRow>
-              <BlockSelect T={T} />
-              <FontSelect T={T} />
-              <SizeSelect T={T} />
+              <BlockSelect T={T} up />
+              <FontSelect T={T} up />
+              <SizeSelect T={T} up />
             </SelectRow>
           </Group>
           <Group>
@@ -386,7 +386,7 @@ export function Toolbar() {
             <ToolButton {...T.flowchart} />
           </Group>
           <Group>
-            <PresetsMenu disabled={!!board} />
+            <PresetsMenu disabled={!!board} side="top" />
             <ToolButton {...T.clear} />
           </Group>
         </GroupRows>

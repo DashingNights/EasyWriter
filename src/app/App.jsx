@@ -18,7 +18,6 @@ import { FindBar } from './components/FindBar.jsx';
 import { FlowsPage } from './components/flows/FlowsPage.jsx';
 import { HoverHint } from './components/HoverHint.jsx';
 import { Notices } from './components/Notices.jsx';
-import { Onboarding } from './components/Onboarding.jsx';
 import { PlanPage } from './components/plan/PlanPage.jsx';
 import { QuickTools } from './components/QuickTools.jsx';
 import { CitePicker } from './components/References.jsx';
@@ -26,6 +25,7 @@ import { Sidebar, SidebarToggle } from './components/Sidebar.jsx';
 import { StatusBar } from './components/StatusBar.jsx';
 import { Toolbar } from './components/Toolbar.jsx';
 import { ToolSearch } from './components/ToolSearch.jsx';
+import { Tutorial } from './components/Tutorial.jsx';
 import { Dictation } from './dictation/Dictation.jsx';
 import { Setup } from './setup/Setup.jsx';
 import { NavPane } from '../document/NavPane.jsx';
@@ -113,9 +113,9 @@ function TitleBar() {
 // the canvas bars are fixed-positioned at the selected board item / canvas (a canvas is edited in place, in the page). Toasts
 // are at the top right, 24 px below the 34 px title strip (clear of the window controls and the toolbar island); the notices
 // (§7c) rest on the transcript pane (§7h) in one bottom-anchored column over the toolbar island, centred in the page's viewport (§7g).
-// The quick tools island (Ctrl+Tab) is fixed-positioned at the pointer; the tour card is beside its step's target, or at the top
-// centre of the page's viewport when the step has none on screen. A workspace page (§7g) replaces the editor area, its
-// toolbar and its sidebar button; the sidebar navigates: its footer tabs show a workspace, its draft rows the editor.
+// The quick tools island (Ctrl+Tab) is fixed-positioned at the pointer; the tutorial dims everything under the title strip, its
+// card beside the light. A workspace page (§7g) replaces the editor area, its toolbar and its sidebar button; the sidebar
+// navigates: its footer tabs show a workspace, its draft rows the editor.
 export function App() {
   const collapsed = useStore((s) => !!s.settings?.sidebarCollapsed);
   useSyncExternalStore(subscribeKeybinds, keybindsVersion); // shortcut labels everywhere follow a rebind (§7k)
@@ -156,8 +156,6 @@ export function App() {
             <Dictation><Notices /></Dictation>
             {/* §7i: the right island at the bottom-right (the dictation mic and chat buttons) and the panel over the page */}
             <Assistant />
-            {/* the tour card and its ring, above the islands (Onboarding.jsx) */}
-            <Onboarding />
           </div>
         </main>
         <StatusBar />
@@ -174,6 +172,8 @@ export function App() {
       <DialogHost />
       {/* the setup on the first start and after Run setup again (setup/Setup.jsx) */}
       <Setup />
+      {/* the tutorial's dim, light, card and pointer, over the dialogs (Tutorial.jsx) */}
+      <Tutorial />
       <ToolSearch />
       <AgentAsk />
       <Toaster theme={dark ? 'dark' : 'light'} position="top-right" offset={{ top: 58 }} duration={5000} />

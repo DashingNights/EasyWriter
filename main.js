@@ -293,7 +293,7 @@ const onlyIf = (id) => (channel, fn) => handle(channel, async (...args) => {
   if (!(await integrations).enabled(await getSettings(), id)) throw new Error(`The ${id} integration is off. Turn it on in Settings > Integrations.`);
   return fn(...args);
 });
-forum.register(onlyIf('forum'), { getSettings, icon: ICON });
+forum.register(onlyIf('forum'), { getSettings, icon: ICON, focusApp: () => mainWin && !mainWin.isDestroyed() && mainWin.focus() });
 // Window zoom (settings.uiScale): a Chromium zoom level in Electron's old View menu steps of 0.5, -3…5 (0 = 100 %). The window
 // controls scale with the title strip.
 const zoomLevel = (v) => Math.max(-3, Math.min(5, Math.round(Number(v) * 2) / 2 || 0));
@@ -316,12 +316,15 @@ handle('window.titleBar', ({ color, symbolColor } = {}) => {
 handle('window.capture', () => mainWin.webContents.capturePage().then((img) => img.toPNG()));
 // References (docs/plans/references.md): one GET of a pasted link or of doi.org for a source's details → {ok, status, url, type,
 // body}. A session of its own, in memory, so no sign-in of the app's other pages goes along; http and https only, 15 s, at most
-// 2 MB of text read.
+// 2 MB of text read. Its user agent is Chrome's without the Electron and app names, which some sites refuse (unity.com: 403).
 let refsSession = null;
 handle('references.fetch', async ({ url, accept } = {}) => {
   const u = new URL(url);
   if (u.protocol !== 'https:' && u.protocol !== 'http:') throw new Error('Only http and https links can be read');
-  refsSession ??= session.fromPartition('references');
+  if (!refsSession) {
+    refsSession = session.fromPartition('references');
+    refsSession.setUserAgent(refsSession.getUserAgent().replace(/ (?:Electron|EasyWriter)\/\S+/gi, ''));
+  }
   try {
     const res = await refsSession.fetch(u.href, { cache: 'no-store', signal: AbortSignal.timeout(15000),
       headers: { accept: typeof accept === 'string' ? accept : 'text/html,application/xhtml+xml,*/*;q=0.8' } });

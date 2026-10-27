@@ -86,6 +86,8 @@ test('parseInput: links, bare domains, DOIs and arXiv ids', () => {
   assert.deepEqual(parseInput('arxiv.org/abs/2411.00114'), { arxiv: '2411.00114', url: 'https://arxiv.org/abs/2411.00114' });
   assert.deepEqual(parseInput('https://doi.org/10.1145/3290605.3300712'), { doi: '10.1145/3290605.3300712' });
   assert.deepEqual(parseInput('doi:10.1007/978-3-540-74997-4_22'), { doi: '10.1007/978-3-540-74997-4_22' });
+  assert.deepEqual(parseInput('https://doi.org/10.48550/arXiv.2310.06825'), { arxiv: '2310.06825', url: 'https://arxiv.org/abs/2310.06825' });
+  assert.deepEqual(parseInput('https://ar5iv.labs.arxiv.org/html/2308.12915'), { arxiv: '2308.12915', url: 'https://arxiv.org/abs/2308.12915' });
   assert.deepEqual(parseInput('alphacephei.com/vosk/'), { url: 'https://alphacephei.com/vosk/' });
   assert.equal(parseInput('not a link'), null);
   assert.equal(parseInput(''), null);
@@ -94,13 +96,14 @@ test('parseInput: links, bare domains, DOIs and arXiv ids', () => {
 const ARXIV_HTML = `<html><head><title>[2411.00114] Project Sid</title>
 <meta name="citation_title" content="Project Sid: Many-agent simulations toward AI civilization" />
 <meta name="citation_author" content="AL, Altera" /><meta name="citation_author" content="Ahn, Andrew" />
+<meta name="citation_author" content="Casas, Diego de las" /><meta name="citation_author" content="Scao, Teven Le" />
 <meta name="citation_date" content="2024/10/31" /><meta name="citation_arxiv_id" content="2411.00114" />
 <meta property="og:site_name" content="arXiv.org" /></head><body></body></html>`;
 
 test('parseMeta: arXiv tags, a news page with Open Graph and JSON-LD, a docs page with only a <title>', () => {
   const ax = parseMeta(ARXIV_HTML);
   assert.equal(ax.type, 'preprint');
-  assert.deepEqual(ax.authors, ['AL, Altera', 'Ahn, Andrew']);
+  assert.deepEqual(ax.authors, ['AL, Altera', 'Ahn, Andrew', 'de las Casas, Diego', 'Scao, Teven Le']); // a capitalised "Le" may be a given name
   assert.equal(ax.year, '2024');
   assert.equal(ax.arxiv, '2411.00114');
   assert.equal(ax.container, '');
@@ -115,10 +118,42 @@ test('parseMeta: arXiv tags, a news page with Open Graph and JSON-LD, a docs pag
   assert.deepEqual(byline.authors, ['Lee, Ann', 'Chan, Bo', 'Diaz, Cy']);
 });
 
+// The cases from the user's reference list, 2026-10-27 (each page's own tags, cut down).
+test('parseMeta with the link: site names off titles, repositories, home pages, patents, bylines, other date tags', () => {
+  const page = (url, tags, title = '') => parseMeta(`<head>${tags}${title && `<title>${title}</title>`}</head>`, url);
+  const og = (t) => `<meta property="og:title" content="${t}">`;
+  assert.equal(page('https://developers.openai.com/api/docs/pricing', og('Pricing | OpenAI API')).title, 'Pricing');
+  assert.deepEqual(['title', 'site'].map((k) => page('https://docs.convai.com/x/narrative-design', og('Narrative design | Convai Documentation'))[k]),
+    ['Narrative design', 'Convai Documentation']);
+  const roblox = page('https://create.roblox.com/docs/reference/engine/classes/TextGenerator', og('TextGenerator | Documentation - Roblox Creator Hub'));
+  assert.deepEqual([roblox.title, roblox.site], ['TextGenerator', 'Roblox Creator Hub']);
+  const docs = page('https://docs.nvidia.com/nvigi-sdk/1.6.0/HybridAI.html', '', 'HYBRID AI — In-Game Inferencing SDK 1.6.0 documentation');
+  assert.deepEqual([docs.title, docs.site], ['HYBRID AI', '']); // "documentation" alone names no one
+  assert.equal(page('https://news.ubisoft.com/en-us/article/3mW', og('Ubisoft Reveals Teammates – An AI Experiment')).title, 'Ubisoft Reveals Teammates – An AI Experiment');
+  const repo = page('https://github.com/art-from-the-machine/Mantella', og('GitHub - art-from-the-machine/Mantella: Mantella is a Skyrim - Fallout mod'));
+  assert.deepEqual([repo.authors, repo.title], [['art-from-the-machine'], 'Mantella']);
+  const model = page('https://huggingface.co/bartowski/Llama-3.2-3B-Instruct-GGUF', '', 'bartowski/Llama-3.2-3B-Instruct-GGUF · Hugging Face');
+  assert.deepEqual([model.authors, model.title], [['bartowski'], 'Llama-3.2-3B-Instruct-GGUF']);
+  const home = page('https://inworld.ai/', og('Inworld AI – Realtime AI for consumer-facing applications'));
+  assert.deepEqual([home.title, home.site], ['Inworld AI', 'Inworld AI']);
+  const patent = page('https://patents.google.com/patent/US10926179B2/en', `<meta name="DC.title" content="Nemesis characters "><meta name="DC.date" content="2016-03-25">
+    <meta name="citation_patent_number" content="US:10926179"><meta name="DC.date" content="2021-02-23"><meta name="DC.contributor" content="Michael de Plater">
+    <meta name="DC.contributor" content="Kevin Leslie Stephens"><meta name="DC.contributor" content="Warner Bros Entertainment Inc">`);
+  assert.deepEqual([patent.authors, patent.year, patent.title], [['de Plater, Michael', 'Stephens, Kevin Leslie'], '2021', 'Nemesis characters']);
+  const news = page('https://www.engadget.com/2016/11/30/x/', `<meta property="article:author" content="Nick Summers"><meta name="nv-pub-date" content="2016-11-30T09:40:00Z">`);
+  assert.deepEqual([news.authors, news.date], [['Summers, Nick'], '2016-11-30']);
+  assert.deepEqual(page('', '<meta name="author" content="Catharine Paddock, Ph.D."><meta name="author" content="Associated Press">').authors,
+    ['Paddock, Catharine', 'Associated Press']);
+  assert.equal(page('https://www.springerprofessional.de/en/x/2882154', '<meta name="doi" content="10.1007/978-3-540-74997-4_1">').doi, '10.1007/978-3-540-74997-4_1');
+});
+
 test('fromCsl: a Crossref proceedings paper', () => {
   const r = fromCsl({ type: 'paper-conference', title: 'Simulation <i>level</i> of detail', author: [{ family: 'Brom', given: 'Cyril' }, { literal: 'IVA Team' }],
     issued: { 'date-parts': [[2007, 9]] }, 'container-title': 'Intelligent Virtual Agents', publisher: 'Springer', page: '89-102', DOI: '10.1007/978-3-540-74997-4_9' });
   assert.deepEqual([r.type, r.title, r.authors, r.year, r.date, r.pages], ['chapter', 'Simulation level of detail', ['Brom, Cyril', 'IVA Team'], '2007', '', '89–102']);
+  // Springer's own record: Crossref's type name, no issued date (only created), the place as publisher-location.
+  const s = fromCsl({ type: 'book-chapter', title: 'T', issued: { 'date-parts': [[null]] }, created: { 'date-parts': [[2007, 8, 31]] }, 'publisher-location': 'Berlin, Heidelberg' });
+  assert.deepEqual([s.type, s.year, s.place], ['chapter', '2007', 'Berlin, Heidelberg']);
 });
 
 test('lookup: page tags; a DOI page that blocks the app falls back to doi.org; a web page takes its site as author', async () => {

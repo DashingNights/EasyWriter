@@ -146,7 +146,29 @@ test('every doc fits the forum kit schema, also a list item that starts with a p
 test('placeholders: listed once each, filled without touching the input', () => {
   const doc = postToDoc(IC5, IC5_MEDIA);
   assert.deepEqual(placeholderUrls(doc), IC5_MEDIA.map((m) => m.src));
-  const filled = fillPlaceholders(doc, { [IC5_MEDIA[0].src]: 'data:image/png;base64,AAAA' });
+  const filled = fillPlaceholders(doc, { [IC5_MEDIA[0].src]: 'data:image/gif;base64,AAAA' }, 700);
   assert.deepEqual(placeholderUrls(filled), [IC5_MEDIA[1].src]);
   assert.deepEqual(placeholderUrls(doc).length, 2);
+});
+
+test('placeholders: a picture becomes a smart canvas as a pasted one does; a GIF or video stays a media node', () => {
+  const schema = getSchema(forumExtensions(1));
+  const doc = postToDoc(IC5, IC5_MEDIA);
+  const [a, b] = IC5_MEDIA.map((m) => m.src);
+  const filled = fillPlaceholders(doc, { [a]: { src: 'data:image/png;base64,AAAA', w: 1600, h: 900 }, [b]: 'data:video/mp4;base64,AAAA' }, 700);
+  assert.doesNotThrow(() => schema.nodeFromJSON(filled).check());
+  const blocks = [];
+  const visit = (n) => (['canvas', 'media'].includes(n.type) ? blocks.push(n) : (n.content ?? []).forEach(visit));
+  visit(filled);
+  const [canvas, media] = blocks;
+  assert.equal(canvas.type, 'canvas');
+  assert.deepEqual([canvas.attrs.w, canvas.attrs.h, canvas.attrs.dw, canvas.attrs.bg], [1600, 900, 700, 'post']); // natural size, page width
+  assert.deepEqual(canvas.attrs.items.map((i) => [i.type, i.x, i.y, i.w, i.h, i.src.slice(0, 15)]), [['image', 0, 0, 1600, 900, 'data:image/png;']]);
+  assert.equal(canvas.attrs.frame.item, canvas.attrs.items[0].id);
+  assert.deepEqual([media.type, media.attrs.src.slice(0, 15)], ['media', 'data:video/mp4;']);
+  const big = fillPlaceholders(doc, { [a]: { src: 'data:image/png;base64,AAAA', w: 16000, h: 400 } }, 700);
+  const c = [];
+  const find = (n) => (n.type === 'canvas' ? c.push(n) : (n.content ?? []).forEach(find));
+  find(big);
+  assert.deepEqual([c[0].attrs.w, c[0].attrs.h], [8000, 200]); // at most 8000 px a side
 });
