@@ -62,7 +62,7 @@
         "dmg",
         "zip"
       ],
-      "icon": "build/icon.svg",
+      "icon": "build/icon-mac.svg",
       "artifactName": "${productName}-mac-${arch}.${ext}",
       "category": "public.app-category.productivity",
       "minimumSystemVersion": "13.0",

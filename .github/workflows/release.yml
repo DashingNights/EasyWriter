@@ -4,6 +4,9 @@ on:
   push:
     tags:
       - "v*"
+  # Run by hand (the Actions tab, or gh workflow run release.yml): the Mac job alone, into the release already published for
+  # package.json's version, for a version that came out before its Mac build.
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -13,6 +16,7 @@ jobs:
   # (electron-publish gitHubPublisher getOrCreateRelease), so the Windows and Mac jobs fill the same release; publish shows it.
   # A re-run on a tag whose release is already published stops here: electron-builder would skip every upload without failing.
   draft:
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
       - name: Draft release
@@ -57,10 +61,19 @@ jobs:
   # APPLE_API_KEY_P8 (the App Store Connect API key's .p8 text), APPLE_API_KEY_ID and APPLE_API_ISSUER.
   mac:
     needs: draft
-    if: vars.MAC_RELEASE == 'true'
+    # After the draft on a tag; run by hand, on its own (the draft job is skipped then).
+    if: ${{ !cancelled() && vars.MAC_RELEASE == 'true' && (needs.draft.result == 'success' || github.event_name == 'workflow_dispatch') }}
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
+      # Run by hand, the job adds to a published release and never makes one.
+      - name: Published release for this version
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          tag="v$(jq -r .version package.json)"
+          [ "$(gh release view "$tag" --json isDraft --jq .isDraft)" = false ] || { echo "$tag has no published release to add the Mac build to." >&2; exit 1; }
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -82,7 +95,10 @@ jobs:
       - run: npx electron-builder --mac --x64 --arm64 --publish always
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          EP_DRAFT: "true"
+          # A tag fills its draft. Run by hand, it uploads into the published release, which electron-builder leaves alone from
+          # two hours after publishing unless EP_GH_IGNORE_TIME is set.
+          EP_DRAFT: ${{ github.event_name == 'push' }}
+          EP_GH_IGNORE_TIME: ${{ github.event_name == 'workflow_dispatch' }}
           CSC_LINK: ${{ secrets.CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
           APPLE_API_KEY: ${{ runner.temp }}/AuthKey.p8

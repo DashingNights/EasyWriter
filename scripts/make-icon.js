@@ -54,7 +54,11 @@ app.whenReady().then(async () => {
     fs.writeFileSync(path.join(outDir, `${base}.ico`), packIco(pngs));
     fs.writeFileSync(path.join(outDir, `${base}.png`), pngs.at(-1).data);
     if (process.argv.includes('--sizes')) pngs.forEach((p) => fs.writeFileSync(path.join(outDir, `${base}-${p.size}.png`), p.data));
-    console.log(`wrote ${path.join(outDir, base)}.ico/.png`);
+    // The Mac's copy (package.json build.mac.icon). macOS icons keep their body 824 of 1024 px wide (Apple's template), so the
+    // body, 232 of the SVG's 256, is scaled to 206 round its centre.
+    fs.writeFileSync(path.join(outDir, `${base}-mac.svg`), svg.trim()
+      .replace(/<svg[^>]*>/, (open) => `${open}\n<g transform="translate(128 128) scale(0.888) translate(-128 -128)">`).replace(/<\/svg>$/, '</g>\n</svg>\n'));
+    console.log(`wrote ${path.join(outDir, base)}.ico/.png/-mac.svg`);
     app.exit(0);
   } catch (e) {
     console.error(e);
