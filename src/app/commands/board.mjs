@@ -8,9 +8,10 @@ import {
   arrangeItems, cleanConnector, groupItems, moveItem, normalizeGroups, repairEnds, unbindFrom, ungroupItems, validConnector,
 } from '../../flow/model.mjs';
 import { resolveConnectors } from '../../flow/route.mjs';
-import { KINDS, rotBox, rotOf } from '../../flow/shapes.mjs';
+import { kindOf, rotBox, rotOf } from '../../flow/shapes.mjs';
+import { lineOf, shapeName } from '../../tooling/shape-picker.mjs';
 import {
-  boardSurface, contentWidth, groupBox, injectStyle, itemElement, make, parseBoard, rasterizeWhiteboard, smartArtboard, topLevelPos, WB_BG,
+  boardSurface, columnWidth, exportDensity, groupBox, injectStyle, itemElement, keptSpan, make, parseBoard, rasterizeWhiteboard, smartArtboard, topLevelPos, WB_BG,
 } from '../../whiteboard.js';
 import { endSide } from '../assistant/attach.mjs';
 import { keyLabel } from '../keybinds.js';
@@ -28,7 +29,6 @@ const newId = () => Math.random().toString(36).slice(2, 9).padEnd(7, '0');
 const IDS = { type: 'array', items: ITEM_ID, minItems: 1, maxItems: 500 };
 const BOARD_PATH = ref('PATH', 'Board block path, from board_list');
 const BOARD_NEEDS = ['doc.open', 'node.board'];
-const CANVAS_DEFAULT = { w: 800, h: 450 }; // canvas.js DEFAULT
 const busy = (ctx, a) => ctx.lib.boardBusy(a.path);
 
 /** The canvas block at `path` → {pos, node, cv (its NodeView), board (what it shows: a synced canvas's library board)}. */
@@ -70,14 +70,14 @@ function briefItem(i, byId) {
 
 // board.find: words a user may say for a type (beside the type, the shape kind and its name), and words that match nothing.
 const FIND_WORDS = { connector: 'arrow line', image: 'picture', stroke: 'pen drawing' };
-const KIND_NAMES = new Map(KINDS.map((k) => [k.kind, k.label]));
 const STOP = new Set(['a', 'an', 'the', 'of', 'on', 'in', 'to', 'and']);
 const MAX_FOUND = 40;
 
 /** The words board.find matches item `i` against (lower case): its label, type, shape and, for a connector, its ends' labels. */
 function findText(i, byId) {
   const ends = i.type === 'connector' ? `from ${plain(byId.get(i.from?.item))} to ${plain(byId.get(i.to?.item))}` : '';
-  return `${plain(i)} ${i.type} ${FIND_WORDS[i.type] ?? ''} ${i.shape ?? ''} ${KIND_NAMES.get(i.shape) ?? ''} ${ends}`.toLowerCase();
+  const name = i.type === 'connector' ? lineOf(i) : kindOf(i.shape) && shapeName(i.shape); // Word's name, beside the board's label
+  return `${plain(i)} ${i.type} ${FIND_WORDS[i.type] ?? ''} ${i.shape ?? ''} ${kindOf(i.shape)?.label ?? ''} ${name || ''} ${ends}`.toLowerCase();
 }
 
 /** The defaults an agent may leave out: the board's own style first (item-style.mjs matchStyle, `items` the target's items, `page`
@@ -132,8 +132,9 @@ function endWarnings(before, after, ids) {
 /** The artboard of board `b` ({w, h, frame}) after its items became `items` (§6b smart artboard, as Board.autoSize): groups
  * made whole (§6 Layer fields, as Board.commit), connectors routed, text measured offscreen (Board.itemHeight without a Board), a
  * frame bound to an item following it, everything shifted so the artboard starts at 0,0 → {w, h, dx, dy, frame, items} (text
- * items carry their measured h). `fit`: the frame becomes the items' box first (canvas.js fitArtboard, the edit bar's Fit). */
-function settle(b, items, fit = false) {
+ * items carry their measured h). `fit`: the frame becomes the items' box first (canvas.js fitArtboard, the edit bar's Fit). `floor`:
+ * the width the artboard does not narrow below by itself, Fit included (Board.floor), unless its frame is bound to an item. */
+function settle(b, items, fit = false, floor = 0) {
   injectStyle();
   const host = make('div', 'wb');
   host.style.cssText = 'position:fixed;left:-100000px;top:0;width:8000px;height:0;margin:0;visibility:hidden;pointer-events:none';
@@ -160,11 +161,14 @@ function settle(b, items, fit = false) {
     let frame = b.frame ?? null;
     const content = groupBox(list.map(box));
     const side = (v) => Math.max(40, Math.min(Math.ceil(v), 8000)); // canvas.js MIN_SIZE, MAX_SIZE
-    if (fit && content) frame = { x: content.x, y: content.y, w: side(content.w), h: side(content.h), ...(list.length === 1 && { item: list[0].id }) };
+    if (fit && content) {
+      const s = keptSpan(content.x, Math.ceil(content.w), floor); // as fitArtboard: the items keep their place across
+      frame = { x: s.x, y: content.y, w: side(s.w), h: side(content.h), ...(list.length === 1 && s.w === Math.ceil(content.w) && { item: list[0].id }) };
+    }
     const bound = frame?.item && list.find((i) => i.id === frame.item);
     if (bound) frame = { ...box(bound), item: bound.id };
     else if (frame?.item) frame = { x: frame.x, y: frame.y, w: frame.w, h: frame.h };
-    const a = smartArtboard(frame, { w: b.w, h: b.h }, content);
+    const a = smartArtboard(frame, { w: b.w, h: b.h }, content, bound ? 0 : floor);
     if (a.dx || a.dy) list = list.map((i) => moveItem(i, a.dx, a.dy));
     return { ...a, items: list.map((i) => (i.type === 'text' ? { ...i, h: measure(i).h } : i)) };
   } finally {
@@ -202,10 +206,14 @@ function write(ctx, a, edit) {
   const view = ctx.editor.view;
   const cv = t.cv ?? fail('failed', 'The canvas is not drawn');
   const out = edit(t.board.items, { size: { w: t.board.w, h: t.board.h }, bg: t.board.bg });
-  const s = settle({ ...t.board, ...(out.frame !== undefined && { frame: out.frame }) }, out.items, out.fit);
+  const page = columnWidth(view, t.pos);
+  // As a canvas edited in place (Board.floor): never narrower by itself than the text width at its display scale (its drawn width
+  // over w), nor than its own width while that is narrower. A frame the call sets (W, H) has its own width.
+  const shown = cv.dom.offsetWidth || Math.min(t.node.attrs.dw, page);
+  const floor = out.frame !== undefined ? 0 : Math.min(t.board.w, Math.round((page * t.board.w) / shown));
+  const s = settle({ ...t.board, ...(out.frame !== undefined && { frame: out.frame }) }, out.items, out.fit, floor);
   // A new artboard width keeps the displayed width's ratio to it (canvas.js nodeTarget); a set one or a changed one is never
   // wider than the page.
-  const page = contentWidth(view);
   const dw = out.dw != null ? Math.min(out.dw, page)
     : s.w === t.board.w ? t.node.attrs.dw : Math.min(Math.round((t.node.attrs.dw / t.board.w) * s.w), page);
   // A suggesting call's change is recorded as its suggestion (suggest/extension.js); a linked canvas writes its library at once,
@@ -218,10 +226,13 @@ function write(ctx, a, edit) {
 }
 
 /** Item `old` with board.items.update's `patch` merged in: fields replaced, `labels` and `heads` merged per slot (null removes
- * a slot); a connector patched to route straight without points of its own loses its waypoints, which would keep it bent. */
+ * a slot); a connector patched to route straight without points of its own loses its waypoints, which would keep it bent; a
+ * picture given a new src loses its metafile. */
 export function patched(old, patch) {
   const merged = { ...old, ...patch };
   if (old.type === 'connector' && patch.route === 'straight' && !('points' in patch)) merged.points = [];
+  // A picture's metafile is the original of the drawing it shows: a new picture leaves it behind, or export would write the old one.
+  if ('src' in patch && patch.src !== old.src && !('metafile' in patch)) delete merged.metafile;
   for (const key of ['labels', 'heads']) {
     if (!isObject(patch[key])) continue;
     const slots = { ...(old[key] ?? {}) };
@@ -411,10 +422,11 @@ export const defs = [
         if (pos === null) fail('not_found', `No block at [${a.at}]`, { path: a.at });
         if (a.position === 'after') pos += doc.nodeAt(pos).nodeSize;
       }
+      // As Insert canvas (canvas.js insertCanvas): the width of the text column there, shown 1:1; the older whiteboard kind is 400 high.
+      const page = columnWidth(view, pos);
       pos = topLevelPos(doc.resolve(pos));
-      const size = a.kind === 'whiteboard' ? { w: pageOf(ctx.state.draft, ctx.state.settings).width, h: 400 } : CANVAS_DEFAULT;
-      const { w = size.w, h = size.h, dw = w, bg = 'post' } = a.attrs ?? {};
-      const attrs = { w, h, dw: Math.min(dw, contentWidth(view)), frame: { x: 0, y: 0, w, h }, bg, items: [] };
+      const { w = page, h = a.kind === 'whiteboard' ? 400 : 450, dw = w, bg = 'post' } = a.attrs ?? {};
+      const attrs = { w, h, dw: Math.min(dw, page), frame: { x: 0, y: 0, w, h }, bg, items: [] };
       const tr = state.tr.insert(pos, state.schema.nodes.canvas.create(attrs));
       return { tr, result: { path: pathOfPos(tr.doc, pos) } };
     },
@@ -733,9 +745,9 @@ export const defs = [
     examples: [{ args: { path: [4] } }, { args: { path: [4], scale: 1 } }],
     run: async (ctx, a) => {
       const { pos, node, board: b } = target(ctx, a.path);
-      // export.js: the artboard at its own size, at the pixel ratio giving 2× its drawn size.
+      // export.js boardPicture: the artboard at its own size, at the pixel ratio giving its drawn size times the export density.
       const shown = ctx.editor.view.nodeDOM(pos)?.offsetWidth || Math.min(node.attrs.dw, pageOf(ctx.state.draft, ctx.state.settings).width);
-      const scale = a.scale ?? Math.min(4, Math.max(0.25, (2 * shown) / b.w));
+      const scale = a.scale ?? Math.max(0.25, (exportDensity() * shown) / b.w);
       const { blob } = await rasterizeWhiteboard({ height: b.h, bg: b.bg, items: b.items }, { width: b.w, theme: themeOf(ctx), scale });
       const ihdr = new DataView(await blob.slice(16, 24).arrayBuffer()); // the PNG's own pixel size
       return { png: await blobBase64(blob), width: ihdr.getUint32(0), height: ihdr.getUint32(4), bytes: blob.size };

@@ -2,7 +2,7 @@ import { toast } from 'sonner';
 import { advanced } from '../../assistant/advanced.js';
 import { invoke } from '../commands.js';
 import { byId, MODEL_DEFS } from '../commands/catalogue.mjs';
-import { assistantMode, COMPUTER, CORE, DESCRIBED_CHARS, refusal, VIEW_SETS, viewOf } from '../commands/tool-sets.mjs';
+import { assistantMode, COMPUTER, CORE, DESCRIBED_CHARS, refusal, VIEW_SETS, viewOf, WEB } from '../commands/tool-sets.mjs';
 import { commandIdOf, toolName, toolsFor } from '../commands/tools-schema.mjs';
 import { keyLabel } from '../keybinds.js';
 import { getState, setState } from '../store.js';
@@ -13,13 +13,13 @@ import {
   markIds, promises, readsAfterWrite, REPEAT_NOTE, resultLine, takePictures, turnMessages, withMarkIds, withNote,
 } from './context.mjs';
 import { familyOf, systemPrompt } from './prompts.mjs';
-import { fix, lint, styleArgs, styleAsk } from './style-lint.mjs';
+import { fix, lint, styleAsk } from './style-lint.mjs';
 import { endTurn } from './sessions.js';
 import { entries } from '../../suggest/core.mjs';
 import { decisions } from '../../suggest/extension.js';
 
-// The assistant's tool loop (SPEC §7i Tool loop; automation plan §13.1, §13.2 Tool calls): the model calls registry commands as
-// OpenAI tool calls through llama-server, one per request; each runs through invoke() as source 'agent:assistant' (schema,
+// The assistant's tool loop (SPEC §7i Tool loop; automation plan §13.1): the model calls registry commands as OpenAI tool calls;
+// each runs through invoke() as source 'agent:assistant' (schema,
 // gates, the AgentAsk card for destructive steps, audit) and its answer goes back as a role 'tool' message.
 
 // The tools offered (tool-sets.mjs): the core, the current view's set and the tools commands_describe added, in the model form;
@@ -27,16 +27,20 @@ import { decisions } from '../../suggest/extension.js';
 // history.redo (the model must not undo the user's own typing; each step line has its own Undo), and tool.run, whose palette
 // Undo / Redo entries would do the same.
 const NEVER = ['history.undo', 'history.redo', 'tool.run'];
-const MAX_CALLS = 20; // the small models, unless Advanced sets one (user decision 2026-10-07: 8 halted promising multi-step work)
+const MAX_CALLS = 20; // a server in place of a provider, unless Advanced sets one (user decision 2026-10-07: 8 halted promising multi-step work)
 // The other limits are Settings > Assistant > Advanced (src/assistant/advanced.js, read at each turn): the characters of one tool
 // answer sent back (8,000, about 2.3 K tokens of the 16 K; ponytail: a char cap, count tokens if it overflows), the turn's last
 // screenshots that keep their image (3; each request resends every picture it keeps), and the cloud models' tool results kept in
 // full (4, the older ones go as their step line) and pictures kept with their image (3) per request.
-const TOOL_TEXT = /<tool_call>|<function=/; // a tool call the model wrote into its text (§13.2: re-asked once)
+const TOOL_TEXT = /<tool_call>|<function=/; // a tool call the model wrote into its text (re-asked once)
 // The system prompt (the procedure the model follows) is the model family's (prompts.mjs, wave 1c).
 const REPEAT_STOP = 'Stopped a repeated call.';
 const CIRCLE_STOP = 'Stopped because the assistant kept repeating itself.';
 const LOOP_STOP = 'The reply started repeating itself and was stopped.';
+// Every provider (2026-10-29, cleanup AS2): a turn pauses once its requests used this many tokens (prompt + completion, summed);
+// Continue resumes it with a fresh budget, Stop ends it.
+const TURN_TOKENS = 300000;
+const BUDGET_STOP = 'Stopped at the token limit for this turn.';
 const TOOL_ASK = 'Make that tool call as a real tool call, not as text.';
 const REPLY_ASK = 'Reply to the user now, in plain text.'; // an empty reply (thinking used it all), asked once without thinking
 const afterWriteText = (size) => `The board after your change${size ? `, ${size}` : ''}. Check it against the request, then reply.`;
@@ -70,11 +74,11 @@ export async function runTurn(session, userText, parts = []) {
   const connections = (fn) => setState({ agent: { ...getState().agent, connections: fn(getState().agent.connections) } });
   connections((c) => [...c, conn]); // the status bar shows "Agent: assistant" while the turn runs
   try {
-    const family = familyOf(assistantSettings().model, assistantSettings().provider); // prompts.mjs: the system prompt and the model form of the tools
+    const family = familyOf(assistantSettings().provider); // prompts.mjs: the system prompt and the model form of the tools
     // The cloud models (2026-10-07): 40 calls, no re-asks, they may read after a write to check their work. Each request resends
     // the turn so far, so what it keeps in full is capped (2026-10-08: one annotation case cost 755,556 tokens with everything kept,
     // and a Qwen Cloud model's free quota is 1M): the last cloudKeep results in full, the last cloudLive pictures with their image (Advanced)
-    // (the rest keep their caption), the situation note carrying the draft ids the small models' trimming used to lose.
+    // (the rest keep their caption), the situation note carrying the draft ids.
     const gemini = family === 'gemini';
     const qwen = assistantSettings().provider === 'qwen';
     const adv = advanced(assistantSettings());
@@ -97,6 +101,7 @@ export async function runTurn(session, userText, parts = []) {
     let changed = false; // a change or navigation succeeded in this turn
     let lastFail = null;
     let looped = false;
+    let spent = 0; // tokens this turn's requests used since the start or the last Continue (TURN_TOKENS)
     const seen = new Map(); // callKey → calls since the last change (a change makes the same read new again)
     const keys = []; // this turn's call keys in order (loopKind)
     let sinceWrite = 0; // the index in keys after the last successful change
@@ -107,14 +112,13 @@ export async function runTurn(session, userText, parts = []) {
     const lines = new Map(); // this turn's tool message → its step line's summary (turnMessages)
     const ranAt = new Map(); // callKey → the tool message of its last run
     const shots = []; // this turn's screenshot messages (computer_act, background_open), oldest first
-    // The plain output rules (style-lint.mjs, plan §13.13): the user's own text (their message and the open draft) is left as it is.
-    // ponytail: only the open draft counts as theirs; a background draft's text gets fixed where the model copies it.
+    // The plain output rules (style-lint.mjs, plan §13.13) on the chat replies: the user's own text (their message and the open
+    // draft) quoted in a reply is left as it is. ponytail: only the open draft counts as theirs.
     const known = () => {
       const doc = getState().editor?.state.doc;
       return `${userText}\n${doc ? doc.textBetween(0, doc.content.size, '\n', ' ') : ''}`;
     };
     let restyled = false; // the reply was asked once to follow the writing rules
-    const restyledCalls = new Set(); // tool names whose text was sent back once for the writing rules
     // The request's messages: turnMessages, and every screenshot but the last adv.shots without its image (its caption stays).
     const request = () => {
       const old = new Set(shots.slice(0, -adv.shots));
@@ -123,10 +127,16 @@ export async function runTurn(session, userText, parts = []) {
     while (!signal.aborted) {
       // Rebuilt for every request, so a navigation in this turn shows; the server's prompt cache holds while it stays the same.
       // Its playbooks follow the turn's view key, so they stay the same within the turn.
-      const fresh = situation(parts, session.viewKey);
+      const fresh = await situation(parts, session.viewKey);
       if (asked > 0 && fresh !== note) messages[asked] = { ...messages[asked], content: withNote(note = fresh, content) };
       const replyNow = messages.at(-1)?.content === REPLY_ASK; // that request goes without thinking
+      if (spent >= TURN_TOKENS) {
+        if (!(await paused(signal))) return;
+        spent = 0;
+      }
       const r = await complete({ messages: request(), ...(tools.length && { tools }), think: think && !replyNow }, signal);
+      spent += (r.usage?.prompt ?? 0) + (r.usage?.completion ?? 0);
+      if (r.searches) searchedStep(r);
       if (r.finish === 'cancelled' || r.error) return;
       if (r.finish === 'repeat') { // the stream looped (assistant.js): hidden; once more without thinking, then stopped
         patchMessage(r.id, () => ({ text: '', reasoning: '' }));
@@ -139,7 +149,7 @@ export async function runTurn(session, userText, parts = []) {
         continue;
       }
       // Gemini may make several calls in one reply (parallel function calling): all of them run, in order, in this round trip;
-      // the small models keep one command per request (parallel_tool_calls: false, any extra call dropped).
+      // a server keeps one command per request (parallel_tool_calls: false, any extra call dropped).
       const batch = gemini ? r.toolCalls : r.toolCalls.slice(0, 1);
       // Dashes, curly quotes and the like are fixed in place; a pattern the fixer cannot change asks for the reply again, once.
       const text = fix(r.text, known());
@@ -173,9 +183,10 @@ export async function runTurn(session, userText, parts = []) {
         const times = (seen.get(key) ?? 0) + 1;
         seen.set(key, times);
         // A repeated read never ends the turn (user, 2026-10-07: the stop kept halting promising work): while its full result is
-        // still in the messages it is answered with the note, else it runs again. A repeated write is a mistake: the note once, then stop.
+        // still in the messages it is answered with the note, else it runs again. A repeated write is a mistake: the note once (Gemini
+        // family: it runs again), then stop, in every family (cleanup AS2).
         const isRead = byId(commandIdOf(call.name))?.risk === 'read';
-        if (times > 2 && !isRead && !gemini && adv.repeatStop) {
+        if (times > 2 && !isRead && adv.repeatStop) {
           addMessage({ role: 'assistant', error: REPEAT_STOP });
           return;
         }
@@ -183,7 +194,7 @@ export async function runTurn(session, userText, parts = []) {
           messages.push({ role: 'tool', tool_call_id: call.id, content: `${REPEAT_NOTE}${left(maxCalls - calls)}` });
           continue;
         }
-        if (times >= 2) seen.set(key, 1); // its result went down to its summary line (turnMessages): it runs again
+        if (times >= 2 && isRead) seen.set(key, 1); // its result went down to its summary line (turnMessages): it runs again
         // Going round in circles (A B A B, or one tool with ever new arguments): the first time the call runs and its result says
         // so; a cycle after that stops the turn before the call runs, and so does the 8th set of arguments for one tool.
         const circle = gemini || !adv.repeatStop ? null : loopKind(keys, sinceWrite); // Gemini: no circle stop (loosened guardrails)
@@ -193,18 +204,8 @@ export async function runTurn(session, userText, parts = []) {
         }
         // Every text the model has seen this turn: the legends in it map mark numbers to ids (runCall, withMarkIds).
         session.legendTexts = messages.slice(asked).flatMap((m) => (typeof m.content === 'string' ? [m.content] : Array.isArray(m.content) ? m.content.map((q) => q?.text ?? '') : []));
-        // The prose of a write (inserted text, labels, notes) follows the writing rules: fixed in place, or sent back once.
-        let run = call;
-        if (!isRead) {
-          const st = styleArgs(call.arguments, known());
-          if (st.issues.length && !restyledCalls.has(call.name)) {
-            restyledCalls.add(call.name);
-            messages.push({ role: 'tool', tool_call_id: call.id, content: `${styleAsk(st.issues, 'the text of this call')}${left(maxCalls - calls)}` });
-            continue;
-          }
-          run = { ...call, arguments: st.arguments };
-        }
-        const { res, pictures, line } = await runCall(session, run, tools);
+        // The text a write puts into a draft goes in as the model sent it (cleanup AS3): the writing rules are for chat replies only.
+        const { res, pictures, line } = await runCall(session, call, tools);
         const answer = clipResult(call.name, call.arguments, res, adv.maxResult);
         const names = [...new Set(keys.slice(circle === 'cycle' ? -4 : -1).map((k) => k.slice(0, k.indexOf(' '))))];
                 const toolMessage = { role: 'tool', tool_call_id: call.id, content: `${circle && !circled ? `${answer}\n\n${loopNote(names)}` : answer}${left(maxCalls - calls - 1)}` };
@@ -270,7 +271,7 @@ export async function runCliTurn(session, parts) {
     const show = (e) => editMessages((ms) => cliMessages(ms, e, crypto.randomUUID()));
     addMessage({ role: 'assistant', streaming: true });
     const end = await cliRun({
-      prompt: withNote(situation(parts), content),
+      prompt: withNote(await situation(parts), content),
       system: systemPrompt('gemini', { uiControl: modeNow().uiControl, render: true, guide: await writingGuide(), suggest: suggesting() }), // the cloud models' rules
       session: session.cli?.provider === provider ? session.cli.id : '',
     }, session.signal, (e) => {
@@ -279,7 +280,8 @@ export async function runCliTurn(session, parts) {
       show(e);
       const def = byId(commandIdOf(e.name));
       const res = cliResult(e);
-      steps(def ?? {}, e.name, res, args.get(e.id), { id: e.id, name: e.name, args: briefArgs(JSON.stringify(args.get(e.id) ?? {})) }, resultLine(def?.risk, res));
+      const a = args.get(e.id) ?? {};
+      steps(def ?? {}, e.name, res, a, { id: e.id, name: e.name, args: briefArgs(JSON.stringify(a)) }, resultLine(def?.risk, res), webStep(def?.id ?? e.name, a, res));
       addMessage({ role: 'assistant', streaming: true }); // the text after the call
     });
     if (end.type === 'done' && end.session) session.cli = { provider, id: end.session };
@@ -290,10 +292,36 @@ export async function runCliTurn(session, parts) {
   }
 }
 
+/** The step line of the web searches the provider ran itself in reply `r` (Qwen Cloud's, assistant/search.js), before the reply:
+ * the stream gives only their count. No call, so later turns replay nothing for it. */
+function searchedStep(r) {
+  const n = r.searches;
+  const m = { id: crypto.randomUUID(), role: 'step', text: '', reasoning: '', streaming: false, error: '',
+    step: { title: `Searched the web ${n === 1 ? 'once' : `${n} times`} with the provider's own search`, ok: true, summary: '' } };
+  editMessages((ms) => {
+    const i = ms.findIndex((x) => x.id === r.id);
+    return i < 0 ? [...ms, m] : [...ms.slice(0, i), m, ...ms.slice(i)];
+  });
+}
+
 const modeNow = () => assistantMode(getState().settings?.assistant);
-// Edits wait as suggestions (docs/plans/suggestions.md) unless auto-approve is on; Read only makes none.
+// Edits wait as suggestions (docs/wiki/suggestions.md) unless auto-approve is on; Read only makes none.
 const suggesting = () => assistantSettings().autoApproveEdits !== true && modeNow().permission !== 'readonly';
 const pictureAfterWrite = () => assistantSettings().pictureAfterWrite !== false && modeNow().permission !== 'readonly';
+
+/** The turn at TURN_TOKENS: a chat line with Continue (Chat.jsx `resume`) → true on Continue, false on Stop. */
+function paused(signal) {
+  return new Promise((resolve) => {
+    const done = (go) => {
+      signal.removeEventListener('abort', halt);
+      patchMessage(id, () => ({ resume: null }));
+      resolve(go);
+    };
+    const halt = () => done(false);
+    const id = addMessage({ role: 'assistant', error: BUDGET_STOP, resume: () => done(true) });
+    signal.addEventListener('abort', halt, { once: true });
+  });
+}
 
 /** The marked picture of the board that the successful board.* `call` changed (its path, or board.insert's new block) as a user
  * message: afterWriteText with view.render's size line (wave 2b) and its legend, then the picture; null when it does not render. */
@@ -327,10 +355,10 @@ async function toolList(session, parts, family) {
   const mode = modeNow();
   const allowed = (t) => !refusal(byId(commandIdOf(t.function.name)) ?? {}, mode);
   // Gemini gets the draft, board and drafts tools in every view with a draft open (it had to load the board tools with
-  // commands_describe with the caret in text); the small models get the view's set. The cloud models also get computer use
-  // (computer_act and the background window, §7i) in every view.
+  // commands_describe with the caret in text); a server gets the view's set. The cloud models also get computer use
+  // (computer_act and the background window, §7i) in every view, and every family gets the web tools (assistant-web).
   const ids = family === 'gemini' && (key === 'editor' || key === 'board') ? [...VIEW_SETS.editor, ...VIEW_SETS.board, ...VIEW_SETS.none] : VIEW_SETS[key];
-  const tools = toolsFor(res.result, { ids: [...new Set([...CORE, ...ids, ...(family === 'gemini' ? [...COMPUTER, 'calls', 'suggestions.list', 'suggestions.resolve'] : [])])], $defs: MODEL_DEFS, form: 'model', family }).filter(allowed);
+  const tools = toolsFor(res.result, { ids: [...new Set([...CORE, ...ids, ...WEB, ...(family === 'gemini' ? [...COMPUTER, 'calls', 'suggestions.list', 'suggestions.resolve'] : [])])], $defs: MODEL_DEFS, form: 'model' }).filter(allowed);
   return [...tools, ...[...session.described.values()].filter((d) => allowed(d) && !tools.some((t) => t.function.name === d.function.name))];
 }
 
@@ -403,7 +431,7 @@ async function runCall(session, call, tools) {
   const draftId = args?.draftId ?? res.result?.draftId;
   const title = typeof draftId === 'string' ? getState().drafts.find((d) => d.id === draftId)?.title ?? '' : '';
   const label = id === 'ui.invoke' && res.ok ? uiStep(args, res.result) : id === 'view.render' ? `Rendered the ${args?.path ? 'board' : args?.flowId ? 'flowchart' : 'view'}`
-    : id === 'computer.act' && res.ok ? computerStep(args) : null;
+    : id === 'computer.act' && res.ok ? computerStep(args) : webStep(id, args, res);
   const line = resultLine(def?.risk, res, title) + (swaps.length ? ` (mark ${swaps.map(([n, v]) => `${n} = ${v}`).join(', ')})` : '');
   steps(def, call.name, res, args, { id: call.id, name: call.name, args: briefArgs(call.arguments) }, line, label);
   return { res, pictures, line };
@@ -421,7 +449,9 @@ function suggestedStep(id, res) {
   const waiting = () => {
     const st = getState();
     if (st.draft?.id === draftId) {
-      const live = new Set(st.editor ? entries(st.editor.state.doc).map((e) => e.id) : []);
+      // A canvas draft's changes are its engine cards' revisions ('r' and the id, as execAs reports them).
+      const live = new Set(st.suggestions.canvas ? st.suggestions.cards.flatMap((c) => c.revs.map((r) => `r${r}`))
+        : st.editor ? entries(st.editor.state.doc).map((e) => e.id) : []);
       return changes.filter((id) => live.has(id));
     }
     const done = new Set(decisions().flatMap((d) => d.ids));
@@ -469,6 +499,18 @@ const COMPUTER_STEPS = {
 };
 const computerStep = (a) => `${(COMPUTER_STEPS[a.action] ?? (() => 'Used'))(a)} the ${a.target === 'background' ? 'background' : 'main'} window`;
 
+// The step line of a web call that ran: the app's own (commands/web.mjs, by command id) or a provider's own search (cli.js: Claude
+// Code's WebSearch and WebFetch, Codex's search as WebSearch with its action), saying what it searched for or read.
+const quoted = (s) => JSON.stringify(String(s ?? '').length > 60 ? `${String(s).slice(0, 57)}...` : String(s ?? ''));
+const WEB_STEPS = {
+  'web.search': (a) => `Searched the web for ${quoted(a.q)}`,
+  'browser.read': (a, r) => `Read ${quoted(r?.title || r?.url || a.url)}`,
+  WebSearch: (a) => (a.action?.type === 'open_page' ? `Read ${a.action.url}` : a.action?.type === 'find_in_page' ? `Searched in ${a.action.url}`
+    : `Searched the web for ${quoted(a.query ?? a.action?.query)}`),
+  WebFetch: (a) => `Read ${a.url}`,
+};
+const webStep = (name, args, res) => (res.ok && WEB_STEPS[name] ? WEB_STEPS[name](args && typeof args === 'object' ? args : {}, res.result) : null);
+
 // Short transcript labels for the reads (a command's title is written for the model, not for the line).
 const STEP_LABELS = { 'ui.state': 'Checked the screen', 'ui.snapshot': 'Read the controls on screen', 'app.info': 'Checked the app', 'doc.get': 'Read the draft',
   'doc.find': 'Searched the draft', 'doc.selection': 'Read the selection', 'commands.index': 'Looked up tools', 'commands.describe': 'Loaded tools',
@@ -487,7 +529,7 @@ function steps(def, name, res, args, call, line, label = null) {
 }
 
 /** The transcript line of one command: title, result or error, and Undo for a document change, or Reject and Show for a change
- * that waits as a suggestion (`res.suggested`, docs/plans/suggestions.md); `call` and `line`, its summary for the model's later turns. */
+ * that waits as a suggestion (`res.suggested`, docs/wiki/suggestions.md); `call` and `line`, its summary for the model's later turns. */
 function step(def, name, res, call, line, label = null) {
   const id = addMessage({
     role: 'step',

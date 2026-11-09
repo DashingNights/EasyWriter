@@ -1,9 +1,14 @@
-// Flowchart shape registry and outline geometry (docs/plans/flowchart.md §3.5, SPEC §6d). Pure: no DOM, no imports, so
-// whiteboard.js, route.mjs, model.mjs and the Node tests share it.
-// A kind's path(w, h, inset) → {d, poly} is in item px (viewBox 0 0 w h, inset = stroke / 2): `d` the SVG outline (null for
-// the 9 older kinds, which whiteboard.js shapeGeometry still draws), `poly` the outline as [[x, y]…] (curves sampled; null for
-// line and arrow, which attach on their box). `rot` (degrees clockwise) turns a shape about its box centre; x y w h stay
-// the unrotated box.
+// The shape library: the board's shape registry and outline geometry (docs/wiki/flowchart.md §3.5, SPEC §6d), with every DrawingML
+// preset as a kind drawn by its own guide maths (src/flow/presets.mjs) and listed in Word's groups (src/flow/gallery.mjs), so the
+// canvases, boards, the flowchart editor and Word's Insert Shapes offer the same shapes (docs/plans/word/briefs/shape-pool.md).
+// Pure: no DOM, so whiteboard.js, route.mjs, model.mjs, the .docx import and export and the Node tests share it.
+import { GALLERY, PRESET_GROUP, PRESET_LABELS } from './gallery.mjs';
+import { hasPreset, itemPath, PRESET_NAMES, presetAdjusted, presetHandles, presetShape, presetSites, presetTextRect } from './presets.mjs';
+
+// A kind's path(w, h, inset, item) → {d, poly, parts?} is in item px (viewBox 0 0 w h, inset = stroke / 2): `d` the SVG outline (null
+// for line, arrow and the speech and thought bubbles, which whiteboard.js shapeGeometry draws), `poly` the outline as [[x, y]…] (curves
+// sampled; null for line and arrow, which attach on their box), `parts` a preset's paths with their fill modes. `rot` (degrees
+// clockwise) turns a shape about its box centre; x y w h stay the unrotated box.
 
 const r1 = (n) => Math.round(n * 10) / 10;
 const pt = (x, y) => `${r1(x)} ${r1(y)}`;
@@ -15,28 +20,8 @@ const arc = (cx, cy, rx, ry, a0, a1, n) => Array.from({ length: n + 1 }, (_, k) 
   return [cx + Math.cos(a) * rx, cy + Math.sin(a) * ry];
 });
 const Q = Math.PI / 2;
-// A rounded rectangle's outline, each corner sampled with `n` steps.
-const roundPoly = (l, t, r, b, rad, n = 4) => [
-  ...arc(r - rad, t + rad, rad, rad, -Q, 0, n), ...arc(r - rad, b - rad, rad, rad, 0, Q, n),
-  ...arc(l + rad, b - rad, rad, rad, Q, 2 * Q, n), ...arc(l + rad, t + rad, rad, rad, 2 * Q, 3 * Q, n),
-];
-const roundD = (l, t, r, b, rad) => `M${pt(l + rad, t)}H${r1(r - rad)}A${r1(rad)} ${r1(rad)} 0 0 1 ${pt(r, t + rad)}V${r1(b - rad)}` +
-  `A${r1(rad)} ${r1(rad)} 0 0 1 ${pt(r - rad, b)}H${r1(l + rad)}A${r1(rad)} ${r1(rad)} 0 0 1 ${pt(l, b - rad)}V${r1(t + rad)}` +
-  `A${r1(rad)} ${r1(rad)} 0 0 1 ${pt(l + rad, t)}Z`;
 const old = (poly) => ({ d: null, poly });
 const closed = (poly, more = '') => ({ d: polyD(poly) + more, poly });
-// The ellipse filling the inset box, plus `more` path (the junction marks): its path and its 32-point outline.
-const ellipse = (w, h, i, more = '') => {
-  const [cx, cy, rx, ry] = [w / 2, h / 2, Math.max(0.5, w / 2 - i), Math.max(0.5, h / 2 - i)];
-  const a = `A${r1(rx)} ${r1(ry)} 0 1 0`;
-  return { d: `M${pt(cx - rx, cy)}${a} ${pt(cx + rx, cy)}${a} ${pt(cx - rx, cy)}Z${more}`, poly: arc(cx, cy, rx, ry, 0, 4 * Q, 32).slice(0, 32) };
-};
-const diamPoly = (w, h, i) => [[w / 2, i], [w - i, h / 2], [w / 2, h - i], [i, h / 2]];
-// n + 1 points from x0 to x1 on the wave y = mid + a · sin(2π (x − l) / span): the edges of a document and a tape.
-const wave = (x0, x1, mid, a, l, span, n = 16) => Array.from({ length: n + 1 }, (_, k) => {
-  const x = x0 + ((x1 - x0) * k) / n;
-  return [x, mid + a * Math.sin((2 * Math.PI * (x - l)) / span)];
-});
 // A kind drawn in its inset box: f(left, top, right, bottom, width, height) → {d, poly}.
 const inBox = (f) => (w, h, i) => f(i, i, w - i, h - i, w - 2 * i, h - 2 * i);
 
@@ -44,36 +29,28 @@ const inBox = (f) => (w, h, i) => f(i, i, w - i, h - i, w - 2 * i, h - 2 * i);
 export const PORTS = [[0.5, 0], [1, 0.5], [0.5, 1], [0, 0.5], [0, 0], [1, 0], [1, 1], [0, 1]];
 export const LANE_BAND = 28; // a swimlane's title band, px
 
-// Registry order (the shape list's order within a group). group ∈ basic | flow | container; keywords: what the shape list and
-// the tool search match besides the label. Optional: ports (default PORTS), labelInset (fractions of w / h, default 0.08),
-// dash (dashed outline), band (title band px: the label sits in it), align / valign (label defaults), box ([w, h] post px of a
-// click-placed shape, default 160 × 110), open (an open outline: never filled; it attaches and hit-tests on its box).
+// The board's own kinds in registry order. group ∈ basic | flow | container (the quick tools take the basic ones); keywords: what
+// the shape list and the tool search match besides the label. prst: the DrawingML preset the kind draws as (its path, adjust values
+// and handles, and the gallery group it is listed in; its label, label box, ports and box stay the board's); a kind without one
+// has its own `path`. Optional: section (the shape list's group when it is not the preset's or `group`), ports (default PORTS),
+// labelInset (fractions of w / h, default 0.08), dash (dashed outline), band (title band px: the label sits in it), align / valign
+// (label defaults), box ([w, h] post px of a click-placed shape, default 160 × 110), open (an open outline: never filled; it
+// attaches and hit-tests on its box).
 export const KINDS = [
-  { kind: 'rect', label: 'Box', group: 'basic', keywords: ['rectangle', 'square', 'rect', 'border', 'outline', 'process', 'rectange', 'sqaure'],
-    path: (w, h, i) => old(rectPoly(i, i, w - i, h - i)) },
-  { kind: 'round', label: 'Rounded box', group: 'basic', keywords: ['rounded rectangle', 'rounded square', 'round rect', 'rounded corners', 'pill', 'button'],
-    path: (w, h, i) => old(roundPoly(i, i, w - i, h - i, Math.max(0, Math.min(w, h) * 0.18 - i))) },
-  { kind: 'ellipse', label: 'Circle', group: 'basic', keywords: ['ellipse', 'oval', 'round', 'ring', 'elipse', 'cirlce', 'circel'],
-    path: (w, h, i) => old(arc(w / 2, h / 2, Math.max(0.5, w / 2 - i), Math.max(0.5, h / 2 - i), 0, 4 * Q, 32).slice(0, 32)) },
-  { kind: 'triangle', label: 'Triangle', group: 'basic', keywords: ['tri', 'pyramid', 'delta', 'wedge', 'trinagle', 'traingle'],
-    path: (w, h, i) => old([[w / 2, i], [w - i, h - i], [i, h - i]]) },
-  {
-    kind: 'star', label: 'Star', group: 'basic', keywords: ['favourite', 'favorite', 'rating', 'sparkle', 'asterisk'],
-    path: (w, h, i) => old(Array.from({ length: 10 }, (_, k) => {
-      const a = -Q + (k * Math.PI) / 5;
-      const s = k % 2 ? 0.45 : 1;
-      return [w / 2 + Math.cos(a) * (w / 2 - i) * s, h / 2 + Math.sin(a) * (h / 2 - i) * s];
-    })),
-  },
-  { kind: 'arrow', label: 'Arrow', group: 'basic', keywords: ['pointer', 'direction', 'connector', 'pointing', 'arow', 'arrrow'], path: () => old(null) },
-  { kind: 'line', label: 'Line', group: 'basic', keywords: ['straight line', 'rule', 'connector', 'segment', 'stroke'], path: () => old(null) },
+  { kind: 'rect', prst: 'rect', label: 'Box', group: 'basic', keywords: ['rectangle', 'square', 'rect', 'border', 'outline', 'process', 'rectange', 'sqaure'] },
+  { kind: 'round', prst: 'roundRect', label: 'Rounded box', group: 'basic', keywords: ['rounded rectangle', 'rounded square', 'round rect', 'rounded corners', 'pill', 'button'] },
+  { kind: 'ellipse', prst: 'ellipse', label: 'Circle', group: 'basic', keywords: ['ellipse', 'oval', 'round', 'ring', 'elipse', 'cirlce', 'circel'] },
+  { kind: 'triangle', prst: 'triangle', label: 'Triangle', group: 'basic', keywords: ['tri', 'pyramid', 'delta', 'wedge', 'trinagle', 'traingle'] },
+  { kind: 'star', prst: 'star5', label: 'Star', group: 'basic', keywords: ['favourite', 'favorite', 'rating', 'sparkle', 'asterisk'] },
+  { kind: 'arrow', section: 'lines', label: 'Arrow', group: 'basic', keywords: ['pointer', 'direction', 'connector', 'pointing', 'arow', 'arrrow'], path: () => old(null) },
+  { kind: 'line', section: 'lines', label: 'Line', group: 'basic', keywords: ['straight line', 'rule', 'connector', 'segment', 'stroke'], path: () => old(null) },
   {
     // The cloud's ellipse body, widened to its bumps (the puffs are left out).
-    kind: 'thought', label: 'Thought bubble', group: 'basic', keywords: ['thought', 'think', 'thinking', 'cloud', 'bubble', 'idea'],
+    kind: 'thought', section: 'callouts', label: 'Thought bubble', group: 'basic', keywords: ['thought', 'think', 'thinking', 'cloud', 'bubble', 'idea'],
     path: (w, h, i) => old(arc(w / 2, i + (h - 2 * i) * 0.4, (w / 2 - i) * 0.84 * 1.1, (h - 2 * i) * 0.32 * 1.1, 0, 4 * Q, 32).slice(0, 32)),
   },
   {
-    kind: 'speech', label: 'Speech bubble', group: 'basic',
+    kind: 'speech', section: 'callouts', label: 'Speech bubble', group: 'basic',
     keywords: ['speech', 'speech balloon', 'callout', 'comic', 'talk', 'say', 'dialogue', 'dialog', 'chat', 'bubble', 'balloon'],
     path: (w, h, i) => {
       const [l, t, r, b] = [i, i, w - i, h - i];
@@ -81,141 +58,33 @@ export const KINDS = [
       return old([[l, t], [r, t], [r, bb], [l + (r - l) * 0.42, bb], [l + (r - l) * 0.16, b], [l + (r - l) * 0.28, bb], [l, bb]]);
     },
   },
-  {
-    // A regular pentagon stretched to the box.
-    kind: 'pentagon', label: 'Pentagon', group: 'basic', keywords: ['five sides', 'polygon', 'house'],
-    path: inBox((l, t, r, b, W, H) => closed(Array.from({ length: 5 }, (_, k) => {
-      const a = -Q + (k * 4 * Q) / 5;
-      return [l + (W / 2) * (1 + Math.cos(a) / Math.cos(Q / 5)), t + (H * (1 + Math.sin(a))) / (1 + Math.cos(Q * 0.4))];
-    }))),
-  },
-  {
-    kind: 'octagon', label: 'Octagon', group: 'basic', keywords: ['stop sign', 'eight sides', 'polygon'],
-    path: inBox((l, t, r, b, W, H) => {
-      const c = Math.min(W, H) * 0.29;
-      return closed([[l + c, t], [r - c, t], [r, t + c], [r, b - c], [r - c, b], [l + c, b], [l, b - c], [l, t + c]]);
-    }),
-  },
-  {
-    kind: 'plus', label: 'Plus', group: 'basic', keywords: ['add', 'greek cross', 'cross', 'positive'],
-    path: inBox((l, t, r, b, W, H) => {
-      const [a, e] = [W / 3, H / 3];
-      return closed([[l + a, t], [r - a, t], [r - a, t + e], [r, t + e], [r, b - e], [r - a, b - e], [r - a, b], [l + a, b], [l + a, b - e], [l, b - e], [l, t + e], [l + a, t + e]]);
-    }),
-  },
-  {
-    kind: 'cross', label: 'Cross', group: 'basic', keywords: ['x', 'times', 'multiply', 'saltire', 'close', 'wrong'],
-    path: inBox((l, t, r, b, W, H) => closed([[0, 0.15], [0.15, 0], [0.5, 0.35], [0.85, 0], [1, 0.15], [0.65, 0.5], [1, 0.85], [0.85, 1], [0.5, 0.65],
-      [0.15, 1], [0, 0.85], [0.35, 0.5]].map(([u, v]) => [l + u * W, t + v * H]))),
-  },
-  {
-    // Nine bumps on an ellipse (|sin| humps, cusps pointing in).
-    kind: 'cloud', label: 'Cloud', group: 'basic', keywords: ['internet', 'network', 'sky', 'weather', 'online'],
-    path: inBox((l, t, r, b, W, H) => closed(Array.from({ length: 72 }, (_, k) => {
-      const a = (k * 4 * Q) / 72;
-      const s = 0.8 + 0.2 * Math.abs(Math.sin(a * 4.5));
-      return [l + (W / 2) * (1 + s * Math.cos(a)), t + (H / 2) * (1 + s * Math.sin(a))];
-    }))),
-  },
-  {
-    kind: 'stadium', label: 'Terminator', group: 'flow', keywords: ['start', 'end', 'stop', 'begin', 'finish', 'pill', 'stadium', 'terminal'],
-    path: (w, h, i) => {
-      const rad = Math.max(0, Math.min(w, h) / 2 - i);
-      return { d: roundD(i, i, w - i, h - i, rad), poly: roundPoly(i, i, w - i, h - i, rad, 8) };
-    },
-  },
-  { kind: 'diam', label: 'Decision', group: 'flow', labelInset: { x: 0.2, y: 0.2 }, keywords: ['if', 'branch', 'condition', 'question', 'yes no', 'rhombus', 'diamond'],
-    path: (w, h, i) => closed(diamPoly(w, h, i)) },
-  { kind: 'lean-r', label: 'Data', group: 'flow', labelInset: { x: 0.2, y: 0.08 }, keywords: ['input', 'output', 'io', 'i/o', 'parallelogram', 'lean right'],
-    path: inBox((l, t, r, b, W) => closed([[l + W * 0.2, t], [r, t], [r - W * 0.2, b], [l, b]])) },
+  { kind: 'pentagon', prst: 'pentagon', label: 'Pentagon', group: 'basic', keywords: ['five sides', 'polygon', 'house'] },
+  { kind: 'octagon', prst: 'octagon', label: 'Octagon', group: 'basic', keywords: ['stop sign', 'eight sides', 'polygon'] },
+  // Labelled with Word's names for their presets (the old board names stay keywords), so one shape has one name in every list.
+  { kind: 'plus', prst: 'plus', label: 'Cross', group: 'basic', keywords: ['plus', 'add', 'greek cross', 'positive'] },
+  { kind: 'cross', prst: 'mathMultiply', label: 'Multiplication Sign', group: 'basic', keywords: ['cross', 'x', 'times', 'multiply', 'saltire', 'close', 'wrong'] },
+  { kind: 'cloud', prst: 'cloud', label: 'Cloud', group: 'basic', keywords: ['internet', 'network', 'sky', 'weather', 'online'] },
+  { kind: 'stadium', prst: 'flowChartTerminator', label: 'Terminator', group: 'flow', keywords: ['start', 'end', 'stop', 'begin', 'finish', 'pill', 'stadium', 'terminal'] },
+  { kind: 'diam', prst: 'flowChartDecision', label: 'Decision', group: 'flow', labelInset: { x: 0.2, y: 0.2 }, keywords: ['if', 'branch', 'condition', 'question', 'yes no', 'rhombus', 'diamond'] },
+  { kind: 'lean-r', prst: 'flowChartInputOutput', label: 'Data', group: 'flow', labelInset: { x: 0.2, y: 0.08 }, keywords: ['input', 'output', 'io', 'i/o', 'parallelogram', 'lean right'] },
   { kind: 'lean-l', label: 'Data (reversed)', group: 'flow', labelInset: { x: 0.2, y: 0.08 }, keywords: ['input', 'output', 'io', 'parallelogram', 'lean left', 'reversed'],
     path: inBox((l, t, r, b, W) => closed([[l, t], [r - W * 0.2, t], [r, b], [l + W * 0.2, b]])) },
-  { kind: 'doc', label: 'Document', group: 'flow', labelInset: { x: 0.08, y: 0.12 }, keywords: ['doc', 'paper', 'report', 'file', 'page', 'printout'],
-    path: inBox((l, t, r, b, W, H) => closed([[l, t], [r, t], ...wave(r, l, b - H * 0.08, H * 0.08, l, W)])) },
-  {
-    // Three sheets: the front one whole, the two behind it up and right by o.
-    kind: 'docs', label: 'Multi-document', group: 'flow', labelInset: { x: 0.1, y: 0.14 }, keywords: ['documents', 'multiple documents', 'docs', 'files', 'pages', 'stack', 'reports'],
-    path: inBox((l, t, r, b, W, H) => {
-      const o = Math.min(W, H) * 0.06;
-      const [f, a] = [r - 2 * o, (H - 2 * o) * 0.08];
-      const front = wave(f, l, b - a, a, l, f - l);
-      const y = b - a; // the front sheet's lower corners
-      return {
-        d: `${polyD([[l, t + 2 * o], [f, t + 2 * o], ...front])}M${pt(l + o, t + 2 * o)}V${r1(t + o)}H${r1(r - o)}V${r1(y - o)}H${r1(f)}` +
-          `M${pt(l + 2 * o, t + o)}V${r1(t)}H${r1(r)}V${r1(y - 2 * o)}H${r1(r - o)}`,
-        poly: [[l, t + 2 * o], [l + o, t + 2 * o], [l + o, t + o], [l + 2 * o, t + o], [l + 2 * o, t], [r, t], [r, y - 2 * o], [r - o, y - 2 * o], [r - o, y - o], [f, y - o], ...front],
-      };
-    }),
-  },
-  { kind: 'fr-rect', label: 'Subroutine', group: 'flow', labelInset: { x: 0.14, y: 0.08 }, keywords: ['predefined process', 'function', 'procedure', 'call', 'subprocess', 'module'],
-    path: inBox((l, t, r, b, W) => closed(rectPoly(l, t, r, b), `M${pt(l + W * 0.1, t)}V${r1(b)}M${pt(r - W * 0.1, t)}V${r1(b)}`)) },
-  {
-    kind: 'hex', label: 'Preparation', group: 'flow', labelInset: { x: 0.2, y: 0.08 }, keywords: ['prepare', 'setup', 'initialise', 'initialize', 'hexagon', 'loop'],
-    path: inBox((l, t, r, b, W, H) => {
-      const s = Math.min(W * 0.2, H / 2);
-      return closed([[l + s, t], [r - s, t], [r, t + H / 2], [r - s, b], [l + s, b], [l, t + H / 2]]);
-    }),
-  },
-  { kind: 'sl-rect', label: 'Manual input', group: 'flow', keywords: ['keyboard', 'enter', 'type in', 'user input', 'sloped'],
-    path: inBox((l, t, r, b, W, H) => closed([[l, t + H * 0.25], [r, t], [r, b], [l, b]])) },
-  { kind: 'trap-t', label: 'Manual operation', group: 'flow', labelInset: { x: 0.2, y: 0.08 }, keywords: ['manual', 'by hand', 'trapezoid', 'inverted trapezoid'],
-    path: inBox((l, t, r, b, W) => closed([[l, t], [r, t], [r - W * 0.2, b], [l + W * 0.2, b]])) },
+  { kind: 'doc', prst: 'flowChartDocument', label: 'Document', group: 'flow', labelInset: { x: 0.08, y: 0.12 }, keywords: ['doc', 'paper', 'report', 'file', 'page', 'printout'] },
+  { kind: 'docs', prst: 'flowChartMultidocument', label: 'Multi-document', group: 'flow', labelInset: { x: 0.1, y: 0.14 }, keywords: ['documents', 'multiple documents', 'docs', 'files', 'pages', 'stack', 'reports'] },
+  { kind: 'fr-rect', prst: 'flowChartPredefinedProcess', label: 'Subroutine', group: 'flow', labelInset: { x: 0.14, y: 0.08 }, keywords: ['predefined process', 'function', 'procedure', 'call', 'subprocess', 'module'] },
+  { kind: 'hex', prst: 'flowChartPreparation', label: 'Preparation', group: 'flow', labelInset: { x: 0.2, y: 0.08 }, keywords: ['prepare', 'setup', 'initialise', 'initialize', 'hexagon', 'loop'] },
+  { kind: 'sl-rect', prst: 'flowChartManualInput', label: 'Manual input', group: 'flow', keywords: ['keyboard', 'enter', 'type in', 'user input', 'sloped'] },
+  { kind: 'trap-t', prst: 'flowChartManualOperation', label: 'Manual operation', group: 'flow', labelInset: { x: 0.2, y: 0.08 }, keywords: ['manual', 'by hand', 'trapezoid', 'inverted trapezoid'] },
   { kind: 'trap-b', label: 'Priority', group: 'flow', labelInset: { x: 0.2, y: 0.08 }, keywords: ['priority action', 'trapezoid', 'important'],
     path: inBox((l, t, r, b, W) => closed([[l + W * 0.2, t], [r - W * 0.2, t], [r, b], [l, b]])) },
-  {
-    kind: 'curv-trap', label: 'Display', group: 'flow', labelInset: { x: 0.16, y: 0.08 }, keywords: ['screen', 'monitor', 'show', 'output', 'curved trapezoid'],
-    path: inBox((l, t, r, b, W, H) => {
-      const [s, e, cy] = [W * 0.15, Math.min(W * 0.15, H / 2), t + H / 2];
-      return { d: `M${pt(l, cy)}L${pt(l + s, t)}H${r1(r - e)}A${r1(e)} ${r1(H / 2)} 0 0 1 ${pt(r - e, b)}H${r1(l + s)}Z`,
-        poly: [[l, cy], [l + s, t], ...arc(r - e, cy, e, H / 2, -Q, Q, 8), [l + s, b]] };
-    }),
-  },
-  {
-    // Convex on the left, concave on the right.
-    kind: 'bow-rect', label: 'Stored data', group: 'flow', labelInset: { x: 0.14, y: 0.08 }, keywords: ['storage', 'data store', 'saved data', 'bow'],
-    path: inBox((l, t, r, b, W, H) => {
-      const [e, ry, cy] = [Math.min(W * 0.12, H / 2), H / 2, t + H / 2];
-      return { d: `M${pt(l + e, t)}H${r1(r)}A${r1(e)} ${r1(ry)} 0 0 0 ${pt(r, b)}H${r1(l + e)}A${r1(e)} ${r1(ry)} 0 0 1 ${pt(l + e, t)}Z`,
-        poly: [...arc(r, cy, e, ry, -Q, -3 * Q, 8), ...arc(l + e, cy, e, ry, Q, 3 * Q, 8)] };
-    }),
-  },
-  {
-    // Body, then the front half of the top ellipse.
-    kind: 'cyl', label: 'Database', group: 'flow', labelInset: { x: 0.08, y: 0.2 }, keywords: ['db', 'cylinder', 'sql', 'table', 'disk', 'storage', 'data store'],
-    path: inBox((l, t, r, b, W, H) => {
-      const [rx, ry, cx] = [W / 2, Math.min(H * 0.12, W * 0.25), l + W / 2];
-      const a = `A${r1(rx)} ${r1(ry)} 0 0`;
-      return { d: `M${pt(l, t + ry)}${a} 1 ${pt(r, t + ry)}V${r1(b - ry)}${a} 1 ${pt(l, b - ry)}ZM${pt(l, t + ry)}${a} 0 ${pt(r, t + ry)}`,
-        poly: [...arc(cx, t + ry, rx, ry, 2 * Q, 4 * Q, 12), ...arc(cx, b - ry, rx, ry, 0, 2 * Q, 12)] };
-    }),
-  },
-  {
-    kind: 'h-cyl', label: 'Direct access', group: 'flow', labelInset: { x: 0.18, y: 0.08 }, keywords: ['direct access storage', 'drum', 'hard disk', 'horizontal cylinder', 'storage'],
-    path: inBox((l, t, r, b, W, H) => {
-      const [rx, ry, cy] = [Math.min(W * 0.12, H * 0.25), H / 2, t + H / 2];
-      const a = `A${r1(rx)} ${r1(ry)} 0 0`;
-      return { d: `M${pt(l + rx, t)}H${r1(r - rx)}${a} 1 ${pt(r - rx, b)}H${r1(l + rx)}${a} 1 ${pt(l + rx, t)}ZM${pt(r - rx, t)}${a} 0 ${pt(r - rx, b)}`,
-        poly: [...arc(r - rx, cy, rx, ry, -Q, Q, 12), ...arc(l + rx, cy, rx, ry, Q, 3 * Q, 12)] };
-    }),
-  },
-  {
-    kind: 'win-pane', label: 'Internal storage', group: 'flow', labelInset: { x: 0.14, y: 0.14 }, keywords: ['memory', 'ram', 'window pane', 'storage'],
-    path: inBox((l, t, r, b, W, H) => {
-      const e = Math.min(W, H) * 0.15;
-      return closed(rectPoly(l, t, r, b), `M${pt(l + e, t)}V${r1(b)}M${pt(l, t + e)}H${r1(r)}`);
-    }),
-  },
-  {
-    kind: 'delay', label: 'Delay', group: 'flow', keywords: ['wait', 'pause', 'hold', 'half rounded', 'd shape'],
-    path: inBox((l, t, r, b, W, H) => {
-      const [e, cy] = [Math.min(W, H) / 2, t + H / 2];
-      return { d: `M${pt(l, t)}H${r1(r - e)}A${r1(e)} ${r1(H / 2)} 0 0 1 ${pt(r - e, b)}H${r1(l)}Z`, poly: [[l, t], ...arc(r - e, cy, e, H / 2, -Q, Q, 12), [l, b]] };
-    }),
-  },
-  { kind: 'sm-circ', label: 'On-page connector', group: 'flow', box: [60, 60], labelInset: { x: 0.15, y: 0.15 }, keywords: ['connector', 'reference', 'jump', 'small circle', 'circle'],
-    path: (w, h, i) => ellipse(w, h, i) },
-  { kind: 'off-page', label: 'Off-page connector', group: 'flow', box: [80, 80], labelInset: { x: 0.08, y: 0.12 }, keywords: ['off page', 'continue', 'next page', 'home plate', 'pentagon'],
-    path: inBox((l, t, r, b, W, H) => closed([[l, t], [r, t], [r, t + H * 0.6], [l + W / 2, b], [l, t + H * 0.6]])) },
+  { kind: 'curv-trap', prst: 'flowChartDisplay', label: 'Display', group: 'flow', labelInset: { x: 0.16, y: 0.08 }, keywords: ['screen', 'monitor', 'show', 'output', 'curved trapezoid'] },
+  { kind: 'bow-rect', prst: 'flowChartOnlineStorage', label: 'Stored data', group: 'flow', labelInset: { x: 0.14, y: 0.08 }, keywords: ['storage', 'data store', 'saved data', 'bow'] },
+  { kind: 'cyl', prst: 'flowChartMagneticDisk', label: 'Database', group: 'flow', labelInset: { x: 0.08, y: 0.2 }, keywords: ['db', 'cylinder', 'sql', 'table', 'disk', 'storage', 'data store'] },
+  { kind: 'h-cyl', prst: 'flowChartMagneticDrum', label: 'Direct access', group: 'flow', labelInset: { x: 0.18, y: 0.08 }, keywords: ['direct access storage', 'drum', 'hard disk', 'horizontal cylinder', 'storage'] },
+  { kind: 'win-pane', prst: 'flowChartInternalStorage', label: 'Internal storage', group: 'flow', labelInset: { x: 0.14, y: 0.14 }, keywords: ['memory', 'ram', 'window pane', 'storage'] },
+  { kind: 'delay', prst: 'flowChartDelay', label: 'Delay', group: 'flow', keywords: ['wait', 'pause', 'hold', 'half rounded', 'd shape'] },
+  { kind: 'sm-circ', prst: 'flowChartConnector', label: 'On-page connector', group: 'flow', box: [60, 60], labelInset: { x: 0.15, y: 0.15 }, keywords: ['connector', 'reference', 'jump', 'small circle', 'circle'] },
+  { kind: 'off-page', prst: 'flowChartOffpageConnector', label: 'Off-page connector', group: 'flow', box: [80, 80], labelInset: { x: 0.08, y: 0.12 }, keywords: ['off page', 'continue', 'next page', 'home plate', 'pentagon'] },
   {
     kind: 'notch-pent', label: 'Loop limit', group: 'flow', keywords: ['loop', 'repeat', 'while', 'for', 'iteration', 'notched pentagon'],
     path: inBox((l, t, r, b, W, H) => {
@@ -223,28 +92,12 @@ export const KINDS = [
       return closed([[l + c, t], [r - c, t], [r, t + c], [r, b], [l, b], [l, t + c]]);
     }),
   },
-  {
-    kind: 'cross-circ', label: 'Summing junction', group: 'flow', box: [60, 60], keywords: ['sum', 'and', 'junction', 'crossed circle', 'x circle'],
-    path: (w, h, i) => {
-      const [cx, cy, kx, ky] = [w / 2, h / 2, (w / 2 - i) * Math.SQRT1_2, (h / 2 - i) * Math.SQRT1_2];
-      return ellipse(w, h, i, `M${pt(cx - kx, cy - ky)}L${pt(cx + kx, cy + ky)}M${pt(cx + kx, cy - ky)}L${pt(cx - kx, cy + ky)}`);
-    },
-  },
-  { kind: 'or-circ', label: 'Or', group: 'flow', box: [60, 60], keywords: ['junction', 'merge', 'plus circle'],
-    path: (w, h, i) => ellipse(w, h, i, `M${pt(w / 2, i)}V${r1(h - i)}M${pt(i, h / 2)}H${r1(w - i)}`) },
-  { kind: 'hourglass', label: 'Collate', group: 'flow', box: [80, 100], keywords: ['hourglass', 'bowtie', 'order', 'organise', 'organize'],
-    path: inBox((l, t, r, b) => closed([[l, t], [r, t], [l, b], [r, b]])) },
-  { kind: 'sort', label: 'Sort', group: 'flow', labelInset: { x: 0.2, y: 0.2 }, keywords: ['order', 'arrange', 'split diamond'],
-    path: (w, h, i) => closed(diamPoly(w, h, i), `M${pt(i, h / 2)}H${r1(w - i)}`) },
-  {
-    kind: 'notch-rect', label: 'Card', group: 'flow', keywords: ['punch card', 'punched card', 'notched rectangle'],
-    path: inBox((l, t, r, b, W, H) => {
-      const c = Math.min(W, H) * 0.2;
-      return closed([[l + c, t], [r, t], [r, b], [l, b], [l, t + c]]);
-    }),
-  },
-  { kind: 'flag', label: 'Tape', group: 'flow', labelInset: { x: 0.08, y: 0.16 }, keywords: ['paper tape', 'punched tape', 'flag', 'wave'],
-    path: inBox((l, t, r, b, W, H) => closed([...wave(l, r, t + H * 0.08, H * 0.08, l, W), ...wave(r, l, b - H * 0.08, H * 0.08, l, W)])) },
+  { kind: 'cross-circ', prst: 'flowChartSummingJunction', label: 'Summing junction', group: 'flow', box: [60, 60], keywords: ['sum', 'and', 'junction', 'crossed circle', 'x circle'] },
+  { kind: 'or-circ', prst: 'flowChartOr', label: 'Or', group: 'flow', box: [60, 60], keywords: ['junction', 'merge', 'plus circle'] },
+  { kind: 'hourglass', prst: 'flowChartCollate', label: 'Collate', group: 'flow', box: [80, 100], keywords: ['hourglass', 'bowtie', 'order', 'organise', 'organize'] },
+  { kind: 'sort', prst: 'flowChartSort', label: 'Sort', group: 'flow', labelInset: { x: 0.2, y: 0.2 }, keywords: ['order', 'arrange', 'split diamond'] },
+  { kind: 'notch-rect', prst: 'flowChartPunchedCard', label: 'Card', group: 'flow', keywords: ['punch card', 'punched card', 'notched rectangle'] },
+  { kind: 'flag', prst: 'flowChartPunchedTape', label: 'Tape', group: 'flow', labelInset: { x: 0.08, y: 0.16 }, keywords: ['paper tape', 'punched tape', 'flag', 'wave'] },
   {
     // A curly brace down the left side; the text sits right of it.
     kind: 'brace', label: 'Annotation', group: 'flow', open: true, align: 'left', labelInset: { x: 0.12, y: 0.04 },
@@ -276,8 +129,189 @@ export const KINDS = [
     },
   },
 ];
-const BY_KIND = new Map(KINDS.map((k) => [k.kind, k]));
+/** A shape drawn from its own geometry: custom geometry (it.path, a Word freeform) or, in files from before every preset had a kind,
+ * a preset by name (it.prst, it.av; src/flow/presets.mjs). Not in KINDS, so no shape list, tool or agent schema offers it. `parts`:
+ * the geometry's paths, each with its fill mode and stroke. */
+export const PATH_KIND = {
+  kind: 'path', label: 'Freeform', group: 'basic', keywords: ['freeform', 'custom shape'],
+  path: (w, h, i, it) => {
+    const parts = itemPath(it, w, h, i);
+    return { d: parts.filter((p) => p.fill !== 'none' || p.stroke).map((p) => p.d).join('') || null, poly: rectPoly(i, i, w - i, h - i), parts };
+  },
+};
+
+// --- the presets as kinds ---
+
+/** A kind's path drawn by preset `prst` in the inset box, with the item's adjust values: its parts (each with its fill mode and
+ * stroke), `d` the stroked parts (the outline the hit path and icons draw), and the outline poly (its largest filled subpath; a
+ * shape with none, a line, attaches on its box). */
+const fromPreset = (prst) => (w, h, i, it) => {
+  const s = presetShape(prst, it?.av, Math.max(1, w - 2 * i), Math.max(1, h - 2 * i), i, i);
+  const stroked = s.parts.filter((p) => p.stroke);
+  return { d: (stroked.length ? stroked : s.parts).map((p) => p.d).join('') || null, poly: s.poly ?? rectPoly(i, i, w - i, h - i), parts: s.parts };
+};
+for (const k of KINDS) {
+  if (!k.prst) continue;
+  k.path = fromPreset(k.prst);
+  k.section ??= PRESET_GROUP[k.prst];
+  k.keywords = [...new Set([...k.keywords, ...(PRESET_LABELS[k.prst] ? [PRESET_LABELS[k.prst].toLowerCase()] : [])])];
+}
+const OWN_PRESET = new Map(KINDS.filter((k) => k.prst).map((k) => [k.prst, k.kind]));
+const words = (s) => s.replace(/([a-z])([A-Z0-9])/g, '$1 $2').toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+/** Every other preset as a kind of its own, its id the preset's name (frameShape and lineShape where the board has a frame and a
+ * line kind of its own), labelled with Word's name; those Word's gallery does not list (action buttons, tabs, gears) are drawn
+ * when a file has them but are in no list. */
+export const PRESET_KINDS = PRESET_NAMES.filter((p) => !OWN_PRESET.has(p)).map((prst) => {
+  const kind = KINDS.some((k) => k.kind === prst) ? `${prst}Shape` : prst;
+  const label = PRESET_LABELS[prst] ?? words(prst).join(' ').replace(/^./, (c) => c.toUpperCase());
+  return { kind, prst, label, group: PRESET_GROUP[prst] ?? 'more', section: PRESET_GROUP[prst] ?? null, path: fromPreset(prst),
+    keywords: [...new Set([...words(label), ...words(prst)])] };
+});
+const BY_PRESET = new Map([...OWN_PRESET, ...PRESET_KINDS.map((k) => [k.prst, k.kind])]);
+const IS_PRESET = new Set(PRESET_KINDS);
+/** The kind that draws preset `prst` (a board kind where one does, else the preset's own), or null for an unknown name. */
+export const presetKind = (prst) => (hasPreset(prst) ? BY_PRESET.get(prst) : null) ?? null;
+
+const BY_KIND = new Map([...KINDS, ...PRESET_KINDS, PATH_KIND].map((k) => [k.kind, k]));
 export const kindOf = (kind) => BY_KIND.get(kind) ?? null;
+
+// Before every preset had a kind (2026-10-30) the .docx import kept a preset's name on the item: a rectangle for one the board
+// could not draw ({shape: 'rect', prst}), or the board kind that drew it (OLD_KIND, rightBrace and flowChartMerge flipped), whose
+// preset may now be another one. The old export wrote that name back in those two cases only. So a rectangle naming a preset the
+// old import gave another kind (OLD_KIND's other keys, OLD_LISTED) or drew as a 'path' item (OLD_DRAWN) was changed to a rectangle
+// by hand (Change Shape kept the name), and stays one.
+const OLD_KIND = { diamond: 'diam', parallelogram: 'lean-r', trapezoid: 'trap-b', hexagon: 'hex', can: 'cyl', leftBrace: 'brace', rightBrace: 'brace',
+  wave: 'flag', mathPlus: 'plus', wedgeRectCallout: 'speech', cloudCallout: 'thought', flowChartProcess: 'rect', flowChartAlternateProcess: 'round',
+  flowChartExtract: 'triangle', flowChartMerge: 'triangle' };
+const OLD_FLIP = { rightBrace: 'mirrorX', flowChartMerge: 'mirrorY' };
+const OLD_DRAWN = new Set(('arc bevel bracketPair chevron chord corner cube diagStripe donut downArrow foldedCorner frame heart hexagon homePlate leftArrow '
+  + 'leftBracket leftRightArrow mathEqual mathMinus notchedRightArrow octagon parallelogram pie plaque plus rightArrow rightBracket round1Rect '
+  + 'round2SameRect roundRect rtTriangle snip1Rect snip2SameRect star4 stripedRightArrow trapezoid triangle upDownArrow upArrow').split(' '));
+// The rest of the old import's PRESET_KIND keys: presets a board kind drew as itself, then as now.
+const OLD_LISTED = new Set(('rect roundRect ellipse triangle octagon plus pentagon star5 mathMultiply cloud flowChartDecision '
+  + 'flowChartInputOutput flowChartPredefinedProcess flowChartInternalStorage flowChartDocument flowChartMultidocument flowChartTerminator '
+  + 'flowChartPreparation flowChartManualInput flowChartManualOperation flowChartConnector flowChartOffpageConnector flowChartPunchedCard '
+  + 'flowChartPunchedTape flowChartSummingJunction flowChartOr flowChartCollate flowChartSort flowChartOnlineStorage flowChartDelay '
+  + 'flowChartMagneticDisk flowChartMagneticDrum flowChartDisplay').split(' '));
+/** Item `it` from such a file as the kind that draws its preset (its adjust values kept, the old kind's flip undone); any other
+ * item as it is. Run where items load (whiteboard.js) and before export (shapes-out.mjs), which may see items never loaded. */
+export function upgradedShape(it) {
+  const prst = it?.type === 'shape' && it.shape !== 'path' && hasPreset(it.prst) ? it.prst : null;
+  const unlisted = (p) => !OLD_DRAWN.has(p) && !OLD_LISTED.has(p) && !Object.hasOwn(OLD_KIND, p);
+  const old = prst && (OLD_KIND[prst] === it.shape || (it.shape === 'rect' && unlisted(prst)));
+  if (!old) return it;
+  const { prst: _, ...out } = it;
+  out.shape = presetKind(prst);
+  const flip = OLD_KIND[prst] === it.shape && OLD_FLIP[prst];
+  if (flip && out[flip]) delete out[flip];
+  else if (flip) out[flip] = true;
+  return out;
+}
+
+/** The shape list's groups in order (shape-list.mjs; titles for the lists): the board's lines, Word's gallery groups, containers. */
+export const SHAPE_SECTIONS = [{ id: 'lines', title: 'Lines' }, ...GALLERY.map(({ id, title }) => ({ id, title })), { id: 'container', title: 'Containers' }];
+const sectionOf = (k) => k.section ?? k.group;
+/** Every listed kind in the lists' order: each gallery group's shapes in Word's order (a board kind where one draws the preset),
+ * then the board's own kinds of that group that are no preset; the lines first and the containers last. */
+export const SHAPE_KINDS = SHAPE_SECTIONS.flatMap(({ id }) => [
+  ...(GALLERY.find((s) => s.id === id)?.shapes ?? []).map(([p]) => kindOf(presetKind(p))),
+  ...KINDS.filter((k) => !k.prst && sectionOf(k) === id),
+]);
+
+// --- per item: the preset it draws, its handles, text box and connection sites ---
+
+/** The preset item `it` draws as (its kind's, or a 'path' item's own), or null. */
+export const prstOf = (it) => kindOf(it?.shape)?.prst ?? (it?.shape === 'path' && hasPreset(it.prst) ? it.prst : null);
+// Item `it`'s inset box (the stroke inside its box): [inset, w, h].
+const insetBox = (it) => {
+  const i = (it.width || 0) / 2;
+  return [i, Math.max(1, it.w - 2 * i), Math.max(1, it.h - 2 * i)];
+};
+// A point of item `it`'s unmirrored box where its mirrored drawing shows it (and back).
+const mirroredXY = (it, x, y) => [it.mirrorX ? it.w - x : x, it.mirrorY ? it.h - y : y];
+
+/** Shape item `it`'s adjust handles in item px (its unturned box, mirrored with it): [{x, y}]; none for a kind without a preset. */
+export function handlesOf(it) {
+  const prst = it?.type === 'shape' && prstOf(it);
+  if (!prst) return [];
+  const [i, w, h] = insetBox(it);
+  return presetHandles(prst, it.av, w, h).map((p) => {
+    const [x, y] = mirroredXY(it, i + p.x, i + p.y);
+    return { x, y };
+  });
+}
+/** Item `it`'s adjust values with handle `k` dragged to `p` (item px, its unturned box), or null when it has no such handle. */
+export function adjustedAv(it, k, p) {
+  const prst = prstOf(it);
+  if (!prst || !handlesOf(it)[k]) return null;
+  const [i, w, h] = insetBox(it);
+  const [x, y] = mirroredXY(it, p.x, p.y);
+  return presetAdjusted(prst, it.av, w, h, k, { x: x - i, y: y - i });
+}
+
+/** Where shape item `it`'s text goes, as px in from its box's edges {l, t, r, b}, or null for the board's own label box (labelInset):
+ * the preset's text rectangle, less the item's internal margins (`inset`, Word's), for a preset kind and for any item from Word. */
+export function labelBox(it) {
+  const k = kindOf(it?.shape);
+  const prst = prstOf(it);
+  if (!prst || (k?.kind !== 'path' && !IS_PRESET.has(k) && !it.inset)) return null;
+  const [i, w, h] = insetBox(it);
+  const r = presetTextRect(prst, it.av, w, h);
+  const m = ['t', 'r', 'b', 'l'].every((s) => Number.isFinite(it.inset?.[s])) ? it.inset : { t: 0, r: 0, b: 0, l: 0 };
+  const box = { l: i + r.l + m.l, t: i + r.t + m.t, r: it.w - i - r.r + m.r, b: it.h - i - r.b + m.b };
+  return { l: it.mirrorX ? box.r : box.l, r: it.mirrorX ? box.l : box.r, t: it.mirrorY ? box.b : box.t, b: it.mirrorY ? box.t : box.b };
+}
+
+const SITES = new Map(); // ponytail: cleared whole at 2000 entries
+/** A preset kind's connection sites as anchors of its box ([[rx, ry]], those inside it) with their directions (degrees). */
+function sitesOf(it) {
+  const prst = it?.type === 'shape' && IS_PRESET.has(kindOf(it.shape)) && prstOf(it);
+  if (!prst) return null;
+  const key = `${prst}|${it.w}|${it.h}|${it.width}|${!!it.mirrorX}|${!!it.mirrorY}|${it.av ? JSON.stringify(it.av) : ''}`;
+  if (!SITES.has(key)) {
+    const [i, w, h] = insetBox(it);
+    const f = (v) => Math.round(v * 1e6) / 1e6;
+    const out = presetSites(prst, it.av, w, h).map((s) => ({ a: mirroredXY(it, i + s.x, i + s.y).map((v, k) => f(v / (k ? it.h : it.w))), ang: s.ang }))
+      .filter(({ a }) => a.every((v) => v >= 0 && v <= 1));
+    if (SITES.size > 2000) SITES.clear();
+    SITES.set(key, out.length ? out : null);
+  }
+  return SITES.get(key);
+}
+const siteAt = (it, anchor) => sitesOf(it)?.find(({ a }) => Math.abs(a[0] - anchor[0]) < 1e-5 && Math.abs(a[1] - anchor[1]) < 1e-5) ?? null;
+
+/** Item `it`'s box on the board with everything it draws ({x, y, w, h}): its turned box, grown to a preset's parts that reach
+ * past it (a callout's tail). */
+export function drawnBox(it) {
+  const prst = it?.type === 'shape' && prstOf(it);
+  if (!prst) return rotBox(it);
+  const [i, w, h] = insetBox(it);
+  const b = presetShape(prst, it.av, w, h, i, i).bounds;
+  const [l, t, r, bt] = [Math.min(0, b.x), Math.min(0, b.y), Math.max(it.w, b.x + b.w), Math.max(it.h, b.y + b.h)];
+  const pts = rotatePoly(it, [[l, t], [r, t], [r, bt], [l, bt]].map(([x, y]) => mirroredXY(it, x, y)));
+  const xs = pts.map((p) => p.x);
+  const ys = pts.map((p) => p.y);
+  return { x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys) };
+}
+
+/** Kind `kind`'s icon path in a w × h box: the stroked outline, scaled down and moved so a part past the box (a callout's tail)
+ * fits too; null for a kind whose outline whiteboard.js draws (line, arrow, the speech and thought bubbles). */
+export function iconOf(kind, w, h, i = 1) {
+  const k = kindOf(kind);
+  const g = k?.path(w, h, i, null);
+  if (!g?.d) return null;
+  const prst = k.prst;
+  if (!prst) return { d: g.d };
+  const b = presetShape(prst, null, w - 2 * i, h - 2 * i, i, i).bounds;
+  if (b.x >= 0 && b.y >= 0 && b.x + b.w <= w && b.y + b.h <= h) return { d: g.d };
+  const s = Math.min((w - 2 * i) / b.w, (h - 2 * i) / b.h);
+  const [iw, ih] = [(w - 2 * i) * s, (h - 2 * i) * s];
+  const inner = presetShape(prst, null, iw, ih, 0, 0);
+  const [ox, oy] = [(w - inner.bounds.w) / 2 - inner.bounds.x, (h - inner.bounds.h) / 2 - inner.bounds.y];
+  const parts = presetShape(prst, null, iw, ih, ox, oy).parts;
+  const stroked = parts.filter((p) => p.stroke);
+  return { d: (stroked.length ? stroked : parts).map((p) => p.d).join('') };
+}
 /** Whether shape kind `s` can be filled: not a line or arrow, not an open outline (the annotation brace). */
 export const fillable = (s) => s !== 'line' && s !== 'arrow' && !kindOf(s)?.open;
 
@@ -313,12 +347,28 @@ export function rotBox(b) {
   return { x: c.x - w / 2, y: c.y - h / 2, w, h };
 }
 
+// --- lines and arrows (whiteboard.js draws them; model.mjs resizeWithGroup maps their ends) ---
+
+export const isLineish = (s) => s === 'line' || s === 'arrow';
+export const arrowHead = (width) => Math.max(12, width * 3.5);
+/** Line/arrow boxes are padded so the stroke and arrowhead fit; endpoints sit at opposite padded corners. */
+export const linePad = (item) => (item.shape === 'arrow' ? arrowHead(item.width) * 0.6 : item.width / 2) + 1;
+
+/** A line's or arrow's two ends in board px ([start, end], turned with it): where its tip handles sit. */
+export function lineEnds(it) {
+  const p = linePad(it);
+  const [x1, x2] = it.flipX ? [it.w - p, p] : [p, it.w - p];
+  const [y1, y2] = it.flipY ? [it.h - p, p] : [p, it.h - p];
+  const c = { x: it.x + it.w / 2, y: it.y + it.h / 2 };
+  return [[x1, y1], [x2, y2]].map(([x, y]) => rotatePoint({ x: it.x + x, y: it.y + y }, c, rotOf(it)));
+}
+
 // --- outline, perimeter, ports ---
 
 /** Item `it`'s outline in board px ([{x, y}]): its kind's poly, else its box, turned by its rot (rotOf). `b`: its unrotated box
  * (text: the rendered height; default the item itself). */
 export function outlineOf(it, b = it) {
-  const poly = (it.type === 'shape' && kindOf(it.shape)?.path(b.w, b.h, (it.width || 0) / 2).poly) || rectPoly(0, 0, b.w, b.h);
+  const poly = (it.type === 'shape' && kindOf(it.shape)?.path(b.w, b.h, (it.width || 0) / 2, it).poly) || rectPoly(0, 0, b.w, b.h);
   return rotatePoly({ x: b.x, y: b.y, w: b.w, h: b.h, rot: rotOf(it) }, poly);
 }
 
@@ -345,19 +395,27 @@ export function perimeter(poly, from, toward) {
 export function anchorPoint(it, anchor, b = it) {
   const c = centre(b);
   const p = rotatePoint({ x: b.x + anchor[0] * b.w, y: b.y + anchor[1] * b.h }, c, rotOf(it));
+  if (siteAt(it, anchor)) return p; // a preset's connection site: the line ends there
   return perimeter(outlineOf(it, b), c, p);
 }
 
 /** A pinned end's point (§6d): anchor [rx, ry] of the unrotated box turned with the item, left where it is (inside the item). */
 export const pinPoint = (it, anchor, b = it) => rotatePoint({ x: b.x + anchor[0] * b.w, y: b.y + anchor[1] * b.h }, centre(b), rotOf(it));
 
-export const portsOf = (it) => (it.type === 'shape' && kindOf(it.shape)?.ports) || PORTS;
+/** Item `it`'s ports: a preset kind's connection sites, else its kind's ports or the box's sides and corners. */
+export const portsOf = (it) => sitesOf(it)?.map((x) => x.a) ?? ((it.type === 'shape' && kindOf(it.shape)?.ports) || PORTS);
 
 /** The item's port points in board px (on its turned outline). */
 export const portPoints = (it, b = it) => portsOf(it).map((a) => anchorPoint(it, a, b));
 
 /** The outward unit normal of the box side an anchor is on, turned by a shape's rot. */
 export function portNormal(it, anchor) {
+  const site = siteAt(it, anchor);
+  if (site) {
+    const a = (site.ang * Math.PI) / 180;
+    const [mx, my] = [it.mirrorX ? -1 : 1, it.mirrorY ? -1 : 1];
+    return rotatePoint({ x: Math.round(Math.cos(a) * mx * 1e6) / 1e6 || 0, y: Math.round(Math.sin(a) * my * 1e6) / 1e6 || 0 }, { x: 0, y: 0 }, rotOf(it));
+  }
   const [dx, dy] = [anchor[0] - 0.5, anchor[1] - 0.5];
   const n = Math.abs(dx) >= Math.abs(dy) ? { x: Math.sign(dx) || 1, y: 0 } : { x: 0, y: Math.sign(dy) };
   return rotatePoint(n, { x: 0, y: 0 }, rotOf(it));
@@ -366,7 +424,7 @@ export function portNormal(it, anchor) {
 // --- styles ---
 
 /** draw.io's default fill / stroke pairs (text #111111) plus two theme pairs: card / ink and transparent / ink (dark theme
- * values; flowPreset picks per theme). Raw hex: agents may pass `preset: n` in place of colours. */
+ * values; stylePresets picks per theme). Raw hex: agents may pass `preset: n` in place of colours. */
 export const STYLE_PRESETS = [
   ['#ffffff', '#000000'], ['#f5f5f5', '#666666'], ['#dae8fc', '#6c8ebf'], ['#d5e8d4', '#82b366'], ['#ffe6cc', '#d79b00'],
   ['#fff2cc', '#d6b656'], ['#f8cecc', '#b85450'], ['#e1d5e7', '#9673a6'],
@@ -375,14 +433,20 @@ export const STYLE_PRESETS = [
   { fill: 'transparent', stroke: '#ffffff', text: '#ffffff' },
 ]);
 
-/** The shape tool preset of Insert flowchart and the library editor: ink and card colours of the page theme. */
+/** The fill a new shape and flowchart node draws: flat, with no outline (the user, 2026-11-02: "the default styles should all be
+ * flat colors. no outlines"). The board palette's blue, which reads on the light and the dark board, under either theme's ink. */
+export const FLAT_FILL = '#4a7fe0';
+const inkCard = (theme) => (theme === 'light' ? ['#111111', '#f0f0f4'] : ['#ffffff', '#3a3b46']);
+
+/** The shape tool preset of Insert flowchart and the library editor: the flat fill with no outline (width 0), the page theme's ink
+ * for the label and for a line set later. */
 export function flowPreset(theme) {
-  const [ink, card] = theme === 'light' ? ['#111111', '#f0f0f4'] : ['#ffffff', '#3a3b46'];
-  return { shape: 'rect', color: ink, width: 2, opacity: 1, fill: 'solid', fillColor: card, size: 16, textColor: ink };
+  const [ink] = inkCard(theme);
+  return { shape: 'rect', color: ink, width: 0, opacity: 1, fill: 'solid', fillColor: FLAT_FILL, size: 16, textColor: ink };
 }
 
 /** STYLE_PRESETS with the two theme pairs in `theme`'s card and ink (the preset row's swatches). */
 export function stylePresets(theme) {
-  const { fillColor: card, color: ink } = flowPreset(theme);
+  const [ink, card] = inkCard(theme);
   return STYLE_PRESETS.map((p, k) => (k < 8 ? p : { fill: k === 8 ? card : p.fill, stroke: ink, text: ink }));
 }

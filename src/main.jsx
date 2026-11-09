@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { App } from './app/App.jsx';
 import { PALETTE_KEY, start } from './app/actions.js';
 import { setState } from './app/store.js';
+import { trackDevicePixel } from './app/viewport.js';
 import { ErrorBoundary } from './app/components/ErrorBoundary.jsx';
 
 // The first frame in the app's theme and palette: main sets prefers-color-scheme from settings.uiTheme (applyNativeTheme)
@@ -14,6 +15,7 @@ setState({ uiDark: dark });
 const palette = document.head.appendChild(document.createElement('style'));
 palette.id = 'palette';
 try { palette.textContent = localStorage.getItem(PALETTE_KEY) ?? ''; } catch {}
+trackDevicePixel();
 const root = createRoot(document.getElementById('root'));
 flushSync(() => root.render(<ErrorBoundary><App /></ErrorBoundary>)); // the editor mounts into #editor, so the shell must be in the DOM before start()
 start();

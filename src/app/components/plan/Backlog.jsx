@@ -12,12 +12,13 @@ import { blockers, doneColumnOf, estimateDays, filterTickets, statusOf, summary,
 import { BACKLOG_COLS, backlogRows } from '../../../plan-chart.js';
 import { withKey } from '../../keybinds.js';
 import { refocusEditor } from '../../actions.js';
-import { deleteTickets, dispatch, editTicket, moveCards } from '../../plans.js';
+import { dispatch, editTicket } from '../../plans.js';
 import { getState, setState, useStore } from '../../store.js';
 import { backgroundClick } from '../../viewport.js';
 import { DateField } from '../DateField.jsx';
 import { IconButton, Tip } from '../Tip.jsx';
 import { keepFocus } from '../Toolbar.jsx';
+import { run } from '../../../tooling/registry.js';
 import { openDraftFromPlan, PRIORITIES } from './Card.jsx';
 import { dragRows, shiftRows } from './drag.js';
 
@@ -170,8 +171,8 @@ export function Backlog({ ctx, options }) {
     if (e.key === 'Escape' && selection.length) go(() => ui({ selection: [] }));
     else if (ctrl && e.key.toLowerCase() === 'a') go(() => ui({ selection: ids }));
     else if (ctrl) return;
-    else if ((e.key === 'Delete' || e.key === 'Backspace') && sel().length) go(() => deleteTickets(planId, sel()));
-    else if (e.key === 'Enter' && at >= 0) go(() => editTicket(planId, focusId));
+    else if ((e.key === 'Delete' || e.key === 'Backspace') && sel().length) go(() => run('plan.tickets.delete', { ids: sel() }));
+    else if (e.key === 'Enter' && at >= 0) go(() => run('plan.tickets.open', { value: focusId }));
     else if ((e.key === 'ArrowUp' || e.key === 'ArrowDown') && e.shiftKey) {
       e.preventDefault();
       const moving = sel();
@@ -215,8 +216,8 @@ export function Backlog({ ctx, options }) {
           <span className="truncate text-sm">{t.title || 'Untitled'}</span>
         </span>
       );
-      case 'status': return <SelectCell label="Status" value={statusOf(t, ctx) ?? NO_STATUS} items={statusItems} onChange={(v) => moveCards(planId, [t.id], v === NO_STATUS ? null : v)} />;
-      case 'priority': return <SelectCell label="Priority" value={String(t.priority)} items={priorityItems} onChange={(v) => dispatch('plan.tickets.update', { planId, ticketIds: [t.id], patch: { priority: +v } })} />;
+      case 'status': return <SelectCell label="Status" value={statusOf(t, ctx) ?? NO_STATUS} items={statusItems} onChange={(v) => run('plan.tickets.status', { ids: [t.id], value: v })} />;
+      case 'priority': return <SelectCell label="Priority" value={String(t.priority)} items={priorityItems} onChange={(v) => run('plan.tickets.priority', { ids: [t.id], value: +v })} />;
       case 'labels': return (
         <span className="flex min-w-0 flex-wrap gap-1">
           {t.labels.map((id) => plan.labels.find((l) => l.id === id)).filter(Boolean).map((l) => (

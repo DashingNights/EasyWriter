@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  arrangeItems, cleanConnector, cloneItems, containedIn, flipItem, groupItems, hitTarget, layerRows, moveItem, normalizeGroups, selectable,
+  arrangeItems, cleanConnector, cloneItems, containedIn, flipItem, groupItems, hitTarget, layerRows, moveItem, normalizeGroups, resizeWithGroup, selectable,
   toggleLayer, turnItem, unbindFrom, ungroupItems, unitOf, units,
 } from '../src/flow/model.mjs';
 import { parseBoard } from '../src/whiteboard.js';
@@ -71,6 +71,8 @@ test('hitTarget: a port within tol, the inside of an unfilled diamond, a rect at
   assert.equal(hitTarget(items, { x: 50, y: 60 }, { exclude: new Set(['d']) }), null);
 });
 
+// stickTarget's rule (the ring): test/word-board-connector-ring.test.mjs.
+
 test('containedIn: the items fully inside a lane', () => {
   const lane = shape('lane', 0, 0, { shape: 'lane', w: 500, h: 200 });
   assert.deepEqual(containedIn(lane, [lane, shape('in', 20, 40), shape('out', 450, 40), conn('k', { x: 1, y: 1 }, { x: 2, y: 2 }, derived)]), ['in']);
@@ -89,6 +91,22 @@ test('flipItem: across x = 50 the centre mirrors, the angle negates and the flag
   assert.deepEqual([f.x, f.y, f.rot, f.mirrorX], [80, 0, 330, true]);
   const c = flipItem({ id: 'c', type: 'connector', from: { item: 'a', anchor: null }, to: { x: 60, y: 9 } }, { x: 50, y: 5 }, 'x');
   assert.deepEqual([c.from, c.to], [{ item: 'a', anchor: null }, { x: 40, y: 9 }]);
+});
+
+test('resizeWithGroup: a group box from 200 × 100 to 400 × 150 (sx 2, sy 1.5) maps each item; stroke width and text size stay', () => {
+  const [b0, b1] = [{ x: 0, y: 0, w: 200, h: 100 }, { x: 10, y: 0, w: 400, h: 150 }];
+  const s = resizeWithGroup(shape('s', 100, 50, { w: 50, h: 20 }), b0, b1);
+  assert.deepEqual([s.x, s.y, s.w, s.h, s.width], [210, 75, 100, 30, 2]);
+  const t = resizeWithGroup({ id: 't', type: 'text', x: 20, y: 10, w: 80, h: 30, size: 16, fit: true }, b0, b1);
+  assert.deepEqual([t.x, t.y, t.w, t.h, t.size, 'fit' in t], [50, 15, 160, 30, 16, false]); // the height reflows
+  const r = resizeWithGroup(shape('r', 0, 0, { w: 40, h: 20, rot: 90 }), b0, b1); // turned: its w lies along y, its h along x
+  assert.deepEqual([r.x, r.y, r.w, r.h, r.rot], [20, -5, 60, 40, 90]); // centre (20, 10) → (50, 15)
+  const tt = resizeWithGroup({ id: 'tt', type: 'text', x: 0, y: 0, w: 40, h: 20, rot: 90 }, b0, b1, 20);
+  assert.deepEqual([tt.x, tt.y, tt.w, tt.h], [20, 5, 60, 20]); // width only
+  const line = resizeWithGroup(shape('l', 8, 8, { shape: 'line', w: 104, h: 4, flipX: true }), b0, b1); // ends (110, 10) → (10, 10), width 2: pad 2
+  assert.deepEqual([line.x, line.y, line.w, line.h, line.flipX, line.flipY, line.rot], [28, 13, 204, 4, true, false, 0]); // ends (230, 15) → (30, 15)
+  const c = resizeWithGroup(conn('k', { item: 'a', anchor: null }, { x: 100, y: 100 }, { points: [{ x: 50, y: 20 }] }), b0, b1);
+  assert.deepEqual([c.from, c.to, c.points], [{ item: 'a', anchor: null }, { x: 210, y: 150 }, [{ x: 110, y: 30 }]]);
 });
 
 // --- layers (SPEC §6 Layer fields) ---

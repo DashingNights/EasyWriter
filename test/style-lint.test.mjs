@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { fix, lint, styleArgs, styleAsk } from '../src/app/assistant/style-lint.mjs';
+import { fix, lint, styleAsk } from '../src/app/assistant/style-lint.mjs';
 
 test('fix: dashes, curly quotes and the ellipsis become keyboard text; code and the user\'s own text stay', () => {
   assert.equal(fix('The map \u2014 the old one \u2014 works'), 'The map, the old one, works');
@@ -31,15 +31,18 @@ test('lint: the patterns fix() cannot change, none in plain lists or in the user
   assert.deepEqual(rules("It's not a bug, it's a feature.", "the user wrote It's not a bug, it's a feature. here"), []);
 });
 
-test('styleArgs: prose strings fixed and linted, ids, paths and colours left alone', () => {
-  const r = styleArgs(JSON.stringify({ draftId: 'a\u2014b', path: [1], items: [{ type: 'text', text: 'Mid lane \u2014 wide', color: '#fff' }],
-    content: "It's not a lane, it's a chokepoint on the map." }));
-  const a = JSON.parse(r.arguments);
-  assert.equal(a.draftId, 'a\u2014b');
-  assert.equal(a.items[0].text, 'Mid lane, wide');
-  assert.deepEqual(r.issues.map((i) => i.rule), ['contrast']);
-  assert.match(styleAsk(r.issues, 'that text'), /^Write that text again .* a contrast frame/);
-  assert.deepEqual(styleArgs('not json').issues, []);
+test('lint: CJK and full-width punctuation is never a symbol; dashes, curly quotes, arrows and emoji are', () => {
+  assert.deepEqual(lint('你好，我已經把第二段改短了。你睇吓啱唔啱？'), []);
+  assert.deepEqual(lint('「引號」〰〽 and ！ and a bullet • here'), []);
+  assert.deepEqual(lint('a ‒ b ‛ c ⇒ d \u{1F600}').map((i) => i.match), ['‒', '‛', '⇒', '\u{1F600}']);
+  assert.match(styleAsk([{ rule: 'contrast', match: 'x' }]), /^Write your last reply again .* a contrast frame/);
+});
+
+test('fix and lint: Chinese dashes, ellipses and curly quotes stay; the same characters in English text are still fixed', () => {
+  const zh = '我們——你和我——都……‘好’ “對” 嗎 —— 係。';
+  assert.equal(fix(zh), zh);
+  assert.deepEqual(lint(fix(zh)), []);
+  assert.equal(fix('Pages 3 – 5 cover the Paris – Berlin route… “ok”'), 'Pages 3-5 cover the Paris, Berlin route... "ok"');
 });
 
 test('lint: a longer list closed by "and" is not a triplet', () => {

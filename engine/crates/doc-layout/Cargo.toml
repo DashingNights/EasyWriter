@@ -1,0 +1,38 @@
+[package]
+name = "ew-doc-layout"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "EasyWriter layout: shaping, line breaking, tabs, lists, tables, pagination, headers/footers, hit testing"
+
+[lints]
+workspace = true
+
+[dependencies]
+ew-geom = { workspace = true, features = ["image"] }
+ew-doc = { workspace = true }
+ew-fonts = { workspace = true }
+ew-proof = { workspace = true }
+ew-metafile = { workspace = true }
+# The display list's types and the painter (P6): this crate builds the lists, the scene crate paints them.
+ew-scene = { workspace = true }
+# EasyWriter: the OS/2 Windows metrics of East Asian fonts (para/builder.rs, `word_line`).
+skrifa = { workspace = true }
+kurbo = { workspace = true }
+unicode-bidi = { workspace = true }
+unicode-linebreak = { workspace = true }
+unicode-segmentation = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+image = { workspace = true }
+log = { workspace = true }
+# EasyWriter engine-fidelity-4: SYMBOL `\j` (Shift-JIS) through its full table; the WebAssembly build links it already (doc-edit).
+encoding_rs = { workspace = true }
+
+[target.'cfg(all(target_arch = "wasm32", target_os = "unknown"))'.dependencies]
+# The browser clock (`SystemTime::now()`/`Instant::now()` panic on wasm32-unknown-unknown).
+js-sys = "0.3"
+
+[dev-dependencies]
+# EasyWriter: tests/fixture_pages.rs reads the Word fixture (docs/plans/engine/fidelity.md).
+ew-docx = { workspace = true }

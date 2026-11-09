@@ -1,0 +1,27 @@
+[package]
+name = "ew-doc"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "EasyWriter document model: stories, paragraphs, runs, tables, sections, styles, numbering, fields, notes, comments, revisions; edit primitives"
+
+[lints]
+workspace = true
+
+[features]
+# Test inputs other crates' tests share (`cfb_guard::repeating_difat_sample`); turned on only as a
+# dev-dependency, so never built into the app.
+test-support = []
+
+[dependencies]
+cfb = { workspace = true }
+ew-geom = { workspace = true }
+base64 = { workspace = true }
+log = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+unicode-segmentation = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }

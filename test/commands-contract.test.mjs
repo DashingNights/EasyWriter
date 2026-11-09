@@ -92,14 +92,17 @@ test('every command the palette runs is in the catalogue', () => {
   assert.deepEqual(PALETTE_COMMANDS, ['drafts.create', 'drafts.setTag', 'drafts.move', 'threads.select', 'drafts.rename', 'drafts.duplicate', 'folders.create']);
 });
 
-test('drafts.duplicate: examples beside the source and at the top level (docs/plans/sidebar-menu.md decision 7)', () => {
+test('drafts.duplicate: examples beside the source and at the top level (docs/wiki/sidebar-menu.md decision 7)', () => {
   assert.deepEqual(byId('drafts.duplicate').examples.map((e) => Object.keys(e.args).join()), ['draftId', 'draftId,folderId']);
   assert.equal(byId('drafts.duplicate').examples[1].args.folderId, null);
 });
 
-test('drafts.create: format document or forum-post, no fixed default, and an example making a Document', () => {
+test('drafts.create: format document, forum-post or board, no fixed default, and an example making a Document', () => {
   const d = byId('drafts.create');
-  assert.deepEqual(d.args.properties.format.enum, ['forum-post', 'document']);
+  // The format stays in the enum so the gate can refuse it: board.on (formats.mjs boardsOn) holds it off until boards are on.
+  assert.deepEqual(d.args.properties.format.enum, ['forum-post', 'document', 'board']);
+  assert.deepEqual([{}, { boardEngine: true }, { boardEngine: false }].map((s) => d.check({ format: 'board' }, null, s)), [['board.on'], [], ['board.on']]);
+  assert.deepEqual(d.check({ format: 'document' }, null, {}), []);
   assert.equal(d.args.properties.format.default, undefined); // formats.mjs defaultFormat picks it
   assert.ok(d.examples.some((e) => e.args.format === 'document' && e.args.content?.markdown));
 });
@@ -249,13 +252,14 @@ test('board.items.add and .update with coords thousandths: x and w scale by the 
   // Qwen Cloud (2026-10-08): its box for a map's mid area on a 1454 x 730 board, in thousandths.
   const node = { type: { name: 'canvas' }, attrs: { w: 1454, h: 730, dw: 1454, frame: { x: 0, y: 0, w: 1454, h: 730 }, bg: 'post', items: [], flow: null }, nodeSize: 2 };
   const tr = { setMeta() { return this; }, setNodeMarkup(_, __, attrs) { node.attrs = attrs; return this; } };
-  const cv = { node, view: { state: { tr }, dispatch() {} } };
-  const doc = { childCount: 1, child: () => node, nodeAt: () => node, descendants() {} };
-  const view = { nodeDOM: () => ({ scView: cv }), dom: { clientWidth: 1454 }, state: { tr }, dispatch() {} };
+  const cv = { node, dom: { offsetWidth: 1454 }, view: { state: { tr }, dispatch() {} } };
+  const doc = { attrs: {}, childCount: 1, child: () => node, nodeAt: () => node, descendants() {} };
+  const view = { nodeDOM: () => ({ scView: cv }), dom: { clientWidth: 1454 }, state: { tr, doc }, dispatch() {} };
   const ctx = { editor: { state: { doc }, view }, state: { rev: 1, settings: { theme: 'dark' } }, lib: { stripImages: (i) => i } };
-  // settle's offscreen host and contentWidth, without a DOM (shapes only: nothing is measured).
+  // settle's offscreen host and columnWidth (a forum post: its --page-width), without a DOM (shapes only: nothing is measured).
   const el = () => ({ style: {}, append() {}, remove() {} });
-  Object.assign(globalThis, { document: { getElementById: () => true, createElement: el, body: el() }, getComputedStyle: () => ({ paddingLeft: '0', paddingRight: '0' }) });
+  Object.assign(globalThis, { document: { getElementById: () => true, createElement: el, body: el() },
+    getComputedStyle: () => ({ paddingLeft: '0', paddingRight: '0', getPropertyValue: (k) => (k === '--page-width' ? '1454px' : '') }) });
   byId('board.items.add').run(ctx, { path: [0], coords: 'thousandths', items: [{ type: 'shape', shape: 'rect', x: 571, y: 297, w: 329, h: 418 }] });
   const [s] = node.attrs.items;
   assert.deepEqual([s.x, s.y, s.w, s.h], [830, 217, 478, 305]);
@@ -305,12 +309,12 @@ test('doc.pageSetup: needs format.document; its examples cover a preset, custom 
   assert.notDeepEqual(validate(d.args, { margins: 'huge' }, $defs), []);
 });
 
-test('doc.format: its examples, a theme colour and null pass the model form of its run (RUN_BRIEF), for every family', () => {
+test('doc.format: its examples, a theme colour and null pass the model form of its run (RUN_BRIEF)', () => {
   const caps = [byId('doc.format')].map(({ id, title, args }) => ({ id, title, args, needs: [] }));
-  for (const family of ['qwen', 'gemma']) {
-    const params = toolsFor(caps, { $defs: MODEL_DEFS, form: 'model', family })[0].function.parameters;
-    for (const ex of byId('doc.format').examples) assert.deepEqual(validate(params, ex.args), [], `${family}: ${JSON.stringify(ex.args)}`);
-    assert.deepEqual(validate(params, { path: [0], run: { color: null, highlight: null } }), [], family);
+  {
+    const params = toolsFor(caps, { $defs: MODEL_DEFS, form: 'model' })[0].function.parameters;
+    for (const ex of byId('doc.format').examples) assert.deepEqual(validate(params, ex.args), [], JSON.stringify(ex.args));
+    assert.deepEqual(validate(params, { path: [0], run: { color: null, highlight: null } }), []);
   }
 });
 

@@ -1,0 +1,4 @@
+repository https://github.com/storytold/wordcraft
+commit 1be606de0341e1482b9b5a1be4a1793b217b0573
+path crates/metafile
+licence MIT OR Apache-2.0

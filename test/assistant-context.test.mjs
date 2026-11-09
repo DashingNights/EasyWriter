@@ -155,7 +155,7 @@ test('calls left, reads after a write and the done reply (wave 1c)', () => {
   const bad = { write: false, ok: false };
   assert.equal(READS_AFTER_WRITE, 3);
   assert.equal(readsAfterWrite([w, r, r]), false);
-  assert.equal(readsAfterWrite([w, r, r, r]), true); // the Gemma rename-pump turn: update, board_get, commands_index, board_list
+  assert.equal(readsAfterWrite([w, r, r, r]), true); // a rename-pump turn: update, board_get, commands_index, board_list
   assert.equal(readsAfterWrite([r, r, r]), false); // no change yet: reading first is the procedure
   assert.equal(readsAfterWrite([w, r, bad, r, r]), false); // a failed read breaks the run
   assert.equal(readsAfterWrite([w, r, bad, r, r, r]), true);
@@ -180,31 +180,20 @@ test('calls left, reads after a write and the done reply (wave 1c)', () => {
   assert.equal(doneReply('Pressed "Save" on "Row 2" (toolbar)'), 'Done: pressed "Save" on "Row 2".');
 });
 
-test('system prompt per model family: gemma12b gets the Gemma prompt, every other model the Qwen one', () => {
-  assert.equal(familyOf('gemma12b'), 'gemma');
-  assert.equal(familyOf('gemma12b', 'google'), 'gemini'); // Google AI runs Gemini whatever the local model choice is
-  assert.equal(familyOf(undefined, 'google'), 'gemini');
-  assert.equal(familyOf(undefined, 'deepseek'), 'gemini'); // the cloud models' family
-  assert.equal(familyOf(undefined, 'qwen'), 'gemini'); // Qwen Cloud (2026-10-08)
-  assert.ok(!systemPrompt('gemini').includes('You run on their computer.'));
-  for (const m of ['qwen9b', 'fable9b', undefined, '']) assert.equal(familyOf(m), 'qwen', m);
-  const qwen = systemPrompt('qwen');
-  const gemma = systemPrompt('gemma');
-  for (const p of [qwen, gemma]) assert.ok(p.startsWith(`${SYSTEM_PROMPT} ${NOTE_RULE}\n`) && !/[–—…‘’“”]/.test(p));
-  assert.equal(qwen, `${SYSTEM_PROMPT} ${NOTE_RULE}\n${RULES.qwen}\n${STYLE_RULE}`); // the writing rules last, in every family
-  assert.match(qwen, /^5\. After a write that succeeded, reply to the user in one short sentence\. Read again only when the user asked for more changes\.$/m);
-  assert.ok(!/read once to check/.test(qwen));
-  assert.equal(gemma, `${SYSTEM_PROMPT} ${NOTE_RULE}\n${RULES.gemma}\n${STYLE_RULE}`);
-  assert.ok(gemma.includes('When the request is done, reply in one sentence and make no more calls.'));
-  assert.match(gemma, /^1\. Read the situation note first\./m);
-  assert.ok(!/after a write|read again|read once/i.test(RULES.gemma)); // no read after a write
-  assert.ok(RULES.gemma.length < RULES.qwen.length);
-  assert.equal(systemPrompt('gemma', { tools: false }), `${SYSTEM_PROMPT} ${NOTE_RULE}\n${STYLE_RULE}`); // no tools, no tool rules
-  assert.ok(systemPrompt('qwen', { uiControl: true }).endsWith(`\n${UI_RULE}\n${STYLE_RULE}`));
-  // Wave 2: the view_render line while it is offered, in both families.
-  for (const f of ['qwen', 'gemma']) assert.equal(systemPrompt(f, { render: true }), `${SYSTEM_PROMPT} ${NOTE_RULE}\n${RULES[f]}\n${RENDER_RULE}\n${STYLE_RULE}`);
+test('system prompt per provider family: the cloud providers get the Gemini prompt, any other the server one', () => {
+  for (const p of ['google', 'deepseek', 'qwen']) assert.equal(familyOf(p), 'gemini', p); // Qwen Cloud since 2026-10-08
+  for (const p of ['server', 'none', undefined, '']) assert.equal(familyOf(p), 'server', p);
+  const server = systemPrompt('server');
+  assert.ok(server.startsWith(`${SYSTEM_PROMPT} ${NOTE_RULE}\n`) && !/[–—…‘’“”]/.test(server));
+  assert.equal(server, `${SYSTEM_PROMPT} ${NOTE_RULE}\n${RULES.server}\n${STYLE_RULE}`); // the writing rules last, in every family
+  assert.match(server, /^5\. After a write that succeeded, reply to the user in one short sentence\. Read again only when the user asked for more changes\.$/m);
+  assert.ok(!/read once to check/.test(server));
+  assert.equal(systemPrompt('server', { tools: false }), `${SYSTEM_PROMPT} ${NOTE_RULE}\n${STYLE_RULE}`); // no tools, no tool rules
+  assert.ok(systemPrompt('server', { uiControl: true }).endsWith(`\n${UI_RULE}\n${STYLE_RULE}`));
+  // Wave 2: the view_render line while it is offered.
+  assert.equal(systemPrompt('server', { render: true }), `${SYSTEM_PROMPT} ${NOTE_RULE}\n${RULES.server}\n${RENDER_RULE}\n${STYLE_RULE}`);
   assert.equal(RENDER_RULE, 'When a target is visual or ambiguous, call view_render. Its legend gives the item id of each number on the picture.');
-  assert.equal(systemPrompt('nope'), qwen);
+  assert.equal(systemPrompt('nope'), server);
 
   // Qwen Cloud (2026-10-08): the thousandths line in place of the board pixels line, only with the option on.
   const thou = systemPrompt('gemini', { thousandths: true });
@@ -215,8 +204,8 @@ ${THOUSANDTHS_RULE}
 
   // The writing guide (2026-10-25): its own section after the writing rules, the bundled copy as it is; none while off or empty.
   const guide = readFileSync(new URL('../src/assistant/human-writing.md', import.meta.url), 'utf8');
-  for (const f of ['qwen', 'gemini']) assert.equal(systemPrompt(f, { guide }), `${systemPrompt(f)}\n\n${GUIDE_RULE}\n\n${guide.trim()}`);
-  assert.equal(systemPrompt('qwen', { guide: ' \n' }), qwen);
+  for (const f of ['server', 'gemini']) assert.equal(systemPrompt(f, { guide }), `${systemPrompt(f)}\n\n${GUIDE_RULE}\n\n${guide.trim()}`);
+  assert.equal(systemPrompt('server', { guide: ' \n' }), server);
 });
 
 test('callKey: the same tool with the same arguments in any key order; different arguments or tools differ', () => {
@@ -348,7 +337,7 @@ test('markIds and withMarkIds: a bare mark number in id, of, ids or a batch step
   assert.deepEqual(withMarkIds({ path: [4], id: '7' }, new Map()), [{ path: [4], id: '7' }, []]); // no legend, no swap
 });
 
-test('suggestions (docs/plans/suggestions.md): the result line, doneReply, the note line and SUGGEST_RULE', () => {
+test('suggestions (docs/wiki/suggestions.md): the result line, doneReply, the note line and SUGGEST_RULE', () => {
   const suggested = { group: 'g3m9x0', changes: ['s7k2a1'] };
   assert.equal(resultLine('write', { ok: true, result: { rev: 5 }, suggested }), 'suggested: rev 5');
   assert.equal(resultLine('write', { ok: true, result: { rev: 5 } }), 'done: rev 5');
@@ -365,7 +354,7 @@ test('suggestions (docs/plans/suggestions.md): the result line, doneReply, the n
   const all = situationNote({ ...base, permission: 'all', suggest: { waiting: 1, mine: 1, accepted: 0, rejected: 0 } });
   assert.ok(all.includes('Permission mode: Allow all. Your edits to drafts wait as suggestions;') && !all.includes('Changes and deletions run at once'), all);
   assert.ok(situationNote({ ...base, permission: 'all' }).includes('Changes and deletions run at once with no card.'));
-  for (const f of ['qwen', 'gemma', 'gemini']) {
+  for (const f of ['server', 'gemini']) {
     assert.ok(systemPrompt(f, { suggest: true }).includes(SUGGEST_RULE), f);
     assert.ok(!systemPrompt(f).includes(SUGGEST_RULE), f);
   }

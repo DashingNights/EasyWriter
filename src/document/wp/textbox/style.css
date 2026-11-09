@@ -1,0 +1,37 @@
+/* Text boxes (docs/plans/word/plan.md §3 textbox). The box's own size, fill, line and text direction are inline styles from its
+   node view (boxes.mjs boxCss); these rules draw the selection, the resize handles and the pointer tools. */
+.page[data-format="document"] .ProseMirror [data-textbox] { position: relative; }
+.page[data-format="document"] .ProseMirror [data-textbox].ProseMirror-selectednode { outline: 1px solid #3d99f5; outline-offset: 0; }
+.page[data-format="document"] .ProseMirror [data-textbox]:focus-within { outline: 1px dashed #a6a6a6; }
+.page[data-format="document"] .ProseMirror [data-textbox-text] { min-width: 0; min-height: 1em; flex: none; }
+.page[data-format="document"] .ProseMirror [data-textbox][data-dir="lrTb"] > [data-textbox-text] { width: 100%; }
+.page[data-format="document"] .ProseMirror [data-textbox]:not([data-dir="lrTb"]) > [data-textbox-text] { height: 100%; }
+.page[data-format="document"] #page-overlay [data-textbox-handles] { position: absolute; pointer-events: none; }
+.page[data-format="document"] #page-overlay [data-textbox-handles] > [data-handle] {
+  position: absolute; width: 8px; height: 8px; margin: -4px 0 0 -4px; border: 1px solid #3d99f5; background: #ffffff; border-radius: 50%; pointer-events: auto;
+}
+.page[data-format="document"] #page-overlay [data-handle="nw"] { left: 0; top: 0; cursor: nwse-resize; }
+.page[data-format="document"] #page-overlay [data-handle="n"] { left: 50%; top: 0; cursor: ns-resize; }
+.page[data-format="document"] #page-overlay [data-handle="ne"] { left: 100%; top: 0; cursor: nesw-resize; }
+.page[data-format="document"] #page-overlay [data-handle="e"] { left: 100%; top: 50%; cursor: ew-resize; }
+.page[data-format="document"] #page-overlay [data-handle="se"] { left: 100%; top: 100%; cursor: nwse-resize; }
+.page[data-format="document"] #page-overlay [data-handle="s"] { left: 50%; top: 100%; cursor: ns-resize; }
+.page[data-format="document"] #page-overlay [data-handle="sw"] { left: 0; top: 100%; cursor: nesw-resize; }
+.page[data-format="document"] #page-overlay [data-handle="w"] { left: 0; top: 50%; cursor: ew-resize; }
+.page[data-format="document"] #page-overlay [data-textbox-band] { position: absolute; display: none; border: 1px dashed #3d99f5; }
+/* Linked boxes (flow.js): each box in a chain clips its text, which goes on in the next box's flow layer. A later box's own text
+   (empty unless typed into) joins the story there, so the box keeps it out of sight. */
+.page[data-format="document"] .ProseMirror [data-textbox][data-chain] { overflow: clip !important; }
+.page[data-format="document"] .ProseMirror [data-textbox][data-chain="next"] > [data-textbox-text] { position: absolute; width: 0; height: 0; overflow: hidden; }
+.page[data-format="document"] .ProseMirror [data-textbox-flow] { min-width: 0; flex: none; width: 100%; cursor: text; user-select: none; }
+.page[data-format="document"] .ProseMirror [data-textbox]:not([data-chain="next"]) > [data-textbox-flow] { display: none; }
+/* The caret and the selection over a later box's copy (flow.js markSelection); the caret only while the editor has the focus. */
+.page[data-format="document"] .ProseMirror [data-textbox-flow] { position: relative; }
+.page[data-format="document"] .ProseMirror [data-flow-mark] { position: absolute; pointer-events: none; }
+.page[data-format="document"] .ProseMirror [data-flow-mark="sel"] { background: Highlight; opacity: 0.35; }
+.page[data-format="document"] .ProseMirror [data-flow-mark="caret"] { border-left: 1px solid currentColor; margin-left: -0.5px; }
+.page[data-format="document"] .ProseMirror:not(.ProseMirror-focused) [data-flow-mark="caret"] { display: none; }
+/* Create Link: the pointer becomes a jug over the page. */
+.page[data-format="document"] .ProseMirror[data-textbox-linking] {
+  cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 20 20'%3E%3Cpath d='M5 4h8v3l3 2-3 2v5H5z' fill='%23fff' stroke='%23000'/%3E%3Cpath d='M13 4l3-2' stroke='%23000'/%3E%3C/svg%3E") 14 2, alias;
+}

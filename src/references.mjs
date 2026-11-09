@@ -1,4 +1,4 @@
-// References (docs/plans/references.md): a draft's saved sources (draft.sources), their reference list entries and in-text
+// References (docs/wiki/references.md): a draft's saved sources (draft.sources), their reference list entries and in-text
 // citations in the draft's style (Harvard or numbered IEEE), and the details read from a pasted link. Pure: node --test imports
 // it (test/references.test.mjs); the network comes in as get(url, accept) (app/references.js over main.js references.fetch).
 
@@ -12,8 +12,10 @@ export const TYPES = [['web', 'Web page'], ['article', 'Article'], ['preprint', 
 // first source); settings.referenceStyle is the default for drafts without one.
 export const STYLES = [['harvard', 'Harvard'], ['ieee', 'Numbered (IEEE)']];
 const STYLE_IDS = STYLES.map(([id]) => id);
-/** The style of `draft`: its own, else the default in `settings`, else Harvard. */
-export const styleOf = (draft, settings) => [draft?.referenceStyle, settings?.referenceStyle].find((s) => STYLE_IDS.includes(s)) ?? 'harvard';
+/** The style of `draft`: its own, else the default in `settings`, else Harvard. `word`: a Document, which also takes Word's styles
+ * (WORD_STYLES); a forum post keeps the two. */
+export const styleOf = (draft, settings, word = false) => [draft?.referenceStyle, settings?.referenceStyle]
+  .find((s) => (word ? WORD_STYLE_IDS : STYLE_IDS).includes(s)) ?? 'harvard';
 const TYPE_IDS = TYPES.map(([id]) => id);
 const TEXT_FIELDS = ['year', 'title', 'container', 'date', 'volume', 'issue', 'pages', 'place', 'publisher', 'doi', 'arxiv', 'url', 'accessed', 'note'];
 
@@ -35,7 +37,28 @@ export function cleanSource(s = {}) {
     authors: (Array.isArray(s.authors) ? s.authors : []).map(str).filter(Boolean).slice(0, 100) };
   for (const k of TEXT_FIELDS) out[k] = str(s[k]);
   if (Number.isInteger(s.num) && s.num > 0) out.num = s.num;
+  // A Document's keys (Word's Create Source), kept only when set so a forum post's sources stay as they were.
+  if (SOURCE_TYPE_IDS.includes(s.wtype)) out.wtype = s.wtype;
+  if (str(s.tag)) out.tag = str(s.tag).replace(/\s+/g, '');
+  if (s.placeholder === true) out.placeholder = true;
+  if (typeof s.corporate === 'boolean') out.corporate = s.corporate; // Create Source's Corporate Author box
+  if (str(s.lang)) out.lang = str(s.lang);
+  const extra = Object.fromEntries(Object.entries(s.extra && typeof s.extra === 'object' ? s.extra : {}).map(([k, v]) => [k, str(v)]).filter(([, v]) => v));
+  // Create Source's Year, Month and Day Accessed become the access date the styles print, when they make a whole date.
+  const day = accessedOf(...ACCESSED_KEYS.map((k) => extra[k]));
+  if (day) {
+    out.accessed = day;
+    for (const k of ACCESSED_KEYS) delete extra[k];
+  }
+  if (Object.keys(extra).length) out.extra = extra;
   return out;
+}
+
+const ACCESSED_KEYS = ['yearAccessed', 'monthAccessed', 'dayAccessed'];
+/** Year, month (a name, its first three letters or a number) and day as YYYY-MM-DD, or '' when they make no whole date. */
+function accessedOf(y = '', m = '', d = '') {
+  const month = /^\d+$/.test(m) ? Number(m) : MONTHS.findIndex((x) => m.length >= 3 && x.toLowerCase().startsWith(m.toLowerCase())) + 1;
+  return /^\d{4}$/.test(y) && month >= 1 && month <= 12 && /^\d{1,2}$/.test(d) && d >= 1 && d <= 31 ? `${y}-${pad(month)}-${pad(d)}` : '';
 }
 
 // ---------- Names ----------
@@ -109,12 +132,13 @@ export const nextNumber = (sources) => Math.max(0, ...sources.map((s) => s.num ?
 /** Map source id → its label in `style`: Harvard, its letter where it needs one (suffixes); numbered, its num, else the next
  * numbers in stored order (what listing them now gives them). */
 export function labels(sources, style = 'harvard') {
-  if (style !== 'ieee') return suffixes(sources);
+  if (!numbered(style)) return suffixes(sources);
   let next = nextNumber(sources) - 1;
   return new Map(sources.map((s) => [s.id, String(s.num ?? ++next)]));
 }
 
 const cite = (s, label, narrative, style) => {
+  if (WORD_ONLY[style]) return wordCiteOne(s, label, WORD_ONLY[style]);
   if (style === 'ieee') return narrative ? `${who(s)} [${label}]` : `[${label}]`;
   const year = `${s.year || 'n.d.'}${label}`;
   return narrative ? `${who(s)} (${year})` : `(${who(s)}, ${year})`;
@@ -186,9 +210,9 @@ function ieee(s, num) {
   return [num && `[${num}]`, main, online].filter(Boolean).join(' '); // no num: a source not cited yet, shown in References
 }
 
-const entry = (s, label, style) => (style === 'ieee' ? ieee(s, label) : harvard(s, label));
+const entry = (s, label, style) => (WORD_ONLY[style] ? wordEntry(s, label, WORD_ONLY[style]) : style === 'ieee' ? ieee(s, label) : harvard(s, label));
 /** One reference list entry as plain text in `style`, with its `label` (labels): Harvard in the course slide's punctuation
- * (docs/plans/references.md), numbered as the IEEE Reference Guide. */
+ * (docs/wiki/references.md), numbered as the IEEE Reference Guide. */
 export const formatReference = (s, label = '', style = 'harvard') => plain(entry(s, label, style));
 /** formatReference as runs: containers, standalone titles and et al. in italics. */
 export const referenceRuns = (s, label = '', style = 'harvard') => runs(entry(s, label, style));
@@ -196,7 +220,8 @@ export const referenceRuns = (s, label = '', style = 'harvard') => runs(entry(s,
 /** `sources` in reference list order: Harvard by authors (or title), then year (n.d. last), then letter; numbered by number. */
 export function sortSources(sources, style = 'harvard') {
   const lab = labels(sources, style);
-  if (style === 'ieee') return [...sources].sort((a, b) => lab.get(a.id) - lab.get(b.id));
+  if (numbered(style)) return [...sources].sort((a, b) => lab.get(a.id) - lab.get(b.id));
+  if (WORD_ONLY[style]) return wordSort(sources, WORD_ONLY[style]);
   const head = (s) => plain(s.authors.length ? listAuthors(s.authors) : s.title);
   return [...sources].sort((a, b) => collate(head(a), head(b)) || (!a.year - !b.year) || collate(a.year, b.year)
     || collate(lab.get(a.id) ?? '', lab.get(b.id) ?? ''));
@@ -212,6 +237,292 @@ export const referenceList = (sources, style = 'harvard') => entries(sources, st
 export const referenceListRuns = (sources, style = 'harvard') => entries(sources, style).map(runs);
 /** Runs as TipTap JSON text nodes (italic: the italic mark, which both editors have). */
 export const textJson = (rs) => rs.map((r) => ({ type: 'text', text: r.text, ...(r.italic && { marks: [{ type: 'italic' }] }) }));
+
+// ---------- Word's sources and styles (docs/plans/word/briefs/citations.md) ----------
+// A Document cites through CITATION and BIBLIOGRAPHY fields (src/document/wp/citations). Its sources are the same draft.sources
+// with a few more keys: wtype (Word's source type), tag (the name a field cites it by), placeholder, lang and extra (the Word
+// fields the source model has no key for). A forum post never sees them.
+
+// A field of a source type's form: [key, label]. Keys of the source model go there; any other key goes to source.extra.
+const F = {
+  title: ['title', 'Title'], year: ['year', 'Year'], month: ['month', 'Month'], day: ['day', 'Day'], city: ['place', 'City'],
+  state: ['stateProvince', 'State/Province'], country: ['countryRegion', 'Country/Region'], publisher: ['publisher', 'Publisher'],
+  editor: ['editor', 'Editor'], volume: ['volume', 'Volume'], volumes: ['numberVolumes', 'Number of Volumes'], translator: ['translator', 'Translator'],
+  shortTitle: ['shortTitle', 'Short Title'], standard: ['standardNumber', 'Standard Number'], pages: ['pages', 'Pages'], edition: ['edition', 'Edition'],
+  comments: ['comments', 'Comments'], medium: ['medium', 'Medium'], yearAccessed: ['yearAccessed', 'Year Accessed'],
+  monthAccessed: ['monthAccessed', 'Month Accessed'], dayAccessed: ['dayAccessed', 'Day Accessed'], url: ['url', 'URL'], doi: ['doi', 'DOI'],
+  issue: ['issue', 'Issue'], bookTitle: ['container', 'Book Title'], journal: ['container', 'Journal Name'], periodical: ['container', 'Periodical Title'],
+  conference: ['container', 'Conference Publication Name'], webPage: ['title', 'Name of Web Page'], webSite: ['container', 'Name of Web Site'],
+  institution: ['publisher', 'Institution'], department: ['department', 'Department'], reportType: ['reportType', 'Report Type'],
+  album: ['container', 'Album Title'], production: ['publisher', 'Production Company'], theater: ['publisher', 'Theater'],
+  distributor: ['publisher', 'Distributor'], patentNumber: ['patentNumber', 'Patent Number'], type: ['kind', 'Type'],
+  caseNumber: ['caseNumber', 'Case Number'], court: ['publisher', 'Court'], reporter: ['reporter', 'Reporter'],
+};
+const ACCESSED = [F.yearAccessed, F.monthAccessed, F.dayAccessed];
+const MORE = [F.shortTitle, F.standard, F.comments, F.medium, ...ACCESSED, F.url, F.doi];
+
+/** Word's 17 source types in the Create Source list's order (probe/dialogs/create-source.json, verified). Each: id (Word's
+ * b:SourceType), label, author (the label of its name list, null: none), short (the recommended fields), all (what Show All
+ * Bibliography Fields adds), verified (only Book's fields were probed: its short set and the first rows of its full set; the
+ * other types' fields come from Word knowledge, unverified). */
+export const SOURCE_TYPES = [
+  { id: 'Book', label: 'Book', author: 'Author', verified: true, short: [F.title, F.year, F.city, F.publisher],
+    all: [F.state, F.country, F.editor, F.volume, F.volumes, F.translator, F.pages, F.edition, ...MORE] },
+  { id: 'BookSection', label: 'Book Section', author: 'Author', short: [F.title, F.bookTitle, F.year, F.pages, F.city, F.publisher],
+    all: [F.state, F.country, F.editor, F.volume, F.volumes, F.translator, F.edition, ...MORE] },
+  { id: 'JournalArticle', label: 'Journal Article', author: 'Author', short: [F.title, F.journal, F.year, F.pages],
+    all: [F.editor, F.publisher, F.volume, F.issue, F.month, F.day, ...MORE] },
+  { id: 'ArticleInAPeriodical', label: 'Article in a Periodical', author: 'Author', short: [F.title, F.periodical, F.year, F.month, F.day, F.pages],
+    all: [F.editor, F.edition, F.volume, F.issue, ...MORE] },
+  { id: 'ConferenceProceedings', label: 'Conference Proceedings', author: 'Author', short: [F.title, F.pages, F.year, F.conference, F.city, F.publisher],
+    all: [F.editor, F.volume, F.volumes, F.state, F.country, ...MORE] },
+  { id: 'Report', label: 'Report', author: 'Author', short: [F.title, F.year, F.publisher, F.city],
+    all: [F.department, F.reportType, F.state, F.country, F.pages, ...MORE] },
+  { id: 'InternetSite', label: 'Web site', author: 'Author', short: [F.webPage, F.year, F.month, F.day, ...ACCESSED, F.url],
+    all: [F.editor, F.production, F.shortTitle, F.standard, F.comments, F.medium, F.doi] },
+  { id: 'DocumentFromInternetSite', label: 'Document From Web site', author: 'Author', short: [F.webPage, F.webSite, F.year, F.month, F.day, ...ACCESSED, F.url],
+    all: [F.editor, F.production, F.shortTitle, F.standard, F.comments, F.medium, F.doi] },
+  { id: 'ElectronicSource', label: 'Electronic Source', author: 'Author', short: [F.title, F.year, F.city, F.publisher],
+    all: [F.editor, F.translator, F.month, F.day, F.edition, F.state, F.country, ...MORE] },
+  { id: 'Art', label: 'Art', author: 'Artist', short: [F.title, F.year, F.institution, F.city], all: [F.medium, F.state, F.country, ...MORE] },
+  { id: 'SoundRecording', label: 'Sound Recording', author: 'Composer', short: [F.title, F.album, F.year, F.production, F.city],
+    all: [F.month, F.day, F.medium, F.state, F.country, ...MORE] },
+  { id: 'Performance', label: 'Performance', author: 'Writer', short: [F.title, F.theater, F.city, F.year], all: [F.month, F.day, F.state, F.country, ...MORE] },
+  { id: 'Film', label: 'Film', author: 'Performer', short: [F.title, F.year, F.distributor], all: [F.city, F.medium, F.country, ...MORE] },
+  { id: 'Interview', label: 'Interview', author: 'Interviewee', short: [F.title, F.year, F.month, F.day], all: [F.publisher, F.city, F.medium, ...MORE] },
+  { id: 'Patent', label: 'Patent', author: 'Inventor', short: [F.title, F.year, F.month, F.day, F.country, F.patentNumber], all: [F.type, ...MORE] },
+  { id: 'Case', label: 'Case', author: null, short: [F.title, F.caseNumber, F.court, F.year, F.month, F.day, F.reporter], all: [F.volume, F.pages, ...MORE] },
+  { id: 'Misc', label: 'Miscellaneous', author: 'Author', short: [F.title, F.year, F.city, F.publisher], all: [F.month, F.day, F.editor, F.volume, ...MORE] },
+];
+const SOURCE_TYPE_IDS = SOURCE_TYPES.map((t) => t.id);
+// Today's five types as Word's (the brief), and back: a Word type to the type the forum post's builder prints it as.
+const TO_WORD = { web: 'InternetSite', article: 'JournalArticle', preprint: 'Report', chapter: 'BookSection', book: 'Book' };
+const FROM_WORD = { InternetSite: 'web', DocumentFromInternetSite: 'web', ElectronicSource: 'web', JournalArticle: 'article',
+  ArticleInAPeriodical: 'article', BookSection: 'chapter', ConferenceProceedings: 'chapter' };
+/** Source `s`'s Word type: its own, else its type's (web → Web site, article → Journal Article, preprint → Report, chapter → Book
+ * Section, book → Book). */
+export const wordTypeOf = (s) => (SOURCE_TYPE_IDS.includes(s?.wtype) ? s.wtype : TO_WORD[s?.type] ?? 'InternetSite');
+/** The builder type a Word type prints as: `old` (the source's type) while the Word type is still that type's, else the nearest. */
+export const typeFromWord = (wtype, old) => (old && TO_WORD[old] === wtype ? old : FROM_WORD[wtype] ?? 'book');
+/** The value of field `key` of source `s` (a model key, else s.extra[key]). */
+export function fieldOf(s, key) {
+  if (TEXT_FIELDS.includes(key)) return s[key] ?? '';
+  // The access date shows in Create Source's three Accessed boxes (cleanSource puts them back together).
+  const m = !s.extra?.[key] && ACCESSED_KEYS.includes(key) && s.accessed?.match(ISO);
+  if (m) return [m[1], MONTHS[m[2] - 1], String(Number(m[3]))][ACCESSED_KEYS.indexOf(key)] ?? '';
+  return s.extra?.[key] ?? '';
+}
+/** Whether `key` is a key of the source model (else it lives in source.extra). */
+export const modelKey = (key) => TEXT_FIELDS.includes(key);
+
+/** The tag Word gives source `s`: the first three letters of the first author's family name (no author: the title's) and the
+ * year's last two digits ("Smith, John", 2026 → "Smi26"). When another source in `taken` (a Set) holds it, a digit is added:
+ * Smi261, Smi262 (unverified: Word's clash rule was not probed). */
+export function tagOf(s, taken = new Set()) {
+  const a = s.authors?.[0];
+  const head = (a ? person(a).family ?? person(a).name : s.title || '').replace(/[^\p{L}\p{N}]/gu, '').slice(0, 3) || 'Src';
+  const base = `${head}${String(s.year ?? '').replace(/\D/g, '').slice(-2)}`;
+  if (!taken.has(base)) return base;
+  for (let n = 1; ; n++) if (!taken.has(`${base}${n}`)) return `${base}${n}`;
+}
+/** `sources` where each one without a tag got one (tagOf, clear of the others) → the same array when none needed one. */
+export function ensureTags(sources) {
+  if (sources.every((s) => s.tag)) return sources;
+  const taken = new Set(sources.map((s) => s.tag).filter(Boolean));
+  return sources.map((s) => {
+    if (s.tag) return s;
+    const tag = tagOf(s, taken);
+    taken.add(tag);
+    return { ...s, tag };
+  });
+}
+/** The next placeholder name: Placeholder1, else the first number no source's tag holds. */
+export function nextPlaceholder(sources) {
+  const taken = new Set(sources.map((s) => s.tag));
+  for (let n = 1; ; n++) if (!taken.has(`Placeholder${n}`)) return `Placeholder${n}`;
+}
+
+// Name forms of the styles' lists: each takes one stored author ("Family, Given" or an organisation) and its place in the list.
+const given = (a) => person(a).given ?? '';
+const NAMES = {
+  initials: (a) => listName(a), // Smith, J.
+  full: (a, i) => person(a).name ?? (i ? `${given(a)} ${person(a).family}`.trim() : a), // Smith, John; then John Smith
+  inverted: (a) => person(a).name ?? a, // Smith, John
+  upperInitials: (a) => person(a).name ?? `${person(a).family.toUpperCase()}${initials(given(a)) ? `, ${initials(given(a))}` : ''}`, // SMITH, J.
+  upperFull: (a) => person(a).name ?? `${person(a).family.toUpperCase()}${given(a) ? `, ${given(a)}` : ''}`, // SMITH, John
+  bare: (a) => person(a).name ?? `${person(a).family} ${initials(given(a)).replace(/\./g, '')}`.trim(), // Smith J
+  spaced: (a) => person(a).name ?? `${person(a).family} ${given(a)}`.trim(), // Smith John
+};
+/** `authors` in name form `form`, `and` before the last ("Smith, J., & Lee, A."). */
+const nameList = (authors, form, and) => {
+  const n = authors.map((a, i) => NAMES[form](a, i));
+  return n.length < 2 ? n.join('') : `${n.slice(0, -1).join(', ')}${and}${n.at(-1)}`;
+};
+const words = (...parts) => parts.filter(Boolean).join(' ');
+const dot = (s) => (s ? end(s) : '');
+const pubOf = (v, sep = ': ') => [v.place, v.publisher].filter(Boolean).join(sep);
+const pubYear = (v, sep) => [pubOf(v, sep), v.year].filter(Boolean).join(', ');
+
+// One source as the style rows read it: the type group, the names as the row prints them, the fields with their fallbacks.
+const GROUPS = { BookSection: 'part', ConferenceProceedings: 'part', JournalArticle: 'journal', ArticleInAPeriodical: 'journal', InternetSite: 'web',
+  DocumentFromInternetSite: 'web' };
+function view(s, row, num) {
+  return {
+    g: GROUPS[wordTypeOf(s)] ?? 'book', authors: s.authors.length ? nameList(s.authors, row.names, row.and) : '', title: s.title || 'Untitled',
+    year: s.year || 'n.d.', container: s.container, place: s.place, publisher: s.publisher, volume: s.volume, issue: s.issue, pages: s.pages,
+    url: s.url || (s.doi ? `https://doi.org/${s.doi}` : ''), num,
+    accessed: s.accessed ? longDate(s.accessed) : [s.extra?.dayAccessed, s.extra?.monthAccessed, s.extra?.yearAccessed].filter(Boolean).join(' '),
+  };
+}
+const U = { cite: 'unverified', entry: 'unverified', sort: 'unverified' };
+const quoted = (v) => (v.g === 'book' ? dot(it(v.title)) : dot(`“${v.title}”`));
+
+/** Word's styles, one row each, in the Style list's order (probe/menus/references.style.json, verified), then the user's own
+ * Harvard. A row: id, label, numbered (cites by number, sources numbered by their first citation), cite {open, close, sep
+ * (between the names and the year; null: no year), and (between two names), page(p) → text, pageSep}, names (the list's name
+ * form, NAMES), and (between the list's last two names), sort ('author' | 'title' | 'number'), entry(v) → the marked entry (v:
+ * view, by type group book, part, journal and web), builder (Harvard and IEEE: the builder's own entries), and status: each rule
+ * 'verified' (a probe, the user's course slide or the IEEE Reference Guide) or 'unverified' (from Word knowledge). */
+export const WORD_STYLES = [
+  { id: 'apa', label: 'APA', cite: { open: '(', close: ')', sep: ', ', and: ' & ', page: (p) => `p. ${p}`, pageSep: ', ' }, names: 'initials', and: ', & ',
+    sort: 'author', status: U,
+    entry: (v) => words(v.authors ? `${v.authors} (${v.year}).` : `${it(v.title)}. (${v.year}).`, v.authors && (v.g === 'book' ? dot(it(v.title)) : dot(v.title)),
+      v.g === 'part' && dot(`In ${it(v.container)}${v.pages ? ` (pp. ${v.pages})` : ''}`),
+      v.g === 'journal' && dot([it(v.container), v.volume && `${v.volume}${v.issue ? `(${v.issue})` : ''}`, v.pages].filter(Boolean).join(', ')),
+      (v.g === 'book' || v.g === 'part') && dot(pubOf(v)), v.g === 'web' && v.url && `Retrieved from ${v.url}`) },
+  { id: 'chicago', label: 'Chicago', cite: { open: '(', close: ')', sep: ' ', and: ' and ', page: (p) => p, pageSep: ', ' }, names: 'full', and: ', and ',
+    sort: 'author', status: U,
+    entry: (v) => words(dot(v.authors), quoted(v), v.g === 'part' && dot(`In ${it(v.container)}`),
+      v.g === 'journal' ? dot(`${words(it(v.container), v.volume, v.issue && `no. ${v.issue}`)} (${v.year})${v.pages ? `: ${v.pages}` : ''}`) : dot(pubYear(v)),
+      v.g === 'web' && v.url && dot(v.url)) },
+  { id: 'gb7714', label: 'GB7714', numbered: true, cite: { open: '[', close: ']', page: (p) => p, pageSep: ': ' }, names: 'bare', and: ', ', sort: 'number', status: U,
+    entry: (v) => words(`[${v.num}]`, dot(v.authors), dot(`${v.title}[${{ book: 'M', part: 'C', journal: 'J', web: 'EB/OL' }[v.g]}]`),
+      v.g === 'journal' ? dot(`${v.container}, ${v.year}${v.volume ? `, ${v.volume}` : ''}${v.issue ? `(${v.issue})` : ''}${v.pages ? `: ${v.pages}` : ''}`) : dot(pubYear(v)),
+      v.g === 'web' && v.url && dot(v.url)) },
+  { id: 'gostName', label: 'GOST - Name Sort', numbered: true, cite: { open: '[', close: ']', page: (p) => `p. ${p}`, pageSep: ', ' }, names: 'spaced', and: ', ',
+    sort: 'author', status: U,
+    entry: (v) => words(`${v.num}.`, v.authors, dot(v.title), pubYear(v, ' : ') && dot(`- ${pubYear(v, ' : ')}`), v.pages && dot(`- ${v.pages}`)) },
+  { id: 'gostTitle', label: 'GOST - Title Sort', numbered: true, cite: { open: '[', close: ']', page: (p) => `p. ${p}`, pageSep: ', ' }, names: 'spaced', and: ', ',
+    sort: 'title', status: U,
+    entry: (v) => words(`${v.num}.`, dot(v.title), v.authors && dot(`/ ${v.authors}`), pubYear(v, ' : ') && dot(`- ${pubYear(v, ' : ')}`)) },
+  { id: 'harvardAnglia', label: 'Harvard - Anglia', cite: { open: '(', close: ')', sep: ', ', and: ' & ', page: (p) => `p.${p}`, pageSep: ', ' },
+    names: 'upperInitials', and: ' & ', sort: 'author', status: U,
+    entry: (v) => words(v.authors && `${v.authors},`, `(${v.year}).`, v.g === 'book' ? dot(it(v.title)) : dot(v.title), v.g === 'part' && dot(`In ${it(v.container)}`),
+      v.g === 'journal' && dot([it(v.container), v.volume && `${v.volume}${v.issue ? `(${v.issue})` : ''}`, v.pages && `pp.${v.pages}`].filter(Boolean).join(', ')),
+      (v.g === 'book' || v.g === 'part') && dot(pubOf(v)), v.g === 'web' && v.url && `[Online]. Available at: ${v.url}${v.accessed ? ` [Accessed ${v.accessed}]` : ''}.`) },
+  { id: 'ieee', label: 'IEEE', numbered: true, builder: true, cite: { open: '[', close: ']', page: (p) => `p. ${p}`, pageSep: ', ' }, sort: 'number',
+    status: { cite: 'verified', entry: 'verified', sort: 'verified' } }, // today's numbered IEEE rules (IEEE Reference Guide)
+  { id: 'iso690Date', label: 'ISO 690 - First Element and Date', cite: { open: '(', close: ')', sep: ', ', and: ' and ', page: (p) => `p. ${p}`, pageSep: ', ' },
+    names: 'upperFull', and: ' and ', sort: 'author', status: U,
+    entry: (v) => words(dot(v.authors), dot(v.year), v.g === 'book' ? dot(it(v.title)) : dot(v.title), v.g !== 'book' && dot(it(v.container)),
+      dot([pubOf(v, ' : '), v.pages && `pp. ${v.pages}`].filter(Boolean).join(', ')), v.g === 'web' && v.url && dot(`Available from: ${v.url}`)) },
+  { id: 'iso690Num', label: 'ISO 690 - Numerical Reference', numbered: true, cite: { open: '(', close: ')', page: (p) => `p. ${p}`, pageSep: ', ' },
+    names: 'upperFull', and: ' and ', sort: 'number', status: U,
+    entry: (v) => words(`${v.num}.`, dot(v.authors), v.g === 'book' ? dot(it(v.title)) : dot(v.title), v.g !== 'book' && dot(it(v.container)),
+      dot(pubYear(v, ' : ')), v.g === 'web' && v.url && dot(`Available from: ${v.url}`)) },
+  { id: 'mla', label: 'MLA', cite: { open: '(', close: ')', sep: null, and: ' and ', page: (p) => p, pageSep: ' ' }, names: 'full', and: ', and ',
+    sort: 'author', status: U,
+    entry: (v) => words(dot(v.authors), quoted(v), v.g !== 'book' && dot(it(v.container)), dot(pubYear(v)), v.g !== 'book' && dot(v.pages),
+      v.g === 'web' && v.url && dot(v.url)) },
+  { id: 'sist02', label: 'SIST02', numbered: true, cite: { open: '[', close: ']', page: (p) => `p. ${p}`, pageSep: ', ' }, names: 'inverted', and: '; ',
+    sort: 'number', status: U,
+    entry: (v) => words(`${v.num})`, dot(v.authors), dot(v.title), v.g !== 'book' && dot(v.container), dot(pubYear(v, ', ')), v.pages && dot(`p. ${v.pages}`)) },
+  { id: 'turabian', label: 'Turabian', cite: { open: '(', close: ')', sep: ' ', and: ' and ', page: (p) => p, pageSep: ', ' }, names: 'full', and: ', and ',
+    sort: 'author', status: U,
+    entry: (v) => words(dot(v.authors), quoted(v), v.g !== 'book' && dot(it(v.container)), dot(pubYear(v)), v.g === 'web' && v.url && dot(v.url)) },
+  { id: 'harvard', label: 'Harvard', builder: true, cite: { open: '(', close: ')', sep: ', ', and: ' and ', page: (p) => pages(p), pageSep: ', ' },
+    sort: 'author', status: { cite: 'verified', entry: 'verified', sort: 'verified' } }, // the user's course style (the builder's own)
+];
+const WORD_STYLE_IDS = WORD_STYLES.map((r) => r.id);
+const ROWS = Object.fromEntries(WORD_STYLES.map((r) => [r.id, r]));
+// The rows the builder has no rules of its own for: formatReference and citation take them through the table.
+const WORD_ONLY = Object.fromEntries(WORD_STYLES.filter((r) => !r.builder).map((r) => [r.id, r]));
+/** Whether `style` cites by number. */
+export const numbered = (style) => !!ROWS[style]?.numbered;
+/** The table row of `style` (Harvard's for an unknown id). */
+export const wordStyle = (style) => ROWS[style] ?? ROWS.harvard;
+
+/** One citation part of source `s` in `row`, marked: the names (et al. from four; from three in APA), the year with its `label`
+ * letter, then the volume and pages; a numbered row's number (`label`) instead of names and year. noAuthor, noYear and noTitle
+ * leave their part out (Word's \n, \y and \t); without authors the title stands in for them. */
+function partOf(s, label, row, { pages: p, volume, noAuthor, noYear, noTitle } = {}) {
+  const c = row.cite;
+  let head = String(label ?? '');
+  if (!row.numbered) {
+    const fam = s.authors.map(citeName);
+    const max = row.id === 'apa' ? 2 : CITE_MAX;
+    const names = !fam.length ? '' : fam.length > max ? `${fam[0]} ${it('et al.')}` : fam.length < 2 ? fam[0] : `${fam.slice(0, -1).join(', ')}${c.and}${fam.at(-1)}`;
+    const who = noAuthor ? '' : names || (noTitle ? '' : s.title || 'Untitled');
+    const year = noYear || c.sep == null ? '' : `${s.year || 'n.d.'}${label ?? ''}`;
+    head = [who, year].filter(Boolean).join(c.sep ?? ' ');
+  }
+  const tail = [volume && `Vol. ${volume}`, p && c.page(p)].filter(Boolean).join(', ');
+  return [head, tail].filter(Boolean).join(c.pageSep);
+}
+/** One source's citation in a Word-only row (citation's path for those styles). */
+const wordCiteOne = (s, label, row) => `${row.cite.open}${partOf(s, label, row)}${row.cite.close}`;
+
+/** A Document's citation in `style`: `items` [{s (null: an unknown tag), label (the letter, or a numbered style's number), pages,
+ * volume, noAuthor, noYear, noTitle}] in one pair of brackets ("(Smith, 2026; Lee, 2025)"), with Word's \f `prefix` and \s
+ * `suffix` inside them. A placeholder cites as its name in brackets, "(Placeholder1)". → plain text, or "Invalid source
+ * specified." when the first source is unknown. */
+export function wordCitation(items, style, { prefix = '', suffix = '' } = {}) {
+  if (!items.length || !items[0].s) return 'Invalid source specified.';
+  const row = wordStyle(style);
+  const known = items.filter((x) => x.s);
+  if (known.every((x) => x.s.placeholder)) return `(${known.map((x) => x.s.tag).join('; ')})`;
+  const parts = known.map((x) => (x.s.placeholder ? x.s.tag : partOf(x.s, x.label, row, x)));
+  const body = parts.join(row.numbered ? `${row.cite.close}, ${row.cite.open}` : '; ');
+  return plain(`${row.cite.open}${prefix ? `${prefix} ` : ''}${body}${suffix ? ` ${suffix}` : ''}${row.cite.close}`);
+}
+
+/** One entry of source `s` in a Word-only row, marked; `label`: its number in a numbered row. */
+const wordEntry = (s, label, row) => row.entry(view(s, row, label));
+
+/** `sources` in a Word-only row's order: by the list's names (none: the title), then year and title; or by title, then year. */
+function wordSort(sources, row) {
+  const head = (s) => plain(s.authors.length ? nameList(s.authors, row.names ?? 'initials', row.and ?? ', ') : s.title);
+  const key = (s) => (row.sort === 'title' ? [s.title, s.year] : [head(s), s.year, s.title]);
+  return [...sources].sort((a, b) => {
+    const [x, y] = [key(a), key(b)];
+    for (let i = 0; i < x.length; i++) {
+      const d = collate(x[i] ?? '', y[i] ?? '');
+      if (d) return d;
+    }
+    return 0;
+  });
+}
+
+/** A Document's numbers: the sources cited in it numbered by their first citation (`citedTags`, in document order), the rest after
+ * them in stored order; placeholders get none → Map source id → number. */
+export function numbersOf(sources, citedTags) {
+  const out = new Map();
+  let n = 0;
+  for (const tag of citedTags) {
+    const s = sources.find((x) => x.tag === tag && !x.placeholder);
+    if (s && !out.has(s.id)) out.set(s.id, ++n);
+  }
+  for (const s of sources) if (!s.placeholder && !out.has(s.id)) out.set(s.id, ++n);
+  return out;
+}
+
+/** The label each source of a Document cites with in `style`: a numbered style's number (numbersOf), else its letter (suffixes)
+ * → Map source id → text. */
+export const wordLabels = (sources, style, citedTags = []) => (numbered(style)
+  ? new Map([...numbersOf(sources, citedTags)].map(([k, v]) => [k, String(v)])) : suffixes(sources.filter((s) => !s.placeholder)));
+
+/** A Document's bibliography in `style`: one entry per source of the current list but placeholders, in the style's order (a
+ * numbered one by number) → runs, one array per entry. Harvard and IEEE are the builder's own entries. */
+export function wordBibliography(sources, style, citedTags = []) {
+  const row = wordStyle(style);
+  const list = sources.filter((s) => !s.placeholder);
+  const lab = wordLabels(list, style, citedTags);
+  let order;
+  if (row.sort === 'number') order = [...list].sort((a, b) => lab.get(a.id) - lab.get(b.id));
+  else order = row.builder ? sortSources(list, 'harvard') : wordSort(list, row);
+  const one = (s) => (row.id === 'ieee' ? ieee(s, lab.get(s.id)) : row.builder ? harvard(s, lab.get(s.id) ?? '') : wordEntry(s, lab.get(s.id) ?? '', row));
+  return order.map((s) => runs(one(s)));
+}
 
 // ---------- Details from a link ----------
 const ENTITIES = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ', ndash: '–', mdash: '—', hellip: '…', lsquo: '‘', rsquo: '’', ldquo: '“', rdquo: '”' };

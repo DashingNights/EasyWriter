@@ -8,6 +8,7 @@ import { validFlow } from '../../../flow/library.mjs';
 import { openFlows, saveToLibrary } from '../../flows.js';
 import { can } from '../../gates.mjs';
 import { useStore } from '../../store.js';
+import { run } from '../../../tooling/registry.js';
 import { IconButton, Tip } from '../Tip.jsx';
 import { CHROME, keepFocus as keepBoardFocus } from './controls.jsx';
 
@@ -57,7 +58,7 @@ export function CanvasBar() {
   const node = { type: 'canvas', attrs: view.node.attrs };
   return (
     <div ref={ref} role="toolbar" aria-label="Canvas" onMouseDown={keepFocus}
-      className="fixed top-0 left-0 z-30 flex items-center gap-0.5 rounded-island border bg-island p-0.5 text-xs shadow-xl">
+      className="fixed top-0 left-0 z-30 flex items-center gap-0.5 rounded-island border bg-island p-1 text-xs shadow-xl">
       <Tip title="Edit the canvas (double-click, Enter)"><Button variant="ghost" size="xs" onClick={() => view.open()}><SquarePen />Edit</Button></Tip>
       <span className="px-1.5 text-muted-foreground tabular-nums">{`${dw} x ${Math.round((dw * h) / w)}`}</span>
       <Tip title="Artboard size (at most the page width)">
@@ -85,7 +86,7 @@ export function CanvasBar() {
 }
 
 /** Artboard side of fixed board `board`; commits on Enter or blur (sets the frame, 40…8000; the artboard still holds the
- * content plus padding: the board sizes it). Escape reverts. Also in the flowchart library editor's header. */
+ * content beyond it: the board sizes it). Escape reverts. Also in the flowchart library editor's header. */
 export function SizeInput({ board, label, value, onCommit }) {
   const [draft, setDraft] = useState(null); // text being typed; null = show the value
   const commit = () => {
@@ -126,7 +127,7 @@ function EditBar({ session }) {
   });
   return (
     <div ref={ref} {...CHROME} data-ribbon-avoid="" role="toolbar" aria-label="Canvas editing" onMouseDown={keepBoardFocus}
-      className="fixed top-0 left-0 z-30 flex items-center gap-1 rounded-island border bg-island p-0.5 text-xs shadow-xl">
+      className="fixed top-0 left-0 z-30 flex items-center gap-1 rounded-island border bg-island p-1 text-xs shadow-xl">
       {flow && (
         <span className="flex max-w-56 min-w-0 items-center gap-1 pl-1.5 text-muted-foreground" title="Edits change the library flowchart everywhere it is synced">
           <Workflow className="size-3.5 shrink-0" />
@@ -134,12 +135,13 @@ function EditBar({ session }) {
           {flowSource.isMissing(flow.id) ? '(missing)' : '(synced)'}
         </span>
       )}
-      <SizeInput board={session.board} label="W" value={w} onCommit={(v) => session.setSize(v, h)} />
-      <SizeInput board={session.board} label="H" value={h} onCommit={(v) => session.setSize(w, v)} />
+      {/* The board's pool commands (pool-board.js board.set, board.fit, board.done) act through this session. */}
+      <SizeInput board={session.board} label="W" value={w} onCommit={(v) => run('board.set', { w: v, h })} />
+      <SizeInput board={session.board} label="H" value={h} onCommit={(v) => run('board.set', { w, h: v })} />
       <Tip title="Shrink the artboard to the items" {...CHROME}>
-        <Button variant="ghost" size="xs" onClick={() => session.fitContent()}><Shrink />Fit to content</Button>
+        <Button variant="ghost" size="xs" onClick={() => run('board.fit')}><Shrink />Fit to content</Button>
       </Tip>
-      <Tip title="Back to the document (Escape)" {...CHROME}><Button size="xs" onClick={() => session.close(true)}><Check />Done</Button></Tip>
+      <Tip title="Back to the document (Escape)" {...CHROME}><Button size="xs" onClick={() => run('board.done')}><Check />Done</Button></Tip>
     </div>
   );
 }

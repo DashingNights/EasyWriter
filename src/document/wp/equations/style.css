@@ -1,0 +1,43 @@
+/* Equations (docs/plans/word briefs/equations.md): the math font from Equation Options, display equations on their own line per
+   their justification (the node's own, else the document's m:defJc on the editor root), the open box and the equation's menu. */
+.page[data-format="document"] .ProseMirror span[data-equation] { position: relative; font-family: var(--math-font, "Cambria Math"), math; }
+.page[data-format="document"] .ProseMirror span[data-equation] math { font-family: inherit; }
+/* Block math centres itself whatever the line's alignment, so a display equation's math stays inline (in display style) and the
+   span's text-align places it. */
+.page[data-format="document"] .ProseMirror span[data-equation][data-display="true"] math { display: inline math; math-style: normal; }
+.page[data-format="document"] .ProseMirror span[data-equation][data-display="true"] {
+  display: block; text-align: center; padding-left: var(--math-l, 0); padding-right: var(--math-r, 0);
+}
+/* A display equation is a block in its paragraph, so ProseMirror's caret helpers beside it (a separator image before it, the
+   trailing break after it) each made an empty line of the paragraph's height, which Word does not have: the Word fixture's Greek
+   alphabet quick table (display math in its cells) drew every row three lines tall. With no line height those lines take no room
+   and keep the caret's place; the equation's line is as tall as its math. !important beats the paragraph's own line height. */
+.page[data-format="document"] .ProseMirror :is(p, h1, h2, h3, h4, h5, h6):has(> span[data-equation][data-display="true"]) { line-height: 0 !important; }
+.page[data-format="document"] .ProseMirror[data-math-jc="left"] span[data-equation][data-display="true"]:not([data-align]),
+.page[data-format="document"] .ProseMirror span[data-equation][data-display="true"][data-align="left"] { text-align: left; }
+.page[data-format="document"] .ProseMirror[data-math-jc="right"] span[data-equation][data-display="true"]:not([data-align]),
+.page[data-format="document"] .ProseMirror span[data-equation][data-display="true"][data-align="right"] { text-align: right; }
+.page[data-format="document"] .ProseMirror span[data-equation][data-linear="true"] { font-style: normal; }
+.page[data-format="document"] .ProseMirror span[data-equation].eq-empty { color: #808080; }
+.page[data-format="document"] .ProseMirror span[data-equation].ProseMirror-selectednode,
+.page[data-format="document"] .ProseMirror span[data-equation].eq-open { outline: 1px solid #a6a6a6; background: rgb(0 0 0 / 0.04); }
+.page[data-format="document"] .ProseMirror span[data-equation] .eq-ph { color: #808080; }
+.page[data-format="document"] .ProseMirror span[data-equation] .eq-input {
+  font: inherit; color: inherit; background: transparent; border: 0; outline: 0; padding: 0 2px; min-width: 4ch;
+}
+.page[data-format="document"] .ProseMirror span[data-equation][data-display="true"] .eq-input { display: block; margin: 0 auto; text-align: inherit; }
+.page[data-format="document"] .ProseMirror span[data-equation] .eq-preview:not(:empty) { margin-left: 0.5em; opacity: 0.85; }
+.page[data-format="document"] .ProseMirror span[data-equation][data-display="true"] .eq-preview { display: block; margin: 0; }
+.page[data-format="document"] .ProseMirror span[data-equation] .eq-arrow {
+  position: absolute; right: -14px; top: 0; width: 13px; height: 100%; min-height: 14px; padding: 0; border: 1px solid #a6a6a6;
+  background: #f3f3f3; color: #444; font: 9px/1 system-ui, sans-serif; cursor: default;
+}
+.page[data-format="document"] .ProseMirror span[data-equation] .eq-menu {
+  position: absolute; right: -14px; top: 100%; z-index: 30; display: flex; flex-direction: column; min-width: 11rem; padding: 2px;
+  border: 1px solid var(--border, #ccc); background: var(--popover, #fff); color: var(--popover-foreground, #000);
+  font: 12px/1.4 system-ui, sans-serif; text-align: left; box-shadow: 0 4px 12px rgb(0 0 0 / 0.15);
+}
+.page[data-format="document"] .ProseMirror span[data-equation] .eq-menu button { position: relative; padding: 3px 8px 3px 22px; border: 0; background: none; color: inherit; text-align: left; }
+.page[data-format="document"] .ProseMirror span[data-equation] .eq-menu button:hover { background: var(--accent, #eee); }
+.page[data-format="document"] .ProseMirror span[data-equation] .eq-menu button[aria-checked="true"]::before { content: "✓"; position: absolute; left: 8px; }
+.page[data-format="document"] .ProseMirror span[data-equation] .eq-menu-head { padding: 4px 8px 2px; font-weight: 600; opacity: 0.7; }

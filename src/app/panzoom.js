@@ -89,11 +89,14 @@ export function keepPlace(area, wrap, insets, before = () => {}) {
 
 const SETTLE_MS = 150; // a wheel pause this long ends a zoom burst
 
-/** Middle-button drag pans `area` (within its scroll limits); Ctrl + wheel over it zooms around the pointer. During a burst
- * `wrap` is only scaled by a compositor transform, so no wheel step restyles or relays out the page however fast or far it
- * turns (each one cost a full layout, 2026-10-25); once the wheel rests, `zoomTo(percent)` applies the real zoom and the
- * page is scrolled to where the transform showed it. `preview(percent)` follows the burst (the zoom readout). */
-export function bindPanZoom(area, wrap, zoomTo, preview = () => {}) {
+/** Middle-button drag pans `area` (within its scroll limits); Ctrl + wheel over it zooms around the pointer, or around the
+ * page's centre line across while `centred()` (a Document's pages, which stay centred). During a burst `wrap` is only scaled by
+ * a compositor transform, so no step restyles or relays out the page however fast or far it goes (each one cost a full layout,
+ * 2026-10-25); once the wheel rests, `zoomTo(percent)` applies the real zoom and the page is scrolled to where the transform
+ * showed it. `preview(percent | null)` follows the burst (the zoom readouts), null once it lands; each step also fires
+ * 'zoompreview' on window (the rulers follow it). → {preview(percent), settle()}: the same burst for the zoom slider, about the
+ * view's middle, and its landing at once (the slider let go). */
+export function bindPanZoom(area, wrap, zoomTo, preview = () => {}, centred = () => false) {
   let panning = null;
   // {z0, s, tx, ty, left, top, timer}: the zoom before the burst, the scale and screen translation shown, and the untransformed
   // origin of `wrap` in scrolled coordinates.
@@ -107,28 +110,38 @@ export function bindPanZoom(area, wrap, zoomTo, preview = () => {}) {
     const r = wrap.getBoundingClientRect();
     area.scrollLeft += r.left - want.x;
     area.scrollTop += r.top - want.y;
+    preview(null);
+    dispatchEvent(new Event('zoompreview'));
+  };
+  // Shows `wrap` at `pct` percent, scaled about the client point (cx, cy), or about the page's centre line across while centred.
+  const scaleTo = (pct, cx, cy) => {
+    if (!burst) {
+      const r = wrap.getBoundingClientRect();
+      burst = { z0: Number(wrap.style.zoom) || 1, s: 1, tx: 0, ty: 0, left: r.left + area.scrollLeft, top: r.top + area.scrollTop, w: r.width, h: r.height };
+      Object.assign(wrap.style, { transformOrigin: '0 0', willChange: 'transform' });
+    }
+    const b = burst;
+    const s = Math.min(4, Math.max(0.1, pct / 100)) / b.z0; // 10…400 %
+    // Scale by f about (px, py), relative to the untransformed origin, which stays put.
+    const f = s / b.s;
+    const px = centred() ? b.w / 2 : cx - (b.left - area.scrollLeft);
+    const py = cy - (b.top - area.scrollTop);
+    [b.s, b.tx, b.ty] = [s, f * b.tx + px * (1 - f), f * b.ty + py * (1 - f)];
+    // Pages that will fit the view's height land centred in it (app.css): show them there.
+    if (centred() && b.h * s + 48 <= area.clientHeight) b.ty = area.getBoundingClientRect().top + (area.clientHeight - b.h * s) / 2 - (b.top - area.scrollTop);
+    wrap.style.transform = `translate(${b.tx / b.z0}px, ${b.ty / b.z0}px) scale(${s})`; // translate is in the zoomed px of `wrap`
+    preview(b.z0 * s * 100);
+    dispatchEvent(new Event('zoompreview'));
+    clearTimeout(b.timer);
+    b.timer = setTimeout(settle, SETTLE_MS);
   };
   area.addEventListener('wheel', (e) => {
     if (!e.ctrlKey) return;
     e.preventDefault();
     // About 10 % per mouse-wheel notch (deltaY 100), proportionally less for touchpad deltas.
     const dy = e.deltaMode === 1 ? e.deltaY * 33 : e.deltaY;
-    if (!burst) {
-      const r = wrap.getBoundingClientRect();
-      burst = { z0: Number(wrap.style.zoom) || 1, s: 1, tx: 0, ty: 0, left: r.left + area.scrollLeft, top: r.top + area.scrollTop };
-      Object.assign(wrap.style, { transformOrigin: '0 0', willChange: 'transform' });
-    }
-    const b = burst;
-    const s = Math.min(4, Math.max(0.1, b.z0 * b.s * Math.exp(-dy / 1000))) / b.z0; // 10…400 %
-    // Scale by f about the pointer (px, py: relative to the untransformed origin), which stays put.
-    const f = s / b.s;
-    const px = e.clientX - (b.left - area.scrollLeft);
-    const py = e.clientY - (b.top - area.scrollTop);
-    [b.s, b.tx, b.ty] = [s, f * b.tx + px * (1 - f), f * b.ty + py * (1 - f)];
-    wrap.style.transform = `translate(${b.tx / b.z0}px, ${b.ty / b.z0}px) scale(${s})`; // translate is in the zoomed px of `wrap`
-    preview(b.z0 * s * 100);
-    clearTimeout(b.timer);
-    b.timer = setTimeout(settle, SETTLE_MS);
+    const now = burst ? burst.z0 * burst.s : Number(wrap.style.zoom) || 1;
+    scaleTo(now * Math.exp(-dy / 1000) * 100, e.clientX, e.clientY);
   }, { passive: false });
   // A resize moves the page's untransformed origin in scrolled coordinates (the area's padding follows its size): measure it
   // again, so the rest of the burst and settle() start from where the page is now.
@@ -157,4 +170,15 @@ export function bindPanZoom(area, wrap, zoomTo, preview = () => {}) {
   };
   area.addEventListener('pointerup', end);
   area.addEventListener('pointercancel', end);
+  return {
+    preview: (pct) => {
+      const v = area.getBoundingClientRect();
+      scaleTo(pct, v.left + area.clientWidth / 2, v.top + area.clientHeight / 2);
+    },
+    settle: () => {
+      if (!burst) return;
+      clearTimeout(burst.timer);
+      settle();
+    },
+  };
 }

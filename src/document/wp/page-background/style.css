@@ -1,0 +1,11 @@
+/* Page background (docs/plans/word briefs/page-background.md). Automatic text turns white on a dark page colour, as in Word (v). */
+.page[data-format="document"][data-pb-dark] { color: #ffffff; }
+.page[data-format="document"] .pg-layer[data-layer^="pageBackground."] { overflow: hidden; user-select: none; }
+.page[data-format="document"] .pg-layer [data-watermark] { pointer-events: none; user-select: none; }
+
+/* Print (plan.md §1.12): print sets html[data-print-bg] from Options > Display "Print background colors and images". Off, the
+   page colour, fills and rule lines drop out; watermarks and page borders always print. */
+@media print {
+  html[data-print-bg="off"] .page[data-format="document"] { --page-color: #ffffff !important; color: #000000; }
+  html[data-print-bg="off"] .page[data-format="document"] .pg-layer:is([data-layer="pageBackground.fill"], [data-layer="pageBackground.rules"]) { display: none; }
+}

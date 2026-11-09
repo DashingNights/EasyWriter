@@ -5,6 +5,7 @@
 // placeholder that the download queue (forum/actions.js) swaps for the file. No DOM: a small HTML reader, so node --test runs it.
 import { cleanTitle, draftTitle } from '../../doc-utils.mjs';
 import { FONT_SIZES, FONTS, HIGHLIGHTS, TEXT_COLORS } from '../../format.mjs';
+import { pictureCanvas } from '../../tooling/picture.mjs';
 
 // ---------------------------------------------------------------------------------------------
 // HTML → a tree of {tag, attrs, children} and strings. Enough for the forum's sanitised post HTML, not for any page.
@@ -193,9 +194,36 @@ function walk(nodes, marks, out, ctx) {
   }
 }
 
+/** A canvas or plan chart's own node from the data-json the DOM post kit writes for it (canvas.js, plan-chart.js
+ * renderHTML): the attrs as the editor holds them, or nothing when the JSON is not an object. */
+function objectNode(type, json) {
+  let attrs = null;
+  try {
+    attrs = JSON.parse(json ?? '');
+  } catch { /* not ours */ }
+  return attrs && typeof attrs === 'object' && !Array.isArray(attrs) ? [{ type, attrs }] : [];
+}
+
+/** A media node from the DOM post kit's `div[data-media]` (extensions.js Media renderHTML): the picture's or video's own
+ * source, its name and display width. A forum placeholder (an https URL, not yet downloaded) keeps its URL. */
+function mediaNode(el, attrs) {
+  const inner = find(el, (c) => c.tag === 'img' || c.tag === 'video');
+  const src = inner?.attrs.src ?? attrs['data-src'] ?? '';
+  if (!/^(data:(image|video)\/|https:\/\/)/.test(src)) return [];
+  const dw = Math.round(Number(attrs['data-dw'])) || null;
+  return [{ type: 'media', attrs: { src, name: (attrs['data-name'] || 'media').slice(0, 200), dw } }];
+}
+
 /** Element `el` as blocks, or undefined for an inline element (walk descends into it). */
 function toBlock(el, marks, ctx) {
   const { tag, attrs } = el;
+  // A copy from the DOM editor's post kit (or another window) keeps its canvases, plan charts and media as the nodes they are.
+  // Only a paste asks for them: a forum's own HTML is outside input, so the import never reads an object out of it.
+  if (ctx.objects) {
+    if (attrs['data-canvas'] !== undefined) return objectNode('canvas', attrs['data-json']);
+    if (attrs['data-plan-chart'] !== undefined) return objectNode('planChart', attrs['data-json']);
+    if (attrs['data-media'] !== undefined) return mediaNode(el, attrs);
+  }
   if (attrs['data-ew-media'] !== undefined) {
     const m = ctx.media[Number(attrs['data-ew-media'])];
     if (!m?.src?.startsWith('https://')) return []; // only an https file can be downloaded later
@@ -341,9 +369,11 @@ function table(el, marks, ctx) {
   return content.length ? [{ type: 'table', content }] : [];
 }
 
-/** A post's HTML (and its media list, `[{kind, src, alt}]`, indexed by data-ew-media) → the forum post draft's doc JSON. */
-export function postToDoc(html, media = []) {
-  const content = blocks(parseHtml(html).children, [], { media });
+/** A post's HTML (and its media list, `[{kind, src, alt}]`, indexed by data-ew-media) → the forum post draft's doc JSON.
+ * `objects: true` (the editor's own paste, never its forum import) also reads the post kit's rendered canvases, plan charts and
+ * media (`div[data-canvas]`, `div[data-plan-chart]`, `div[data-media]`) back as their nodes. */
+export function postToDoc(html, media = [], { objects = false } = {}) {
+  const content = blocks(parseHtml(html).children, [], { media, objects });
   // Leading and trailing empty paragraphs are Invision's spacing, not the post's.
   while (content.length > 1 && content[0].type === 'paragraph' && !content[0].content) content.shift();
   while (content.length > 1 && content[content.length - 1].type === 'paragraph' && !content[content.length - 1].content) content.pop();
@@ -370,16 +400,6 @@ export function placeholderUrls(doc) {
   };
   visit(doc);
   return [...urls];
-}
-
-/** A smart canvas holding picture `src` (natural size `w` × `h`, at most 8000 px a side) at 0,0, shown at most `width` wide:
- * what pasting a picture makes (whiteboard.js addImages). */
-export function pictureCanvas({ src, w, h }, width) {
-  const k = Math.min(1, 8000 / Math.max(w, h));
-  const [W, H] = [Math.max(1, Math.round(w * k)), Math.max(1, Math.round(h * k))];
-  const id = Math.random().toString(36).slice(2, 9).padEnd(7, '0');
-  return { type: 'canvas', attrs: { w: W, h: H, dw: Math.min(W, width), frame: { x: 0, y: 0, w: W, h: H, item: id }, bg: 'post',
-    items: [{ id, type: 'image', src, x: 0, y: 0, w: W, h: H }] } };
 }
 
 /** `doc` with every placeholder of a URL in `files` holding that file: a picture ({src, w, h}) becomes a smart canvas shown at

@@ -8,7 +8,9 @@ const { app, screen } = require('electron');
 /** Before ready: a covered test window keeps painting, and an uncaught error (in the app or in a harness script's own code) is
  * logged and ends the run with exit code 1 instead of opening Electron's error dialog on the user's screen. */
 exports.prepare = () => {
-  app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion');
+  // Added to main.js's list: a second disable-features switch would replace the first.
+  const off = app.commandLine.getSwitchValue('disable-features');
+  app.commandLine.appendSwitch('disable-features', [off, 'CalculateNativeWinOcclusion'].filter(Boolean).join(','));
   process.on('uncaughtException', (e) => {
     console.error('Uncaught exception in a test run:', e);
     app.exit(1);
@@ -27,5 +29,8 @@ exports.keepBehind = (win) => {
   const [w, h] = win.getSize();
   const width = Math.min(w, a.width);
   const height = Math.min(h, a.height);
-  win.setBounds({ x: a.x + Math.round((a.width - width) / 2), y: a.y + Math.round((a.height - height) / 2), width, height });
+  const bounds = { x: a.x + Math.round((a.width - width) / 2), y: a.y + Math.round((a.height - height) / 2), width, height };
+  // Twice: moving between screens of different scale (125 and 100 percent) scales the first size by the old screen's factor.
+  win.setBounds(bounds);
+  win.setBounds(bounds);
 };

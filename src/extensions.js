@@ -15,6 +15,7 @@ import { Find } from './find.js';
 import { FONT_SIZES, FONTS, HIGHLIGHTS, presetChain, TEXT_COLORS } from './format.mjs';
 import { keyAmong } from './app/keybinds.js';
 import { chordOf, osChord } from './app/keys.mjs';
+import { commandOf, run } from './tooling/registry.js';
 
 export { FONT_SIZES, FONTS, HIGHLIGHTS, TEXT_COLORS }; // defined in format.mjs, which the command catalogue imports too
 
@@ -393,8 +394,9 @@ export const TIPTAP_CHORDS = new Set(['Ctrl+Z', 'Ctrl+Y', 'Ctrl+Shift+Z', 'Ctrl+
   'Ctrl+Shift+J', ...[0, 1, 2, 3, 4, 5, 6].map((n) => `Ctrl+Alt+${n}`)].map(osChord));
 
 /** The text shortcuts of a format's editor: `map` {keybind id: (chain) => chain} runs a chord bound to one of its ids; a chord in
- * `chords` (TipTap's own for those commands) that the user has moved does nothing. */
-export function textKeys(map, chords) {
+ * `chords` (TipTap's own for those commands) that the user has moved does nothing. With `pool`, an id that is also a pool command
+ * on the active surface (app/pool.js: Undo, Redo, the marks) runs that command instead, so a key and its button do the same. */
+export function textKeys(map, chords, pool = false) {
   const ids = Object.keys(map);
   return Extension.create({
     name: 'textKeys',
@@ -406,7 +408,8 @@ export function textKeys(map, chords) {
           handleKeyDown(_view, event) {
             const id = keyAmong(ids, event);
             if (id) {
-              map[id](editor.chain()).run();
+              if (pool && commandOf(id)) run(id);
+              else map[id](editor.chain()).run();
               return true;
             }
             return chords.has(chordOf(event));
@@ -417,7 +420,7 @@ export function textKeys(map, chords) {
   });
 }
 
-const TextKeys = textKeys(TEXT_KEYS, TIPTAP_CHORDS);
+const TextKeys = textKeys(TEXT_KEYS, TIPTAP_CHORDS, true);
 
 const MIN_COLUMN = 20; // the forum editor's cellMinWidth (SPEC §1)
 

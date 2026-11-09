@@ -1,38 +1,39 @@
 import { useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { cn } from 'cn';
 import {
-  Ban, CalendarDays, ChartGantt, CircleCheck, ExternalLink, FileText, Hash, Heading, Hourglass, Info, ListChecks, ListTodo, Minus,
-  MoveHorizontal, Percent, RefreshCw, Signal, SlidersHorizontal, Snowflake, SquareKanban, Tag, Trash2, Workflow, X,
+  Ban, CalendarDays, CircleCheck, ExternalLink, FileText, Hash, Heading, Hourglass, Info, ListChecks, Minus,
+  MoveHorizontal, Percent, Signal, SlidersHorizontal, Snowflake, Tag, Trash2, Workflow, X,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Dot } from '@/components/ui/dot';
 import { Input } from '@/components/ui/input';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { DropdownMenuItem } from '@/components/ui/dropdown-menu';
 import { Toggle } from '@/components/ui/toggle';
-import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
-import { activeChart, freezeCtx, planSource } from '../../../plan-chart.js';
+import { activeChart, planSource } from '../../../plan-chart.js';
 import { VIEW_TITLES } from '../plan/ChartView.jsx';
 import { columnsOf, FIELDS, OPTION_DEFAULTS, ZOOMS } from '../../../plan/plan-model.mjs';
 import { refocusEditor } from '../../actions.js';
 import { can } from '../../gates.mjs';
 import { enabled } from '../../../integrations/index.mjs';
 import { useStore } from '../../store.js';
-import { planList, usePlans } from '../../plans.js';
+import { usePlans } from '../../plans.js';
+import { FIELD_NAMES, PlanPick, TABS } from '../../pool-plan.js';
+import { run } from '../../../tooling/registry.js';
+import { SplitButton, ToggleGroup } from '../../../tooling/ribbon/parts.jsx';
 import { DateField } from '../DateField.jsx';
 import { IconButton, Tip } from '../Tip.jsx';
 import { PRIORITIES } from '../plan/Card.jsx';
 
 const keepFocus = (e) => e.preventDefault(); // buttons never take focus: the document keeps its selection
-const VIEWS = [['kanban', 'Board', SquareKanban], ['backlog', 'Backlog', ListTodo], ['gantt', 'Gantt', ChartGantt]];
 // Gantt toggles: key, chip text, tooltip (when it says more).
 const GANTT_SHOW = [['showDeps', 'Deps', 'Dependencies'], ['showCritical', 'Critical', 'Critical path'], ['showBaseline', 'Baseline'],
   ['showToday', 'Today', 'Today line'], ['showWeekends', 'Weekends', 'Weekends (off shows working days only)'], ['showTaskList', 'Task list']];
-// Card fields / Backlog columns: name (tooltip) and icon.
-const FIELD_INFO = {
-  num: ['Number', Hash], labels: ['Labels', Tag], due: ['Due date', CalendarDays], checklist: ['Checklist', ListChecks], priority: ['Priority', Signal],
-  estimate: ['Estimate', Hourglass], progress: ['Progress', Percent], draft: ['Linked draft', FileText], pushed: ['Pushed tick', CircleCheck],
-  blocked: ['Blocked', Ban], deps: ['Dependencies', Workflow],
+// Card fields / Backlog columns: icon (the name is pool-plan.js FIELD_NAMES).
+const FIELD_ICONS = {
+  num: Hash, labels: Tag, due: CalendarDays, checklist: ListChecks, priority: Signal, estimate: Hourglass, progress: Percent, draft: FileText,
+  pushed: CircleCheck, blocked: Ban, deps: Workflow,
 };
 const stamp = (at) => new Intl.DateTimeFormat(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }).format(at);
 const editorArea = () => document.getElementById('editor-area').getBoundingClientRect();
@@ -100,10 +101,10 @@ function DateOption({ value, onCommit, ...props }) {
 
 /** Options… (Gantt plan §7.2) in the board tool options' style: rows of small toggles. Title, columns, label / priority filters,
  * filter text, done, drafts, fields (Gantt: range, zoom, week labels, what it shows), legend, footer. Every change is one undo
- * step of the document. */
-function ChartOptions({ chart, ctx, error, set }) {
+ * step of the document, run as a plan chart command (pool-plan.js). */
+function ChartOptions({ chart, ctx, error }) {
   const o = { ...OPTION_DEFAULTS, ...chart.options };
-  const put = (patch) => set({ options: { ...chart.options, ...patch } });
+  const put = (patch) => run('plan.chart.set', { options: { ...chart.options, ...patch } });
   const plan = ctx?.plan;
   // While the forum integration is off the stored unpushedOnly and 'pushed' stay, unshown and unused (planSource.pushShown).
   const push = useStore((s) => enabled(s.settings, 'forum'));
@@ -125,7 +126,7 @@ function ChartOptions({ chart, ctx, error, set }) {
     <div className="grid grid-cols-[auto_minmax(0,1fr)] items-start gap-x-2 gap-y-1">
       {error && <p className="col-span-2 rounded-md border border-dashed border-warning/70 px-1.5 py-1 text-xs text-warning">This chart cannot export as a picture: {error}.</p>}
       <Row label="Title">
-        <Chip tip="Title bar" icon pressed={o.title !== ''} onChange={(on) => put({ title: on ? null : '' })}><Heading /></Chip>
+        <Chip tip="Title bar" icon pressed={o.title !== ''} onChange={() => run('plan.chart.title')}><Heading /></Chip>
         <TextOption aria-label="Chart title" className="min-w-0 flex-1" disabled={o.title === ''} value={o.title ?? ''} placeholder={VIEW_TITLES[chart.view]}
           onCommit={(t) => put({ title: t.trim() || null })} />
       </Row>
@@ -155,7 +156,7 @@ function ChartOptions({ chart, ctx, error, set }) {
       </Row>
       <Row label="Tickets">
         <TextOption aria-label="Filter text" placeholder="Filter text (title, #num)" className="w-full" value={o.search} onCommit={(t) => put({ search: t.slice(0, 100) })} />
-        <Chip pressed={o.hideDone} onChange={(on) => put({ hideDone: on })}>Hide done</Chip>
+        <Chip pressed={o.hideDone} onChange={() => run('plan.chart.hideDone')}>Hide done</Chip>
         {!gantt && <Chip tip="Draft cards (the project's drafts that no ticket links)" pressed={o.showDrafts} onChange={(on) => put({ showDrafts: on })}>Drafts</Chip>}
         {!gantt && push && <Chip pressed={o.unpushedOnly} onChange={(on) => put({ unpushedOnly: on })}>Unpushed only</Chip>}
         <label className="flex h-6 items-center gap-1 px-1 text-xs text-muted-foreground">
@@ -193,26 +194,22 @@ function ChartOptions({ chart, ctx, error, set }) {
       ) : (
         <Row label={chart.view === 'backlog' ? 'Columns' : 'Fields'} tip={chart.view === 'backlog' ? 'Backlog columns shown' : 'Card fields shown'}>
           {FIELDS.filter((f) => push || f !== 'pushed').map((f) => {
-            const [name, Icon] = FIELD_INFO[f];
-            return (
-              <Chip key={f} tip={name} icon pressed={o.fields.includes(f)} onChange={(on) => put({ fields: on ? [...o.fields, f] : o.fields.filter((x) => x !== f) })}><Icon /></Chip>
-            );
+            const Icon = FIELD_ICONS[f];
+            return <Chip key={f} tip={FIELD_NAMES[f]} icon pressed={o.fields.includes(f)} onChange={() => run('plan.chart.fields', { value: f })}><Icon /></Chip>;
           })}
         </Row>
       )}
       <Row label="Chart">
-        <Chip tip="Label legend" pressed={o.legend} onChange={(on) => put({ legend: on })}>Legend</Chip>
-        <Chip tip="Footer (counts, date)" pressed={o.footer} onChange={(on) => put({ footer: on })}>Footer</Chip>
+        <Chip tip="Label legend" pressed={o.legend} onChange={() => run('plan.chart.legend')}>Legend</Chip>
+        <Chip tip="Footer (counts, date)" pressed={o.footer} onChange={() => run('plan.chart.footer')}>Footer</Chip>
       </Row>
     </div>
   );
 }
 
-/** Freeze / Refresh: chart NodeView `view` shows the plan as it is now (also the §7c tool search's Freeze, Refresh). */
-export const freezeChart = (view) => view.set({ frozen: { at: Date.now(), ctx: freezeCtx(planSource.context(view.chart.planId), view.chart.view) } });
-
 /** §6e plan chart bar above (else below) the node-selected plan chart (hovering never shows it), right-aligned (one instance in App):
- * view, Options…, plan, Live / Frozen (+ Refresh), size, Full width, Open plan, Delete. */
+ * view, Options…, plan, Live / Frozen (its menu: Refresh, Show live), size, Full width, Open plan, Delete. Each control runs its
+ * plan chart command (pool-plan.js) on the chart the bar serves. */
 export function PlanChartBar() {
   usePlans();
   const snap = useSyncExternalStore(activeChart.subscribe, activeChart.get);
@@ -237,17 +234,12 @@ export function PlanChartBar() {
   if (!snap || !editorShown) return null;
   const { chart } = view;
   const ctx = planSource.context(chart.planId); // the live plan (Freeze, Refresh, Options lists)
-  const set = (patch) => view.set(patch);
-  const freeze = () => freezeChart(view);
-  const plans = planList();
+  const act = (id, arg) => () => run(id, arg);
   return (
     <div ref={ref} role="toolbar" aria-label="Plan chart" onMouseDown={keepFocus}
-      className="fixed top-0 left-0 z-30 flex flex-wrap items-center gap-0.5 rounded-island border bg-island p-0.5 text-xs shadow-xl">
-      <ToggleGroup type="single" size="xs" aria-label="Chart view" value={chart.view} onValueChange={(v) => v && set({ view: v })}>
-        {VIEWS.map(([v, name, Icon]) => (
-          <ToggleGroupItem key={v} value={v} aria-label={name} className="px-1.5" onMouseDown={keepFocus}><Icon />{name}</ToggleGroupItem>
-        ))}
-      </ToggleGroup>
+      className="fixed top-0 left-0 z-30 flex flex-wrap items-center gap-0.5 rounded-island border bg-island p-1 text-xs shadow-xl [&_[data-face-label]]:text-xs">
+      <ToggleGroup label="Chart view" size="medium"
+        items={TABS.map(([, name, icon, v]) => ({ id: `plan.chart.${v}`, label: name, icon, active: chart.view === v, onClick: act(`plan.chart.${v}`) }))} />
       <Popover>
         <PopoverTrigger asChild>
           <Button variant="ghost" size="xs" onMouseDown={keepFocus}><SlidersHorizontal />Options...</Button>
@@ -257,37 +249,29 @@ export function PlanChartBar() {
             document (typing over the selected chart), Tab goes into the panel, Escape closes it */}
         <PopoverContent align="end" className="w-[24rem] p-1.5 text-xs"
           onOpenAutoFocus={(e) => { e.preventDefault(); e.target.focus(); }} onCloseAutoFocus={refocusEditor} onMouseDown={(e) => e.stopPropagation()}>
-          <ChartOptions chart={chart} ctx={chart.frozen?.ctx ?? ctx} error={snap.error} set={set} />
+          <ChartOptions chart={chart} ctx={chart.frozen?.ctx ?? ctx} error={snap.error} />
         </PopoverContent>
       </Popover>
-      <Select value={plans.some((p) => p.id === chart.planId) ? chart.planId : ''} onValueChange={(planId) => set({ planId, frozen: null })}>
-        <SelectTrigger size="xs" aria-label="Plan" className="max-w-44 px-1.5" onMouseDown={keepFocus}>
-          <SelectValue placeholder="Plan not found" />
-        </SelectTrigger>
-        <SelectContent onCloseAutoFocus={refocusEditor}>
-          {plans.map((p) => <SelectItem key={p.id} value={p.id} className="text-xs">{p.title || p.threadUrl}</SelectItem>)}
-        </SelectContent>
-      </Select>
-      <Tip title={chart.frozen ? 'Shows the plan as it was. Click to show it live' : 'Follows the plan. Click to freeze this moment'}>
-        <Toggle size="xs" aria-label="Frozen" pressed={!!chart.frozen} disabled={!chart.frozen && !ctx}
-          onMouseDown={keepFocus} onPressedChange={(on) => (on ? freeze() : set({ frozen: null }))}>
-          <Snowflake />{chart.frozen ? 'Frozen' : 'Live'}
-        </Toggle>
-      </Tip>
-      {chart.frozen && (
-        <>
-          <span className="px-1 text-muted-foreground">{stamp(chart.frozen.at)}</span>
-          <IconButton label="Freeze it again with the plan as it is now" disabled={!ctx} onClick={freeze}><RefreshCw /></IconButton>
-        </>
-      )}
+      {/* The plan box takes typing: its mousedown must not reach the bar's keepFocus */}
+      <span className="inline-flex" onMouseDown={(e) => e.stopPropagation()}>
+        <PlanPick value={chart.planId} onChange={(planId) => run('plan.chart.plan', { value: planId })} />
+      </span>
+      <SplitButton id="plan.chart.freeze" label={chart.frozen ? 'Frozen' : 'Live'} icon={Snowflake} size="medium" active={!!chart.frozen}
+        off={!chart.frozen && !ctx} onClick={act(chart.frozen ? 'plan.chart.live' : 'plan.chart.freeze')}>
+        <DropdownMenuItem disabled={!ctx} onSelect={act(chart.frozen ? 'plan.chart.refresh' : 'plan.chart.freeze')}>
+          {chart.frozen ? 'Freeze again with the plan as it is now' : 'Freeze this moment'}
+        </DropdownMenuItem>
+        <DropdownMenuItem disabled={!chart.frozen} onSelect={act('plan.chart.live')}>Show live (follow the plan)</DropdownMenuItem>
+      </SplitButton>
+      {chart.frozen && <span className="px-1 text-muted-foreground">{stamp(chart.frozen.at)}</span>}
       <span className="px-1.5 text-muted-foreground tabular-nums">{`${snap.w} x ${snap.h}`}</span>
       <Tip title="Page width">
-        <Button variant="ghost" size="xs" disabled={chart.dw == null} onClick={() => set({ dw: null })}><MoveHorizontal />Full width</Button>
+        <Button variant="ghost" size="xs" disabled={chart.dw == null} onClick={act('plan.chart.fullWidth')}><MoveHorizontal />Full width</Button>
       </Tip>
       <Tip title="Open the plan at this view (double-click, Enter)">
-        <Button variant="ghost" size="xs" disabled={!ctx} onClick={() => view.openPlan()}><ExternalLink />Open plan</Button>
+        <Button variant="ghost" size="xs" disabled={!ctx} onClick={act('plan.chart.open')}><ExternalLink />Open plan</Button>
       </Tip>
-      <IconButton label="Delete chart" variant="destructive-ghost" onClick={() => view.remove()}><Trash2 /></IconButton>
+      <IconButton label="Delete chart" variant="destructive-ghost" onClick={act('plan.chart.delete')}><Trash2 /></IconButton>
     </div>
   );
 }

@@ -7,13 +7,14 @@
 // (a TipTap JSON block), `flow` (a library record; null when not loaded or missing), `window` {visible}
 // (document.visibilityState is 'visible': shown and not minimized) or `settings` (settings.json as loaded).
 
-import { formatOf } from '../formats.mjs';
+import { boardsOn, formatOf } from '../formats.mjs';
 import { integrationGates } from '../integrations/index.mjs';
 
 const gate = (subject, test, message, fix) => ({ subject, test, message, fix });
 
 export const GATES = {
-  'doc.open': gate('ui', (u) => !!u?.editor, 'No document is open', 'Open a draft or start a new one'),
+  // A whiteboard's hidden DOM editor is not a document: its edits go to draft.board, and no text command may touch it.
+  'doc.open': gate('ui', (u) => !!u?.editor && u?.draft?.format !== 'board', 'No document is open', 'Open a draft or start a new one'),
   'view.editor': gate('ui', (u) => u?.view?.type === 'editor', 'The editor is not shown', 'Go back to the editor (Back to editor)'),
   'view.plan': gate('ui', (u) => u?.view?.type === 'plan', 'The plan workspace is not open', 'Open it with the Plans tab'),
   'view.flows': gate('ui', (u) => u?.view?.type === 'flows', 'The flowchart library is not open', 'Open it with the Flowcharts tab'),
@@ -35,9 +36,19 @@ export const GATES = {
   'board.itemIs': gate('board', (b, _args, types) => !!b?.item && types.includes(b.item.type),
     'The selection is not one item of the needed type', 'Select exactly one item of that type'),
   'doc.inTable': gate('doc', (d) => !!d?.inTable, 'The caret is not in a table', 'Put the caret in a table cell first'),
+  // Whether a new draft may be a whiteboard (formats.mjs boardsOn): off until the board is usable, so the tool search and the
+  // agent leave it out. A board draft already saved still opens.
+  'board.on': gate('settings', (s) => boardsOn(s), 'Whiteboards are not available in this build', 'Open a document instead'),
   'history.canUndo': gate('history', (h) => !!h?.canUndo, 'There is nothing to undo', 'Make a change first'),
-  // No agent edit waits as a suggestion in the draft (docs/plans/suggestions.md): `suggestions` is the count, the open draft's or
+  // No agent edit waits as a suggestion in the draft (docs/wiki/suggestions.md): `suggestions` is the count, the open draft's or
   // a session's live, else its summary's. A forum push needs it.
+  // The draft is not a canvas draft (engine/model/form.mjs isCanvas): an agent command that works on the draft but has no engine
+  // side (commands/engine.mjs ENGINE) would read or change the hidden DOM editor, which holds no copy of it. draft.boards: the
+  // same for the board commands, until a canvas draft's boxes can be changed as suggestions.
+  'draft.dom': gate('draft', (d) => !d?.canvas, 'This command does not work on a draft in the canvas engine yet',
+    'Use the doc tools, or turn off View > Canvas engine to move the draft back to the DOM editor'),
+  'draft.boards': gate('draft', (d) => !d?.canvas, 'Boards in a canvas engine draft cannot be changed as suggestions yet',
+    'Turn off View > Canvas engine to move the draft back to the DOM editor'),
   'draft.settled': gate('draft', (d) => !(d?.suggestions > 0), 'Suggestions wait in this draft', 'Accept or reject them in the draft first'),
   'history.canRedo': gate('history', (h) => !!h?.canRedo, 'There is nothing to redo', 'Undo a change first'),
   // The draft's format (formats.mjs formatOf: no draft or no format is the forum post). Forum services, typography and tools

@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { defaultSect } from '../src/document/defaults.mjs';
-import { marginPreset, pageAt, pageGuard, pagesFor, paperSize, printCss, sectFor, showIn, tooSmall, unitOf } from '../src/document/pages.mjs';
+import { marginPreset, pageAt, paperSize, printCss, sectFor, showIn, tooSmall, unitOf } from '../src/document/pages.mjs';
 
 const A4 = defaultSect('a4');
 
@@ -38,32 +38,12 @@ test('margins that leave no text column are refused; lengths show in cm or inche
   assert.equal(showIn(72, unitOf('a4')), '2.54');
 });
 
-test('page counts at content heights on and around page boundaries', () => {
+test('the page at a layout y over runs between page breaks', () => {
   const body = 600;
   const breaker = 200; // bottom margin, gap, top margin
-  assert.equal(pagesFor(0, body, breaker), 1);
-  assert.equal(pagesFor(600, body, breaker), 1);
-  assert.equal(pagesFor(600.4, body, breaker), 1); // rounding
-  assert.equal(pagesFor(601, body, breaker), 2); // a line pushed below the breaker is on page 2...
-  assert.equal(pagesFor(700, body, breaker), 2); // ...and so is an end inside the breaker (floats not drawn yet)
-  assert.equal(pagesFor(1400, body, breaker), 2);
-  assert.equal(pagesFor(1401, body, breaker), 3);
   // pageAt over two runs: the second starts after a manual page break at y 2000.
   const segs = [{ top: 0, pages: 2 }, { top: 2000, pages: 3 }];
   assert.deepEqual([0, 599, 800, 1500, 2000, 2800, 9000].map((y) => pageAt(y, segs, body + breaker)), [0, 0, 1, 1, 2, 3, 4]);
-});
-
-test('the page count guard stops an A-B-A flip and runaway growth at the largest count', () => {
-  const settle = pageGuard(5);
-  assert.deepEqual(settle(1, [3]), [3]);
-  assert.deepEqual(settle(1, [4]), [4]);
-  assert.deepEqual(settle(1, [3]), [4]); // back to 3 for the same doc: keep 4
-  assert.deepEqual(settle(2, [3]), [3]); // a new doc version starts over
-  const grow = pageGuard(3);
-  assert.deepEqual([1, 2, 3, 4, 5, 6].map((n) => grow(7, [n])), [[1], [2], [3], [4], [4], [4]]);
-  const still = pageGuard(3);
-  for (let i = 0; i < 20; i++) still(9, [2]); // caret moves in one doc version measure the same count
-  assert.deepEqual(still(9, [3]), [3]);
 });
 
 test('a page number is set and removed through sectFor; other fields stay', () => {

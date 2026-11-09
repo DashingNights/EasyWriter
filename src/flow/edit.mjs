@@ -1,4 +1,4 @@
-// Connector editing (docs/plans/flowchart.md §5.3–§5.5, SPEC §6d): label slots, reverse, segment / waypoint handles and
+// Connector editing (docs/wiki/flowchart.md §5.3–§5.5, SPEC §6d): label slots, reverse, segment / waypoint handles and
 // keyboard navigation between connected items. Pure (no DOM): whiteboard.js and the Node tests share it.
 import { LABEL_SLOTS, MAX_POINTS } from './model.mjs';
 import { nearestT, polylinePoint } from './route.mjs';

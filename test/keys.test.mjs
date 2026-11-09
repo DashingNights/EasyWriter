@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { kindOf } from '../src/flow/shapes.mjs';
 import { chordOf, chordText, codeOf, collisions, DEFS, effective, GROUPS, keybindsKey, keyName, macUse, normalize, osUse, overridesOf, partName, setMac,
-  SHAPE_KEYS, windowsUse } from '../src/app/keys.mjs';
+  SHAPE_KEYS, windowsUse, WORD_DEFS } from '../src/app/keys.mjs';
 
 test('chordOf names the physical key with modifiers in a fixed order; Meta counts as Ctrl; a lone modifier is no chord', () => {
   assert.equal(chordOf({ code: 'KeyP', ctrlKey: true, altKey: true }), 'Ctrl+Alt+P');
@@ -94,10 +94,11 @@ test('board keys: Ctrl+G groups and Ctrl+Shift+G ungroups (Figma)', () => {
   assert.deepEqual([b['board.group'], b['board.ungroup']], [['Ctrl+G'], ['Ctrl+Shift+G']]);
 });
 
-test("Document keys: Word's chords, Ctrl+E shadowing inline code, none taking a global chord, the board keeping its own", () => {
+test("Document keys: Word's chords, Ctrl+E shadowing inline code, no document.* binding taking a global chord, the board keeping its own", () => {
   const b = effective(DEFS);
-  const docs = DEFS.filter((d) => d.scope === 'document');
-  assert.ok(docs.every((d) => d.group === 'Document' && d.id.startsWith('document.')));
+  // The app's own Document bindings; Word's (word.*) are checked below and in test/word-keys.test.mjs.
+  const docs = DEFS.filter((d) => d.id.startsWith('document.'));
+  assert.ok(docs.every((d) => d.group === 'Document' && d.scope === 'document'));
   assert.deepEqual([b['document.alignCenter'], b['document.growFont1'], b['document.indent'], b['document.normalStyle']], [['Ctrl+E'], ['Ctrl+]'], ['Ctrl+M'], ['Ctrl+Shift+N']]);
   assert.deepEqual(DEFS.find((d) => d.id === 'document.alignCenter').shadows, ['text.code']);
   assert.deepEqual(b['document.pageBreak'], ['Ctrl+Enter']); // nothing else binds Ctrl+Enter: no collision below
@@ -107,7 +108,49 @@ test("Document keys: Word's chords, Ctrl+E shadowing inline code, none taking a 
   for (const d of docs) for (const k of b[d.id]) assert.ok(!global.has(k), `${d.id} ${k}`);
   // Without the shadow, Ctrl+E would collide with inline code.
   assert.ok(collisions(DEFS.map((d) => (d.id === 'document.alignCenter' ? { ...d, shadows: undefined } : d)), b)['document.alignCenter']);
-  assert.deepEqual([b['board.forward'], b['board.duplicate']], [['Ctrl+]'], ['Ctrl+J']]); // same chords, scopes that never overlap
+  assert.deepEqual([b['board.forward'], b['board.duplicate']], [['Ctrl+]'], ['Ctrl+D', 'Ctrl+J']]); // same chords, scopes that never overlap
+});
+
+// Every Word chord that equals a global, editor or text chord names that binding in its shadows (plan.md §1.13 Shadows), on
+// Windows and on a Mac, so the collision tests cannot pass by accident.
+const shadowsComplete = () => {
+  const b = effective(DEFS);
+  const app = DEFS.filter((d) => ['global', 'editor', 'text'].includes(d.scope));
+  for (const w of WORD_DEFS) for (const k of b[w.id]) for (const a of app) if (b[a.id].includes(k)) assert.ok(w.shadows?.includes(a.id), `${w.id} ${k} ${a.id}`);
+};
+test('Word keys: every chord an app binding holds in an overlapping scope is in shadows (Windows)', shadowsComplete);
+test('Word keys: every chord an app binding holds in an overlapping scope is in shadows (Mac)', () => {
+  setMac(true);
+  try { shadowsComplete(); } finally { setMac(false); }
+});
+
+// The app chords Word moves inside Document text (plan.md §1.13 App chords this moves): a Word binding holds the chord and
+// shadows the app binding, which keeps its chord everywhere else.
+const MOVED = [
+  ['app.toolSearch', 'Ctrl+Space', 'word.font.resetChar'], ['app.quickTools', 'Ctrl+Tab', 'word.chars.tabInCell'],
+  ['app.assistant', 'Ctrl+Shift+A', 'word.font.allCaps'], ['app.dictate', 'Ctrl+Shift+D', 'word.font.doubleUnderline'],
+  ['app.zoomIn', 'Ctrl+=', 'word.views.zoomIn'], ['app.zoomOut', 'Ctrl+-', 'word.views.zoomOut'], ['app.zoomReset', 'Ctrl+0', 'word.view.zoom.zoom100'],
+  ['app.zoomIn', 'Ctrl+Shift+=', 'word.home.font.superscript'], ['app.zoomOut', 'Ctrl+Shift+-', 'word.home.font.subscript'],
+  ['app.zoomOut', 'Ctrl+Num-', 'word.chars.enDash'], ['app.devtools', 'Ctrl+Shift+I', 'word.home.font.italic'],
+  ['app.plans', 'Ctrl+Alt+P', 'word.view.views.printLayout'], ['insert.canvas', 'Ctrl+Alt+C', 'word.editing.copyFormat'],
+  ['insert.flowchart', 'Ctrl+Alt+F', 'word.references.footnotes.insertFootnote'], ['suggest.next', 'Ctrl+Alt+PageDown', 'word.navigation.endOfWindow'],
+  ['suggest.previous', 'Ctrl+Alt+PageUp', 'word.navigation.startOfWindow'], ['suggest.accept', 'Ctrl+Alt+Enter', 'word.styles.styleSeparator'],
+  ['app.sidebar', 'Ctrl+\\', 'word.outlining.masterDocument.collapseSubdocuments'], ['text.alignLeft', 'Ctrl+Shift+L', 'word.styles.listBulletKey'],
+  ['text.alignCenter', 'Ctrl+Shift+E', 'word.review.tracking.trackChanges'], ['text.alignRight', 'Ctrl+Shift+R', 'word.wordCount.recount'],
+  ['text.alignJustify', 'Ctrl+Shift+J', 'word.home.paragraph.distributed'], ['text.subscript', 'Ctrl+,', 'word.chars.accentPrefixes'],
+  ['text.orderedList', 'Ctrl+Shift+7', 'word.chars.accentPrefixes'], ['text.bulletList', 'Ctrl+Shift+8', 'word.home.paragraph.showAll'],
+  ['text.strike', 'Ctrl+Shift+S', 'word.home.styles.styles.applyStyles'], ['edit.redo', 'Ctrl+Shift+Z', 'word.font.resetChar'],
+  ['text.blockquote', 'Ctrl+Shift+B', 'word.home.font.bold'], ['text.heading5', 'Ctrl+Alt+5', 'word.pictures.objectLayer'],
+];
+test('Word keys: each moved app chord, its Word binding, and the app binding keeping the chord outside Document text', () => {
+  const b = effective(DEFS);
+  for (const [app, chord, word] of MOVED) {
+    assert.ok(b[app].includes(chord), `${app} ${chord}`);
+    assert.ok(b[word]?.includes(chord), `${word} ${chord}`);
+    assert.ok(DEFS.find((d) => d.id === word).shadows.includes(app), `${word} shadows ${app}`);
+  }
+  assert.deepEqual(b['app.toolSearchDoc'], ['Alt+Q']);
+  assert.deepEqual(b['edit.redo'], ['Ctrl+Y', 'Ctrl+Shift+Z']); // Document text: Ctrl+Y redoes or repeats, Ctrl+Shift+Z resets characters
 });
 
 test('Ctrl+N opens New draft everywhere and collides with nothing (N alone stays the plan and flowchart key)', () => {
@@ -164,6 +207,8 @@ test('Mac defaults: Ctrl becomes Cmd, Alt+character becomes Ctrl+Cmd, the except
   assert.deepEqual([b['text.preset1'], b['text.preset9']], [['Ctrl+Cmd+1'], ['Ctrl+Cmd+9']]);
   assert.deepEqual([b['app.toolSearch'], b['app.quickTools'], b['edit.redo'], b['app.replace'], b['browser.reload'], b['suggest.reject']],
     [['Fn+Space', 'Ctrl+Shift+Space'], ['Fn+Tab', 'Ctrl+Tab'], ['Shift+Cmd+Z', 'Cmd+Y'], ['Ctrl+H'], ['Cmd+R'], ['Alt+Cmd+Backspace']]);
+  assert.deepEqual(b['app.toolSearchDoc'], []); // Alt+Q's Mac form Ctrl+Cmd+Q locks the screen
+  assert.deepEqual([macUse('Shift+Cmd+Q').level, macUse('Alt+Cmd+M').level], ['system', 'system']);
   for (const d of DEFS) for (const k of b[d.id]) {
     assert.ok(normalize(k), `${d.id} ${k}`);
     assert.notEqual(macUse(k)?.level, 'system', `${d.id} ${k}`);

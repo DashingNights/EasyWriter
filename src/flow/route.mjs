@@ -1,4 +1,4 @@
-// Connector routing (docs/plans/flowchart.md §3.4, SPEC §6d): resolveConnectors writes each connector's derived fields (bbox
+// Connector routing (docs/wiki/flowchart.md §3.4, SPEC §6d): resolveConnectors writes each connector's derived fields (bbox
 // x y w h, shaft path `d`, `tips`, label anchors `lps`) from its ends, waypoints and route, so rendering never needs the
 // siblings. Pure (no DOM).
 import { anchorPoint, outlineOf, perimeter, pinPoint, portNormal, rotBox, rotOf } from './shapes.mjs';

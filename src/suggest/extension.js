@@ -1,4 +1,4 @@
-// The Suggestions extension (docs/plans/suggestions.md One converter, Display): both editor kits carry it (src/editors.js), so the
+// The Suggestions extension (docs/wiki/suggestions.md One converter, Display): both editor kits carry it (src/editors.js), so the
 // open draft's editor, the assistant's background sessions and the background window record agent edits the same way. It runs
 // last in each round (priority 1): an agent's round gets its records (core.convert) in the same dispatch and undo event, any
 // other round keeps records whole (core.normalize), pastes drop records, and the page draws the waiting changes in yellow.
@@ -72,6 +72,10 @@ function callFor(owner, root) {
   if (windowScope && windowEditor() === owner) return windowAgent(owner) ? windowScope.call : null;
   return workerCall;
 }
+
+/** The agent call transaction `tr` of `editor` belongs to (an appended transaction: its root's), or null for the user's. Tracking
+ * reads it so an agent's edit stays a suggestion, never a tracked change of the user. */
+export const agentCallOf = (editor, tr) => callFor(editor, tr.getMeta('appendedTransaction') ?? tr);
 
 const windowAgent = (owner) => typeof window !== 'undefined'
   && core.attribute(windowScope.kind, window.event, lastInput.get(owner) ?? -Infinity, Date.now()) === 'agent';
@@ -286,13 +290,19 @@ export function resolve(editor, sel, action, { by = null, draftId = null } = {})
   const ids = picked.map((e) => e.id);
   const tr = (action === 'reject' ? core.reject : core.accept)(editor.state, ids);
   if (tr) editor.view.dispatch(tr);
+  logDecisions(picked, action, { by, draftId });
+  return ids;
+}
+
+/** Logs decisions `picked` ({id, g, by, ids?}: changes, or a canvas draft's cards with their revision ids as `ids`) per group, as
+ * resolve does. */
+export function logDecisions(picked, action, { by = null, draftId = null } = {}) {
   const at = Date.now();
   for (const g of new Set(picked.map((e) => e.g))) {
     const mine = picked.filter((e) => e.g === g);
-    log.push({ draftId, ids: mine.map((e) => e.id), g, author: mine[0].by, by, action, at });
+    log.push({ draftId, ids: mine.flatMap((e) => e.ids ?? [e.id]), g, author: mine[0].by, by, action, at });
   }
   log.splice(0, Math.max(0, log.length - 200));
-  return ids;
 }
 
 // Places `pids` (core.places ids) of `editor`'s changes, accepted or rejected in one transaction; logged per group like a change.

@@ -2,6 +2,9 @@
 node_modules/
 dist/
 release/
+# The engine's build, which npm run build makes from engine/
+/src/engine/wasm/*
+!/src/engine/wasm/package.json
 
 # Test runs: throwaway profiles and harnesses (.smoke-data), smoke outputs written to the repo root, smoke scripts, the
 # assistant's evaluation (its fixture is the owner's real drafts)
@@ -18,6 +21,12 @@ media/
 .vscode/
 SPEC.md
 docs/plans/
+docs/wiki/
+
+# graphify: the code graph it builds, the scripts that rebuild it and the CLAUDE.md section that points Claude Code at it
+graphify-out/
+scripts/graph/
+CLAUDE.md
 
 # Keys and logs
 .env

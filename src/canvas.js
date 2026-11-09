@@ -8,17 +8,19 @@ import { Node } from '@tiptap/core';
 import { NodeSelection } from '@tiptap/pm/state';
 import { closeHistory } from '@tiptap/pm/history';
 import { stateOf, validFlow, validSource, writeBackOk } from './flow/library.mjs';
+import { whenNear } from './document/lazy.mjs';
 import { boardDiff } from './suggest/core.mjs';
-import { Board, contentWidth, DEFAULT_WIDTH, dismissOnly, drawCanvas, edgeSpeed, injectStyle, insertBoard, itemElement, make, parseBoard, parseFrame, scrollParent, smartArtboard, topLevelPos, whiteboardToCanvas, withoutScroll } from './whiteboard.js';
+import { Board, columnWidth, DEFAULT_WIDTH, dismissOnly, drawCanvas, drawnWidth, edgeSpeed, injectStyle, insertBoard, itemElement, keptSpan, loneShape, make, parseBoard, parseFrame, scrollParent, smartArtboard, topLevelPos, whiteboardToCanvas, withoutScroll } from './whiteboard.js';
 
 const DEFAULT = { w: 800, h: 450 };
 const MIN_SIZE = 40; // artboard sides and display width
 const MAX_SIZE = 8000;
+const REACH = 120; // screen px of the editor area around an edited artboard that can be scrolled to (the page keeps as much, EditorPage.jsx)
 const CORNERS = ['nw', 'ne', 'sw', 'se'];
 const fit = (v, min, max) => Math.max(min, Math.min(v, max));
 
 // .sc-editing: the page while a canvas is edited (the rest of the document dimmed and inert); .sce-art: the edited board
-// over the canvas, with its artboard edge strips.
+// over the canvas, with its artboard edge strips and .sce-reach, the room around it the editor area scrolls to (reach()).
 const CSS = `
 .sc{position:relative;box-sizing:border-box;margin:1em 0;user-select:none;-webkit-user-select:none}
 .sc:not(.sc-selected){cursor:pointer}
@@ -35,11 +37,17 @@ const CSS = `
 .sce-rs-e{left:100%;top:0;height:100%;width:calc(10px*var(--sce-inv,1));cursor:ew-resize}
 .sce-rs-s{top:100%;left:0;width:100%;height:calc(10px*var(--sce-inv,1));cursor:ns-resize}
 .sce-rs-se{left:100%;top:100%;width:calc(14px*var(--sce-inv,1));height:calc(14px*var(--sce-inv,1));cursor:nwse-resize}
+.sce-reach{position:absolute;inset:calc(${-REACH}px*var(--sce-inv,1));visibility:hidden;pointer-events:none}
 .sc-flow{position:absolute;left:6px;top:6px;display:flex;align-items:center;gap:4px;max-width:calc(100% - 12px);box-sizing:border-box;padding:1px 7px 1px 5px;border-radius:999px;background:color-mix(in oklab,var(--card) 70%,transparent);backdrop-filter:blur(2px);box-shadow:0 0 0 1px var(--border);color:var(--muted-foreground);font:11px/16px system-ui,sans-serif;white-space:nowrap;pointer-events:none}
 .sc-flow svg{flex:none;width:12px;height:12px}
 .sc-flow span{overflow:hidden;text-overflow:ellipsis}
 .sc-flow-missing{background:color-mix(in oklab,var(--warning) 16%,var(--card));color:var(--warning);outline:1px dashed var(--warning);outline-offset:-1px}
 `;
+
+/** The look new items take on a canvas being edited, where its format gives one in place of the shared tool settings: look(tool,
+ * kind) → item fields ('path': {open, closed}) or null, setLook(tool, patch) → true when the format keeps the change (Board.look).
+ * A Document fills them (src/document/wp/shapes/looks.js: its theme's default shape and line); elsewhere they give nothing. */
+export const canvasLooks = { look: () => null, setLook: () => false };
 
 function injectCanvasStyle() {
   if (document.getElementById('sc-style')) return;
@@ -188,10 +196,12 @@ const WORKFLOW_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor
 
 // ---------------------------------------------------------------------------------------------
 // Document NodeView: the scaled preview. Click selects, a corner handle changes dw, double-click / Enter / Edit edits it.
+// A document that opens draws its canvases' artboards only near the view (lazy.mjs); until then the box has its drawn size
+// (dw and the artboard's ratio) and no artboard.
 
 class CanvasView {
-  constructor({ node, view, getPos, editor }) {
-    Object.assign(this, { node, view, getPos, editor, session: null, drag: null });
+  constructor({ node, view, getPos, editor }, options) {
+    Object.assign(this, { node, view, getPos, editor, options, session: null, drag: null });
     injectStyle(); // .wb-handle
     injectCanvasStyle();
     this.dom = make('div', 'sc');
@@ -204,10 +214,15 @@ class CanvasView {
     this.dom.addEventListener('pointercancel', this.onPointerUp);
     this.dom.addEventListener('mousedown', (e) => e.preventDefault()); // no caret or native selection in the document
     this.dom.addEventListener('dblclick', (e) => !e.target.classList.contains('wb-handle') && this.open());
-    this.resizeObserver = new ResizeObserver(() => this.scaleArt());
+    this.resizeObserver = new ResizeObserver(() => this.scaleArt(true));
     this.resizeObserver.observe(this.dom);
     this.unsubscribe = flowSource.subscribe(this.onFlow);
-    this.render();
+    this.drawn = false;
+    this.lazy = whenNear(view, this.dom, () => {
+      this.drawn = true;
+      this.render();
+    });
+    if (!this.drawn) this.render();
   }
 
   // The library flowchart this canvas is synced with ({id, rev}), or null.
@@ -215,25 +230,28 @@ class CanvasView {
     return validFlow(this.node.attrs.flow);
   }
 
-  // Draws liveBoard(): a synced canvas shows the library flowchart (its record is loaded on first sight), dw stays its own.
+  // Draws liveBoard(): a synced canvas shows the library flowchart (its record is loaded on first sight), dw stays its own. Its
+  // size first, the artboard once drawn.
   render() {
     const f = this.flow();
     if (f && !flowSource.get(f.id) && !flowSource.isMissing(f.id)) flowSource.load(f.id);
-    const { w, h, bg, items } = liveBoard(this);
+    const { w, h, bg, items, frame } = liveBoard(this);
     this.dw = this.node.attrs.dw;
     this.artSize = { w, h };
     // --sc-ratio: a Document caps the width so the canvas fits one page (document.css); other formats ignore it.
-    Object.assign(this.dom.style, { width: `min(${this.dw}px, 100%)`, aspectRatio: `${w} / ${h}` });
+    Object.assign(this.dom.style, { width: drawnWidth(this.dw), aspectRatio: `${w} / ${h}` });
     this.dom.style.setProperty('--sc-ratio', String(w / h));
-    this.art?.remove();
-    this.art = drawCanvas(this.dom, { aw: w, ah: h, bg, items });
     this.dom.classList.toggle('sc-empty', !items.length);
-    this.drawSuggestion(items);
+    if (this.drawn) {
+      this.art?.remove();
+      this.art = drawCanvas(this.dom, { aw: w, ah: h, bg, items, overflow: this.options.overflow && loneShape({ items, frame }) });
+      this.drawSuggestion(items);
+    }
     this.drawBadge(f);
     this.scaleArt();
   }
 
-  // A changed canvas waiting as a suggestion (docs/plans/suggestions.md Display): added and changed items outlined, removed ones
+  // A changed canvas waiting as a suggestion (docs/wiki/suggestions.md Display): added and changed items outlined, removed ones
   // drawn as ghosts, against the board the change replaced.
   drawSuggestion(items) {
     const old = this.node.attrs.suggest?.ins?.old;
@@ -274,9 +292,12 @@ class CanvasView {
     emitCanvas();
   };
 
-  // The artboard is drawn at the display width.
-  scaleArt() {
-    this.art.style.transform = `scale(${this.dom.offsetWidth / this.artSize.w})`;
+  // The artboard is drawn at the display width, read in the resize observer's callback (`read`), where the layout is done; a
+  // redraw scales by the width read last, and the observer reads the new one when the redraw changed it. Read after the redraw's
+  // own style writes, each canvas laid the document out again (about 70 ms a frame on the Word fixture's 322 canvases).
+  scaleArt(read = false) {
+    if (read) this.shownW = this.dom.offsetWidth;
+    if (this.art && this.shownW) this.art.style.transform = `scale(${this.shownW / this.artSize.w})`;
   }
 
   // Handles and the outline keep their on-screen size under the page zoom.
@@ -290,9 +311,10 @@ class CanvasView {
     return Number.isFinite(m) ? Math.floor(m) : Infinity;
   }
 
-  // The widest dw that changes what is drawn: the text width, and in a Document the page cap.
+  // The widest dw that changes what is drawn: the text width at the canvas from the page setup (its section's, or in newspaper
+  // columns its column's: columnWidth), and in a Document the page cap.
   maxWidth() {
-    return Math.min(contentWidth(this.view), this.pageCap());
+    return Math.min(columnWidth(this.view, this.getPos() ?? undefined), this.pageCap());
   }
 
   setDw(dw) {
@@ -316,6 +338,7 @@ class CanvasView {
   }
 
   open() {
+    this.lazy.now();
     const pos = this.getPos();
     if (typeof pos === 'number') openCanvasEditor(this.editor, pos);
   }
@@ -352,7 +375,7 @@ class CanvasView {
     const aw = g.w0 + ((g.corner.includes('w') ? -1 : 1) * (e.clientX - g.x)) / g.scale;
     const ah = h0 + ((g.corner.includes('n') ? -1 : 1) * (e.clientY - g.y)) / g.scale;
     this.dw = Math.round(fit((g.w0 * (aw * g.w0 + ah * h0)) / (g.w0 ** 2 + h0 ** 2), MIN_SIZE, this.maxWidth()));
-    this.dom.style.width = `min(${this.dw}px, 100%)`;
+    this.dom.style.width = drawnWidth(this.dw);
     this.scaleArt();
     emitCanvas(); // the bar's size label
   };
@@ -365,6 +388,8 @@ class CanvasView {
 
   update(node) {
     if (node.type !== this.node.type) return false;
+    // The same node with other decorations (float-layout's places): ProseMirror sets those on the box, nothing to draw again.
+    if (node === this.node) return true;
     const was = this.flow();
     this.node = node;
     this.writeBack(was);
@@ -398,6 +423,7 @@ class CanvasView {
   }
 
   selectNode() {
+    this.lazy.now(); // reached by the keyboard or a search
     if (this.dom.classList.contains('sc-selected')) return;
     this.dom.classList.add('sc-selected');
     this.dom.append(...CORNERS.map((c) => make('div', `wb-handle wb-h-${c}`, { title: 'Drag to resize' })));
@@ -414,6 +440,7 @@ class CanvasView {
   }
 
   destroy() {
+    this.lazy.stop();
     this.resizeObserver.disconnect();
     this.unsubscribe();
     this.session?.close(); // the node is gone (undo, delete, draft switch, editor remount)
@@ -439,7 +466,7 @@ function nodeTarget(cv) {
     commit(attrs, newGroup) {
       const pos = cv.getPos();
       if (typeof pos !== 'number') return;
-      if (attrs.w !== liveBoard(cv).w) attrs = { ...attrs, dw: Math.min(Math.round(ratio * attrs.w), contentWidth(cv.view)) };
+      if (attrs.w !== liveBoard(cv).w) attrs = { ...attrs, dw: Math.min(Math.round(ratio * attrs.w), columnWidth(cv.view, pos)) };
       commitSynced(cv, pos, attrs, newGroup);
     },
     done() {
@@ -469,6 +496,10 @@ class CanvasSession {
     // Artboard px → page px: the canvas's display scale, kept while editing (a size capped to the page width never shrinks
     // the content on screen). Its inverse is the board's unit: item sizes show and are set in post px (§6c).
     this.k = target.el().getBoundingClientRect().width / scaleOf(this.page) / target.attrs().w;
+    this.drift = { x: 0, y: 0 }; // page px the overlay sits off the canvas's place in the post (anchored growth, shift below)
+    this.area = scrollParent(this.page); // the editor area, and its child holding the page, which reach() moves
+    this.pan = [...this.area.children].find((c) => c.contains(this.page));
+    this.room = { x: 0, y: 0 }; // screen px the area's content sits right of / below its place for reach()
     this.board = new Board(target.attrs(), {
       commit: (attrs, newGroup) => target.commit(attrs, newGroup),
       undo: () => withoutScroll(() => editor.commands.undo()),
@@ -476,9 +507,26 @@ class CanvasSession {
       canUndo: () => !!editor.can().undo?.(),
       canRedo: () => !!editor.can().redo?.(),
       emptyClick: () => this.board.dom.focus({ preventScroll: true }),
-      shift: (dx, dy) => ({ x: dx, y: dy }), // the canvas stays at its place in the post: its content shifts on screen
+      // Growth or shrinking on the left / top (live, undo / redo): the overlay moves by as much, over the page margin if needed,
+      // so the frame and the content stay put on screen and nothing is left for the board to make up (§6b). Fit to content
+      // moves the frame itself: its content goes to the overlay's corner.
+      shift: (dx, dy) => {
+        if (this.fitting) return;
+        this.drift.x -= dx * this.k;
+        this.drift.y -= dy * this.k;
+        if (this.art) this.show();
+      },
+      // The text column at the canvas, at the display scale: the artboard keeps that width (Board.floor).
+      textWidth: () => Math.round(columnWidth(pm, target.owner.getPos()) / this.k),
+      look: (tool, kind) => canvasLooks.look(tool, kind),
+      setLook: (tool, patch) => canvasLooks.setLook(tool, patch),
+      // Resize shape to fit text for a shape with none: the format's (a Document's keeps its size), except on a canvas synced with
+      // a library flowchart, whose shapes are a board's and grow (as docx/shapes-out.mjs fitOf writes them).
+      autoFit: validFlow(target.attrs().flow) ? true : target.owner.options.fitText,
+      overflow: target.owner.options.overflow, // a lone shape draws past its frame, as its canvas on the page (whiteboard.js loneShape)
     }, { unit: 1 / this.k });
     this.art = make('div', 'sce-art');
+    this.reachEl = make('div', 'sce-reach');
     const strips = ['e', 's', 'se'].map((edge) => {
       const el = make('div', `sce-rs sce-rs-${edge}`, { title: 'Drag to resize the artboard' });
       el.addEventListener('pointerdown', (e) => this.startResize(e, edge));
@@ -487,7 +535,7 @@ class CanvasSession {
       el.addEventListener('pointercancel', this.endResize);
       return el;
     });
-    this.art.append(...strips, this.board.dom); // the board paints over the strips, so items' edge handles win
+    this.art.append(this.reachEl, ...strips, this.board.dom); // the board paints over the strips, so items' edge handles win
     // The strips keep their on-screen size: the page zoom may have changed since show().
     this.art.addEventListener('pointermove', () => this.art.style.setProperty('--sce-inv', String(1 / this.board.scale())));
     this.art.addEventListener('dragover', (e) => e.dataTransfer.types.includes('Files') && e.preventDefault());
@@ -501,6 +549,7 @@ class CanvasSession {
     window.addEventListener('keydown', this.onKeyDown);
     window.addEventListener('paste', this.board.pasteEvent, true);
     window.addEventListener('pointerdown', this.onPointerDown, true);
+    this.area.addEventListener('scroll', this.reach, { passive: true }); // a zoom or a resize moves the artboard too
     this.emit();
     this.board.dom.focus({ preventScroll: true });
   }
@@ -527,7 +576,7 @@ class CanvasSession {
     this.emit();
   }
 
-  // Over the canvas's element in the post (hidden meanwhile), at its top-left in page px (`at`).
+  // Over the canvas's element in the post (hidden meanwhile), at its top-left in page px (`at`) plus the drift.
   place() {
     const el = this.target.el();
     el.style.visibility = 'hidden';
@@ -539,9 +588,30 @@ class CanvasSession {
   }
 
   show() {
-    Object.assign(this.art.style, { left: `${this.at.x}px`, top: `${this.at.y}px`, transform: `scale(${this.k})` });
+    Object.assign(this.art.style, { left: `${this.at.x + this.drift.x}px`, top: `${this.at.y + this.drift.y}px`, transform: `scale(${this.k})` });
     this.board.refreshScale(); // handles keep their on-screen size
-    this.art.style.setProperty('--sce-inv', String(1 / this.board.scale()));
+    this.reach();
+  }
+
+  // The editor area reaches every part of the artboard with REACH screen px around it (2026-10-30, the user: "if i drag a shape very
+  // very far out from canvas my viewport doesnt let me see that far"). Past the area's right and bottom, .sce-reach makes that room by
+  // itself; past its left and top, where overflow cannot be scrolled to, the area's content moves right / down by as much (a relative
+  // offset: nothing is laid out again) and the scroll follows it, so nothing moves on screen. The room only grows until close():
+  // taking it back mid-edit would fight the browser's scroll anchoring through a Document's passing relayouts and move the view.
+  reach = () => {
+    this.art.style.setProperty('--sce-inv', String(1 / this.board.scale())); // the strips' and .sce-reach's screen size
+    const [p, r] = [this.pan.getBoundingClientRect(), this.reachEl.getBoundingClientRect()];
+    this.moveRoom(Math.max(this.room.x, Math.ceil(p.left - r.left)), Math.max(this.room.y, Math.ceil(p.top - r.top)));
+  };
+
+  // The area's content `x`, `y` px right of / below its place, the scroll moved with it.
+  moveRoom(x, y) {
+    if (x === this.room.x && y === this.room.y) return;
+    const { scrollLeft: sx, scrollTop: sy } = this.area;
+    Object.assign(this.pan.style, x || y ? { position: 'relative', left: `${x}px`, top: `${y}px` } : { position: '', left: '', top: '' });
+    this.area.scrollLeft = sx + x - this.room.x;
+    this.area.scrollTop = sy + y - this.room.y;
+    this.room = { x, y };
   }
 
   // done: Done, the final Escape, a pointer-down outside (commit an open text edit, return focus with the canvas
@@ -553,6 +623,8 @@ class CanvasSession {
     if (done) this.board.finishEdit();
     this.board.destroy();
     this.editor.off('transaction', this.onTransaction);
+    this.area.removeEventListener('scroll', this.reach);
+    this.moveRoom(0, 0); // the view stays where it is, as far as the area can scroll without the room
     this.art.remove();
     this.page.classList.remove('sc-editing');
     const el = this.target.el();
@@ -573,8 +645,14 @@ class CanvasSession {
     if (!setArtboardSize(this.board, w, h)) this.emit();
   }
 
+  // In a document the width stays at least the text width (as far as the artboard is that wide, Board.floor).
   fitContent() {
-    fitArtboard(this.board);
+    this.fitting = true;
+    try {
+      fitArtboard(this.board, this.board.floor());
+    } finally {
+      this.fitting = false;
+    }
   }
 
   // Dragging the right edge, bottom edge or corner: live size, one commit on pointerup; the editor area scrolls near its
@@ -659,14 +737,16 @@ class CanvasSession {
   };
 
   // Window, capture phase: a left pointer-down in the main column outside the canvas and the board chrome leaves edit mode
-  // and does nothing else. The sidebar, the status bar (zoom), dialogs, the assistant's panel and button and the browser's pane
+  // and does nothing else, except call `outside(e)` when set. The sidebar, the status bar (zoom), dialogs, the assistant's panel and button and the browser's pane
   // and tab strip (§7j) keep working.
   onPointerDown = (e) => {
     const t = e.target instanceof Element ? e.target : null;
     if (e.button !== 0 || !t?.closest('main') || this.art.contains(t) || t.closest('[data-board-chrome], [data-assistant-panel], [data-chat-island], [data-dictation-pane], [data-browser-pane], [data-browser-tabs]')) return;
     e.stopPropagation();
     swallowClick();
+    const outside = this.outside; // a shape picked from Insert Shapes still armed: it draws where the press is (wp/shapes/target.js)
     this.close(true);
+    outside?.(e);
   };
 
   onDrop = (e) => {
@@ -677,8 +757,8 @@ class CanvasSession {
 
 // Artboard size of a board (the in-place edit bar and the flowchart library editor's header).
 
-/** Sets board `b`'s frame to {0, 0, w, h} (40…8000) and commits; the artboard still holds the content beyond it plus
- * padding (§6b smart artboard). → false when nothing was committed (not numbers, or the same frame: drawn again). */
+/** Sets board `b`'s frame to {0, 0, w, h} (40…8000) and commits; the artboard still holds the content beyond it (§6b
+ * smart artboard). → false when nothing was committed (not numbers, or the same frame: drawn again). */
 export function setArtboardSize(b, w, h) {
   if (!Number.isFinite(w) || !Number.isFinite(h)) return false;
   b.finishEdit();
@@ -687,21 +767,24 @@ export function setArtboardSize(b, w, h) {
     b.render(); // drops a live size
     return false;
   }
-  b.frame = frame; // the commit sizes the artboard; the host updates the displayed size
+  // The commit sizes the artboard, never below this width by itself from now on (Board.floor); the host updates the displayed size.
+  [b.frame, b.width] = [frame, frame.w];
   b.commit();
   return true;
 }
 
-/** Fit to content: frame = the items' bounding box, items shifted so it starts at 0,0. */
-export function fitArtboard(b) {
+/** Fit to content: frame = the items' bounding box, items shifted so it starts at 0,0; at least `min` wide, the items then keeping
+ * their place across as far as they can (a canvas in a document, Board.floor). */
+export function fitArtboard(b, min = 0) {
   b.finishEdit();
   const c = b.contentBox();
   if (!c) return;
-  const frame = { x: 0, y: 0, w: fit(Math.ceil(c.w), MIN_SIZE, MAX_SIZE), h: fit(Math.ceil(c.h), MIN_SIZE, MAX_SIZE) };
-  if (b.items.length === 1) frame.item = b.items[0].id; // fitted to its one item: the frame follows that item
-  if (!c.x && !c.y && sameBox(frame, b.frame) && frame.item === b.frame?.item) return;
-  b.shiftItems(-c.x, -c.y);
-  b.frame = frame;
+  const s = keptSpan(c.x, Math.ceil(c.w), min);
+  const frame = { x: 0, y: 0, w: fit(s.w, MIN_SIZE, MAX_SIZE), h: fit(Math.ceil(c.h), MIN_SIZE, MAX_SIZE) };
+  if (b.items.length === 1 && s.w === Math.ceil(c.w)) frame.item = b.items[0].id; // fitted to its one item: the frame follows that item
+  if (!s.x && !c.y && sameBox(frame, b.frame) && frame.item === b.frame?.item) return;
+  b.shiftItems(-s.x, -c.y);
+  [b.frame, b.width] = [frame, frame.w]; // as setArtboardSize
   b.commit();
 }
 
@@ -728,6 +811,14 @@ export const Canvas = Node.create({
   atom: true,
   selectable: true,
   draggable: false,
+
+  // What the format's canvases do with shapes. fitText: Resize shape to fit text for a shape with no autoFit of its own (a board's
+  // shape grows; a Document's are Word's, which keep their size). overflow: a canvas that is one shape draws past its frame (its
+  // shadow, glow and the text that runs past it), for a format whose output shows that too (a Document exports it as a Word shape;
+  // a post's picture clips at the frame).
+  addOptions() {
+    return { fitText: true, overflow: false };
+  },
 
   addAttributes() {
     return {
@@ -758,11 +849,12 @@ export const Canvas = Node.create({
 
   addCommands() {
     return {
+      // A new canvas spans the text column it goes into, shown 1:1 (2026-10-30, the user: "spawn canvas with full document widths").
       insertCanvas:
         (attrs = {}) =>
-        ({ state, tr, dispatch }) => {
-          const { w = DEFAULT.w, h = DEFAULT.h } = attrs;
-          const node = state.schema.nodes[this.name].create({ ...attrs, dw: attrs.dw ?? w, frame: attrs.frame ?? { x: 0, y: 0, w, h } });
+        ({ state, tr, dispatch, view }) => {
+          const { w = columnWidth(view), h = DEFAULT.h } = attrs;
+          const node = state.schema.nodes[this.name].create({ ...attrs, w, h, dw: attrs.dw ?? w, frame: attrs.frame ?? { x: 0, y: 0, w, h } });
           if (dispatch) insertBoard(tr, topLevelPos(state.selection.$to), node);
           return true;
         },
@@ -781,6 +873,6 @@ export const Canvas = Node.create({
   },
 
   addNodeView() {
-    return (props) => new CanvasView(props);
+    return (props) => new CanvasView(props, this.options);
   },
 });

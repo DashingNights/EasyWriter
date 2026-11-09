@@ -17,9 +17,10 @@
 }
 
 /* ---------- Page themes (SPEC §1) ---------- */
-/* The area around the page follows the page theme even while a Document makes data-theme light (applyPageTheme). */
-:root[data-canvas-theme="dark"] { --pg-bg: #21212a; }
-:root[data-canvas-theme="light"] { --pg-bg: #f2f2f5; }
+/* The area around the page (the canvas) is a step off the app's panels (Settings > General Palette): darker in the light
+   theme, lighter in the dark one (#e1e1e1 and #303030 on the default panels). A Canvas pick in the palette wins. */
+:root { --pg-bg: color-mix(in srgb, var(--background), black 10%); }
+:root.dark { --pg-bg: color-mix(in srgb, var(--background), white 9.6%); }
 :root[data-theme="dark"] {
   --post-bg: #303039;
   --text: #c5c6d0;

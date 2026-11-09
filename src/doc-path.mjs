@@ -1,8 +1,11 @@
 // Block addressing for the command layer (SPEC §8; agent-automation plan §3.5). A PATH is the list of child indices from
 // the doc down to a block: [4] = the fifth top-level block, [2, 1, 0] = list → its second item → that item's first
 // paragraph. outline / nodeAt / find read TipTap JSON; posOfPath / pathOfPos read ProseMirror Nodes (duck-typed: no imports).
-// Text offsets are block-local: the characters of the textblock's text, a hard break counting one ('\n'), as ProseMirror's
-// parentOffset counts them.
+// Text offsets are block-local and equal ProseMirror's parentOffset: a hard break counts one ('\n'), every other inline leaf (a
+// field, a bookmark, a note, a picture) one U+FFFC, and an inline container (a content control) one U+FFFC at each boundary, so
+// doc.find, doc.selection and doc.format agree past them (docs/plans/word/plan.md §1.8 Agents).
+
+import { INLINE } from './document/model/blocks.mjs';
 
 export const BOARD_TYPES = ['canvas', 'planChart'];
 
@@ -16,12 +19,28 @@ export function nodeAt(doc, path) {
   return node;
 }
 
-/** The plain text of a TipTap JSON node: its text, a hard break as '\n', child blocks separated by a space. */
+const OBJ = '￼';
+// Inline containers hold inline content of their own.
+const CONTAINERS = new Set(['sdtInline']);
+const inlineContent = (node) => !!node.content?.length && node.content.every((c) => INLINE.has(c.type) || c.marks);
+
+/** The text of a TipTap JSON node with ProseMirror's offsets: its text, a hard break as '\n', any other inline leaf as U+FFFC and an
+ * inline container between two U+FFFC, joined without spaces; child blocks separated by a space. */
 export function nodeText(node) {
   if (node.type === 'text') return node.text ?? '';
   if (node.type === 'hardBreak') return '\n';
-  const inline = node.content?.every((c) => c.type === 'text' || c.type === 'hardBreak');
-  return (node.content ?? []).map(nodeText).join(inline ? '' : ' ');
+  if (CONTAINERS.has(node.type)) return `${OBJ}${(node.content ?? []).map(nodeText).join('')}${OBJ}`;
+  if (INLINE.has(node.type)) return OBJ;
+  return (node.content ?? []).map(nodeText).join(inlineContent(node) ? '' : ' ');
+}
+
+/** The text of a TipTap JSON node as a reader sees it (outline): a field as its result, other inline leaves as nothing. */
+function readText(node) {
+  if (node.type === 'text') return node.text ?? '';
+  if (node.type === 'hardBreak') return '\n';
+  if (node.type === 'field') return node.attrs?.result ?? '';
+  if (INLINE.has(node.type) && !CONTAINERS.has(node.type)) return '';
+  return (node.content ?? []).map(readText).join(inlineContent(node) || CONTAINERS.has(node.type) ? '' : ' ');
 }
 
 function boardAttrs(node) {
@@ -33,7 +52,7 @@ function boardAttrs(node) {
  * model knows the text goes on (2026-10-07: a cut paragraph read as a fragment, and the model replaced it with its 120 characters). */
 const cutText = (s) => (s.length > 120 ? `${s.slice(0, 120)}... (cut, ${s.length} characters in all)` : s);
 
-/** A block's waiting suggestion (attrs.suggest, docs/plans/suggestions.md) for outline(), or undefined: 'insert s7k2a1',
+/** A block's waiting suggestion (attrs.suggest, docs/wiki/suggestions.md) for outline(), or undefined: 'insert s7k2a1',
  * 'replace s7k2a1', 'deleted before: 2 blocks s8m3q0', joined by '; '. `replaced`: the ids whose run replaced blocks. */
 function pendingOf(r, replaced) {
   if (!r) return undefined;
@@ -50,9 +69,9 @@ export function outline(doc, { depth = 1 } = {}) {
   const replaced = new Set((doc.content ?? []).filter((b) => b?.attrs?.suggest?.ins?.old).map((b) => b.attrs.suggest.ins.id));
   const walk = (node, path) => {
     (node.content ?? []).forEach((child, i) => {
-      if (child.type === 'text' || child.type === 'hardBreak') return;
+      if (INLINE.has(child.type)) return;
       const p = [...path, i];
-      const entry = { path: p, type: child.type, text: BOARD_TYPES.includes(child.type) ? '' : cutText(nodeText(child)) };
+      const entry = { path: p, type: child.type, text: BOARD_TYPES.includes(child.type) ? '' : cutText(readText(child)) };
       if (BOARD_TYPES.includes(child.type)) entry.attrs = boardAttrs(child);
       else if (child.type === 'heading') entry.attrs = { level: child.attrs?.level };
       const pending = pendingOf(child.attrs?.suggest, replaced);
@@ -65,14 +84,13 @@ export function outline(doc, { depth = 1 } = {}) {
   return out;
 }
 
-const isTextblock = (node) => !!node.content?.length && node.content.every((c) => c.type === 'text' || c.type === 'hardBreak')
-  || ['paragraph', 'heading', 'codeBlock', 'boxTitle'].includes(node.type);
+const isTextblock = (node) => inlineContent(node) || ['paragraph', 'heading', 'codeBlock', 'boxTitle'].includes(node.type);
 
 /** Every textblock of `doc` with its path, in document order. */
 function textblocks(doc) {
   const out = [];
   const walk = (node, path) => (node.content ?? []).forEach((child, i) => {
-    if (BOARD_TYPES.includes(child.type) || child.type === 'text' || child.type === 'hardBreak') return;
+    if (BOARD_TYPES.includes(child.type) || INLINE.has(child.type)) return;
     if (isTextblock(child)) out.push({ path: [...path, i], text: nodeText(child) });
     else walk(child, [...path, i]);
   });

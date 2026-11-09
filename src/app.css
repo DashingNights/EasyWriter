@@ -2,6 +2,7 @@
 @import "tw-animate-css";
 @import "./page.css";
 @import "./document/document.css";
+@import "./document/wp/wp.css";
 @import "./suggest/suggest.css";
 
 @source "./";
@@ -13,24 +14,24 @@
    actions.js applyUiTheme), independent of the page preview's page theme (page.css). Surfaces step
    up from background (sidebar, status bar, dialogs) to card / popover (title strip, islands, menus); accent tints whatever
    is under it: hover at 60 %, on and selected at full. The dark set is the user's own palette of 2026-10-24 (#1a1a1a
-   panels, #262626 bars and cards, #5c5c5c fills, #e6e6e6 text). */
+   panels, #262626 bars and cards, #5c5c5c fills, #cfcfcf text, #949494 soft text, #c3c3c3 buttons; text and buttons from the word-parity sandbox, 2026-10-28). */
 :root {
   --radius: 0.625rem;
   color-scheme: light;
-  --background: #f5f5f5;
-  --foreground: #1f1f1f;
+  --background: #fafafa;
+  --foreground: #000000;
   --card: #ffffff;
-  --card-foreground: #1f1f1f;
+  --card-foreground: #000000;
   --popover: #ffffff;
-  --popover-foreground: #1f1f1f;
-  --primary: #2b2b2b;
+  --popover-foreground: #000000;
+  --primary: #4d8ef5;
   --primary-foreground: #fafafa;
-  --secondary: #e8e8e8;
-  --secondary-foreground: #1f1f1f;
-  --muted: #e8e8e8;
-  --muted-foreground: #666666;
+  --secondary: #e0e0e0;
+  --secondary-foreground: #000000;
+  --muted: #e0e0e0;
+  --muted-foreground: #292929;
   --accent: rgb(0 0 0 / 10%); /* a tint, so hover and on show on any surface, islands included */
-  --accent-foreground: #1f1f1f;
+  --accent-foreground: #000000;
   --destructive: oklch(0.577 0.245 27.325);
   --warning: #c2410c; /* blocked, conflicts, due today, refused on push, keybind warnings */
   --suggest: #f2b400; /* agent edits waiting as suggestions (suggest/suggest.css has the page's own tokens) */
@@ -43,19 +44,19 @@
 .dark {
   color-scheme: dark;
   --background: #1a1a1a;
-  --foreground: #e6e6e6;
+  --foreground: #cfcfcf;
   --card: #262626;
-  --card-foreground: #e6e6e6;
+  --card-foreground: #cfcfcf;
   --popover: #262626;
-  --popover-foreground: #e6e6e6;
-  --primary: #ededed;
+  --popover-foreground: #cfcfcf;
+  --primary: #c3c3c3;
   --primary-foreground: #1f1f1f;
   --secondary: #5c5c5c;
-  --secondary-foreground: #e6e6e6;
+  --secondary-foreground: #cfcfcf;
   --muted: #5c5c5c;
-  --muted-foreground: #ababab;
+  --muted-foreground: #949494;
   --accent: rgb(255 255 255 / 10%);
-  --accent-foreground: #e6e6e6;
+  --accent-foreground: #cfcfcf;
   --destructive: oklch(0.704 0.191 22.216);
   --warning: #e09952;
   --suggest: #f5c542;
@@ -75,6 +76,12 @@
 
 /* A page shown (the editor, a workspace) fades in over motion.js's pages length: opacity only, no transform, so nothing in
    it gets a new containing block. */
+/* Islands at a fractional display scale (125 %, 150 %): their spacing and border snap to whole device pixels (--px, viewport.js
+   trackDevicePixel), so every edge inside one shares a fraction and a control's gaps round alike on both sides (the user,
+   2026-10-29: the browser button sat a pixel off-centre at 125 %). Unset at a whole scale, they keep 0.25rem and 1px. */
+.rounded-island { --spacing: round(nearest, 0.25rem, var(--px, 0.0001px)); }
+.rounded-island.border { border-width: round(down, 1px, var(--px, 1px)); }
+
 @theme {
   --animate-page-in: page-in var(--motion-pages) ease-out;
   @keyframes page-in {
@@ -94,6 +101,15 @@
   animation: none !important;
 }
 
+/* §7d: after a tool pick the quick access menu hides when the pointer leaves it (QuickTools.jsx sets data-hiding). It and the
+   popups open from it (the tool options card, a select's list, a colour menu; all portalled) fade out together over motion.js's
+   hide length, and show again at once when the pointer comes back first. Another open popup would fade with them, but a press
+   outside the island closes those. */
+[data-quick-tools][data-hiding],
+body:has([data-quick-tools][data-hiding]) [data-radix-popper-content-wrapper] {
+  opacity: 0;
+  transition: opacity var(--motion-hide) ease-out;
+}
 /* The tutorial (app/components/Tutorial.jsx): the light's rim, and its pointer once every 4.5 s. The pointer comes in from
    --tutorial-from and fades in (0.6 s), rests on the target (0.2 s), clicks with a burst of dots and fades out slowly, 1.5 s
    in all, then waits 3 s (the user, 2026-10-27). It does not show while the tutorial's motion is off. */
@@ -420,7 +436,9 @@
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
-  --radius-island: calc(var(--radius) + 4px); /* every floating bar / island (toolbar, rails, menus, ribbons): one corner size */
+  /* Every floating bar / island (toolbar, rails, menus, ribbons): one corner size, concentric with the rounded-md controls and
+     items 0.25rem and a 1px border inside it (the user, 2026-10-29: hover backgrounds against the island's corners). */
+  --radius-island: calc(var(--radius-md) + 0.25rem + 1px);
   --default-transition-duration: var(--motion-controls); /* a transition-* with no duration-*: hover, focus, on / off (motion.js) */
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -459,18 +477,28 @@
   }
 }
 
-/* Title strip (SPEC §7): the window's drag region (double-click maximizes). px, not rem: with its 1 px bottom border it is the
-   height of the native window controls (main.js TITLE_BAR, 33 px) drawn over its right end, in the room the Window Controls
-   Overlay leaves (env(); no overlay in full screen). Controls placed in it stay clickable, and so do the menus, selects,
-   popovers, dialogs and palettes drawn over it (a long list opened upward in a short window reaches the window top): the
-   drag region takes every click inside it that no no-drag element covers. */
+/* Title row (SPEC §7): the window's drag region (double-click maximizes), in every mode: the title strip (App.jsx TitleBar) or a
+   Document's ribbon tab row, which share this class, so both have the Panels colour and sit over the sidebar's layer (its column
+   is its own layer while it slides) that the row reaches over. px, not rem: the native window controls (main.js TITLE_BAR,
+   33 px) draw over its right end, in the room the Window Controls Overlay leaves (env(); no overlay in full screen). Controls
+   placed in it stay clickable, and so do the menus, selects, popovers, dialogs and palettes drawn over it (a long list opened
+   upward in a short window reaches the window top): the drag region takes every click inside it that no no-drag element covers. */
+/* The sidebar slides: its column, and the title row's margin with it (not --side-w itself: an inherited variable that moves
+   restyles everything in the main column on every frame). */
+[data-app-grid] { transition: grid-template-columns var(--motion-sidebar) ease-out; }
 .titlebar {
+  position: relative;
+  z-index: 20;
   height: 34px;
-  padding-left: calc(env(titlebar-area-x, 0px) + 10px); /* 10 px, and on the Mac the traffic lights first */
+  background: var(--background);
+  color: var(--foreground);
+  margin-left: calc(-1 * var(--side-w, 0px)); /* over the sidebar's empty top strip, from the window's left edge (App.jsx main) */
+  transition: margin-left var(--motion-sidebar) ease-out;
+  padding-left: calc(env(titlebar-area-x, 0px) + 10.25px); /* the sidebar button's icon on the sidebar's icon line (20 px); on the Mac the traffic lights first */
   padding-right: calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw));
   -webkit-app-region: drag;
 }
-.titlebar :is(button, input, select, textarea, a),
+.titlebar :is(button, input, select, textarea, a, [role="tab"]),
 [data-radix-popper-content-wrapper], [role="dialog"], [role="alertdialog"], [data-board-chrome] {
   -webkit-app-region: no-drag;
 }
@@ -516,3 +544,36 @@ body,
 #editor-area::-webkit-scrollbar:horizontal {
   height: 0;
 }
+
+/* Word parity (docs/plans/word plan.md §1.7). The margin card column (src/tooling/cards.jsx) is placed in #page-wrap's own
+   coordinates, so the page's zoom and scroll carry it. */
+#page-wrap { position: relative; }
+/* A Document scrolls as Word's pages do: 24 px around the sheets, centred both ways while smaller than the view (zoomed out),
+   in place of the pan surface's view of slack on every side (EditorPage.jsx). Only the first child is the page holder (as
+   actions.js and Review.jsx read it): the Draw ruler, Ink Replay and any other box appended to #editor-area keep their own size. */
+#editor-area[data-word-view] > div:first-child { --pan-y: 24px; padding: 24px calc(24px + var(--shift-r, 0px)) 24px calc(24px + var(--shift-l, 0px)); min-width: 100%; min-height: 100cqh; display: grid; justify-content: center; align-content: center; }
+
+/* NativeSelect and NativeListBox (ui/select.jsx): real <select> elements drawn as SelectTrigger and SelectContent. base-select is
+   Chromium's styleable select; the list sits in the top layer, so no dialog clips it. The UA gives both a 24 px minimum height. */
+select:is([data-slot="native-select"], [data-slot="native-listbox"]),
+select[data-slot="native-select"]::picker(select) { appearance: base-select; }
+select[data-slot="native-select"] { min-block-size: 0; overflow: hidden; }
+select[data-slot="native-select"]::picker-icon {
+  content: ""; width: 1rem; height: 1rem; background-color: currentColor; opacity: .5; transition: rotate var(--motion-menus, 0ms);
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+select[data-slot="native-select"]:open::picker-icon { rotate: 180deg; }
+select[data-slot="native-select"]::picker(select) {
+  margin-block: .25rem; padding: .25rem; max-height: min(20rem, calc(100vh - 4rem)); scrollbar-width: thin; scrollbar-color: var(--border) transparent;
+  border: 1px solid var(--border); border-radius: var(--radius-island); background-color: color-mix(in oklab, var(--card) 85%, transparent);
+  backdrop-filter: blur(2px); color: var(--popover-foreground); box-shadow: 0 20px 25px -5px rgb(0 0 0 / .1), 0 8px 10px -6px rgb(0 0 0 / .1);
+}
+select:is([data-slot="native-select"], [data-slot="native-listbox"]) option {
+  display: flex; align-items: center; gap: .5rem; min-block-size: 0; padding: .375rem .5rem; border-radius: calc(var(--radius) - 2px); outline: none; white-space: nowrap;
+}
+select[data-slot="native-select"] option:is(:hover, :focus),
+select[data-slot="native-listbox"] option:hover { background-color: color-mix(in oklab, var(--accent) 60%, transparent); }
+select[data-slot="native-select"] option::checkmark { order: 1; margin-inline-start: auto; }
+select[data-slot="native-listbox"] option { padding: .125rem .375rem; }
+select[data-slot="native-listbox"] option::checkmark { display: none; }
+select[data-slot="native-listbox"] option:checked { background-color: var(--accent); color: var(--accent-foreground); }

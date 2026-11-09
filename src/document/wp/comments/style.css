@@ -1,0 +1,9 @@
+/* Comments (docs/plans/word plan.md §3 comments): the commented range in a light tint of its author's colour (--cmt, set per
+   thread by the module), the active thread darker through one decoration. */
+[data-doc-text] span[data-comment] {
+  background-color: color-mix(in srgb, var(--cmt, #e8b730) 22%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--cmt, #e8b730) 60%, transparent);
+}
+[data-doc-text] .comment-active {
+  background-color: color-mix(in srgb, var(--cmt, #e8b730) 45%, transparent);
+}

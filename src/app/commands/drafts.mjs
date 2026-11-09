@@ -1,4 +1,7 @@
-import { defaultFormat, pageOf } from '../../formats.mjs';
+import { Marked } from 'marked';
+import { postToDoc, postsOn } from '../../document/canvas/post.js';
+import { isCanvas } from '../../engine/model/form.mjs';
+import { boardsOn, defaultFormat, pageOf } from '../../formats.mjs';
 import { bare } from '../../integrations/index.mjs';
 import { brief, pendingCount } from '../../suggest/core.mjs';
 import { migrateBoards } from '../../whiteboard.js';
@@ -17,8 +20,10 @@ const THREAD = 'project:3a7c9e1b-5d2f-4b8a-9c6e-1f0d2b4a6c8e'; // a project key 
 /** The draft `id` (the open one carries the live fields), or null. */
 const draftOf = (ctx, id) => (ctx.state.draft?.id === id ? ctx.state.draft : ctx.state.drafts.find((d) => d.id === id) ?? null);
 const titleOf = (ctx, id) => draftOf(ctx, id)?.title || 'Untitled draft';
-// The suggestions waiting in draft `d` (docs/plans/suggestions.md): the open draft's live count, else its summary's.
-const waiting = (ctx, d) => (ctx.state.draft?.id === d.id && ctx.editor ? pendingCount(ctx.editor.state.doc) : d.suggestions ?? 0);
+// The suggestions waiting in draft `d` (docs/wiki/suggestions.md): the open draft's live count (a canvas draft's engine cards,
+// which state.suggestions mirrors, else its editor's records), else its summary's.
+const waiting = (ctx, d) => (ctx.state.draft?.id !== d.id ? d.suggestions ?? 0 : ctx.state.suggestions?.canvas ? ctx.state.suggestions.count
+  : ctx.editor ? pendingCount(ctx.editor.state.doc) : d.suggestions ?? 0);
 /** The suggestions waiting in TipTap JSON `doc` (a draft file's): its records' distinct ids. */
 const countOf = (doc) => new Set([...(doc?.attrs?.suggest?.attrs ?? []).map((r) => r.id),
   ...(doc?.content ?? []).flatMap((b) => [b?.attrs?.suggest?.ins?.id, ...(b?.attrs?.suggest?.del ?? []).map((x) => x.id)])].filter(Boolean)).size;
@@ -27,6 +32,14 @@ const folderOf = (ctx, id) => {
   const f = ctx.state.settings.draftFolders?.[id];
   return folders(ctx).some((x) => x.id === f) ? f : null;
 };
+
+/** drafts.get's answer for canvas draft `d`: its fields with the engine's text (from `eng`, its open session, else its background
+ * session or record) and canvas: true, never its engine form. */
+async function canvasDraft(ctx, d, eng) {
+  const { engine, doc, ...rest } = d;
+  const [text, waiting] = await Promise.all([ctx.lib.canvasText(d, eng), ctx.lib.canvasWaiting?.(d, eng)]);
+  return { draft: bare('draft', { ...rest, text, canvas: true, suggestions: waiting ?? d.suggestions ?? 0 }, ctx.state.settings) };
+}
 
 function needFolder(ctx, folderId) {
   if (folderId != null && !folders(ctx).some((f) => f.id === folderId)) fail('not_found', `No folder has the id ${folderId}`);
@@ -68,8 +81,19 @@ export const defs = [
     examples: [{ args: { draftId: EXAMPLE_ID } }],
     run: async (ctx, a) => {
       const open = ctx.state.draft?.id === a.draftId;
+      // A canvas draft (stage2b.md decision 7): its text from the engine with canvas: true, never its engine form; doc_get reads
+      // it in full.
+      if (open && (ctx.engine || isCanvas(ctx.state.draft))) return canvasDraft(ctx, ctx.state.draft, ctx.engine);
       const loaded = open ? { ...ctx.state.draft, doc: ctx.editor.getJSON() } : await ctx.api.drafts.load(a.draftId);
       if (!loaded) fail('not_found', `The draft ${a.draftId} could not be loaded`);
+      if (isCanvas(loaded)) return canvasDraft(ctx, loaded, null);
+      // A whiteboard: no doc (it has none), and its media as each key with its size, never the bytes.
+      if (loaded.format === 'board') {
+        const { media = {}, ...board } = loaded.board ?? {};
+        const sizes = Object.fromEntries(Object.entries(media).map(([k, v]) => [k, typeof v === 'string' ? v.length : 0]));
+        return { draft: bare('draft', { ...loaded, doc: null, board: { ...board, media: sizes } }, ctx.state.settings),
+          ...(open && { rev: ctx.state.rev }) };
+      }
       // A draft not opened since the merge still holds whiteboards on disk: shown as the canvases it opens as (§6b Converted whiteboards).
       const doc = open ? loaded.doc : migrateBoards(loaded.doc, pageOf(loaded, ctx.state.settings).width);
       // A suggestion record as {id, kind}, its old blocks left out.
@@ -92,11 +116,13 @@ export const defs = [
         threadUrl: { anyOf: [ref('URL'), { type: 'null' }], description: 'The project or thread URL, or null for none' },
         folderId: { type: 'string', minLength: 1, description: 'A folder id from folders_list' },
         tagId: { ...TAG_ID, description: 'A tag id from tags_list' },
-        content: { ...CONTENT, description: 'The first text, as markdown, html or json' },
-        format: { enum: ['forum-post', 'document'], description: 'Omitted: a forum post in a forum-thread project while the forum is on, else a document' },
+        content: { ...CONTENT, description: 'The first text, as markdown, html or json. Not with format board' },
+        format: { enum: ['forum-post', 'document', 'board'], description: 'Omitted: a forum post in a forum-thread project while the forum is on, else a document' },
       },
     },
     result: { type: 'object', required: ['draftId', 'rev', 'format'] },
+    // Whiteboards are off until the board is usable (formats.mjs boardsOn): the palette, the assistant and MCP all go through here.
+    check: (a, _draft, settings) => (a.format === 'board' && !boardsOn(settings) ? ['board.on'] : []),
     examples: [{ args: {} }, { args: { threadUrl: THREAD, tagId: 'todo', content: { markdown: '# Week 3\n\nNotes.' } } },
       { args: { format: 'document', content: { markdown: '# Report\n\nText' } } }, { args: { title: 'Week 3 notes', format: 'document' } }],
     run: async (ctx, a) => {
@@ -105,9 +131,25 @@ export const defs = [
       // docs/plans/document.md New-draft defaults: without the user's last pick, so an agent's result never depends on it. An
       // explicit forum-post is allowed with the forum off: the format opens in either state.
       const format = a.format ?? defaultFormat(ctx.state.settings, a.threadUrl === undefined ? ctx.state.settings.selectedThread : a.threadUrl);
-      // Parsed in the new draft's own schema before it exists, so content that does not parse creates nothing.
-      const { nodes, dropped } = a.content ? await ctx.lib.toNodes(a.content, null, { format }) : { nodes: null, dropped: [] };
-      const doc = nodes && { type: 'doc', content: nodes.map((n) => n.toJSON()) };
+      // A whiteboard starts blank: its items are draft.board, never parsed text.
+      if (format === 'board' && a.content) fail('invalid_args', 'A whiteboard takes no starting text');
+      // Parsed in the new draft's own schema before it exists, so content that does not parse creates nothing. A post's HTML
+      // and Markdown go through the forum's own import (postToDoc: the kit's nodes, other markup as paragraphs), as its paste
+      // does; JSON and pictures keep the kit's schema.
+      let doc = null;
+      let dropped = [];
+      if (a.content) {
+        const key = Object.keys(a.content)[0];
+        if (format === 'forum-post' && postsOn(ctx.state) && (key === 'html' || key === 'markdown')) {
+          const html = key === 'html' ? a.content.html : new Marked().parse(a.content.markdown);
+          doc = postToDoc(html);
+          if (/<img\b/i.test(html)) dropped = ['img']; // postToDoc keeps a picture as its alt text
+        } else {
+          const out = await ctx.lib.toNodes(a.content, null, { format });
+          dropped = out.dropped;
+          doc = out.nodes && { type: 'doc', content: out.nodes.map((n) => n.toJSON()) };
+        }
+      }
       const { draftId } = await ctx.actions.createDraft({ title: a.title, threadUrl: a.threadUrl, folderId: a.folderId, tagId: a.tagId, doc, format });
       return { draftId, rev: ctx.state.rev, format, ...(dropped.length && { dropped }) };
     },
@@ -163,7 +205,7 @@ export const defs = [
       const draft = draftOf(ctx, a.draftId);
       if (!draft) fail('not_found', `No draft has the id ${a.draftId}`);
       const previous = draft.title;
-      // renameDraft refuses while the background window holds the draft (docs/plans/sidebar-menu.md decision 1).
+      // renameDraft refuses while the background window holds the draft (docs/wiki/sidebar-menu.md decision 1).
       if (!(await ctx.actions.renameDraft(a.draftId, a.title))) {
         fail('failed', ctx.state.worker?.draftId === a.draftId ? 'The background window has this draft open' : 'The draft could not be saved');
       }

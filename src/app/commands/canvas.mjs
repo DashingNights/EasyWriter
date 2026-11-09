@@ -45,7 +45,7 @@ export const defs = [
     notFor: 'saving',
     group: 'canvas',
     risk: 'write',
-    undo: 'none', // Done commits an open text edit (an agent's typing in it waits as a suggestion, docs/plans/suggestions.md)
+    undo: 'none', // Done commits an open text edit (an agent's typing in it waits as a suggestion, docs/wiki/suggestions.md)
     needs: ['view.editor', 'board.canvasMode'],
     args: NO_ARGS,
     result: { type: 'object', required: ['closed'] },

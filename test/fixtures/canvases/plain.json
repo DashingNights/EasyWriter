@@ -1,0 +1,54 @@
+{
+  "w": 400,
+  "h": 300,
+  "dw": 400,
+  "aw": 400,
+  "ah": 300,
+  "frame": { "x": 0, "y": 0, "w": 400, "h": 300 },
+  "bg": "post",
+  "items": [
+    {
+      "id": "box1",
+      "type": "shape",
+      "shape": "rect",
+      "x": 40,
+      "y": 80,
+      "w": 120,
+      "h": 60,
+      "color": "#123456",
+      "width": 2,
+      "opacity": 1,
+      "fill": "solid",
+      "fillColor": "#abcdef"
+    },
+    {
+      "id": "preset",
+      "type": "shape",
+      "shape": "pentagon",
+      "av": [0.5],
+      "x": 200,
+      "y": 40,
+      "w": 60,
+      "h": 60,
+      "color": "#8a8ca0",
+      "width": 1,
+      "opacity": 1,
+      "fill": "solid",
+      "fillColor": "#e05252"
+    },
+    {
+      "id": "last",
+      "type": "shape",
+      "shape": "diamond",
+      "x": 280,
+      "y": 120,
+      "w": 60,
+      "h": 60,
+      "color": "#000000",
+      "width": 1,
+      "opacity": 1,
+      "fill": "none",
+      "fillColor": "#ffffff"
+    }
+  ]
+}

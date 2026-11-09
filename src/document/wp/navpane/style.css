@@ -1,0 +1,22 @@
+/* navpane: the collapse triangle in the left margin of each heading (shown on hover, and always while collapsed), objects found
+   by the search menu, and the Headings tab's rows that hold a hit. */
+[data-doc-text] [data-nav-twisty] {
+  position: absolute;
+  margin-left: -1.25em;
+  width: 1em;
+  cursor: default;
+  user-select: none;
+  opacity: 0;
+  color: rgb(0 0 0 / 0.45);
+  font-size: 0.75em;
+  line-height: inherit;
+  text-align: center;
+}
+[data-doc-text] [data-nav-twisty]::before { content: '\25E2'; }
+[data-doc-text] [data-nav-twisty][data-collapsed]::before { content: '\25B7'; }
+[data-doc-text] :hover > [data-nav-twisty],
+[data-doc-text] [data-nav-twisty][data-collapsed] { opacity: 1; }
+[data-doc-text] [data-nav-hit] { outline: 2px solid rgb(255 160 0 / 0.8); outline-offset: 1px; }
+@media print { [data-doc-text] [data-nav-twisty] { display: none; } }
+
+[data-pane] [data-nav-headings] .nav-hit { background: rgb(255 200 0 / 0.3); }

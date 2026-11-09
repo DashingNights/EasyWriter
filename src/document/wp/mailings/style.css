@@ -1,0 +1,19 @@
+/* Mail merge on the page (docs/plans/word/briefs/mailings.md): Preview Results draws each merge field's value in front of the field,
+   which it hides; Highlight Merge Fields shades merge fields grey (view state, never printed as data). */
+[data-doc-text] [data-merge-hidden] {
+  display: none;
+}
+
+[data-doc-text] [data-merge-preview] {
+  white-space: pre-line;
+}
+
+[data-doc-text] [data-merge-highlight] {
+  background-color: rgb(0 0 0 / 0.12);
+}
+
+@media print {
+  [data-doc-text] [data-merge-highlight] {
+    background-color: transparent;
+  }
+}

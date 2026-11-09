@@ -2,7 +2,8 @@
 // The assistant through the user's own Claude Code or Codex (SPEC §7i Coding CLIs): finding the CLI, its version, sign-in and
 // models; the arguments of one run; its JSON lines as assistant.event events. Each run gets EasyWriter's MCP server on its command
 // line (bin/easywriter-agent.js with the per-start key in EASYWRITER_ASSISTANT, src/agent-server.js), never in the CLI's own
-// config files, and no built-in tools. Electron-free, so test/assistant-cli.test.mjs runs it under Node.
+// config files, and no built-in tools but the CLI's own web search while settings.assistant.providerSearch is on (search.js).
+// Electron-free, so test/assistant-cli.test.mjs runs it under Node.
 const { execFile, spawn } = require('child_process');
 const fs = require('fs');
 const os = require('os');
@@ -218,35 +219,40 @@ async function probe(id, a = {}, fresh = false) {
 /** A TOML value for Codex's -c (JSON strings and arrays of strings are valid TOML). */
 const toml = (v) => JSON.stringify(v);
 
+// Claude Code's own web tools, on while `search` (settings.assistant.providerSearch): its calls stream as tool_use blocks by these names.
+const CLAUDE_WEB = ['WebSearch', 'WebFetch'];
+
 /** The arguments of one Claude Code run (`claude --help`, 2.1.274): print mode, the prompt on stdin, stream-json with partial
  * messages, only EasyWriter's MCP server (`link` = {command, args}) and none of the user's settings, hooks, CLAUDE.md, skills
- * or MCP servers, no built-in tools, EasyWriter's tools allowed without asking (the app's permission mode decides), anything
- * else refused. `systemFile`: the system prompt's file; `resume`: the session id of the turn before. */
-function claudeArgs({ link, model, effort, systemFile, resume }) {
+ * or MCP servers, no built-in tools (with `search`: only CLAUDE_WEB), EasyWriter's tools allowed without asking (the app's
+ * permission mode decides), anything else refused. `systemFile`: the system prompt's file; `resume`: the session id of the turn
+ * before. --tools and --allowedTools take a comma-separated list (`claude --help`, 2.1.309). */
+function claudeArgs({ link, model, effort, systemFile, resume, search = false }) {
   const mcp = { mcpServers: { [SERVER]: { command: link.command, args: link.args, env: { ELECTRON_RUN_AS_NODE: '1', [KEY_VAR]: `\${${KEY_VAR}}` } } } };
+  const web = search ? CLAUDE_WEB : [];
   return [
     '-p', '--output-format', 'stream-json', '--verbose', '--include-partial-messages',
     '--mcp-config', JSON.stringify(mcp), '--strict-mcp-config', '--setting-sources', '', '--disable-slash-commands',
-    '--tools', '', '--allowedTools', `mcp__${SERVER}`, '--permission-mode', 'dontAsk',
+    '--tools', web.join(','), '--allowedTools', [`mcp__${SERVER}`, ...web].join(','), '--permission-mode', 'dontAsk',
     ...(model ? ['--model', model] : []), ...(effort ? ['--effort', effort] : []),
     ...(systemFile ? ['--system-prompt-file', systemFile] : []), ...(resume ? ['--resume', resume] : []),
   ];
 }
 
-// Codex's own tools, turned off for EasyWriter's runs (`codex features list`, 0.154.0), and its web search.
+// Codex's own tools, turned off for EasyWriter's runs (`codex features list`, 0.154.0); its web search is off unless `search`.
 const CODEX_OFF = ['shell_tool', 'unified_exec', 'view_image', 'apps', 'plugins', 'memories', 'browser_use', 'computer_use', 'image_generation', 'multi_agent'];
 
 /** The arguments of one Codex run (`codex exec --help`, 0.154.0): JSON lines, the prompt on stdin ('-'), outside a git repository,
  * without ~/.codex/config.toml (its sign-in still counts), none of its own tools (CODEX_OFF) and a read-only sandbox in case one is
- * left, never asking, EasyWriter's MCP server by -c with
- * its tools approved (the app's permission mode decides) and the key passed through by name. `resume`: the thread id of the
- * turn before (exec resume has no --sandbox, so the sandbox goes by -c too). */
-function codexArgs({ link, model, effort, system, resume }) {
+ * left, never asking, its web search live with `search` (settings.assistant.providerSearch) and else off, EasyWriter's MCP server
+ * by -c with its tools approved (the app's permission mode decides) and the key passed through by name. `resume`: the thread id of
+ * the turn before (exec resume has no --sandbox, so the sandbox goes by -c too). */
+function codexArgs({ link, model, effort, system, resume, search = false }) {
   const s = `mcp_servers.${SERVER}`;
   const opts = [
     '--json', '--skip-git-repo-check', '--ignore-user-config',
     '-c', 'sandbox_mode="read-only"', '-c', 'approval_policy="never"',
-    ...CODEX_OFF.flatMap((f) => ['-c', `features.${f}=false`]), '-c', 'web_search="disabled"',
+    ...CODEX_OFF.flatMap((f) => ['-c', `features.${f}=false`]), '-c', `web_search=${toml(search ? 'live' : 'disabled')}`,
     '-c', `${s}.command=${toml(link.command)}`, '-c', `${s}.args=${toml(link.args)}`, '-c', `${s}.env={ELECTRON_RUN_AS_NODE="1"}`,
     '-c', `${s}.env_vars=${toml([KEY_VAR])}`, '-c', `${s}.default_tools_approval_mode="approve"`, '-c', `${s}.tool_timeout_sec=600`,
     ...(model ? ['-m', model] : []), ...(effort ? ['-c', `model_reasoning_effort=${toml(effort)}`] : []),
@@ -296,7 +302,9 @@ function parseClaude(st, msg) {
 }
 
 /** One `codex exec --json` line → events. `st` keeps the thread id and the text sent per item (item.updated may repeat it).
- * Items of type error are notices (skills trimmed, transport fallbacks) and top-level errors are retries: only turn.failed ends. */
+ * Items of type error are notices (skills trimmed, transport fallbacks) and top-level errors are retries: only turn.failed ends.
+ * A web_search item (its own search, {id, query, action: {type: search | open_page | find_in_page, ...}, results?}; exec_events.rs)
+ * is a tool named WebSearch, as Claude Code's: both its events come when it completes, since it may start without its query. */
 function parseCodex(st, msg) {
   st.sent ??= {};
   const it = msg.item;
@@ -313,6 +321,12 @@ function parseCodex(st, msg) {
         const from = st.sent[it.id] ?? 0;
         st.sent[it.id] = text.length;
         return text.length > from ? [{ type: it.type === 'agent_message' ? 'delta' : 'reasoning', text: text.slice(from) }] : [];
+      }
+      if (it.type === 'web_search') {
+        if (msg.type !== 'item.completed') return [];
+        const args = { query: String(it.query ?? ''), ...(it.action && { action: it.action }) };
+        const result = Array.isArray(it.results) ? `${it.results.length} results` : args.query;
+        return [{ type: 'tool_start', id: it.id, name: 'WebSearch', args }, { type: 'tool_end', id: it.id, name: 'WebSearch', ok: true, result }];
       }
       const tool = it.type === 'mcp_tool_call' ? { name: it.tool, args: it.arguments ?? {} }
         : it.type === 'command_execution' ? { name: 'command', args: { command: it.command } } : null;

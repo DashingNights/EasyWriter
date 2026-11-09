@@ -1,0 +1,101 @@
+# EasyWriter's engine: WordCraft's workspace at the commit in ORIGIN.md, reduced to the crates the engine builds
+# (docs/plans/engine/plan.md section 1), and the wasm host crate. ORIGIN.md lists every change from WordCraft.
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+
+[workspace.package]
+version = "0.12.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+rust-version = "1.95"
+
+[workspace.dependencies]
+# internal: the ew-* packages (viewport-design.md section 9.1). Each library has its package's name since the identifier
+# rename (P7, scripts/engine-rename.mjs).
+ew-geom = { path = "crates/geom" }
+ew-doc = { path = "crates/doc" }
+ew-fonts = { path = "crates/fonts" }
+ew-doc-layout = { path = "crates/doc-layout" }
+ew-docx = { path = "crates/docx" }
+ew-docbin = { path = "crates/docbin" }
+ew-formats = { path = "crates/formats" }
+ew-scene = { path = "crates/scene" }
+ew-pdf = { path = "crates/pdf" }
+ew-proof = { path = "crates/proof" }
+ew-doc-edit = { path = "crates/doc-edit" }
+ew-metafile = { path = "crates/metafile" }
+ew-board = { path = "crates/board" }
+
+# foundation
+kurbo = { version = "0.13", features = ["serde"] }
+thiserror = "2"
+serde = { version = "1", features = ["derive", "rc"] }
+serde_json = { version = "1", features = ["float_roundtrip"] }
+log = "0.4"
+chrono = { version = "0.4.45", default-features = false, features = ["std"] }
+proptest = "1"
+unicode-bidi = "0.3"
+unicode-segmentation = "1"
+unicode-linebreak = "0.1"
+unicode-script = "0.5"
+regex = { version = "1", default-features = false, features = ["std", "unicode", "perf"] }
+regex-automata = { version = "0.4", default-features = false, features = ["std", "syntax", "meta", "nfa-pikevm", "unicode"] }
+
+# text / rendering / formats
+skrifa = "0.47"
+harfrust = "0.13"
+wuff = "0.2.9"
+brotli-decompressor = "5"
+vello_cpu = "0.2"
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp", "gif", "bmp", "tiff"] }
+craft-pdf = { git = "https://github.com/storytold/craft-libs", rev = "92d392cff132eaf53e13afff77f38b5c11b73aa0", version = "=0.1.0", default-features = false, features = ["write"] }
+quick-xml = "0.41"
+# zip's "deflate" adds zopfli, which it uses only for levels above 9; the engine writes at the default 6 (engine-size-2: 88 KB).
+zip = { version = "3", default-features = false, features = ["deflate-flate2-zlib-rs"] }
+miniz_oxide = "0.9"
+cfb = "0.15"
+encoding_rs = "0.8"
+chardetng = "1"
+aes = "0.9"
+sha1 = "0.11"
+sha2 = "0.11"
+hmac = "0.13"
+base64 = "0.23"
+getrandom = "0.3"
+zeroize = "1"
+libc = "0.2"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+cognitive_complexity = "deny"
+wildcard_imports = "deny"
+dbg_macro = "warn"
+todo = "warn"
+too_many_arguments = "deny"
+type_complexity = "allow"
+
+[profile.dev.package."*"]
+opt-level = 2
+debug = false
+
+[profile.dev]
+opt-level = 1
+debug = "line-tables-only"
+
+# Fat LTO and one codegen unit: the .wasm 12.5 % smaller than thin and 16, layout and paint no slower
+# (docs/plans/engine/viewport-design.md section 11, step 4; docs/plans/word/bench.log, engine-size). opt-level "s" for the file
+# format crates was measured and not kept: 3 % smaller but the Word fixture's parse 22 % slower; for the PDF writer alone, 1.1 %
+# smaller, larger gzipped, and export 13 % slower.
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+debug = 0
+
+# Required by craft-pdf: the backend rejects writers that failed during unwinding.
+[patch.crates-io]
+krilla = { git = "https://github.com/storytold/craft-libs", rev = "92d392cff132eaf53e13afff77f38b5c11b73aa0" }
+

@@ -65,7 +65,7 @@ function Scale() {
 }
 
 // What each theme looks like: its own panel, bar and text colours (app.css :root and .dark), whatever the theme in effect.
-const LOOK = { light: ['#f5f5f5', '#ffffff', '#1f1f1f'], dark: ['#1a1a1a', '#262626', '#e6e6e6'] };
+const LOOK = { light: ['#fafafa', '#ffffff', '#000000'], dark: ['#1a1a1a', '#262626', '#cfcfcf'] };
 
 function Look({ theme }) {
   const half = (t) => (

@@ -5,8 +5,8 @@ import { EditorState, TextSelection } from '@tiptap/pm/state';
 import { MarkdownManager } from '@tiptap/markdown';
 import { Marked } from 'marked';
 import { DEFAULT_NUMBERING, newDocumentJson } from '../src/document/defaults.mjs';
-import { kindOf, listLabels, numberNewLists } from '../src/document/numbering.mjs';
-import { Lists } from '../src/document/lists.js';
+import { kindOf, listLabels, newListKey, numberNewLists, setNumsAbstract } from '../src/document/numbering.mjs';
+import { listItems, Lists } from '../src/document/lists.js';
 import { documentExtensions } from '../src/document/schema.js';
 
 // Flat lists (docs/plans/document.md Lists): labels per num and level from doc.attrs.numbering, and list paragraphs in Markdown.
@@ -124,4 +124,24 @@ test('a Numbering library pick on a nested item changes that level of the list',
   const last = top.apply(tr2).doc;
   assert.deepEqual(labelsOf(last), ['One a.', 'Sub I.', 'Two b.', 'Other •']);
   assert.match(last.attrs.numbering.nums[3].abstract, /^custom/);
+});
+
+test('a list inserted under a heading numbered through its style starts its own list, and List Bullet writes Markdown bullets', () => {
+  const base = newDocumentJson({}).attrs;
+  const numbering = setNumsAbstract({ ...DEFAULT_NUMBERING, nums: { ...DEFAULT_NUMBERING.nums } }, [5], 'ml.headings');
+  const heading = (n) => ({ ...base.styles.list[`Heading${n}`], para: { ...base.styles.list[`Heading${n}`].para, numbering: { numId: 5, ilvl: n - 1 } } });
+  const styles = { ...base.styles, list: { ...base.styles.list, Heading1: heading(1), Heading2: heading(2),
+    ListBullet: { type: 'paragraph', name: 'List Bullet', basedOn: 'Normal', para: { numbering: { numId: 1, ilvl: 0 } } } } };
+  const h1 = (text) => ({ type: 'heading', attrs: { level: 1 }, content: [{ type: 'text', text }] });
+  const doc = schema.nodeFromJSON({ ...newDocumentJson({}), attrs: { ...base, numbering, styles }, content: [h1('Intro'), h1('Next')] });
+  const state = EditorState.create({ doc, plugins: [Lists.config.addProseMirrorPlugins.call({})[0]] });
+  const key = newListKey();
+  const item = (text) => schema.nodes.paragraph.create({ numbering: { numId: key, ilvl: 0, abstract: 'decimal' } }, schema.text(text));
+  const after = state.applyTransaction(state.tr.insert(doc.firstChild.nodeSize, [item('a'), item('b')])).state.doc;
+  const items = listItems(after);
+  assert.deepEqual(listLabels(items.map((it) => it.n), after.attrs.numbering), ['1', '1.', '2.', '2']);
+  const md = new MarkdownManager({ marked: new Marked(), extensions: documentExtensions(50) });
+  const json = { ...newDocumentJson({}), attrs: { ...base, styles }, content: ['one', 'two'].map((text) => ({ type: 'paragraph',
+    attrs: { styleId: 'ListBullet', numbering: null }, content: [{ type: 'text', text }] })) };
+  assert.equal(md.serialize(json), '- one\n- two');
 });

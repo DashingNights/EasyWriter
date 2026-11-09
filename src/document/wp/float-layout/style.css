@@ -1,0 +1,106 @@
+/* Floating objects (docs/plans/word/plan.md §3 float-layout). The plugin puts data-fl (the wrap), data-fl-side and the --fl-*
+   variables on each object whose layout is not In Line; these rules draw them. */
+
+/* Behind Text and In Front of Text: absolute in .ProseMirror coordinates. .ProseMirror is an isolated stacking context above the
+   page white (§1.8), so a negative z-index paints under the text and above the sheet. */
+.page[data-format="document"] .ProseMirror :is([data-fl="behind"], [data-fl="front"]) {
+  position: absolute !important; left: var(--fl-x, 0); top: var(--fl-y, 0); margin: 0 !important; z-index: var(--fl-z, 1);
+}
+.page[data-format="document"] .ProseMirror [data-fl="behind"] { pointer-events: none; }
+.page[data-format="document"] .ProseMirror [data-fl="behind"].ProseMirror-selectednode { pointer-events: auto; }
+
+/* Square, Tight, Through and Top and Bottom under engine 1 in Print Layout: a block at its place, moved by a measured margin.
+   A CSS float there would land at the end of its page run (§1.9), so none is drawn. */
+.page[data-format="document"] .ProseMirror :is([data-fl="square"], [data-fl="tight"], [data-fl="through"], [data-fl="topBottom"]) {
+  margin: var(--fl-mt, 0) var(--fl-mr, 0) var(--fl-mb, 0) var(--fl-ml, 0) !important;
+}
+/* A picture's resizable wrapper is inline-flex; as a block it takes a line of its own. */
+.page[data-format="document"] .ProseMirror [data-resize-container]:is([data-fl="square"], [data-fl="tight"], [data-fl="through"], [data-fl="topBottom"]) {
+  display: flex !important; width: fit-content;
+}
+
+/* Under engine 2 (page floats per page), outside Print Layout and in a header or footer being edited (headers-footers edit.js):
+   Square, Tight and Through are CSS floats at one side whose float area is their outline (--fl-shape: place.mjs shapeOf), and Top
+   and Bottom clears both sides. The story editor is a flow root the plugin holds at its text's height (storyFlow), so its floats
+   reach past it as the page layer draws them (placePartFloats). */
+.page[data-format="document"] .hf-host > .ProseMirror { display: flow-root; }
+.page[data-format="document"] :is([data-pg-engine="2"] .ProseMirror, .ProseMirror[data-pg-engine="2"], .hf-host > .ProseMirror) :is([data-fl="square"], [data-fl="tight"], [data-fl="through"]),
+#editor-area[data-word-view]:not([data-word-view="print"], [data-word-view="focus"]) .page[data-format="document"] .ProseMirror :is([data-fl="square"], [data-fl="tight"], [data-fl="through"]) {
+  float: left; shape-outside: var(--fl-shape, margin-box); shape-image-threshold: 0.5;
+}
+.page[data-format="document"] :is([data-pg-engine="2"] .ProseMirror, .ProseMirror[data-pg-engine="2"], .hf-host > .ProseMirror) [data-fl-side="right"]:is([data-fl="square"], [data-fl="tight"], [data-fl="through"]),
+#editor-area[data-word-view]:not([data-word-view="print"], [data-word-view="focus"]) .page[data-format="document"] .ProseMirror [data-fl-side="right"]:is([data-fl="square"], [data-fl="tight"], [data-fl="through"]) {
+  float: right;
+}
+.page[data-format="document"] :is([data-pg-engine="2"] .ProseMirror, .ProseMirror[data-pg-engine="2"], .hf-host > .ProseMirror) :is([data-fl="topBottom"], [data-fl-cont]),
+#editor-area[data-word-view]:not([data-word-view="print"], [data-word-view="focus"]) .page[data-format="document"] .ProseMirror :is([data-fl="topBottom"], [data-fl-cont]) {
+  clear: both;
+}
+/* Square, Tight and Through placed down their page by the page or its margins (plugin.js pageWrapped): drawn where their page puts
+   them, as Behind and In Front of Text are, whatever comes before them in the text; the text wraps round them through the page
+   wrap floats (PAGE_WRAP_PASS), as Word and LibreOffice lay such an object out. */
+.page[data-format="document"] :is([data-pg-engine="2"] .ProseMirror, .ProseMirror[data-pg-engine="2"]) [data-fl-page] {
+  position: absolute !important; left: var(--fl-x, 0); top: var(--fl-y, 0); margin: 0 !important; float: none !important; shape-outside: none;
+}
+/* ProseMirror puts an empty image before an object at a paragraph's start, for the caret (its own sheet keeps it inline with
+   !important); Chromium then takes a float there for one in the middle of the first line and leaves that line whole, under it. */
+.page[data-format="document"] .ProseMirror img.ProseMirror-separator:has(+ :is([data-fl="square"], [data-fl="tight"], [data-fl="through"])) { display: none !important; }
+/* The Text Wrapping break (hardBreak clear, w:br w:clear): the next line starts below the floats. */
+.page[data-format="document"] :is([data-pg-engine="2"] .ProseMirror, .ProseMirror[data-pg-engine="2"]) br[data-clear="all"],
+#editor-area[data-word-view]:not([data-word-view="print"], [data-word-view="focus"]) .page[data-format="document"] .ProseMirror br[data-clear="all"] { clear: both; }
+.page[data-format="document"] :is([data-pg-engine="2"] .ProseMirror, .ProseMirror[data-pg-engine="2"]) br[data-clear="left"],
+#editor-area[data-word-view]:not([data-word-view="print"], [data-word-view="focus"]) .page[data-format="document"] .ProseMirror br[data-clear="left"] { clear: left; }
+.page[data-format="document"] :is([data-pg-engine="2"] .ProseMirror, .ProseMirror[data-pg-engine="2"]) br[data-clear="right"],
+#editor-area[data-word-view]:not([data-word-view="print"], [data-word-view="focus"]) .page[data-format="document"] .ProseMirror br[data-clear="right"] { clear: right; }
+
+/* Framed paragraphs: the frame's width and height. */
+.page[data-format="document"] .ProseMirror [data-fl-kind="frame"] {
+  width: var(--fl-w, auto); height: var(--fl-h, auto); min-height: var(--fl-minh, 0); box-sizing: content-box; overflow: visible;
+  outline: 1px dashed color-mix(in srgb, currentColor 30%, transparent);
+}
+/* The dashed outline shows where a frame is while editing; Word prints a frame without it (fixture page 140). */
+@media print {
+  .page[data-format="document"] .ProseMirror [data-fl-kind="frame"] { outline: none; }
+}
+.page[data-format="document"] .ProseMirror [data-fl-hidden] { visibility: hidden; }
+.page[data-format="document"] .ProseMirror[data-fl-tool] { cursor: crosshair; }
+.page[data-format="document"] .ProseMirror :is([data-fl="behind"], [data-fl="front"], [data-fl="square"], [data-fl="tight"], [data-fl="through"], [data-fl="topBottom"]):not([data-fl-kind="frame"]) { cursor: move; }
+
+/* The overlay parts: the anchor mark, the Layout Options button, the drag guides and the frame being drawn. */
+.page[data-format="document"] [data-fl-ui] > * { position: absolute; }
+.page[data-format="document"] [data-fl-anchor] {
+  width: 12px; height: 14px; color: #5c5c5c;
+  background: no-repeat center / 12px 14px url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 14' fill='none' stroke='%235c5c5c' stroke-width='1.2'%3E%3Ccircle cx='6' cy='2.5' r='1.6'/%3E%3Cpath d='M6 4v9M3 6.5h6M1.5 9.5c.5 2 2.4 3.4 4.5 3.4s4-1.4 4.5-3.4'/%3E%3C/svg%3E");
+}
+.page[data-format="document"] [data-fl-options] {
+  display: grid; place-items: center; width: 22px; height: 22px; padding: 0; border: 1px solid #c8c8c8; border-radius: var(--radius-sm);
+  background: #ffffff; color: #404040; pointer-events: auto; cursor: default;
+}
+.page[data-format="document"] [data-fl-options]:is(:hover, :focus-visible) { background: #eaeaea; outline: 2px solid #3d99f5; outline-offset: -1px; }
+.page[data-format="document"] [data-fl-ui] [hidden] { display: none; }
+.page[data-format="document"] [data-fl-guides] > [data-fl-guide] { position: absolute; background: #00b050; }
+.page[data-format="document"] [data-fl-guides] > [data-fl-guide="v"] { top: -100000px; bottom: -100000px; height: 200000px; width: 1px; }
+.page[data-format="document"] [data-fl-guides] > [data-fl-guide="h"] { left: -2000px; width: 4000px; height: 1px; }
+.page[data-format="document"] [data-fl-frame-rect] { border: 1px dashed #3d99f5; background: color-mix(in srgb, #3d99f5 8%, transparent); }
+.page[data-format="document"] [data-fl-menu] {
+  position: absolute; pointer-events: auto; min-width: 13rem; padding: 4px; border: 1px solid var(--border); border-radius: var(--radius-island);
+  background: var(--popover); color: var(--popover-foreground); box-shadow: 0 6px 20px rgb(0 0 0 / 0.25); font: 12px/1.4 system-ui, sans-serif; z-index: 5;
+}
+.page[data-format="document"] [data-fl-menu] > b { display: block; padding: 4px 6px 2px; font-weight: 600; opacity: 0.7; }
+.page[data-format="document"] [data-fl-menu] > button {
+  display: flex; width: 100%; align-items: center; gap: 6px; padding: 3px 6px; border: 0; border-radius: var(--radius-sm); background: none; color: inherit;
+  text-align: left; font: inherit;
+}
+.page[data-format="document"] [data-fl-menu] > button:is(:hover, :focus-visible) { background: var(--accent); outline: none; }
+.page[data-format="document"] [data-fl-menu] > button[aria-checked="true"]::before { content: '\2713'; width: 1em; }
+.page[data-format="document"] [data-fl-menu] > button:not([aria-checked="true"])::before { content: ''; width: 1em; }
+
+/* Edit Wrap Points: the wrap outline and a handle at each point. */
+.page[data-format="document"] [data-fl-points] > * { position: absolute; }
+.page[data-format="document"] [data-fl-wrap-line] { overflow: visible; pointer-events: none; }
+.page[data-format="document"] [data-fl-wrap-line] polygon { fill: none; stroke: #c00000; stroke-width: 1px; stroke-dasharray: 4 3; }
+/* Each edge of the outline takes a drag that adds a point there. */
+.page[data-format="document"] [data-fl-wrap-line] line { stroke: transparent; stroke-width: 8px; pointer-events: stroke; cursor: crosshair; }
+.page[data-format="document"] [data-fl-point] {
+  width: 8px; height: 8px; box-sizing: border-box; border: 1px solid #c00000; background: #ffffff; pointer-events: auto; cursor: move;
+}

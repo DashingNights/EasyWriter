@@ -1,19 +1,14 @@
 import { deref } from '../schema.mjs';
 import { CATALOGUE } from './catalogue.mjs';
-import { GUIDE, unionText } from './define.mjs';
+import { GUIDE } from './define.mjs';
 import { toolName } from './tool-sets.mjs';
 
 // Commands as OpenAI function tools (SPEC §8 Tool schemas; agent-automation plan §4.6, §13.1): the in-app assistant's tool loop
-// now, the MCP bridge later. Tool name = command id with '.' → '_'; parameters = the args schema rewritten for hosts and
-// llama.cpp: `$ref` inlined (a description beside it kept), `oneOf` → `anyOf`, a type list → `anyOf` of single types, `default` /
-// `examples` dropped. Two forms: 'host' (description = title + the gates it needs) and 'model' (description = title, the
-// command's `brief`, Not-for line and first example, then its guide lines; limits, patterns, additionalProperties and titles
-// dropped too: the registry still validates the full schema and names it on invalid_args). The model form of family 'gemma'
-// (wave 1c) has no unions: Gemma 4's chat template renders a parameter from type, enum, items, properties, required and nullable
-// only, so an anyOf came out as type "" with no alternatives; a union there is one schema of its first branch's type with the
-// alternatives in its description, and an enum gets a type: string (the template shows an enum only then; a null in it becomes
-// nullable) or number (its values go in the description). Family 'qwen'
-// keeps anyOf: llama.cpp builds Qwen3.5's tool-call grammar from the schema, where one type would forbid "at": "end". Pure.
+// now, the MCP bridge later. Tool name = command id with '.' → '_'; parameters = the args schema rewritten for hosts: `$ref`
+// inlined (a description beside it kept), `oneOf` → `anyOf`, a type list → `anyOf` of single types, `default` / `examples`
+// dropped. Two forms: 'host' (description = title + the gates it needs) and 'model' (description = title, the command's
+// `brief`, Not-for line and first example, then its guide lines; limits, patterns, additionalProperties and titles dropped too:
+// the registry still validates the full schema and names it on invalid_args). Pure.
 
 export { toolName };
 
@@ -23,32 +18,13 @@ export const commandIdOf = (name, ids = CATALOGUE.map((d) => d.id)) => ids.find(
 // Keys the model form leaves out.
 const SLIM = ['additionalProperties', 'minimum', 'maximum', 'minLength', 'maxLength', 'minItems', 'maxItems', 'minProperties', 'maxProperties',
   'pattern', 'title'];
-// A branch that only adds constraints (doc.format's anyOf of required keys): the flat form drops such a union.
-const SHAPED = ['type', 'enum', 'const', 'properties', 'items', '$ref', 'oneOf', 'anyOf'];
 
-/** `schema` rewritten as above (a copy); `slim`: the model form; `flat` (with slim): no unions, the gemma family's. */
-export function rewrite(schema, $defs, { slim = false, flat = false } = {}) {
+/** `schema` rewritten as above (a copy); `slim`: the model form. */
+export function rewrite(schema, $defs, { slim = false } = {}) {
   const s = schema?.$ref && schema.description ? { ...deref(schema, $defs), description: schema.description } : deref(schema, $defs);
   if (!s || typeof s !== 'object') return s;
-  const again = (x) => rewrite(x, $defs, { slim, flat });
+  const again = (x) => rewrite(x, $defs, { slim });
   const { default: _d, examples: _e, $ref: _r, oneOf, anyOf, type, properties, items, additionalProperties, ...rest } = s;
-  if (flat && slim) {
-    const { title: _t, description, ...base } = s;
-    const list = Array.isArray(type) && type.length > 1 ? type.map((t) => (t === 'null' ? { type: 'null' } : { ...base, type: t })) : null;
-    const branches = list ?? oneOf ?? anyOf;
-    if (branches && !branches.some((b) => SHAPED.some((k) => k in b))) {
-      const { oneOf: _o, anyOf: _a, ...own } = s; // constraints only: the registry checks them
-      return again(own);
-    }
-    if (branches) {
-      const kept = branches.filter((b) => deref(b, $defs)?.type !== 'null');
-      const { oneOf: _o, anyOf: _a, ...own } = list ? {} : base; // the union's own keys (an object's properties beside it)
-      const first = again({ ...own, ...(list ? kept[0] : { ...deref(kept[0], $defs), ...(kept[0].description && { description: kept[0].description }) }) });
-      const named = description ?? (branches.length > 1 ? unionText(branches, $defs) : first.description);
-      const nullable = kept.length < branches.length && named && !/\bnull\b/i.test(named);
-      return { ...first, ...(named && { description: nullable ? `${named}, or null` : named }) };
-    }
-  }
   if (Array.isArray(type) && type.length > 1) {
     const { title, description, ...base } = s;
     const branch = (t) => (t === 'null' ? { type: 'null' } : again({ ...base, type: t }));
@@ -57,15 +33,6 @@ export function rewrite(schema, $defs, { slim = false, flat = false } = {}) {
   const out = { ...rest };
   if (slim) for (const k of SLIM) delete out[k];
   if (type !== undefined) out.type = Array.isArray(type) ? type[0] : type;
-  else if (flat && Array.isArray(out.enum)) { // Gemma's template shows an enum only on a string: null as nullable, numbers in words
-    const vals = out.enum.filter((v) => v !== null);
-    if (vals.length < out.enum.length) out.nullable = true;
-    if (vals.every((v) => typeof v === 'string')) Object.assign(out, { type: 'string', enum: vals });
-    else {
-      delete out.enum;
-      Object.assign(out, { type: 'number', description: [out.description?.replace(/\.$/, ''), `One of ${vals.join(', ')}`].filter(Boolean).join('. ') });
-    }
-  }
   const branches = oneOf ?? anyOf;
   if (branches) out.anyOf = branches.map(again);
   if (properties) out.properties = Object.fromEntries(Object.entries(properties).map(([k, v]) => [k, again(v)]));
@@ -89,16 +56,15 @@ export function modelDescription(id, title) {
 }
 
 /** `capabilities` (app.capabilities answers: [{id, title, args, needs: [{gate, fix}]}]) as OpenAI function tools, only the
- * commands in `ids` when given; `form` 'host' or 'model' (above); `family` (the model form's): 'qwen' or 'gemma' (prompts.mjs
- * familyOf). */
-export function toolsFor(capabilities, { ids, $defs, form = 'host', family = 'qwen' }) {
+ * commands in `ids` when given; `form` 'host' or 'model' (above). */
+export function toolsFor(capabilities, { ids, $defs, form = 'host' }) {
   const model = form === 'model';
   return capabilities.filter((c) => !ids || ids.includes(c.id)).map((c) => ({
     type: 'function',
     function: {
       name: toolName(c.id),
       description: model ? modelDescription(c.id, c.title) : c.title + (c.needs?.length ? ` Needs: ${c.needs.map((n) => `${n.gate}: ${n.fix}`).join('; ')}` : ''),
-      parameters: rewrite(c.args, $defs, { slim: model, flat: model && family === 'gemma' }),
+      parameters: rewrite(c.args, $defs, { slim: model }),
     },
   }));
 }

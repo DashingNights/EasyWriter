@@ -1,0 +1,67 @@
+/* Content controls and legacy form fields (plan.md §3 content-controls). The box, title tab, drop-down arrow and plus button show
+   while the pointer is over the control or the caret is inside (cc-in, a plugin decoration), as overlays that never move the text:
+   each is absolute, outside the flow, as Word draws them. Start/End Tag shows the tags always, in the line as Word does; None draws
+   nothing. Design Mode and Ctrl+Shift+X show every control's tags (data-cc-design, data-cc-tags on the editor root). */
+[data-doc-text] .cc { --cc-c: var(--cc-color, var(--primary, #2b6cb0)); position: relative; }
+[data-doc-text] div.cc { display: block; }
+[data-doc-text] .cc-tab,
+[data-doc-text] .cc-tag,
+[data-doc-text] .cc-arrow,
+[data-doc-text] .cc-plus { display: none; user-select: none; font: 11px/1.4 system-ui, sans-serif; color: var(--cc-c); }
+[data-doc-text] .cc[data-appearance="boundingBox"]:is(.cc-in, :hover) { outline: 1px solid color-mix(in srgb, var(--cc-c) 60%, transparent); outline-offset: 1px; }
+[data-doc-text] .cc[data-appearance="boundingBox"]:is(.cc-in, :hover) > .cc-tab:not([hidden]) {
+  display: inline-flex; gap: 2px; position: absolute; left: -2px; bottom: 100%; padding: 0 4px; white-space: nowrap; z-index: 2;
+  background: color-mix(in srgb, var(--cc-c) 15%, white); border: 1px solid color-mix(in srgb, var(--cc-c) 60%, transparent); border-bottom: 0;
+  border-radius: 3px 3px 0 0;
+}
+[data-doc-text] .cc-menu { cursor: pointer; padding: 0 2px; }
+[data-doc-text] .cc-menu[hidden] { display: none; }
+[data-doc-text] .cc[data-appearance="tags"] > .cc-tag,
+[data-doc-text][data-cc-design] .cc > .cc-tag,
+[data-doc-text][data-cc-tags] .cc > .cc-tag {
+  display: inline-block; padding: 0 4px; border: 1px solid var(--cc-c); background: color-mix(in srgb, var(--cc-c) 12%, white); vertical-align: baseline;
+}
+[data-doc-text] .cc > .cc-start { border-radius: 6px 0 0 6px; margin-right: 1px; }
+[data-doc-text] .cc > .cc-end { border-radius: 0 6px 6px 0; margin-left: 1px; }
+/* Start/End Tag as Word draws and prints it, measured by .smoke-data/word/fixture/walk/tags_docx.py at 8, 12 and 24 pt in Aptos and
+   Calibri (the same at every size and font): the start tag is its title in Tahoma 8 pt plus 13.35 pt (18.4 pt without a title), the
+   end tag 11.6 pt with no text. Each chip shows from 12.3 pt above the baseline to 2.2 pt below, and its line is at least
+   15.72 pt above and 5 pt below the baseline. The chips stay inline (not inline-block), so a line never breaks between a tag and
+   the text it touches, as in Word: the 20.72 pt line-height gives the line room (centred 2.18 pt up, from Tahoma's ascent 1.0005
+   and descent 0.2065 em), and the padding gives the drawn chip its height. Under Multiple spacing Word puts the extra room under
+   the text and the editor half above it (--line-extra, paragraph/extension.js), so the chip's box rises by half of it to make the
+   line as tall as Word's (the fixture's 1.16 multiple: 15.84 pt above the baseline, measured); the padding keeps the drawn chip. */
+[data-doc-text] .cc[data-appearance="tags"] > .cc-tag {
+  display: inline; margin: 0; border: 0; border-radius: 7pt; vertical-align: calc(2.18pt + var(--line-extra, 0pt) / 2);
+  padding: calc(2.12pt - var(--line-extra, 0pt) / 2) 6.675pt calc(2.73pt + var(--line-extra, 0pt) / 2);
+  box-shadow: inset 0 0 0 0.75pt color-mix(in srgb, var(--cc-c) 50%, transparent);
+  font: 8pt/20.72pt Tahoma, sans-serif; letter-spacing: 0; white-space: pre; color: #000;
+}
+[data-doc-text] .cc[data-appearance="tags"] > .cc-start:empty { padding-inline: 9.2pt; }
+[data-doc-text] .cc[data-appearance="tags"] > .cc-end { padding-inline: 5.8pt; }
+[data-doc-text] .cc:is(.cc-in, :hover) > .cc-arrow:not([hidden]) {
+  display: block; position: absolute; left: calc(100% + 2px); top: 0; z-index: 2; cursor: pointer; padding: 0 3px; border: 1px solid var(--cc-c);
+  border-radius: 2px; background: color-mix(in srgb, var(--cc-c) 15%, white);
+}
+[data-doc-text] .cc[data-type="repeating"]:is(.cc-in, :hover) > .cc-plus:not([hidden]) {
+  display: block; position: absolute; right: 0; top: 100%; z-index: 2; cursor: pointer; padding: 0 6px; border: 1px solid var(--cc-c); border-radius: 3px;
+  background: color-mix(in srgb, var(--cc-c) 15%, white);
+}
+[data-doc-text] .cc[data-placeholder] > .cc-body { color: #7f7f7f; }
+[data-doc-text] .cc[data-type="checkbox"] > .cc-body { cursor: default; }
+/* A picture control with no picture in it (one inserted here) draws a stand-in for Word's placeholder picture. One from Word holds
+   that picture itself, which is all Word draws, so it gets no box. */
+[data-doc-text] .cc[data-type="picture"][data-bare] > .cc-body::before {
+  content: ''; display: inline-block; width: 96px; height: 72px; vertical-align: bottom; cursor: pointer;
+  background: #f2f2f2 no-repeat center / 32px url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%237f7f7f' stroke-width='1.5'%3E%3Crect x='3' y='3' width='18' height='18' rx='2'/%3E%3Ccircle cx='9' cy='9' r='2'/%3E%3Cpath d='m21 15-3.1-3.1a2 2 0 0 0-2.8 0L6 21'/%3E%3C/svg%3E");
+}
+/* Legacy form fields: Form Field Shading on (the default) draws them grey, as Word does. */
+[data-doc-text] .cc-ff-shaded { background: #d9d9d9; color: #000; }
+/* A control's chrome does not print, as in Word: its title tab (with the gallery arrow), arrow, plus button and box, and the tags
+   Design Mode shows. The caret inside the cover page's control (cc-in) put the tab and its arrow on page 1 of the printed PDF.
+   Start/End Tag is the control's look, and Word prints it. */
+@media print {
+  [data-doc-text] :is(.cc-tab, .cc-arrow, .cc-plus),
+  [data-doc-text] .cc:not([data-appearance="tags"]) > .cc-tag { display: none !important; }
+  [data-doc-text] .cc { outline: none !important; }
+}

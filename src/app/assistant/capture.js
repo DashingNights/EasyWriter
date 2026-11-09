@@ -11,7 +11,8 @@ import { situationNotes } from '../../integrations/index.mjs';
 import { entries } from '../../suggest/core.mjs';
 import { decisions } from '../../suggest/extension.js';
 import { activeBoard } from '../../whiteboard.js';
-import { selection } from '../commands.js';
+import { openEngine, selection } from '../commands.js';
+import { assistantRevs, ENGINE, outlineLines as engineOutline, outlineOf } from '../commands/engine.mjs';
 import { assistantMode } from '../commands/tool-sets.mjs';
 import { sortDrafts } from '../draft-order.mjs';
 import { draftTag } from '../drafts-meta.js';
@@ -89,16 +90,36 @@ export function captureSelection() {
   return s.text.trim() ? textAttachment(s) : null;
 }
 
+/** captureSelection, also on a canvas draft (stage2b/stale-doc.md R15): there the selected text comes from the engine
+ * (document.selection), with doc_get's paths. → a promise of the attachment or null. */
+export async function captureSelectionNow() {
+  const eng = openEngine();
+  if (!eng) return captureSelection();
+  const s = await ENGINE['doc.selection'].read({ eng }, {}).catch(() => null);
+  return s?.kind === 'text' && s.text.trim() ? textAttachment(s) : null;
+}
+
+/** What the situation note reads from the open canvas draft's engine: the assistant's changes waiting there (its revisions) and, with
+ * `outline` (the cloud models' note), the outline lines cut at the note's limit. */
+async function engineSituation(eng, outline) {
+  const [o, mine] = await Promise.all([outline ? outlineOf(eng) : null, assistantRevs(eng)]);
+  return { outline: o ? engineOutline(o, OUTLINE_BLOCKS) : [], waiting: mine, mine };
+}
+
 /** The situation note (context.mjs situationNote) for a message with `parts`: the page, the open draft (and its format), its thread, what is
  * selected (and whether it is attached; board items the message attaches count as selected), the canvas being edited, the drafts of the thread (else all drafts) and the playbooks
- * for the message (playbooks.mjs pickPlaybooks; `viewKey`: the turn's tool-set key, tool-sets.mjs viewOf). */
-export function situation(parts = [], viewKey = '') {
+ * for the message (playbooks.mjs pickPlaybooks; `viewKey`: the turn's tool-set key, tool-sets.mjs viewOf). A canvas draft's outline,
+ * selection and waiting changes come from its engine. → a promise of the note. */
+export async function situation(parts = [], viewKey = '') {
   const st = getState();
   const { view, settings = {} } = st;
   const draft = st.draft;
+  const google = ['google', 'deepseek', 'qwen', 'claude', 'codex'].includes(settings.assistant?.provider); // the cloud models' and the CLIs' note
+  const eng = openEngine();
+  const canvas = eng ? await engineSituation(eng, google).catch(() => null) : null;
   let sel = null;
   try {
-    sel = captureSelection();
+    sel = await captureSelectionNow();
   } catch {}
   // Board items the message attaches (their pill was captured while the board was active; the chat box's focus ends that,
   // whiteboard.js updateActive) are still the selection (wave 1c).
@@ -115,7 +136,6 @@ export function situation(parts = [], viewKey = '') {
   const list = sortDrafts(st.drafts, settings.draftOrder).filter((d) => scope === 'all' || d.threadUrl === draft.threadUrl);
   const pos = canvasEditor.get()?.target.owner?.getPos?.();
   const { permission } = assistantMode(settings.assistant);
-  const google = ['google', 'deepseek', 'qwen', 'claude', 'codex'].includes(settings.assistant?.provider); // the cloud models' and the CLIs' note
   return situationNote({
     page: view.type,
     plan: view.type === 'plan' ? planSource.context(view.planId)?.plan.title ?? '' : '',
@@ -130,26 +150,28 @@ export function situation(parts = [], viewKey = '') {
     canvas: typeof pos === 'number' && st.editor ? `the canvas at block [${pathOfPos(st.editor.state.doc, pos)}]` : '',
     background: sessionIds().map((id) => st.drafts.find((d) => d.id === id)?.title ?? ''),
     drafts: list.map((d) => ({ title: d.id === draft?.id ? draft.title : d.title, tag: tag(d.id), ...(google && { id: d.id }) })),
-    ...(google && { draftId: draft?.id ?? '', outline: st.editor && draft ? outlineLines(st.editor.state.doc) : [] }),
+    ...(google && { draftId: draft?.id ?? '', outline: canvas?.outline ?? (st.editor && draft && !eng ? outlineLines(st.editor.state.doc) : []) }),
     total: list.length,
     scope,
     projectNote: situationNotes(draft, settings),
     permission,
-    suggest: permission === 'readonly' ? null : suggestLine(st, settings), // Read only edits nothing (loop.js suggesting)
+    suggest: permission === 'readonly' ? null : suggestLine(st, settings, canvas), // Read only edits nothing (loop.js suggesting)
     playbooks: google ? [] : pickPlaybooks({ parts, view: viewKey, permission }),
   });
 }
 
-/** The note's suggestions line (docs/plans/suggestions.md) while auto-approve is off: the open draft's waiting changes, the
+/** The note's suggestions line (docs/wiki/suggestions.md) while auto-approve is off: the open draft's waiting changes, the
  * assistant's among them, and the changes of the assistant's that the user accepted or rejected since its last turn began
- * (extension.js decisions; a withdrawal by the assistant itself does not count). null with auto-approve on. */
-function suggestLine(st, settings) {
+ * (extension.js decisions; a withdrawal by the assistant itself does not count). null with auto-approve on. On a canvas draft
+ * (`canvas`, engineSituation) the waiting changes are the assistant's revisions there. */
+function suggestLine(st, settings, canvas = null) {
   if (settings.assistant?.autoApproveEdits === true) return null;
-  const waiting = st.editor && st.draft ? entries(st.editor.state.doc) : [];
+  const waiting = canvas ? [] : st.editor && st.draft ? entries(st.editor.state.doc) : [];
   const since = st.assistant?.lastTurnAt ?? st.assistant?.turn?.lastTurnAt ?? 0; // assistant.js send() keeps the previous turn's start
   const theirs = decisions().filter((d) => d.at > since && d.author === 'agent:assistant' && d.by !== 'agent:assistant');
   const count = (action) => theirs.filter((d) => d.action === action).reduce((n, d) => n + d.ids.length, 0);
-  return { waiting: waiting.length, mine: waiting.filter((e) => e.by === 'agent:assistant').length, accepted: count('accept'), rejected: count('reject') };
+  return { waiting: canvas?.waiting ?? waiting.length, mine: canvas?.mine ?? waiting.filter((e) => e.by === 'agent:assistant').length,
+    accepted: count('accept'), rejected: count('reject') };
 }
 
 const OUTLINE_BLOCKS = 120; // blocks in the note's outline; a longer draft says how many more

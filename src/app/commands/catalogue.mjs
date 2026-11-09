@@ -20,10 +20,11 @@ import { defs as suggestions } from './suggestions.mjs';
 import { defs as threads } from './threads.mjs';
 import { defs as tool } from './tool.mjs';
 import { defs as ui } from './ui.mjs';
+import { defs as web } from './web.mjs';
 
 // Every command (SPEC §8 Catalogue), an integration's own (integrations/<id>/commands.mjs) included. Node-importable: node --test imports it (test/commands-contract.test.mjs).
 
-export const CATALOGUE = [...app, ...ui, ...settings, ...threads, ...drafts, ...doc, ...documents, ...references, ...board, ...connectors, ...flow, ...render, ...computer, ...canvas, ...forum, ...history, ...suggestions, ...tool, ...batch, ...commands];
+export const CATALOGUE = [...app, ...ui, ...settings, ...threads, ...drafts, ...doc, ...documents, ...references, ...board, ...connectors, ...flow, ...render, ...computer, ...web, ...canvas, ...forum, ...history, ...suggestions, ...tool, ...batch, ...commands];
 
 export const $defs = { ID, PATH, URL, TAG_ID, ITEM, RUN, PARA };
 

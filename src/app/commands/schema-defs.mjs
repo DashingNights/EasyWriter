@@ -1,5 +1,5 @@
 import { DASHES, HEADS, JUMPS, MAX_POINTS, ROUTES } from '../../flow/model.mjs';
-import { KINDS } from '../../flow/shapes.mjs';
+import { KINDS, PRESET_KINDS } from '../../flow/shapes.mjs';
 import { FILLS } from '../../whiteboard.js';
 import { THREAD_KEY } from '../../thread-url.mjs';
 
@@ -47,6 +47,8 @@ const SIZE = { type: 'number', minimum: 1 };
 const COLOR = { type: 'string', pattern: '^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$' };
 const OPACITY = { type: 'number', minimum: 0, maximum: 1 };
 const BOOL = { type: 'boolean' };
+// A text item's or shape label's font family (whiteboard.js validFont); absent: the board's own font.
+const FONT = { type: 'string', pattern: '^[^"\'`;{}<>\\\\]{1,100}$' };
 const XY = { x: NUM, y: NUM };
 const BOX = { ...XY, w: SIZE, h: SIZE };
 // Every type's layer fields (SPEC §6 Layer fields): the board keeps hidden and locked only as true (false clears one in a
@@ -60,7 +62,7 @@ const item = (type, required, properties) => ({
 
 const TEXT = item('text', ['x', 'y', 'w', 'html'], {
   ...XY, w: SIZE, html: { type: 'string', maxLength: 100000 }, size: SIZE, color: COLOR, bold: BOOL,
-  align: { enum: ['left', 'center', 'right'] }, bg: { anyOf: [COLOR, { type: 'null' }] }, rot: NUM, fit: BOOL,
+  align: { enum: ['left', 'center', 'right'] }, bg: { anyOf: [COLOR, { type: 'null' }] }, rot: NUM, fit: BOOL, font: FONT,
 });
 const IMAGE = item('image', ['src', 'x', 'y', 'w', 'h'], {
   ...BOX, src: { type: 'string', pattern: '^data:image/', maxLength: 20000000 },
@@ -68,11 +70,11 @@ const IMAGE = item('image', ['src', 'x', 'y', 'w', 'h'], {
   rot: NUM, mirrorX: BOOL, mirrorY: BOOL,
 });
 const SHAPE = item('shape', ['shape', 'x', 'y', 'w', 'h'], {
-  ...BOX, shape: { enum: KINDS.map((k) => k.kind) }, color: COLOR, width: { type: 'number', minimum: 0 }, opacity: OPACITY,
+  ...BOX, shape: { enum: [...KINDS, ...PRESET_KINDS].map((k) => k.kind) }, color: COLOR, width: { type: 'number', minimum: 0 }, opacity: OPACITY,
   fill: { enum: FILLS.map(([k]) => k) }, fillColor: COLOR, rot: NUM, flipX: BOOL, flipY: BOOL, mirrorX: BOOL, mirrorY: BOOL,
   // its label
   html: { type: 'string', maxLength: 100000 }, size: SIZE, textColor: COLOR, align: { enum: ['left', 'center', 'right'] },
-  valign: { enum: ['top', 'middle', 'bottom'] },
+  valign: { enum: ['top', 'middle', 'bottom'] }, font: FONT,
 });
 const STROKE = item('stroke', ['x', 'y', 'w', 'h', 'vw', 'vh', 'd', 'color', 'width', 'opacity'], {
   ...BOX, vw: SIZE, vh: SIZE, d: { type: 'string', maxLength: 1000000 }, color: COLOR, width: SIZE, opacity: OPACITY, rot: NUM, mirrorX: BOOL, mirrorY: BOOL,
@@ -119,7 +121,8 @@ export const ITEM_BRIEF = {
   properties: {
     type: { enum: ['text', 'shape', 'connector', 'image', 'stroke'] }, id: S, ...BOX,
     html: S, size: NUM, color: S, bold: BOOL, align: TEXT.properties.align, valign: SHAPE.properties.valign, bg: S,
-    shape: SHAPE.properties.shape, width: NUM, opacity: NUM, fill: SHAPE.properties.fill, fillColor: S, rot: NUM, textColor: S,
+    // the board's own kinds only (within the brief's size); the executor takes every preset kind too (an item from Word)
+    shape: { enum: KINDS.map((k) => k.kind) }, width: NUM, opacity: NUM, fill: SHAPE.properties.fill, fillColor: S, rot: NUM, textColor: S,
     // heads: the common ones only (wave 1c, board.items.add within MAX_TOOL); a wrong name's invalid_args lists them all.
     from: OBJ, to: OBJ, route: { enum: ROUTES }, heads: { ...OBJ, description: 'start, end: such as none, arrow, triangle, diamond, circle, bar' }, dash: { enum: DASHES },
     labels: { ...OBJ, description: 'start, mid, end: {html}' },

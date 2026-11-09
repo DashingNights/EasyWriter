@@ -11,8 +11,9 @@ import {
 import { fmt, toDay } from '../../../plan/dates.mjs';
 import { blockers, doneColumnOf, unitOf } from '../../../plan/plan-model.mjs';
 import { openDraft, refocusEditor } from '../../actions.js';
-import { deleteTickets, dispatch, editTicket, moveCards, newTicket } from '../../plans.js';
+import { newTicket } from '../../plans.js';
 import { closeWorkspace } from '../../views.js';
+import { run } from '../../../tooling/registry.js';
 import { IconButton, Tip } from '../Tip.jsx';
 
 const NO_STATUS = '-'; // radio value of "No status" (Radix needs a non-empty value)
@@ -33,7 +34,7 @@ function CardMenu({ card, ctx, ids, open, setOpen }) {
   const { plan } = ctx;
   const planId = plan.id;
   const t = card.ticket;
-  const move = (v) => moveCards(planId, ids, v === NO_STATUS ? null : v);
+  const move = (v) => run('plan.tickets.status', { ids, value: v });
   const tickets = ids.filter((id) => plan.tickets.some((x) => x.id === id));
   return (
     <DropdownMenu modal={false} open={open} onOpenChange={setOpen}>
@@ -54,7 +55,7 @@ function CardMenu({ card, ctx, ids, open, setOpen }) {
             <DropdownMenuSub>
               <DropdownMenuSubTrigger>Priority</DropdownMenuSubTrigger>
               <DropdownMenuSubContent>
-                <DropdownMenuRadioGroup value={String(t.priority)} onValueChange={(v) => dispatch('plan.tickets.update', { planId, ticketIds: tickets, patch: { priority: +v } })}>
+                <DropdownMenuRadioGroup value={String(t.priority)} onValueChange={(v) => run('plan.tickets.priority', { ids: tickets, value: +v })}>
                   {PRIORITIES.map(([v, label, Icon]) => <DropdownMenuRadioItem key={v} value={String(v)}>{Icon ? <Icon /> : <span className="size-4" />}{label}</DropdownMenuRadioItem>)}
                 </DropdownMenuRadioGroup>
               </DropdownMenuSubContent>
@@ -67,7 +68,7 @@ function CardMenu({ card, ctx, ids, open, setOpen }) {
                     const on = t.labels.includes(l.id);
                     return (
                       <DropdownMenuCheckboxItem key={l.id} checked={on} onSelect={(e) => e.preventDefault()}
-                        onCheckedChange={() => dispatch(on ? 'plan.tickets.labels.remove' : 'plan.tickets.labels.add', { planId, ticketIds: tickets, labelId: l.id })}>
+                        onCheckedChange={() => run('plan.tickets.labels', { ids: tickets, value: l.id, on })}>
                         <Dot color={l.color} />{l.name}
                       </DropdownMenuCheckboxItem>
                     );
@@ -75,14 +76,14 @@ function CardMenu({ card, ctx, ids, open, setOpen }) {
                 </DropdownMenuSubContent>
               </DropdownMenuSub>
             )}
-            <DropdownMenuCheckboxItem checked={t.milestone} onCheckedChange={(v) => dispatch('plan.tickets.update', { planId, ticketIds: tickets, patch: { milestone: v } })}>
+            <DropdownMenuCheckboxItem checked={t.milestone} onCheckedChange={(v) => run('plan.tickets.milestone', { ids: tickets, value: v })}>
               <Milestone />Milestone
             </DropdownMenuCheckboxItem>
             <DropdownMenuSeparator />
             {t.draftId
               ? <DropdownMenuItem onSelect={() => openDraftFromPlan(t.draftId)}><FileText />Open draft</DropdownMenuItem>
-              : <DropdownMenuItem onSelect={() => editTicket(planId, t.id)}><FileText />Link draft...</DropdownMenuItem>}
-            <DropdownMenuItem variant="destructive" onSelect={() => deleteTickets(planId, tickets)}>Delete{tickets.length > 1 ? ` ${tickets.length} tickets` : ''}...</DropdownMenuItem>
+              : <DropdownMenuItem onSelect={() => run('plan.tickets.open', { value: t.id })}><FileText />Link draft...</DropdownMenuItem>}
+            <DropdownMenuItem variant="destructive" onSelect={() => run('plan.tickets.delete', { ids: tickets })}>Delete{tickets.length > 1 ? ` ${tickets.length} tickets` : ''}...</DropdownMenuItem>
           </>
         )}
         {!t && (

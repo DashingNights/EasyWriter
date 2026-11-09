@@ -1,0 +1,17 @@
+# EasyWriter's whiteboard painter (docs/plans/board/design.md sections 2 and 3): an item's stamp, the display list one board
+# item draws, made from a complete engine model that src/board/model.mjs builds. No draw or parse code of its own.
+[package]
+name = "ew-board"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "EasyWriter whiteboard: each item's stamp, laid out from an engine model in a scratch session"
+
+[lints]
+workspace = true
+
+[dependencies]
+ew-doc-edit = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }

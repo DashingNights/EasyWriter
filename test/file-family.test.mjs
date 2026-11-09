@@ -4,7 +4,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import fsp from 'node:fs/promises';
-import { fileFamily, writeFileAtomic } from '../src/file-family.js';
+import crypto from 'node:crypto';
+import { fileFamily, verifySha512, writeFileAtomic } from '../src/file-family.js';
 
 const tempDir = () => fs.mkdtempSync(path.join(os.tmpdir(), 'dw-family-'));
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -134,4 +135,12 @@ test('writeFileAtomic retries a rename that another process blocks for a moment 
   }
   assert.equal(calls, 3);
   assert.equal(fs.readFileSync(file, 'utf8'), '{"a":1}');
+});
+
+test('verifySha512 passes the right hash and fails a wrong or missing one', async () => {
+  const file = path.join(tempDir(), 'EasyWriter-Portable.zip');
+  fs.writeFileSync(file, 'zip bytes');
+  await verifySha512(file, crypto.createHash('sha512').update('zip bytes').digest('base64'));
+  await assert.rejects(verifySha512(file, crypto.createHash('sha512').update('other').digest('base64')), /damaged/);
+  await assert.rejects(verifySha512(file, ''), /no checksum/);
 });

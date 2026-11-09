@@ -2,31 +2,41 @@ import { elementFromString, getHTMLFromFragment } from '@tiptap/core';
 import { closeHistory, redoDepth, redoNoScroll, undoDepth, undoNoScroll } from '@tiptap/pm/history';
 import { DOMParser, Fragment } from '@tiptap/pm/model';
 import { NodeSelection } from '@tiptap/pm/state';
+import { Marked } from 'marked';
 import { version as appVersion } from '../../package.json';
 import { canvasEditor } from '../canvas.js';
 import { BOARD_TYPES, pathOfPos, posOfPath } from '../doc-path.mjs';
+import { isPost, postToDoc } from '../document/canvas/post.js';
 import { DEFAULT_NUMBERING } from '../document/defaults.mjs';
 import { normaliseHtml } from '../document/paste.js';
 import { kitOf } from '../editors.js';
+import { engineHost } from '../engine/client.js';
+import { convert as convertRecord } from '../engine/model/read.mjs';
 import { formatOf, pageOf } from '../formats.mjs';
-import { activeBoard, contentWidth, migrateBoards } from '../whiteboard.js';
+import { pictureOfUrl } from '../tooling/picture.mjs';
+import { bindServices } from '../tooling/registry.js';
+import { areaOpens } from '../tooling/surface.js';
+import { activeBoard, columnWidth, migrateBoards } from '../whiteboard.js';
 import * as actions from './actions.js';
-import { familyOf } from './assistant/prompts.mjs';
-import { IDLE as SESSION_IDLE, noteWrite, sessionFor, sessionIds } from './assistant/sessions.js';
+import { backgroundClient, IDLE as SESSION_IDLE, noteWrite, sessionFor, sessionIds } from './assistant/sessions.js';
 import { invokeControl, snapshot as uiSnapshot } from './assistant/ui-control.js';
 import { $defs, byId, CATALOGUE, MODEL_DEFS } from './commands/catalogue.mjs';
 import { argsMessage, fail } from './commands/define.mjs';
+import { noteMarkers } from './commands/doc.mjs';
+import { assistantRevs, commit as commitEngine, ENGINE, lastRev, markPost } from './commands/engine.mjs';
 import { assistantMode, PERMISSIONS, refusal } from './commands/tool-sets.mjs';
 import { commandIdOf, toolsFor } from './commands/tools-schema.mjs';
 import { argsDigest, cyrb53 } from './digest.mjs';
+import { engineSoon as waitForEngine } from './engine-soon.mjs';
 import * as flows from './flows.js';
 import { can, GATES } from './gates.mjs';
+import { isCanvas } from '../engine/model/form.mjs';
 import { enabled, listed, offArg } from '../integrations/index.mjs';
 import { integrationsCtx } from '../integrations/ui.js';
 import * as plans from './plans.js';
 import * as references from './references.js';
 import { mapPath } from './rev.js';
-import { newId as suggestId, pendingCount, strip as stripRecords } from '../suggest/core.mjs';
+import { ASSISTANT as ASSISTANT_AUTHOR, attribute, newId as suggestId, pendingCount, strip as stripRecords } from '../suggest/core.mjs';
 import { noteGroup, withCall } from '../suggest/extension.js';
 import { tagList } from './drafts-meta.js';
 import { deref, validate, withDefaults } from './schema.mjs';
@@ -61,7 +71,8 @@ let chain = Promise.resolve();
  * {ok: true, result, draftId, rev, undoSteps, ms, dryRun, diff?} or {ok: false, error: {code, message, data?}}; never rejects. */
 export function invoke(req) {
   if (req?.source === 'ui' || req?.source === 'palette') return execute(req);
-  const run = chain.then(() => execute(req));
+  // A GitHub sync covering the window (actions.js busy()) refuses agent commands, so none edits while it pulls (AR8).
+  const run = chain.then(() => (state.syncing ? error('busy', 'The app is syncing with GitHub; retry in a moment') : execute(req)));
   chain = run.catch(() => {});
   return run;
 }
@@ -126,18 +137,29 @@ async function runOne(def, rawArgs, opts) {
     }
     if (!sess && rawArgs.draftId !== state.draft?.id) return error('busy', 'The user is opening that draft; retry in a moment');
   }
-  const ctx = makeCtx(opts.source, ctrl.signal, sess);
-  // 4. Revision: every PATH argument read at ifRev, mapped onto the current doc (a session's: onto its doc, from its revs).
+  // A canvas draft's engine session (stage2b.md decision 4): the commands of ENGINE work there, the others are refused (failedGates).
+  let eng = engineOf(sess);
+  // The page area opens a draft the render after it is created or opened: an agent's or the smoke script's next call (a forum
+  // post's on the engine, C5) waits for it instead of reporting busy. The engine refusing the draft meanwhile leaves it to the
+  // DOM host (engineOf then answers null), and Stop ends the wait at once.
+  if (eng === false && needsDoc(def) && !sess && (opts.source === 'smoke' || isAgent(opts.source))) {
+    eng = (await waitForEngine({ id: state.draft?.id, signal: opts.signal, read: () => ({ focus: state.focusedSession, areaOpens: areaOpens(state), draftId: state.draft?.id }) })) || engineOf(sess);
+    if (opts.signal?.aborted) return error('cancelled', 'The call was cancelled');
+  }
+  if (eng === false && needsDoc(def)) return notInEngine();
+  const ctx = makeCtx(opts.source, ctrl.signal, sess, eng);
+  // 4. Revision: every PATH argument read at ifRev, mapped onto the current doc (a session's: onto its doc, from its revs). On a
+  // canvas draft the engine commands find their paragraphs at ifRev themselves (commands/engine.mjs).
   let args = rawArgs;
-  if (opts.ifRev !== undefined) {
+  if (opts.ifRev !== undefined && !eng) {
     args = mapArgPaths(def.args, rawArgs, opts.ifRev, sess);
     if (args === STALE) return error('stale', `A block addressed at rev ${opts.ifRev} was deleted or merged since; read again`, { rev: ctx.state.rev });
   }
   // 5. Preconditions, before any ask: the user never approves a call that cannot run.
   if (typeof args.draftId === 'string' && !draftById(args.draftId)) return error('not_found', `No draft has the id ${args.draftId}`);
-  const failed = failedGates(def, args, opts.source, sess);
+  const failed = failedGates(def, args, opts.source, sess, eng);
   if (failed.length) return error('precondition_failed', failed.map((f) => f.message).join('; '), { failed });
-  // An agent's change to draft content waits as a suggestion (docs/plans/suggestions.md Which calls suggest): ctx.suggest is its
+  // An agent's change to draft content waits as a suggestion (docs/wiki/suggestions.md Which calls suggest): ctx.suggest is its
   // call, which the Suggestions extension records the change under. An agent's undo would change the draft without a record.
   if (suggests(def, args, opts)) {
     if (def.group === 'history') return error('refused', 'Undo by an agent would change the draft directly. Withdraw your own suggestions with suggestions_resolve.');
@@ -160,13 +182,13 @@ async function runOne(def, rawArgs, opts) {
     // The user opened the session's draft meanwhile: the main editor holds it now. A handover waits for the work below (a batch
     // step's: for the whole batch, runBatch).
     if (sess?.ending && !opts.group) fail('stale', 'The user opened that draft meanwhile; read it again', { rev: state.rev });
-    const job = Promise.race([work(def, ctx, args, opts), stopped]);
+    const job = Promise.race([eng && ENGINE[def.id] ? engineWork(def, ctx, args, opts) : work(def, ctx, args, opts), stopped]);
     if (sess && !opts.group) sess.pending = job.catch(() => {});
     const out = await job;
     if (sess && out.undoSteps > 0 && opts.source === ASSISTANT) noteWrite(sess.draftId);
     if (!opts.dryRun) noteMeta(def, args, opts.source, out.result);
     const suggested = ctx.suggest?.ids.length ? { suggested: { group: ctx.suggest.g, changes: [...ctx.suggest.ids] } } : {};
-    return { ok: true, ...out, ...suggested, ...(sess && { draftId: sess.draftId, rev: sess.rev }) };
+    return { ok: true, ...out, ...suggested, ...(sess && { draftId: sess.draftId, rev: out.rev ?? sess.rev }) };
   } catch (e) {
     return errorOf(e);
   } finally {
@@ -198,10 +220,167 @@ async function work(def, ctx, args, opts) {
   const before = def.undo === 'doc' && ed ? undoDepth(ed.state) : 0;
   // Presses (ui.invoke, tool.run) run in their call's 'ui' scope. computer.mjs scopes the main window's input itself, after its
   // card (ctx.inScope); board writes and canvas.close scope their own dispatch ('exact').
-  const result = await (PRESSES.includes(def.id) ? inScope(ctx.suggest, 'ui', () => def.run(ctx, args)) : def.run(ctx, args));
+  const result = await (PRESSES.includes(def.id) ? pressing(ctx, () => inScope(ctx.suggest, 'ui', () => def.run(ctx, args))) : def.run(ctx, args));
   const undoSteps = def.undo === 'doc' && ed && ctx.editor === ed ? undoDepth(ed.state) - before : 0;
   return { result, undoSteps };
 }
+
+// ---------------------------------------------------------------------------------------------
+// Canvas drafts (docs/plans/engine/stage2b.md decisions 4 and 5; commands/engine.mjs)
+
+/** The engine session a command on the open draft, or on background session `sess`, works in: a canvas session's client; the
+ * open draft's while the canvas page area holds it (surface.js areaOpens); false while that area is still opening it, or while a
+ * canvas draft is open but not shown (a workspace page: no engine holds it then); else null (the DOM editor). */
+function engineOf(sess) {
+  if (sess) return sess.client ?? null;
+  if (!areaOpens(state)) return isCanvas(state.draft) ? false : null;
+  const c = state.focusedSession;
+  return c && c.id === state.draft?.id ? c : false;
+}
+
+/** The open canvas draft's engine session, or null (capture.js reads the situation from it). */
+export const openEngine = () => engineOf(null) || null;
+
+/** Whether `def` works on a draft's content (doc.open), so a canvas draft that is still opening makes it wait. */
+const needsDoc = (def) => !!ENGINE[def.id] || def.needs.some((n) => needOf(n).gate === 'doc.open');
+
+/** The answer to a command on a canvas draft whose engine session is not there (engineOf false). */
+const notInEngine = () => error('busy', areaOpens(state) ? 'The draft is still opening in the canvas engine; retry in a moment'
+  : 'The draft is in the canvas engine, which holds it only while the editor shows it. Go back to the editor (Back to editor), then retry');
+
+/** The suggestion group an agent's engine write carries as its revisions' tag: its call's, else (auto-approve) the source's group. */
+const engineTag = (ctx, opts) => (isAgent(opts.source) ? ctx.suggest?.g ?? groupFor(opts.source, ctx.state.draft?.id ?? null).g : null);
+
+/** Steps 9–10 on a canvas draft: a read, plain engine commands, or a write's steps in one execAs call as the assistant (an agent's;
+ * the palette's as the user's own commands), whose revisions are the call's suggestion. A batch step's write waits in the batch's
+ * group for the batch's one call (runBatch). */
+async function engineWork(def, ctx, args, opts) {
+  const e = ENGINE[def.id];
+  const c = engineCtx(ctx, opts.ifRev);
+  if (!e.write) {
+    if (opts.dryRun && e.run) return { result: { simulated: false, title: def.title, args }, undoSteps: 0 };
+    const result = await (e.read ?? e.run)(c, args);
+    if (e.run) ctx.session?.changed?.(); // a source added, an undo: a background session saves
+    return { result, undoSteps: 0, rev: lastRev(ctx.engine) };
+  }
+  const w = await e.write(c, args);
+  if (opts.dryRun) return { result: { simulated: false, title: def.title, args, steps: w.steps.length }, undoSteps: 0 };
+  if (opts.group?.engine) {
+    opts.group.engine.push(w);
+    return { result: null, undoSteps: 0, engineStep: opts.group.engine.length - 1 };
+  }
+  const r = await commitEngine(ctx.engine, [w], engineTag(ctx, opts), isAgent(opts.source));
+  wrote(ctx, r);
+  return { result: r.results[0], undoSteps: r.changed ? 1 : 0, rev: r.rev };
+}
+
+/** After an engine write `r`: its revisions join the call's suggestion, and a background session saves. */
+function wrote(ctx, r) {
+  if (ctx.suggest) ctx.suggest.ids.push(...r.revisions.map((n) => `r${n}`));
+  if (r.changed) ctx.session?.changed?.();
+}
+
+/** The ctx commands/engine.mjs reads (its header): the engine, ifRev, and the conversions that need the app (Markdown, the kit).
+ * `post`: the draft is a forum post (engine.mjs's post paths and commands then); `postContent`: doc.insert's and doc.replace's
+ * content as the post kit's JSON. */
+function engineCtx(ctx, ifRev) {
+  const draft = ctx.state.draft;
+  const settings = ctx.state.settings;
+  const post = isPost(draft, settings);
+  if (post && ctx.engine) markPost(ctx.engine); // commit's outline and the reads come from the post's state
+  return {
+    eng: ctx.engine, ifRev, draftId: draft?.id ?? null, references: ctx.references, noteMarkers,
+    post, presets: settings?.presets,
+    html: (content) => engineHtml(content, draft),
+    postContent: (content) => postJson(content, draft),
+    fromHtml: (html, images) => blocksOfHtml(html, draft, images),
+    markdownOf: (blocks) => toMarkdown({ type: 'doc', content: blocks }, null, draft, null),
+    stripImages, shortImages,
+  };
+}
+
+const IMG_ONE = /!\[[^\]]*\]\([^)]*\)/;
+
+/** doc.insert's and doc.replace's content as HTML for the engine's paste → {html, dropped}: Markdown through marked (its headings,
+ * lists and tables as HTML has them), JSON through the draft's kit. A board has no place in the engine yet. */
+async function engineHtml(content, draft) {
+  if (content.html !== undefined) return { html: content.html, dropped: /<img\b(?![^>]*\ssrc=["']?data:)/i.test(content.html) ? ['img'] : [] };
+  if (content.markdown !== undefined) {
+    return { html: new Marked().parse(content.markdown.replace(IMG_MD, '')), dropped: IMG_ONE.test(content.markdown) ? ['img'] : [] };
+  }
+  const { nodes, dropped } = await toNodes(content, null, draft);
+  if (nodes.some((n) => BOARD_TYPES.includes(n.type.name))) fail('refused', GATES['draft.boards'].message, { code: 'board', hint: GATES['draft.boards'].fix });
+  return { html: getHTMLFromFragment(Fragment.fromArray(nodes), nodes[0].type.schema), dropped };
+}
+
+/** doc.insert's and doc.replace's content on a forum post, as the post kit's JSON for post.insert → {json, dropped}: HTML and
+ * Markdown through postToDoc (the forum's import rules, as the post's own paste uses them); JSON and pictures through the post
+ * kit's schema (toNodes). */
+async function postJson(content, draft) {
+  const key = Object.keys(content)[0];
+  if (key === 'html' || key === 'markdown') {
+    const html = key === 'html' ? content.html : new Marked().parse(content.markdown.replace(IMG_MD, ''));
+    // postToDoc keeps a picture as its alt text: every <img> is dropped, data URL or not (the post's own paste makes pictures
+    // through content.images).
+    return { json: postToDoc(html), dropped: /<img\b/i.test(html) ? ['img'] : [] };
+  }
+  if (key === 'json') {
+    // post.insert reads a node array or a doc (its `content`); one block node is wrapped.
+    const j = content.json;
+    return { json: { type: 'doc', content: Array.isArray(j) ? j : j?.type === 'doc' ? j.content ?? [] : [j] }, dropped: [] };
+  }
+  const { nodes, dropped } = await toNodes(content, null, draft);
+  return { json: { type: 'doc', content: nodes.map((n) => n.toJSON()) }, dropped };
+}
+
+/** The engine's HTML of a range as TipTap JSON blocks of `draft`'s kit (doc.get json and markdown), pictures shortened unless
+ * `images`. */
+async function blocksOfHtml(html, draft, images) {
+  let nodes;
+  try {
+    ({ nodes } = await toNodes({ html }, null, draft));
+  } catch {
+    return []; // no block in it (an empty paragraph)
+  }
+  const json = nodes.map((n) => n.toJSON());
+  return images ? json : stripImages(json);
+}
+
+/** HTML with its pictures' data URLs shortened to their length and hash. */
+const shortImages = (html) => html.replace(DATA_URL, (s, kind) => `data:${kind};len=${s.length};hash=${cyrb53(s)}`);
+
+/** A canvas draft's text for drafts.get (stage2b.md decision 7): from engine session `eng` (the open draft's), the draft's background
+ * session, else its record made into text by the engine's helper worker. */
+async function canvasText(draft, eng) {
+  const c = eng || backgroundClient(draft.id);
+  if (c) return (await c.query('document.text'))?.value?.text ?? '';
+  return new TextDecoder().decode(await convertRecord(engineHost(), draft, 'txt'));
+}
+
+/** The assistant's changes waiting in a canvas draft (drafts.get, as the situation note counts them): in engine session `eng` or the
+ * draft's background session, else null (no engine holds it: the record's count stands). */
+async function canvasWaiting(draft, eng) {
+  const c = eng || backgroundClient(draft.id);
+  return c ? assistantRevs(c) : null;
+}
+
+// An agent's press (ui.invoke, tool.run, computer.act on the main window) on a canvas draft: while it runs, the registry's engine
+// commands go in as the agent's tracked changes (svc.agentInput, registry.js), unless the input is the user's own (attribute: a
+// trusted input event under 'ui'; under 'computer' the agent's own input events are trusted too, so all of it is the agent's).
+let press = null; // {author, tag, kind} of the press running now
+
+/** Runs press `fn` of `ctx`'s call, in scope `kind`, with its input attributed to the agent on a canvas draft. */
+async function pressing(ctx, fn, kind = 'ui') {
+  if (!isAgent(ctx.source) || !engineOf(null)) return fn();
+  press = { author: ASSISTANT_AUTHOR, tag: engineTag(ctx, { source: ctx.source }), kind };
+  try {
+    return await fn();
+  } finally {
+    press = null;
+  }
+}
+
+bindServices({ agentInput: () => (press && attribute(press.kind, globalThis.window?.event, -Infinity, Date.now()) === 'agent' ? press : null) });
 
 /** Runs `fn` under withCall(null, `call`, `kind`) (One converter). Board text typed in the scope is the call's: the user's open
  * text edit is committed as theirs before it, and the same edit, its text changed in the scope, is committed inside it. Both
@@ -349,20 +528,25 @@ function nodeSubject(path, ed = state.editor) {
 const liveBoard = () => canvasEditor.get()?.board ?? activeBoard.get();
 
 /** The subject a gate reads (§3.7): from the arguments when the command addresses its target, else the live UI. Background
- * session `sess`: its editor in place of the open draft's, shown (doc.open and view.editor hold). */
-function subjectOf(kind, args = {}, sess = null) {
+ * session `sess`: its editor (a canvas session: its engine) in place of the open draft's, shown (doc.open and view.editor hold).
+ * `eng`: the engine session the command works in (engineOf); the engine itself refuses a table command outside a table and an
+ * undo with nothing to undo. */
+function subjectOf(kind, args = {}, sess = null, eng = engineOf(sess)) {
   const ed = sess?.editor ?? state.editor;
   switch (kind) {
-    case 'ui': return sess ? { editor: sess.editor, view: { type: 'editor' } } : state;
+    case 'ui': return sess ? { editor: sess.editor ?? sess.client, view: { type: 'editor' } } : state;
     case 'draft': {
       const d = args.draftId ? draftById(args.draftId) : state.draft;
       // Waiting suggestions: the live count of the open draft or the session, else the summary's (draft.settled).
       const live = d && (d.id === state.draft?.id ? state.editor : sess?.draftId === d.id ? sess.editor : null);
-      const suggestions = live ? pendingCount(live.state.doc) : d?.suggestions ?? 0;
-      return d && { id: d.id, threadUrl: d.threadUrl ?? null, pushedAt: d.pushedAt ?? null, format: d.format ?? null, threads: state.settings?.threads, suggestions };
+      // A canvas draft's are the engine's cards, which state.suggestions mirrors for the open draft (src/suggest/canvas.js).
+      const suggestions = d?.id === state.draft?.id && state.suggestions.canvas ? state.suggestions.count : live ? pendingCount(live.state.doc) : d?.suggestions ?? 0;
+      // A canvas draft (draft.dom): the open draft while the canvas page area holds it, or a canvas session's. Summaries do not say.
+      const canvas = !!d && (sess?.draftId === d.id ? !!sess.client : d.id === state.draft?.id && (isCanvas(state.draft) || eng != null));
+      return d && { id: d.id, threadUrl: d.threadUrl ?? null, pushedAt: d.pushedAt ?? null, format: d.format ?? null, threads: state.settings?.threads, suggestions, canvas };
     }
-    case 'doc': return ed && { inTable: ed.isActive('table') };
-    case 'history': return ed && { canUndo: undoDepth(ed.state) > 0, canRedo: redoDepth(ed.state) > 0 };
+    case 'doc': return eng ? { inTable: true } : ed && { inTable: ed.isActive('table') };
+    case 'history': return eng ? { canUndo: true, canRedo: true } : ed && { canUndo: undoDepth(ed.state) > 0, canRedo: redoDepth(ed.state) > 0 };
     case 'node': {
       if (args.path) return nodeSubject(args.path, ed);
       const sel = ed?.state.selection;
@@ -377,23 +561,32 @@ function subjectOf(kind, args = {}, sess = null) {
 }
 
 const needOf = (n) => (typeof n === 'string' ? { gate: n } : n);
+// The command groups that edit boards, which a canvas draft holds as boxes: refused there with their own reason (draft.boards).
+const BOARDS = ['board', 'canvas'];
 
 /** [{gate, message, fix}] of every applicable gate of `def.needs` (plus window.visible for a headless: false command from an
  * agent, with `def.hidden` as its fix when set) that does not hold; `sess`: the background session the command works in.
  * An off integration's command, or an argument it owns (integrationArgs), fails its integration.<id> gate alone: the other
- * gates would only name parts of the integration (an outside client's tool list may be from before it was turned off). */
-function failedGates(def, args, source, sess = null) {
+ * gates would only name parts of the integration (an outside client's tool list may be from before it was turned off). `eng`: the
+ * engine session the command works in (engineOf). */
+function failedGates(def, args, source, sess = null, eng = engineOf(sess)) {
   const off = def.integration && !enabled(state.settings, def.integration) ? def.integration : offArg(def, args, state.settings);
   if (off) {
     const g = GATES[`integration.${off}`];
     return [{ gate: `integration.${off}`, message: g.message, fix: g.fix }];
   }
   const failed = [];
-  for (const n of !def.headless && isAgent(source) ? [...def.needs, { gate: 'window.visible', fix: def.hidden }] : def.needs) {
+  // A command on a canvas draft's content works only through the engine (ENGINE), whoever calls it: the others would read or
+  // edit the hidden DOM editor, whose edits no save writes. A command that handles canvas drafts itself (its own engine path,
+  // `canvas: true`: the suggestions' cards) is let through. Boards wait for suggested box edits (stage2b.md "Later").
+  const needs = [...def.needs,
+    ...(!isAgent(source) || def.headless ? [] : [{ gate: 'window.visible', fix: def.hidden }]),
+    ...(def.needs.some((n) => needOf(n).gate === 'doc.open') && !ENGINE[def.id] && !def.canvas ? [BOARDS.includes(def.group) ? 'draft.boards' : 'draft.dom'] : [])];
+  for (const n of needs) {
     const { gate, if: when, with: param, fix } = needOf(n);
     if (when && !when(args)) continue;
     const g = GATES[gate];
-    if (!can(gate, subjectOf(g.subject, args, sess), args, param)) failed.push({ gate, message: g.message, fix: fix ?? g.fix });
+    if (!can(gate, subjectOf(g.subject, args, sess, eng), args, param)) failed.push({ gate, message: g.message, fix: fix ?? g.fix });
   }
   // def.check (define.mjs): gates that depend on the arguments and the addressed draft, here so they also come before any ask.
   const draft = sess?.draft ?? (args.draftId ? draftById(args.draftId) : state.draft);
@@ -445,7 +638,7 @@ async function policy(def, args, opts, ctx, risk = def.risk, text = null) {
 }
 
 // ---------------------------------------------------------------------------------------------
-// Suggestions (docs/plans/suggestions.md Which calls suggest, Grouping, Policy precedence)
+// Suggestions (docs/wiki/suggestions.md Which calls suggest, Grouping, Policy precedence)
 
 const autoApprove = () => state.settings?.assistant?.autoApproveEdits === true; // undefined (an older profile): suggestions on
 const INPUT_ACTIONS = ['click', 'double_click', 'move', 'drag', 'type', 'key', 'scroll'];
@@ -499,7 +692,7 @@ const META_ROWS = {
   'drafts.rename': (a, r) => `Rename to “${r?.title ?? a.title}”`,
   'drafts.setTag': (a) => (a.tagId ? `Tag as “${tagList(state.settings).find((t) => t.id === a.tagId)?.name ?? a.tagId}”` : 'Clear the tag'),
   'drafts.move': (a) => (a.folderId ? `Move to “${(state.settings.folders ?? []).find((f) => f.id === a.folderId)?.name ?? a.folderId}”` : 'Move to the top level'),
-  // The draft's sources (references.*, docs/plans/references.md)
+  // The draft's sources (references.*, docs/wiki/references.md)
   'references.add': (a, r) => `Add the source ${r?.source?.citeNarrative ?? ''}`,
   'references.update': (a, r) => `Change the source ${r?.source?.citeNarrative ?? ''}`,
   'references.remove': (a, r) => `Remove the source ${r?.source?.citeNarrative ?? ''}`,
@@ -527,7 +720,8 @@ async function linkedDrafts(flowId) {
   if (state.editor && state.draft?.id) live.set(state.draft.id, shows(state.editor.state.doc));
   for (const id of sessionIds()) {
     const s = live.has(id) ? null : await sessionFor(id).catch(() => null);
-    if (s) live.set(id, shows(s.editor.state.doc));
+    // ponytail: a canvas session's boxes are not read (box.list); its summary's flows count, below.
+    if (s?.editor) live.set(id, shows(s.editor.state.doc));
   }
   const out = [...live].filter(([, hit]) => hit).map(([id]) => id);
   for (const d of state.drafts) if (!live.has(d.id) && d.flows?.includes(flowId)) out.push(d.id);
@@ -623,11 +817,15 @@ async function runBatch(args, opts) {
     }
     if (!sess && target !== state.draft?.id) return error('busy', 'The user is opening that draft; retry in a moment');
   }
-  const ifRev = opts.ifRev ?? sess?.rev ?? state.rev;
-  const ctx = makeCtx(opts.source, new AbortController().signal, sess);
+  // A canvas draft's doc steps go into one execAs call after the loop (commands/engine.mjs commit), and find their paragraphs at
+  // ifRev themselves.
+  const eng = engineOf(sess);
+  if (eng === false && steps.some((s) => needsDoc(s.def))) return notInEngine();
+  const ifRev = opts.ifRev ?? (eng ? undefined : sess?.rev ?? state.rev);
+  const ctx = makeCtx(opts.source, new AbortController().signal, sess, eng);
   // Preconditions of every step on the state now, before the ask.
   for (const [i, { def, args: raw }] of steps.entries()) {
-    const a = mapArgPaths(def.args, raw, ifRev, routes(def) ? sess : null);
+    const a = eng ? raw : mapArgPaths(def.args, raw, ifRev, routes(def) ? sess : null);
     if (a === STALE) return error('stale', `steps[${i}]: a block addressed at rev ${ifRev} was deleted or merged since`, { rev: ctx.state.rev, step: i });
     if (typeof a.draftId === 'string' && !draftById(a.draftId)) return error('not_found', `steps[${i}]: no draft has the id ${a.draftId}`, { step: i });
     const failed = failedGates(def, a, opts.source, routes(def) ? sess : null);
@@ -658,7 +856,7 @@ async function runBatch(args, opts) {
   const ed = ctx.editor;
   const live = () => ctx.editor === ed; // the editor the batch began on (not remounted; a session's lives until the batch ends)
   const before = ed ? undoDepth(ed.state) : 0;
-  const group = { first: null };
+  const group = { first: null, engine: eng ? [] : null };
   const results = [];
   const run = async () => {
     for (const [i, { def, args: a }] of steps.entries()) {
@@ -674,12 +872,30 @@ async function runBatch(args, opts) {
     }
     if (group.first && live()) ed.view.dispatch(closeHistory(ed.state.tr));
     const suggested = results.filter((r) => r.suggested).map((r) => r.suggested);
+    // The canvas draft's steps: one call, all or nothing (atomic or not), one undo step.
+    let made = null;
+    if (group.engine?.length) {
+      const tag = engineTag(ctx, opts);
+      try {
+        made = await commitEngine(eng, group.engine, tag, isAgent(opts.source));
+      } catch (e) {
+        const err = errorOf(e).error;
+        return error(err.code, `The batch's document steps: ${err.message} (none of them went in)`, err.data);
+      }
+      for (const r of results) if (r.engineStep !== undefined) r.result = made.results[r.engineStep];
+      if (made.changed && sess) {
+        sess.changed?.();
+        if (opts.source === ASSISTANT) noteWrite(sess.draftId);
+      }
+      if (made.revisions.length && steps.some((s) => s.suggest)) suggested.push({ group: tag, changes: made.revisions.map((n) => `r${n}`) });
+    }
     return {
       ok: true,
       result: { results: results.map((r) => (r.ok ? r.result : { error: r.error })) },
-      undoSteps: ed && live() ? undoDepth(ed.state) - before : 0,
+      undoSteps: made ? Number(made.changed) : ed && live() ? undoDepth(ed.state) - before : 0,
       ...(suggested.length && { suggested: { group: suggested[0].group, changes: suggested.flatMap((x) => x.changes) } }),
-      ...(sess && { draftId: sess.draftId, rev: sess.rev }),
+      ...(made && { rev: made.rev }),
+      ...(sess && { draftId: sess.draftId, rev: made?.rev ?? sess.rev }),
     };
   };
   const job = run();
@@ -713,14 +929,16 @@ async function runCalls(args, opts) {
 // ctx and the renderer helpers commands reach through it (ctx.lib)
 
 /** A command's ctx; `sess`: the background session it works in (§7i Background drafts), whose draft, rev and editor stand in for
- * the open draft's (ctx.state reads the rest from the store), with no live board. */
-function makeCtx(source, signal, sess = null) {
+ * the open draft's (ctx.state reads the rest from the store), with no live board. `eng`: the canvas draft's engine session the
+ * command works in (engineOf), else null; a canvas session has no editor. */
+function makeCtx(source, signal, sess = null, eng = null) {
   return {
     state: sess ? Object.create(state, { draft: { get: () => sess.draft }, rev: { get: () => sess.rev }, editor: { get: () => sess.editor } }) : state,
     get editor() {
       return sess ? sess.editor : state.editor; // the editor now: a command that awaits may outlive a remount
     },
     session: sess,
+    engine: eng || null,
     api,
     actions,
     references, // the open draft's sources (app/references.js), for references.*
@@ -734,7 +952,7 @@ function makeCtx(source, signal, sess = null) {
     ask: (title, description = '', { risk = 'destructive', steps } = {}) => askRaw(source, title, description, risk, steps, signal).then((a) => a === 'allow'),
     suggest: null, // the call a suggesting command's change is recorded under (runOne)
     inScope(kind, fn) { // `fn` in this call's window-level scope (computer.act on the main window: 'computer')
-      return inScope(this.suggest, kind, fn);
+      return pressing(this, () => inScope(this.suggest, kind, fn), kind);
     },
     autoApprove,
     linkedDrafts,
@@ -748,7 +966,7 @@ function makeCtx(source, signal, sess = null) {
 // never busy.
 const sessionLib = ({ editor: ed, draft }) => ({
   ...lib,
-  toNodes: (c, e = ed, d = draft) => toNodes(c, e, d),
+  toNodes: (c, e = ed, d = draft, at) => toNodes(c, e, d, at),
   toMarkdown: (n, p) => toMarkdown(n, p, draft, ed),
   toHtml: (p, i) => toHtml(p, i, ed),
   selection: () => selection(ed),
@@ -773,35 +991,35 @@ const newId = () => Math.random().toString(36).slice(2, 9).padEnd(7, '0');
 
 /** A canvas node holding the picture `dataUrl` at its natural size (≤ 8000 px a side), displayed `w` wide (default: the
  * natural width), never wider than `width`, the target's text width (the addImages pattern, whiteboard.js). In a Document
- * (`inline`) a paragraph holding the picture as an image node instead (docs/plans/document.md Pictures). */
+ * (`inline`) a paragraph holding the picture as an image node instead (docs/plans/document.md Pictures). An EMF or WMF shows the
+ * metafile reader's drawing at its own size and keeps its original, as an inserted file does (tooling/picture.mjs pictureOfUrl). */
 async function imageNode({ dataUrl, w: want, alt }, i, width, inline) {
-  const img = new Image();
-  img.src = dataUrl;
-  try {
-    await img.decode();
-  } catch {
-    fail('invalid_args', `content.images[${i}] is not a picture the app can read`, { path: `/content/images/${i}/dataUrl`, message: 'cannot be decoded', expected: {} });
-  }
+  const picture = await pictureOfUrl(dataUrl);
+  if (!picture) fail('invalid_args', `content.images[${i}] is not a picture the app can read`, { path: `/content/images/${i}/dataUrl`, message: 'cannot be decoded', expected: {} });
+  const { src, w: nw, h: nh } = picture;
+  const original = picture.metafile && { metafile: picture.metafile };
   if (inline) {
-    const w = Math.max(1, Math.round(Math.min(want ?? img.naturalWidth, width))); // `w` may enlarge it, as a canvas's dw does
-    const h = Math.max(1, Math.round((w * img.naturalHeight) / img.naturalWidth));
-    return { type: 'paragraph', content: [{ type: 'image', attrs: { src: dataUrl, alt: alt?.trim() || null, width: w, height: h } }] };
+    const w = Math.max(1, Math.round(Math.min(want ?? nw, width))); // `w` may enlarge it, as a canvas's dw does
+    const h = Math.max(1, Math.round((w * nh) / nw));
+    // A metafile's orig is its size, so Reset Picture & Size does not take the drawing's doubled natural size (whiteboard.js addPictures).
+    return { type: 'paragraph', content: [{ type: 'image', attrs: { src, alt: alt?.trim() || null, width: w, height: h, ...(original && { ...original, orig: { w, h } }) } }] };
   }
-  const k = Math.min(1, 8000 / Math.max(img.naturalWidth, img.naturalHeight));
-  const w = Math.max(1, Math.round(img.naturalWidth * k));
-  const h = Math.max(1, Math.round(img.naturalHeight * k));
+  const k = Math.min(1, 8000 / Math.max(nw, nh));
+  const w = Math.max(1, Math.round(nw * k));
+  const h = Math.max(1, Math.round(nh * k));
   const id = newId();
   return {
     type: 'canvas',
-    attrs: { w, h, dw: Math.min(want ?? w, width), frame: { x: 0, y: 0, w, h, item: id }, bg: 'post', items: [{ id, type: 'image', src: dataUrl, x: 0, y: 0, w, h }] },
+    attrs: { w, h, dw: Math.min(want ?? w, width), frame: { x: 0, y: 0, w, h, item: id }, bg: 'post', items: [{ id, type: 'image', src, x: 0, y: 0, w, h, ...original }] },
   };
 }
 
 /** SPEC §8 Content: {json | html | markdown | images} → {nodes: ProseMirror block nodes of editor `ed`, dropped: [construct]}.
  * html and markdown parse with the kit of `draft`'s format; a Document's html first goes through the paste pre-pass
  * (document/paste.js: lists to list paragraphs, quotes to the Quote style). `ed` null: nodes of that kit's schema, for a draft
- * not made yet (drafts.create passes {format}), so invalid content creates nothing. */
-async function toNodes(content, ed = state.editor, draft = state.draft) {
+ * not made yet (drafts.create passes {format}), so invalid content creates nothing. `at`: where the nodes go in `ed`'s doc
+ * (default: the selection), whose section's text width pictures fit. */
+async function toNodes(content, ed = state.editor, draft = state.draft, at = undefined) {
   const format = formatOf(draft, state.settings).id;
   const kit = kitOf(format);
   const schema = ed?.schema ?? kit.schema;
@@ -823,8 +1041,9 @@ async function toNodes(content, ed = state.editor, draft = state.draft) {
     });
     json = kit.markdown.parse(md).content ?? [];
   } else {
-    // `ed` null (a draft not made yet): its format's page width, not the open draft's editor, which may be another format.
-    const width = ed ? contentWidth(ed.view) : pageOf(draft, state.settings).width;
+    // `ed` null (a draft not made yet): its format's page width, not the open draft's editor, which may be another format. A
+    // Document's: the text width of the section at `at` (columnWidth, from its page setup).
+    const width = ed ? columnWidth(ed.view, at) : pageOf(draft, state.settings).width;
     json = await Promise.all(content.images.map((img, i) => imageNode(img, i, width, format === 'document')));
   }
   json = stripRecords(json); // no agent writes or forges a suggestion record
@@ -870,7 +1089,7 @@ function toHtml(path, images, ed = state.editor) {
     if (pos === null) fail('not_found', `No block at [${path}]`, { path });
     html = getHTMLFromFragment(Fragment.from(ed.state.doc.nodeAt(pos)), ed.schema);
   }
-  return images ? html : html.replace(DATA_URL, (s, kind) => `data:${kind};len=${s.length};hash=${cyrb53(s)}`);
+  return images ? html : shortImages(html);
 }
 
 const CONTEXT = 40;
@@ -928,12 +1147,12 @@ function busyNow() {
 const modeNow = () => (canvasEditor.get() ? 'canvas-edit' : activeBoard.get() ? 'board' : 'text');
 
 /** ui.state (§7). */
-function uiState() {
+async function uiState() {
   return {
     view: state.view.type,
     mode: modeNow(),
     tool: liveBoard()?.mode ?? null,
-    selection: selectionBrief(),
+    selection: await engineSelection() ?? selectionBrief(),
     busy: busyNow(),
     visible: document.visibilityState === 'visible',
     zoom: state.zoomPct,
@@ -948,6 +1167,14 @@ function selectionBrief() {
   if (!ed) return { kind: 'none' };
   const sel = ed.state.selection;
   return { kind: sel instanceof NodeSelection ? 'node' : 'text', path: pathOfPos(ed.state.doc, sel.from) };
+}
+
+/** The open canvas draft's selection as the engine has it ({kind: 'text', path} by doc.selection's paths), or null on the DOM. */
+async function engineSelection() {
+  const eng = engineOf(null);
+  if (!eng) return null;
+  const s = await ENGINE['doc.selection'].read(engineCtx({ engine: eng, state }), {}).catch(() => ({ kind: 'none' }));
+  return s.kind === 'text' ? { kind: 'text', path: s.path } : { kind: 'none' };
 }
 
 /** Every gate on the current subjects (a gate that needs a parameter, board.itemIs, reads false), less those of off
@@ -996,13 +1223,12 @@ function audit(req, res, ms) {
 const auditTail = ({ n, source, draftId }) => auditLog.filter((l) => (!source || l.source === source) && (!draftId || l.draftId === draftId)).slice(-n);
 
 const lib = {
-  appVersion, undoDepth, redoDepth, undoNoScroll, redoNoScroll, toNodes, toMarkdown, toHtml, stripImages, selection, boardBusy,
+  appVersion, undoDepth, redoDepth, undoNoScroll, redoNoScroll, toNodes, toMarkdown, toHtml, stripImages, selection, boardBusy, canvasText, canvasWaiting,
   anyBoardBusy, uiState, capabilities, auditTail, uiSnapshot, uiInvoke: invokeControl, batch: () => fail('failed', 'batch runs in the executor'),
   // view.render: the window's content as main captures it (webContents.capturePage), PNG bytes.
   capturePage: () => api.window.capture(),
-  // commands.describe: the model form of the tools `ids`, as the assistant's loop offers them (SPEC §8 Tool schemas), for the
-  // chosen model's family.
-  tools: (ids) => toolsFor(capabilities(false), { ids, $defs: MODEL_DEFS, form: 'model', family: familyOf(getState().settings?.assistant?.model, getState().settings?.assistant?.provider) }),
+  // commands.describe: the model form of the tools `ids`, as the assistant's loop offers them (SPEC §8 Tool schemas).
+  tools: (ids) => toolsFor(capabilities(false), { ids, $defs: MODEL_DEFS, form: 'model' }),
 };
 
 // ---------------------------------------------------------------------------------------------

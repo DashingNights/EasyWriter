@@ -1,4 +1,4 @@
-// The forum integration's renderer actions (docs/plans/integrations.md Web seam): projects' forum threads, the forum's sign-in,
+// The forum integration's renderer actions (docs/wiki/integrations.md Web seam): projects' forum threads, the forum's sign-in,
 // push and unpush. Commands reach them through ctx.integrations.forum (app/commands.js makeCtx), the forum's UI through
 // integrations/ui.js. They read app/actions.js bindings only inside functions: app/actions.js -> integrations/ui.js ->
 // forum/ui.jsx -> this file is a cycle, like the existing actions/commands one.
@@ -16,21 +16,30 @@
 const service = window.api.forum;
 
 import {
-  addProject, alertDialog, changeSettings, commitBoardEdit, confirmDialog, hideOverlay, markDirty, openDialog, saveNow, saveSettings, selectThread,
-  showOverlay, threadLabel, toast, updateDraft,
+  addProject, alertDialog, changeSettings, commitBoardEdit, confirmDialog, hideOverlay, markDirty, openDialog, saveCanvasOther, saveNow,
+  saveSettings, selectThread, showOverlay, threadLabel, toast, updateDraft,
 } from '../../app/actions.js';
 import { fail } from '../../app/commands/define.mjs';
 import { getState, setState, subscribe } from '../../app/store.js';
 import { tagList } from '../../app/drafts-meta.js';
+import { commitOpenBoxes } from '../../document/canvas/boxes.jsx';
+import { isPost, postSource, storedDoc } from '../../document/canvas/post.js';
+import { importProblem } from '../../document/canvas/post-import.mjs';
 import { kitOf } from '../../editors.js';
-import { FORMATS } from '../../formats.mjs';
+import { engineHost } from '../../engine/client.js';
+import { isCanvas } from '../../engine/model/form.mjs';
+import { withQuietSession } from '../../engine/quiet.mjs';
+import { PX_PER_PT } from '../../engine/view/camera.mjs';
+import { FORMATS, formatVersionOf } from '../../formats.mjs';
+import { areaOpens, openEditor } from '../../tooling/surface.js';
 import { enabled } from '../index.mjs';
-import { buildPayload } from './export.js';
-import { fillPlaceholders, pictureCanvas, placeholderUrls, postTitle, postToDoc } from './import.mjs';
+import { buildPayload, postModel } from './export.js';
+import { fillPlaceholders, placeholderUrls, postTitle, postToDoc } from './import.mjs';
+import { pictureCanvas, pictureOfUrl } from '../../tooling/picture.mjs';
 import { contentWidth, DEFAULT_WIDTH } from '../../whiteboard.js';
 import { hasForum, normalizeThread as normalizeTopic, siteOf, slugTitle, topicId, topicOf } from './topic.mjs';
 
-export { buildPayload }; // export.preview and push.prepare (forum/commands.mjs), and the smoke hook (app/actions.js __smoke)
+export { buildPayload, postModel }; // export.preview and push.prepare (forum/commands.mjs), and the smoke hook (app/actions.js __smoke)
 
 const settings = () => getState().settings;
 
@@ -239,50 +248,80 @@ async function chooseThread() {
   return openDialog('chooseThread', { threads, selected: settings().selectedThread });
 }
 
+/** The open post's engine session while the canvas page area holds it (a watcher: release it after), or null for a post in the
+ * DOM editor or one the page area has not opened yet. */
+function postSession(state) {
+  if (!isPost(state.draft, state.settings) || !areaOpens(state)) return null;
+  return engineHost().ids().includes(state.draft.id) ? engineHost().watch(state.draft.id) : null;
+}
+
 /** Fills the forum reply box of the open draft's project's forum thread after the human confirm (never submits). A draft in no
  * project asks for a project with one; a project without one says to link it; with `requireThread` both resolve
  * {code: 'no_thread'} (agents get no dialog). */
 export async function push({ requireThread = false } = {}) {
   const state = getState();
-  if (!state.editor || !state.draft) return;
-  let key = state.draft.threadUrl;
-  if (!projectTopic(key)) {
-    if (requireThread) return { code: 'no_thread' };
-    const project = key && findThread(key);
-    if (project) return alertDialog(`Link a forum thread to "${threadLabel(project)}" first`, 'Use the link button on its row in the sidebar.');
-    key = await chooseThread();
-    if (!key) return;
-    state.draft.threadUrl = key;
-    markDirty();
+  if (!state.draft) return;
+  // A post on the canvas engine is pushed from its session; anything else needs its DOM editor. With neither, say why rather than
+  // return as if the push had happened.
+  const client = postSession(state);
+  if (!client && !state.editor) {
+    // A line, not a dialog: an agent's push would wait on one (push.prepare).
+    toast('The draft is not open in an editor. Open it, then push again.', true);
+    return;
   }
-  const url = projectTopic(key);
-  const thread = findThread(key);
-  const label = thread ? threadLabel(thread) : url;
-  if (!(await confirmDialog({
-    title: `Fill the reply box of "${label}" with this draft?`,
-    description: 'You review and press Submit in the forum window.',
-    confirmText: 'Push',
-  }))) return;
-
-  let error = null;
-  showOverlay('Rendering canvases...');
   try {
-    commitBoardEdit();
-    await saveNow();
-    const payload = await buildPayload(state.editor, state.settings, state.draft);
-    showOverlay('Uploading images in the forum window...');
-    const result = await service.push({ threadUrl: url, ...payload });
-    if (!result?.ok) throw new Error(result?.error || 'Unknown error');
-    state.draft.pushedAt = Date.now();
-    state.dirty = true;
-    setState({}); // after the in-place change of state.draft
-    await saveNow();
-  } catch (e) {
-    error = e;
+    let key = state.draft.threadUrl;
+    if (!projectTopic(key)) {
+      if (requireThread) return { code: 'no_thread' };
+      const project = key && findThread(key);
+      if (project) return alertDialog(`Link a forum thread to "${threadLabel(project)}" first`, 'Use the link button on its row in the sidebar.');
+      key = await chooseThread();
+      if (!key) return;
+      state.draft.threadUrl = key;
+      markDirty();
+    }
+    const url = projectTopic(key);
+    const thread = findThread(key);
+    const label = thread ? threadLabel(thread) : url;
+    if (!(await confirmDialog({
+      title: `Fill the reply box of "${label}" with this draft?`,
+      description: 'You review and press Submit in the forum window.',
+      confirmText: 'Push',
+    }))) return;
+
+    let error = null;
+    showOverlay('Rendering canvases...');
+    try {
+      let payload;
+      if (client) {
+        // A post on the canvas engine: its own save is the post the push sends, once any box being edited in place has committed.
+        await commitOpenBoxes();
+        await saveNow();
+        payload = await buildPayload(await postModel(client), state.settings, state.draft);
+      } else if (isCanvas(state.draft)) {
+        // The DOM editor under the page area holds the post as it was before the move, not the engine's: wait, don't send that.
+        throw new Error('The draft is still opening in the canvas engine. Try again in a moment.');
+      } else {
+        commitBoardEdit();
+        await saveNow();
+        payload = await buildPayload(state.editor, state.settings, state.draft);
+      }
+      showOverlay('Uploading images in the forum window...');
+      const result = await service.push({ threadUrl: url, ...payload });
+      if (!result?.ok) throw new Error(result?.error || 'Unknown error');
+      state.draft.pushedAt = Date.now();
+      state.dirty = true;
+      setState({}); // after the in-place change of state.draft
+      await saveNow();
+    } catch (e) {
+      error = e;
+    }
+    hideOverlay();
+    if (error) await alertDialog('Push failed', String(error.message || error));
+    else toast('Content placed in the forum reply box. Review it there and press Submit.');
+  } finally {
+    client?.release();
   }
-  hideOverlay();
-  if (error) await alertDialog('Push failed', String(error.message || error));
-  else toast('Content placed in the forum reply box. Review it there and press Submit.');
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -349,10 +388,14 @@ export async function importPosts(projectKeys, onProgress = () => {}) {
       const at = Number.isNaN(date) ? Date.now() : date;
       const doc = postToDoc(post.html, post.media);
       // A given id keeps `created` at the post's date (main sets created only for a record without an id).
+      // A DOM save stamps its form (formats.mjs formatVersionOf: 1 for a post), not the canvas form's 3, so 1.x builds open it.
       const draft = { id, title: postTitle(doc, post.date), threadUrl: key, created: at, pushedAt: at, format: format.id,
-        formatVersion: format.version, doc };
+        formatVersion: formatVersionOf({ format: format.id }), doc };
       try {
-        schema.nodeFromJSON(doc).check(); // the editor would drop what its schema cannot hold
+        // With the engine hosting posts it, not the DOM kit, decides whether the post is written (post-import.mjs); with the flag
+        // off this is the schema check the import always made, and no engine session opens.
+        const why = await importProblem(draft, getState(), () => schema.nodeFromJSON(doc).check());
+        if (why) throw new Error(why);
         await window.api.drafts.save(draft);
       } catch (e) {
         failed.push({ url: post.url, error: String(e.message || e) });
@@ -383,22 +426,28 @@ const dataUrlOf = (blob) => new Promise((resolve, reject) => {
   reader.readAsDataURL(blob);
 });
 
-/** A downloaded file as fill() takes it: a picture as {src, w, h} (its natural size), so it becomes a canvas; a video or GIF,
- * or a picture that does not decode, as its data URL, so it stays a media node (whiteboard.js isMedia). */
-async function pictureOf(src, type) {
-  if (!type.startsWith('image/') || type === 'image/gif') return src;
-  const img = new Image();
-  img.src = src;
-  try {
-    await img.decode();
-  } catch {
-    return src;
+/** A downloaded file as fill() takes it: a picture as {src, w, h (its own size), metafile?} (picture.mjs pictureOfUrl: an EMF or WMF
+ * as the metafile reader draws it, keeping its original), so it becomes a canvas; a video or GIF, or a picture that does not
+ * decode, as its data URL, so it stays a media node (whiteboard.js isMedia). */
+const downloaded = async (src, type) => (type.startsWith('image/') && type !== 'image/gif' && await pictureOfUrl(src)) || src;
+
+/** The placeholder URLs of the open draft `id`'s placeholders as its editor holds them now (its file catches up at the next
+ * save): a DOM post's editor, or a canvas post's session. */
+async function openUrls(id, record) {
+  if (!isCanvas(record)) {
+    const { editor } = getState();
+    return editor ? placeholderUrls(editor.getJSON()) : [];
   }
-  return img.naturalWidth && img.naturalHeight ? { src, w: img.naturalWidth, h: img.naturalHeight } : src;
+  const session = engineHost().ids().includes(id) ? engineHost().watch(id) : null;
+  try {
+    return placeholderUrls(session ? (await postModel(session)).doc : storedDoc(record) ?? {});
+  } finally {
+    session?.release();
+  }
 }
 
-/** The placeholder URLs of draft `id`: its file's, and the open editor's while it is the open draft (the two differ until the
- * editor's next save). [] when the draft is gone, null when its file could not be read. */
+/** The placeholder URLs of draft `id`: its file's, and the open draft's editor or engine session (the two differ until its next
+ * save). [] when the draft is gone, null when its file could not be read. */
 async function pendingUrls(id) {
   let file;
   try {
@@ -407,21 +456,73 @@ async function pendingUrls(id) {
     return null;
   }
   if (!file) return [];
-  const { draft, editor } = getState();
-  const open = draft?.id === id && editor ? placeholderUrls(editor.getJSON()) : [];
-  return [...new Set([...placeholderUrls(file.doc ?? {}), ...open])];
+  const { draft } = getState();
+  const open = draft?.id === id ? await openUrls(id, file) : [];
+  const stored = isCanvas(file) ? placeholderUrls(storedDoc(file) ?? {}) : [];
+  return [...new Set([...placeholderUrls(file.doc ?? {}), ...stored, ...open])];
+}
+
+/** The box.fill that puts a downloaded `file` in placeholder box `box`: a video or GIF as its data URL in the box's file, a
+ * picture as a canvas of it shown at most the column wide (as a pasted one is). `column` is points; a canvas's own sizes are px. */
+function fillBox(box, file, column) {
+  if (typeof file === 'string') return { id: box.id, file };
+  const attrs = pictureCanvas(file, column * PX_PER_PT).attrs;
+  const w = attrs.dw / PX_PER_PT;
+  const h = (w * attrs.h) / attrs.w;
+  return { id: box.id, kind: 'canvas', data: JSON.stringify(attrs), w: Math.round(w * 1000) / 1000, h: Math.round(h * 1000) / 1000 };
+}
+
+/** Fills the placeholder boxes of the post open in engine `session` from `files` → whether one changed. A placeholder is a
+ * media box whose file is its URL (box.get); box.fill puts the file in it without an undo step, so bringing a placeholder back
+ * does not download it again. */
+async function fillBoxes(session, files) {
+  const { boxes = [], column = 468 } = (await session.query('box.list', {}))?.value ?? {};
+  let changed = false;
+  for (const box of boxes.filter((b) => b.kind === 'media')) {
+    const src = (await session.query('box.get', { id: box.id }))?.value?.file;
+    const file = files[src];
+    if (!file) continue;
+    if ((await session.exec('box.fill', fillBox(box, file, column)))?.ok) changed = true;
+  }
+  return changed;
+}
+
+/** Puts `files` in the placeholders of canvas post `draft` (`open`: it is the open draft, saved by the app's chain). A record no
+ * view holds is opened in a quiet session for the fill, which saves it; the open one is filled through the page area's session
+ * and saved by the app's chain. */
+async function fillCanvas(draft, files, open) {
+  const held = engineHost().ids().includes(draft.id);
+  // The open draft is filled by the page area's own session; while that is still opening, the next pass fills it (the placeholder
+  // stays), rather than opening a second session for the same draft beside it.
+  if (open && !held) return;
+  if (!held) {
+    return withQuietSession(draft, { source: (d) => postSource(d, settings(), null) }, async (session) => {
+      if (await fillBoxes(session, files)) await saveCanvasOther(draft, session);
+    });
+  }
+  const session = engineHost().watch(draft.id);
+  try {
+    if ((await fillBoxes(session, files))) await (open ? saveNow() : saveCanvasOther(draft, session));
+  } finally {
+    session.release();
+  }
 }
 
 /** Puts `files` ({url: a picture {src, w, h}, or a video's or GIF's data URL}) in draft `id`'s placeholders, a picture as a
  * smart canvas (import.mjs fillPlaceholders): another draft loaded, patched and saved; the open draft in one
  * transaction outside the undo history, saved at once, also when it opened while its file was patched (it may have loaded the
- * old file). A fill that still gets lost (the draft switched while it landed) leaves the placeholder, which the next pass sees. */
+ * old file). A canvas post goes through its engine session (fillCanvas). A fill that still gets lost (the draft switched while
+ * it landed) leaves the placeholder, which the next pass sees. */
 async function fill(id, files) {
+  // Where the post is open decides, not the record's form: a post the page area shows is filled through its engine session even
+  // before its first save makes the record the canvas form, or that save would drop the file the DOM editor put in.
+  if (openEditor(getState(), id) === 'engine') return fillCanvas(getState().draft, files, true);
   if (getState().draft?.id !== id) {
-    const doc = (await window.api.drafts.load(id))?.doc;
+    const record = await window.api.drafts.load(id);
+    if (isCanvas(record)) return fillCanvas(record, files, false);
     // ponytail: load, then save through updateDraft; an edit to that draft landing in between (the background window) is lost.
     // Lock per draft if that window starts editing imported drafts while they download.
-    if (doc) await updateDraft(id, { doc: fillPlaceholders(doc, files, DEFAULT_WIDTH) });
+    if (record?.doc) await updateDraft(id, { doc: fillPlaceholders(record.doc, files, DEFAULT_WIDTH) });
   }
   const { draft, editor } = getState();
   if (draft?.id !== id || !editor) return;
@@ -505,7 +606,7 @@ async function downloadPass() {
     await Promise.all(w.urls.map(async (url) => {
       try {
         const { type, data } = await service.download(url);
-        const file = await pictureOf(await dataUrlOf(new Blob([data], { type })), type);
+        const file = await downloaded(await dataUrlOf(new Blob([data], { type })), type);
         filled = filled.then(() => fill(w.id, { [url]: file })).catch(() => {});
       } catch {
         failed++;

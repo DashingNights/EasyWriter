@@ -1,0 +1,52 @@
+/* markup (docs/plans/word plan.md §1.12 DOM markers, §3 markup): Print Markup. Off prints the final text: deletions, change bars
+   and comment shading hidden, insertions plain. On prints the inline marks as tracking draws them. Balloons and cards never print
+   (ceiling: Word prints them in a scaled margin). print sets data-print-markup on <html> while printing; the editor root carries
+   it too (index.js), so either marker works. */
+@media print {
+  html[data-print-markup="off"] [data-doc-text] del[data-rev],
+  [data-doc-text][data-print-markup="off"] del[data-rev] {
+    display: none !important;
+  }
+  html[data-print-markup="off"] [data-doc-text] ins[data-rev],
+  [data-doc-text][data-print-markup="off"] ins[data-rev] {
+    text-decoration: none !important;
+    color: inherit !important;
+    background: none !important;
+    /* Advanced Options can draw insertions bold or italic (tracking's markCss). */
+    font-weight: inherit !important;
+    font-style: inherit !important;
+    font-size: inherit !important;
+  }
+  html[data-print-markup="off"] [data-doc-text] :is([data-fmt-change], span[data-comment]),
+  [data-doc-text][data-print-markup="off"] :is([data-fmt-change], span[data-comment]) {
+    text-decoration: inherit !important;
+    background: none !important;
+    box-shadow: none !important;
+    border: 0 !important;
+  }
+  /* Change bars: tracking's ::after on a changed paragraph (::before on a bordered one; colors.mjs CHANGED) and document.css's box-shadow bar on block
+     revisions. A deleted block goes with its bar. */
+  html[data-print-markup="off"] [data-doc-text] [data-changed]:not([data-bdr])::after,
+  [data-doc-text][data-print-markup="off"] [data-changed]:not([data-bdr])::after,
+  html[data-print-markup="off"] [data-doc-text] [data-changed][data-bdr]:not([data-label])::before,
+  [data-doc-text][data-print-markup="off"] [data-changed][data-bdr]:not([data-label])::before,
+  html[data-print-markup="off"] [data-doc-text] [data-rev-del],
+  [data-doc-text][data-print-markup="off"] [data-rev-del],
+  html[data-print-markup="off"] [data-doc-text] tr[data-rev*='"del"'],
+  [data-doc-text][data-print-markup="off"] tr[data-rev*='"del"'] {
+    display: none !important;
+  }
+  /* Tracking's cell shading on changed table rows (colors.mjs). Not !important, so a cell's own shading (an inline style) still
+     prints; :not(#_) only lifts the specificity above tracking's rule. */
+  html[data-print-markup="off"] [data-doc-text] tr[data-rev] > :is(td, th):not(#_),
+  [data-doc-text][data-print-markup="off"] tr[data-rev] > :is(td, th):not(#_) {
+    background: none;
+  }
+  html[data-print-markup="off"] [data-doc-text] [data-rev-ins],
+  [data-doc-text][data-print-markup="off"] [data-rev-ins] {
+    box-shadow: none !important;
+  }
+  #editor-area[data-word-view] :is([data-margin-cards], [data-sg-layer]) {
+    display: none !important;
+  }
+}

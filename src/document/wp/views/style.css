@@ -1,0 +1,72 @@
+/* Views (docs/plans/word/plan.md §3 views, briefs/views.md): each view's look keyed on #editor-area's data-word-view, which the ribbon
+   mount writes from store word.view. Pagination draws pages only in Print Layout and Focus, so the other views just reshape the sheet.
+   Overrides of document.css (page-engine's) carry the #editor-area scope, which outranks its rules.
+   Selectors repeat [data-word-view] first: the scope test (test/word-css-scope.test.mjs) wants every rule to start with that scope. */
+
+/* Web Layout: no pages; the sheet takes the editor area's width less the home view's margins (--views-fit, Slot.jsx), so text wraps
+   to the window at any zoom. The page colour shows; page breaks draw nothing. */
+#editor-area[data-word-view][data-word-view="web"] .page[data-format="document"],
+#editor-area[data-word-view][data-word-view="draft"][data-wrap="window"] .page[data-format="document"] { width: var(--views-fit); }
+#editor-area[data-word-view][data-word-view="web"] .page[data-format="document"] { padding: 16px; min-height: 0; box-shadow: none; }
+#editor-area[data-word-view]:is([data-word-view="web"], [data-word-view="draft"], [data-word-view="immersive"]) .page[data-format="document"] .ProseMirror { min-height: 0; }
+/* document.css ends the text with a -10000px margin that page floats keep from shrinking the text box; with no pages it would
+   leave the text box 0 px tall and the sheet behind only its padding. */
+#editor-area[data-word-view]:is([data-word-view="web"], [data-word-view="draft"], [data-word-view="immersive"]) .page[data-format="document"] .ProseMirror::after { display: none; }
+#editor-area[data-word-view][data-word-view="web"] .page[data-format="document"] .ProseMirror div[data-page-break] { height: 0; margin: 0; background: none; }
+
+/* Draft: no page edges or shadow, no floating objects, the text at the page's text width (or the window's), and every break as a
+   dotted line with Word's label. */
+#editor-area[data-word-view][data-word-view="draft"] .page[data-format="document"] { padding: 12px 24px; min-height: 0; box-shadow: none; }
+#editor-area[data-word-view][data-word-view="draft"] .page[data-format="document"] .ProseMirror [data-wrap]:not([data-wrap="inline"]) { display: none; }
+#editor-area[data-word-view][data-word-view="draft"] .page[data-format="document"] .ProseMirror :is(div[data-page-break], [data-section-break], [data-column-break]) {
+  clear: none;
+  height: auto;
+  margin: 6px 0;
+  background: none;
+  border-top: 1px dotted #808080;
+  color: #808080;
+  font: 9pt/1.2 sans-serif;
+  text-align: center;
+  user-select: none;
+}
+#editor-area[data-word-view][data-word-view="draft"] .page[data-format="document"] .ProseMirror div[data-page-break]::after { content: "Page Break"; }
+#editor-area[data-word-view][data-word-view="draft"] .page[data-format="document"] .ProseMirror [data-column-break]::after { content: "Column Break"; }
+#editor-area[data-word-view][data-word-view="draft"] .page[data-format="document"] .ProseMirror [data-section-break]::after { content: "Section Break (Next Page)"; display: block; position: static; transform: none; padding: 0; background: none; }
+#editor-area[data-word-view][data-word-view="draft"] .page[data-format="document"] .ProseMirror [data-section-break][data-kind="continuous"]::after { content: "Section Break (Continuous)"; }
+#editor-area[data-word-view][data-word-view="draft"] .page[data-format="document"] .ProseMirror [data-section-break][data-kind="evenPage"]::after { content: "Section Break (Even Page)"; }
+#editor-area[data-word-view][data-word-view="draft"] .page[data-format="document"] .ProseMirror [data-section-break][data-kind="oddPage"]::after { content: "Section Break (Odd Page)"; }
+/* The draft font (Options > Advanced, settings.word.display.draftFont) in Draft and Outline: it replaces every font, as Word's does. */
+#editor-area[data-word-view][data-draft-font] .page[data-format="document"] .ProseMirror :is(p, h1, h2, h3, h4, h5, h6, li, td, th, span) {
+  font-family: var(--draft-font) !important;
+  font-size: var(--draft-size, 11pt) !important;
+}
+
+/* Focus: the pages on a dark background, nothing else (the ribbon shows only at the top edge). */
+#editor-area[data-word-view][data-word-view="focus"] { background: #1a1a1a; }
+
+/* The Reader: the text alone, at the chosen column width, in the chosen page colour, spaced wider when Text Spacing is on. The
+   text stays editable. */
+#editor-area[data-word-view][data-word-view="immersive"] .page[data-format="document"] { box-shadow: none; min-height: 0; padding: 48px; }
+#editor-area[data-word-view][data-word-view="immersive"][data-reader-width="veryNarrow"] .page[data-format="document"] { width: 35ch; }
+#editor-area[data-word-view][data-word-view="immersive"][data-reader-width="narrow"] .page[data-format="document"] { width: 50ch; }
+#editor-area[data-word-view][data-word-view="immersive"][data-reader-width="moderate"] .page[data-format="document"] { width: 70ch; }
+#editor-area[data-word-view][data-word-view="immersive"][data-reader-width="wide"] .page[data-format="document"] { width: 100ch; }
+#editor-area[data-word-view][data-word-view="immersive"][data-reader-color="sepia"] .page[data-format="document"] { background: #f4ecd8; color: #5b4636; }
+#editor-area[data-word-view][data-word-view="immersive"][data-reader-color="inverse"] .page[data-format="document"] { filter: invert(1) hue-rotate(180deg); }
+#editor-area[data-word-view][data-word-view="immersive"][data-reader-spacing] .page[data-format="document"] .ProseMirror :is(p, h1, h2, h3, h4, h5, h6, li) {
+  letter-spacing: 0.12em;
+  word-spacing: 0.3em;
+  line-height: 2;
+}
+.page[data-format="document"] .ProseMirror [data-syllable] { color: #808080; }
+
+/* Read Mode's copy of the text (Reader.jsx): the paper colour, wide spacing, and page breaks that take no room. */
+.page[data-format="document"][data-read-page] { background: #ffffff; }
+.page[data-format="document"][data-read-page][data-page-color="sepia"] { background: #f4ecd8; color: #5b4636; }
+.page[data-format="document"][data-read-page][data-page-color="inverse"] { filter: invert(1) hue-rotate(180deg); }
+.page[data-format="document"][data-read-page] .ProseMirror > div[data-page-break] { height: 0; margin: 0; background: none; }
+.page[data-format="document"][data-read-page][data-spacing] .ProseMirror :is(p, h1, h2, h3, h4, h5, h6, li) {
+  letter-spacing: 0.12em;
+  word-spacing: 0.3em;
+  line-height: 2;
+}

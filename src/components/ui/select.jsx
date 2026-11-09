@@ -34,6 +34,10 @@ const triggerClass = (size, className) => cn(
   size === "xs" ? "h-6 gap-1 px-2 text-xs" : "h-8",
   className)
 
+// While a NativeSelect's list is open every key is the list's: Radix closes a dialog on Esc at the document, and WordDialog takes Enter
+// as OK. On window at load, so it runs before every other key listener.
+globalThis.window?.addEventListener("keydown", (e) => { if (document.querySelector("select:open")) e.stopImmediatePropagation(); }, true);
+
 // `up`: the list opens above (SelectContent side="top"), so the chevron points up; app.css turns it over while open.
 function SelectTrigger({
   className,
@@ -68,6 +72,44 @@ function SelectButton({ className, size = "sm", children, ...props }) {
   );
 }
 
+/** SelectTrigger's and SelectContent's look on a real <select> (app.css, appearance: base-select): labels, access keys, type-ahead and
+ * form drivers see a plain control. `options` [[value, label, option props?]]. Without `width` the box is as wide as its widest label
+ * whatever is picked, so a pick never moves what sits beside it. Up and Down step a closed list and Alt+Down opens it, as Windows lists do. */
+function NativeSelect({ options, size = "sm", width, className, onKeyDown, ...props }) {
+  const keys = (e) => {
+    onKeyDown?.(e);
+    if (e.defaultPrevented || (e.key !== "ArrowDown" && e.key !== "ArrowUp")) return;
+    const s = e.currentTarget;
+    if (s.matches(":open")) return;
+    e.preventDefault();
+    if (e.altKey) { s.showPicker(); return; }
+    const next = s.options[s.selectedIndex + (e.key === "ArrowDown" ? 1 : -1)];
+    if (!next || next.disabled) return;
+    next.selected = true;
+    s.dispatchEvent(new Event("change", { bubbles: true }));
+  };
+  return (
+    <span className={cn("inline-grid min-w-0 grid-cols-[minmax(0,1fr)] align-middle", className)} style={{ width }}>
+      <select data-slot="native-select" data-size={size} className={triggerClass(size, "col-start-1 row-start-1 w-full min-w-0")} onKeyDown={keys} {...props}>
+        {options.map(([v, label, extra]) => <option key={String(v)} value={String(v)} {...extra}>{label}</option>)}
+      </select>
+      {!width && options.map(([v, label]) => (
+        <span key={String(v)} aria-hidden="true"
+          className={cn("invisible col-start-1 row-start-1 h-0 overflow-hidden border-x border-transparent whitespace-nowrap", size === "xs" ? "pr-7 pl-2 text-xs" : "pr-9 pl-3 text-sm")}>{label}</span>
+      ))}
+    </span>
+  );
+}
+
+/** A list drawn open (a <select size>), as NativeSelect. `options` [[value, label]]. */
+function NativeListBox({ options, className, ...props }) {
+  return (
+    <select data-slot="native-listbox" className={cn("w-full rounded-md border border-input bg-transparent text-xs shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 dark:bg-input/30", className)} {...props}>
+      {options.map(([v, label]) => <option key={String(v)} value={String(v)}>{label}</option>)}
+    </select>
+  );
+}
+
 function SelectContent({
   className,
   children,
@@ -83,7 +125,7 @@ function SelectContent({
       <SelectPrimitive.Content
         data-slot="select-content"
         className={cn(
-          "relative z-50 max-h-(--radix-select-content-available-height) min-w-[8rem] origin-(--radix-select-content-transform-origin) overflow-x-hidden overflow-y-auto rounded-island border bg-island text-popover-foreground shadow-xl data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 duration-(--motion-menus)",
+          "relative z-50 max-h-(--radix-select-content-available-height) min-w-[8rem] origin-(--radix-select-content-transform-origin) overflow-x-hidden overflow-y-auto rounded-island border bg-island text-popover-foreground shadow-xl data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 duration-(--motion-menus)",
           position === "popper" &&
             "data-[side=bottom]:translate-y-1 data-[side=left]:-translate-x-1 data-[side=right]:translate-x-1 data-[side=top]:-translate-y-1",
           className
@@ -125,7 +167,7 @@ function SelectItem({
     <SelectPrimitive.Item
       data-slot="select-item"
       className={cn(
-        "relative flex w-full cursor-default items-center gap-2 rounded-sm py-1.5 pr-8 pl-2 text-sm outline-hidden select-none focus:bg-accent/60 focus:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 [&_svg:not([class*='text-'])]:text-muted-foreground *:[span]:last:flex *:[span]:last:items-center *:[span]:last:gap-2",
+        "relative flex w-full cursor-default items-center gap-2 rounded-md py-1.5 pr-8 pl-2 text-sm outline-hidden select-none focus:bg-accent/60 focus:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 [&_svg:not([class*='text-'])]:text-muted-foreground *:[span]:last:flex *:[span]:last:items-center *:[span]:last:gap-2",
         className
       )}
       {...props}>
@@ -182,6 +224,8 @@ function SelectScrollDownButton({
 }
 
 export {
+  NativeListBox,
+  NativeSelect,
   Select,
   SelectButton,
   SelectContent,

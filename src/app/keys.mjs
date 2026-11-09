@@ -10,6 +10,7 @@
 // native/globe and the renderer replays them as key events with fnKey set (actions.js globeKey). The Mac has its own defaults
 // (keysFor) and its own overrides (settings.keybindsMac, keybindsKey).
 
+import { WORD_KEYS } from '../document/word/keymap.mjs';
 import { MAC } from '../platform.mjs';
 
 let mac = MAC;
@@ -112,6 +113,7 @@ const MAC_KEYS = {
   'edit.redo': ['Shift+Cmd+Z', 'Cmd+Y'],
   'app.replace': ['Ctrl+H'], // Cmd+H hides the app
   'app.devtools': ['Alt+Cmd+I'],
+  'app.toolSearchDoc': [], // Alt+Q's Mac form Ctrl+Cmd+Q locks the screen; Globe+Space opens tool search there already
   'document.indent': ['Ctrl+Shift+M'], // Cmd+M minimizes the window
   'document.outdent': ['Shift+Cmd+M'],
   'document.clearParagraph': ['Alt+Cmd+Q'], // Cmd+Q quits
@@ -131,8 +133,21 @@ const MAC_KEYS = {
   'suggest.reject': ['Alt+Cmd+Backspace'],
 };
 
-/** Binding `d`'s default chords on this platform. */
-export const keysFor = (d) => (mac ? MAC_KEYS[d.id] ?? d.keys.map(toMac) : d.keys);
+/** Binding `d`'s default chords on this platform. A Word binding (WORD_DEFS) takes its rows' Mac forms (wordMac). */
+export const keysFor = (d) => (mac ? MAC_KEYS[d.id] ?? (d.rows ? wordMac(d) : d.keys.map(toMac)) : d.keys);
+
+/** Word binding `d`'s Mac chords (plan.md §1.13 Mac): each row's `mac` list when keymap.mjs gives one, else its toMac chord
+ * when macOS neither takes it ('system') nor types with it ('typing') and no app binding it does not shadow holds it on a Mac,
+ * else none (the command stays in the ribbon and in tool search). */
+function wordMac(d) {
+  return d.rows.flatMap((r) => {
+    if (r.mac) return r.mac;
+    const m = toMac(r.chord);
+    if (['system', 'typing'].includes(macUse(m)?.level)) return [];
+    const taken = DEFS.some((a) => !a.rows && overlaps(a.scope, d.scope) && !d.shadows?.includes(a.id) && keysFor(a).includes(m));
+    return taken ? [] : [m];
+  });
+}
 
 /** The settings key this platform stores its overrides under. */
 export const keybindsKey = () => (mac ? 'keybindsMac' : 'keybinds');
@@ -220,6 +235,8 @@ const MACOS = new Map([
   ...WIN('system', 'shows or hides the Dock', 'Alt+Cmd+D'),
   ...WIN('system', 'opens Force Quit', 'Alt+Cmd+Esc'),
   ...WIN('system', 'takes a screenshot', 'Shift+Cmd+3', 'Shift+Cmd+4', 'Shift+Cmd+5'),
+  ...WIN('system', 'logs out', 'Shift+Cmd+Q'),
+  ...WIN('system', 'minimizes every window of the app', 'Alt+Cmd+M'),
   ...WIN('system', 'opens Mission Control', 'Ctrl+Up'),
   ...WIN('system', "shows the app's windows", 'Ctrl+Down'),
   ...WIN('system', 'switches desktops', 'Ctrl+Left', 'Ctrl+Right'),
@@ -315,7 +332,8 @@ export function overridesOf(defs, binds) {
 // Escape, arrows and Tab in menus, lists, dialogs and text boxes; arrow nudges and Alt+Arrow on boards) stay fixed.
 
 /** The shape kinds with a key of their own (SPEC §6c Keyboard: Figma's keys, except that R stays Rotate, so Box takes B):
- * kind → binding id. The key arms the shape tool with that kind; S arms it with the last kind used. */
+ * kind → binding id. The key arms the shape tool with that kind (line and arrow: the Line and Arrow tools, free lines); S arms it
+ * with the last kind used. */
 export const SHAPE_KEYS = { rect: 'board.box', ellipse: 'board.circle', line: 'board.line', arrow: 'board.arrow' };
 
 export const GROUPS = ['General', 'Text', 'Document', 'Insert', 'Suggestions', 'Boards', 'Plans', 'Flowcharts', 'Browser'];
@@ -331,6 +349,26 @@ const board = def('Boards', 'board');
 const plan = def('Plans', 'plan');
 const flows = def('Flowcharts', 'flows');
 const browser = def('Browser', 'browser');
+
+/** Word's bindings in Document text (plan.md §1.13), from keymap.mjs: one per (cmd, arg) of the bind rows without `reuse`, id
+ * `word.<cmd>` (plus `.<arg>`), its rows' chords as keys and their shadows. `rows` keeps the rows for the Mac forms (wordMac)
+ * and WordKeys (`when`, `fallthrough`, `prefix`). A reuse row adds none: its existing binding keeps the chord. */
+export const WORD_DEFS = (() => {
+  const byId = new Map();
+  for (const r of WORD_KEYS) {
+    if (r.kind !== 'bind' || r.reuse) continue;
+    const id = `word.${r.cmd}${r.arg !== undefined ? `.${r.arg}` : ''}`;
+    if (!byId.has(id)) {
+      byId.set(id, { id, label: r.arg !== undefined ? `${r.label} (${r.arg})` : r.label, group: 'Document', scope: 'document', keys: [], rows: [],
+        cmd: r.cmd, arg: r.arg });
+    }
+    const d = byId.get(id);
+    d.keys.push(r.chord);
+    d.rows.push(r);
+    if (r.shadows) d.shadows = [...new Set([...(d.shadows ?? []), ...r.shadows])];
+  }
+  return [...byId.values()];
+})();
 
 export const DEFS = [
   general('app.save', 'Save', ['Ctrl+S']),
@@ -350,6 +388,7 @@ export const DEFS = [
   general('app.zoomOut', 'Zoom the window out', ['Ctrl+-', 'Ctrl+Shift+-', 'Ctrl+Num-']),
   general('app.zoomReset', 'Reset the window zoom', ['Ctrl+0', 'Ctrl+Num0']),
   general('app.devtools', 'Developer tools', ['Ctrl+Shift+I']),
+  general('app.toolSearchDoc', 'Tool search in Documents', ['Alt+Q']), // Word's search box key; actions.js runs it only in a Document
 
   text('text.bold', 'Bold', ['Ctrl+B']),
   text('text.italic', 'Italic', ['Ctrl+I']),
@@ -390,11 +429,12 @@ export const DEFS = [
   doc('document.clearParagraph', 'Clear paragraph formatting', ['Ctrl+Q']),
   doc('document.normalStyle', 'Normal style', ['Ctrl+Shift+N']),
   doc('document.pageBreak', 'Page break', ['Ctrl+Enter']), // TipTap's hard break also takes Mod-Enter; DocumentKeys swallows it
+  ...WORD_DEFS,
 
   insert('insert.canvas', 'Insert canvas', ['Ctrl+Alt+C']),
   insert('insert.flowchart', 'Insert flowchart', ['Ctrl+Alt+F']),
 
-  // Agent edits waiting as suggestions (docs/plans/suggestions.md Keys): none types a character with AltGr. Accept and reject act
+  // Agent edits waiting as suggestions (docs/wiki/suggestions.md Keys): none types a character with AltGr. Accept and reject act
   // on the active change.
   suggest('suggest.next', 'Next suggestion', ['Ctrl+Alt+PageDown']),
   suggest('suggest.previous', 'Previous suggestion', ['Ctrl+Alt+PageUp']),
@@ -402,20 +442,21 @@ export const DEFS = [
   suggest('suggest.reject', 'Reject suggestion', ['Ctrl+Alt+Backspace']),
 
   board('board.select', 'Select tool', ['V']),
+  board('board.hand', 'Hand tool', ['H']),
   board('board.text', 'Text tool', ['T']),
   board('board.image', 'Add image', ['I']),
   board('board.pen', 'Pen', ['P']),
   board('board.eraser', 'Eraser', ['E']),
   board('board.shape', 'Shape tool', ['S']),
   board('board.connector', 'Connector tool', ['A']),
-  board('board.box', 'Box shape', ['B']),
-  board('board.circle', 'Circle shape', ['O']),
-  board('board.line', 'Line shape', ['L']),
-  board('board.arrow', 'Arrow shape', ['Shift+L']),
+  board('board.box', 'Rectangle', ['B']),
+  board('board.circle', 'Oval', ['O']),
+  board('board.line', 'Line', ['L']),
+  board('board.arrow', 'Arrow', ['Shift+L']),
   board('board.keepTool', 'Keep tool on or off', ['Q']),
   board('board.selectAll', 'Select all items', ['Ctrl+A']),
-  board('board.deselect', 'Deselect', ['Ctrl+D']),
-  board('board.duplicate', 'Duplicate', ['Ctrl+J']),
+  board('board.deselect', 'Deselect', []), // Esc deselects, on every board (design section 8)
+  board('board.duplicate', 'Duplicate', ['Ctrl+D', 'Ctrl+J']),
   board('board.copy', 'Copy items', ['Ctrl+C']),
   board('board.cut', 'Cut items', ['Ctrl+X']),
   board('board.copyStyle', 'Copy style', ['Ctrl+Shift+C']),

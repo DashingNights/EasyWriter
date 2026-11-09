@@ -50,7 +50,7 @@ function shape(r) {
 }
 
 /** One tool answer ({ok, result, suggested?} | {ok: false, error}) → its result line of at most 160 characters: "read: …" for a
- * read, "done: …" for a change, "suggested: …" for a change that waits for the user (docs/plans/suggestions.md), "failed (code):
+ * read, "done: …" for a change, "suggested: …" for a change that waits for the user (docs/wiki/suggestions.md), "failed (code):
  * message" for an error; `title` (the draft the call names) is added when given. */
 export function resultLine(risk, res, title = '') {
   const named = title ? ` (draft "${clip(title, VALUE_CHARS)}")` : '';
@@ -219,8 +219,8 @@ export const loopNote = (names) => `You are going round in circles (calls: ${nam
 /** The line every tool result of the turn ends with (wave 1c): how many of the turn's calls are left. */
 export const callsLeft = (n) => ` Calls left in this reply: ${n}.`;
 
-// Reading on after a change (wave 1c, the Gemma eval: a right first write, then reads and unasked changes up to the call cap
-// and an empty reply): a successful change followed by 3 successful reads and nothing else ends the turn with doneReply.
+// Reading on after a change (a right first write, then reads and unasked changes up to the call cap and an empty reply): a
+// successful change followed by 3 successful reads and nothing else ends the turn with doneReply.
 export const READS_AFTER_WRITE = 3;
 
 /** Whether command `id` of risk `risk` is a change for readsAfterWrite (wave 2): a doc.* or board.* command that is not a read.

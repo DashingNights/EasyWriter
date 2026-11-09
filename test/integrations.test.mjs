@@ -116,15 +116,16 @@ test('agentNotes: the forum adds its push note only while on', () => {
   assert.match(agentNotes(ON), /Pushes to the forum/);
 });
 
-// docs/plans/integrations.md step 6: core reaches forum code only through the registries (integrations/ui.js, index.mjs), and
+// docs/wiki/integrations.md step 6: core reaches forum code only through the registries (integrations/ui.js, index.mjs), and
 // the forum service only through forum/actions.js's one service line.
 test('boundary: core imports no forum module, and only the forum and preload name api.forum', () => {
   const files = (dir) => readdirSync(dir, { recursive: true, withFileTypes: true }).filter((f) => f.isFile() && /\.(m?js|jsx)$/.test(f.name))
     .map((f) => join(f.parentPath, f.name).replaceAll('\\', '/'));
   const core = [...files('src'), 'main.js'].filter((f) => !f.startsWith('src/integrations/'));
   // main.js registers the forum's main process; catalogue.mjs spreads its command defs (index.mjs must not: define -> gates ->
-  // index).
-  const allowed = ['main.js', 'src/app/commands/catalogue.mjs'];
+  // index); the post host (canvas/post.js, C1) compares the engine's save of a forum post with the DOM editor's, which is the
+  // post kit's pure canonical form (forum/normal.mjs), not the forum service.
+  const allowed = ['main.js', 'src/app/commands/catalogue.mjs', 'src/document/canvas/post.js'];
   const importsForum = (text) => /(?:from|import|require)\s*\(?\s*['"][^'"]*integrations\/forum\//.test(text);
   assert.deepEqual(core.filter((f) => !allowed.includes(f) && importsForum(readFileSync(f, 'utf8'))), []);
   const named = [...files('src'), 'main.js'].filter((f) => !f.startsWith('src/integrations/forum/') && readFileSync(f, 'utf8').includes('api.forum'));

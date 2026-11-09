@@ -8,19 +8,15 @@ import {
 import { Input } from '@/components/ui/input';
 import { SelectItem } from '@/components/ui/select';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
-import { fitArtboard, setArtboardSize } from '../../../canvas.js';
 import { refocusEditor, saveSettings, threadLabel } from '../../actions.js';
-import {
-  canRedoFlow, canUndoFlow, draftThread, duplicateFlow, getFlow, insertFlowchartDialog, newFlow, openFlows, removeFlow, updateFlow, useFlows,
-} from '../../flows.js';
+import { canRedoFlow, canUndoFlow, draftThread, getFlow, openFlows, updateFlow, useFlows } from '../../flows.js';
+import { run } from '../../../tooling/registry.js';
 import { can } from '../../gates.mjs';
 import { keyAmong, keyIs, withKey } from '../../keybinds.js';
 import { useStore } from '../../store.js';
-import { closeWorkspace } from '../../views.js';
 import { SizeInput } from '../board/CanvasBar.jsx';
 import { CHROME } from '../board/controls.jsx';
 import { InlineInput } from '../InlineInput.jsx';
-import { SidebarButton } from '../Sidebar.jsx';
 import { IconButton, Tip } from '../Tip.jsx';
 import { keepFocus, NONE, ToolSelect } from '../Toolbar.jsx';
 import { FlowEditor } from './FlowEditor.jsx';
@@ -38,22 +34,22 @@ function threadItems(threads, extra) {
 }
 
 /** The open flowchart's controls (board chrome, so focus in W / H keeps the board active): W / H, Fit to content, Insert
- * into draft…, Undo / Redo on the record's stack, and Duplicate, Move to project, Delete. */
+ * into draft…, Undo / Redo on the record's stack, and Duplicate, Move to project, Delete; the pool commands (pool-board.js). */
 function EditorControls({ record, board }) {
   const threads = useStore((s) => s.settings?.threads) ?? [];
   const { id, board: { w, h } } = record;
   return (
     <div {...CHROME} className="flex items-center gap-1" onMouseDown={(e) => e.target.tagName !== 'INPUT' && e.preventDefault()}>
-      <SizeInput board={board} label="W" value={w} onCommit={(v) => setArtboardSize(board, v, h)} />
-      <SizeInput board={board} label="H" value={h} onCommit={(v) => setArtboardSize(board, w, v)} />
-      <Tip title="Shrink the artboard to the items"><Button variant="ghost" size="xs" onClick={() => fitArtboard(board)}><Shrink />Fit to content</Button></Tip>
-      <Tip title="Insert it into the open draft, synced or as a copy"><Button variant="ghost" size="xs" onClick={() => insertFlowchartDialog(id)}><SquarePlus />Insert into draft...</Button></Tip>
-      <IconButton label="Undo" keybind="edit.undo" disabled={!can('history.canUndo', { canUndo: canUndoFlow(id) })} onClick={() => board.undo()}><Undo2 /></IconButton>
-      <IconButton label="Redo" keybind="edit.redo" disabled={!can('history.canRedo', { canRedo: canRedoFlow(id) })} onClick={() => board.redo()}><Redo2 /></IconButton>
+      <SizeInput board={board} label="W" value={w} onCommit={(v) => run('board.set', { w: v, h })} />
+      <SizeInput board={board} label="H" value={h} onCommit={(v) => run('board.set', { w, h: v })} />
+      <Tip title="Shrink the artboard to the items"><Button variant="ghost" size="xs" onClick={() => run('board.fit')}><Shrink />Fit to content</Button></Tip>
+      <Tip title="Insert it into the open draft, synced or as a copy"><Button variant="ghost" size="xs" onClick={() => run('flow.insert', id)}><SquarePlus />Insert into draft...</Button></Tip>
+      <IconButton label="Undo" keybind="edit.undo" disabled={!can('history.canUndo', { canUndo: canUndoFlow(id) })} onClick={() => run('edit.undo')}><Undo2 /></IconButton>
+      <IconButton label="Redo" keybind="edit.redo" disabled={!can('history.canRedo', { canRedo: canRedoFlow(id) })} onClick={() => run('edit.redo')}><Redo2 /></IconButton>
       <DropdownMenu modal={false}>
         <IconButton label="More flowchart actions" slot={DropdownMenuTrigger}><Ellipsis /></IconButton>
         <DropdownMenuContent align="end" onCloseAutoFocus={refocusEditor}>
-          <DropdownMenuItem onSelect={() => duplicateFlow(id).then((r) => r && openFlows(r.id))}><Copy />Duplicate</DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => run('flow.library.duplicate')}><Copy />Duplicate</DropdownMenuItem>
           <DropdownMenuSub>
             <DropdownMenuSubTrigger><FolderInput />Move to project</DropdownMenuSubTrigger>
             <DropdownMenuSubContent className="max-w-80">
@@ -64,7 +60,7 @@ function EditorControls({ record, board }) {
             </DropdownMenuSubContent>
           </DropdownMenuSub>
           <DropdownMenuSeparator />
-          <DropdownMenuItem variant="destructive" onSelect={() => removeFlow(id)}><Trash2 />Delete...</DropdownMenuItem>
+          <DropdownMenuItem variant="destructive" onSelect={() => run('flow.library.delete', id)}><Trash2 />Delete...</DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
     </div>
@@ -98,7 +94,7 @@ export function FlowsPage() {
       } else if (!flowId && !typing && keyAmong(['flows.find', 'flows.new'], e)) { // §7k
         e.preventDefault();
         if (keyIs('flows.find', e)) filterRef.current?.focus();
-        else newFlow(scopeThread);
+        else run('flow.library.create', scopeThread);
       }
     };
     const el = root();
@@ -108,14 +104,13 @@ export function FlowsPage() {
 
   const rename = (title) => {
     setRenaming(false);
-    if (title != null) updateFlow(flowId, { title });
+    if (title != null) run('flow.library.rename', { id: flowId, title });
     (board ?? root())?.focus();
   };
   const inScope = (s) => scope === ALL || (scope === NONE ? !s.threadUrl : s.threadUrl === scope);
   return (
     <div data-viewport className="flex h-full flex-col">
       <header className="flex h-9 shrink-0 items-center gap-1 border-b px-1 text-xs">
-        <SidebarButton />
         <Tip title="All flowcharts of the project">
           <Button variant="ghost" size="xs" className="font-medium" disabled={!flowId} onMouseDown={keepFocus} onClick={() => openFlows(null)}>Flowcharts</Button>
         </Tip>
@@ -152,12 +147,9 @@ export function FlowsPage() {
         )}
         {!flowId && (
           <Tip title={withKey('New flowchart in this project', 'flows.new')}>
-            <Button variant="ghost" size="xs" onMouseDown={keepFocus} onClick={() => newFlow(scopeThread)}><Plus />New flowchart</Button>
+            <Button variant="ghost" size="xs" onMouseDown={keepFocus} onClick={() => run('flow.library.create', scopeThread)}><Plus />New flowchart</Button>
           </Tip>
         )}
-        <Tip title="Back to the open draft">
-          <Button variant="outline" size="xs" onMouseDown={keepFocus} onClick={() => closeWorkspace()}>Back to editor</Button>
-        </Tip>
       </header>
       {record ? <FlowEditor key={record.id} id={record.id} onBoard={setBoard} /> : <FlowLibrary inScope={inScope} filter={filter} view={view} />}
     </div>

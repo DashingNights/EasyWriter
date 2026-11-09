@@ -1,35 +1,35 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { cn } from 'cn';
-import { ArrowUp, Ban, Bot, Brain, Check, CircleAlert, ImagePlus, MessageSquare, MessageSquarePlus, Mic, Square, X } from 'lucide-react';
+import { ArrowUp, Ban, Bot, Brain, Check, CircleAlert, ImagePlus, MessageSquare, MessageSquarePlus, Mic, Search, Square, X } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-// import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'; // LOCAL LLM (commented out 2026-10-07): the install dialog
 import { Dot } from '@/components/ui/dot';
 import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { SelectButton } from '@/components/ui/select';
 import { Spinner } from '@/components/ui/spinner';
 import { canvasEditor } from '../../canvas.js';
 import { activeBoard } from '../../whiteboard.js';
-import { openSettings, refocusEditor, setupOpen } from '../actions.js';
+import { openSettings, refocusEditor, setupOpen, toggleToolSearch } from '../actions.js';
 import { assistantMode } from '../commands/tool-sets.mjs';
 import { AgentAsk } from '../components/AgentAsk.jsx';
 import { IconButton, Tip } from '../components/Tip.jsx';
 import { joinText } from '../dictation/core.mjs';
 import { DictationButton, hold } from '../dictation/Dictation.jsx';
-import { dictationReady, pttDown, pttUp, toggleDictation, useDictation, warm as warmDictation } from '../dictation/dictation.js';
+import { pttDown, pttUp, toggleDictation, useDictation, warm as warmDictation } from '../dictation/dictation.js';
 import { can } from '../gates.mjs';
+import { wordKeyWins } from '../../document/word/keys.js';
 import { keyIs } from '../keybinds.js';
 import { motion } from '../motion.js';
 import { getState, setState, useStore, WORKER } from '../store.js';
-import { viewportRect } from '../viewport.js';
+import { afterSlide } from '../sliding.js';
+import { useViewportBox, viewportRect } from '../viewport.js';
 import { MAC } from '../../platform.mjs';
-// LOCAL LLM (commented out 2026-10-07): BACKENDS, cancelInstall, closeInstall, install, openInstall, size.
 import {
   ASSISTANT_DEFAULTS, clearPending, closeChat, CTX, MODEL_FIELD, modelChoices, newChat, pickModel, refreshStatus, saveAssistant, send, setThinking, stop, EFFORTS,
-  thinkingEffort, toggleChat, usable, useAssistant, wake,
+  thinkingEffort, toggleChat, usable, useAssistant,
 } from './assistant.js';
 import { BackgroundPane } from './BackgroundPane.jsx';
-import { captureSelection } from './capture.js';
+import { captureSelectionNow } from './capture.js';
 import { autoPill, chatEditor, dictateInto, dropWaves, imageAttachment, inlineOf, partsOf, PILL_CLASS } from './chat-input.js';
 import { Markdown } from './Markdown.jsx';
 import { anchorPanel, dragPanel, placePanel } from './panel.mjs';
@@ -37,34 +37,39 @@ import { anchorPanel, dragPanel, placePanel } from './panel.mjs';
 // The assistant's chat chrome (SPEC §7i; automation plan §13.4), mounted once in the main column's area (App.jsx) after the
 // dictation chrome: the right island (the dictation mic button and the chat button, each once its feature is set up), the
 // panel (floating over the page in its viewport, movable and resizable from its corners, anchored to the nearer viewport
-// edges; never changes [data-viewport]) and the install dialog.
+// edges; never changes [data-viewport]).
 
 const rem = () => parseFloat(getComputedStyle(document.documentElement).fontSize) || 13;
 const keep = (e) => e.preventDefault(); // buttons that never take the focus
 const MODE_BADGE = { ask: 'Ask first', readonly: 'Read only', all: 'Allow all' }; // the permission mode when it is not Standard
 const CORNER = 10; // px from a corner that resizes
-// const PRIVACY = 'Everything you send stays on this computer.'; // LOCAL LLM (commented out 2026-10-07)
 const privacy = (label = 'Google AI') => `What you send, attachments and pictures included, goes to ${label}.`; // status().providerLabel
 
-/** The right island: the dictation mic button over the chat button at the editor's bottom-right corner (in a workspace one
- * compact row there, clear of its scrollbars and the Backlog's rows). Each shows once its feature is set up (`chat`: an
- * assistant that can run); with neither the island stays in place unseen, as the chat panel is placed from it. */
+/** The right island: tool search, the dictation mic and the chat button stacked at the page viewport's bottom-right corner, on
+ * every page alike (the user, 2026-10-28; a workspace's 1rem from its right edge, clear of its scrollbars). Each shows once its
+ * feature is set up (`chat`: an assistant that can run); with neither the island stays in place unseen, as the chat panel is
+ * placed from it. The corner is the viewport box's, so a Document's right or bottom pane moves the island off its own edge, as
+ * the left pane moves the board rail. */
 function RightIsland({ islandRef, chat }) {
   const a = useAssistant();
   const workspace = !can('view.editor', { view: useStore((s) => s.view) });
-  const dictation = useStore((s) => dictationReady(s.settings?.dictation));
+  const box = useViewportBox(true);
   const Icon = a.turn ? Bot : MessageSquare;
-  const size = workspace ? 'compact' : 'regular';
-  const icon = workspace ? 'size-3.5' : undefined;
+  const corner = box && { right: `calc(${box.right}px + ${workspace ? '1rem' : '0.5rem'})`, bottom: `calc(${box.bottom}px + 0.75rem)` };
   return (
-    <div ref={islandRef} data-chat-island data-right-island
-      className={cn('absolute z-30 flex gap-1 rounded-island border bg-island shadow-xl', workspace ? 'right-4 bottom-3' : 'right-2 bottom-3 flex-col p-1',
-        !chat && !dictation && 'invisible')}>
-      <DictationButton size={size} icon={icon} side={workspace ? 'top' : 'left'} />
+    <div ref={islandRef} data-chat-island data-right-island style={corner ?? undefined}
+      className="absolute right-2 bottom-3 z-30 flex flex-col gap-1 rounded-island border bg-island p-1 shadow-xl">
+      {/* The tools stack away from the assistant's button, the anchor at the bottom: tool search, then dictation; one that is off
+          leaves no gap. */}
+      <IconButton label="Tool search" keybind="app.toolSearch" size="regular" tip={{ side: 'left' }} onMouseDown={keep}
+        onClick={() => toggleToolSearch()}>
+        <Search />
+      </IconButton>
+      <DictationButton size="regular" side="left" />
       {chat && (
-        <IconButton label="Assistant" keybind="app.assistant" size={size} tip={{ side: workspace ? 'top' : 'left' }} aria-expanded={a.open}
+        <IconButton label="Assistant" keybind="app.assistant" size="regular" tip={{ side: 'left' }} aria-expanded={a.open}
           aria-controls="assistant-panel" data-chat-button onMouseDown={keep} onClick={() => toggleChat()}>
-          <Icon className={icon} />
+          <Icon />
         </IconButton>
       )}
     </div>
@@ -80,6 +85,7 @@ function useFrame(islandRef) {
     const box = islandRef.current.parentElement;
     const bar = box.querySelector('[data-agent-area="toolbar"]:not([data-ribbon])'); // a Document's tools island is at the left edge; it has no bottom island
     const measure = () => {
+      if (afterSlide(measure)) return; // the panel keeps its right and bottom gaps while the sidebar slides (sliding.js)
       const v = viewportRect();
       setFrame({ box: box.getBoundingClientRect(), vp: v, btn: islandRef.current.getBoundingClientRect(), bar: bar?.isConnected ? bar.getBoundingClientRect() : null });
     };
@@ -95,20 +101,16 @@ function useFrame(islandRef) {
   return frame;
 }
 
-/** The model the server runs, for the header: the pin's label, a custom file's name, or an external server's host. */
-const modelName = (st) => (st?.model?.label === 'Custom model' ? st.model.file : st?.model?.label ?? (st?.url ? new URL(st.url).host : ''));
+/** The model for the header: the provider's model, or a server's host when it names none. */
+const modelName = (st) => st?.model?.label ?? (st?.url ? new URL(st.url).host : '');
 
 function StatusDot({ server }) {
-  const [title, color] = !server ? ['Not installed', null]
-    : server.state === 'error' ? ['Error', 'var(--destructive)']
-      : server.state === 'starting' ? ['Loading the model', 'var(--warning)']
-        : server.state !== 'ready' ? ['Not running', null]
-          : server.sleeping ? ['Asleep', 'var(--warning)'] : ['Ready', 'var(--success)'];
+  const [title, color] = server ? ['Ready', 'var(--success)'] : ['Not set up', null];
   return <Dot role="img" aria-label={title} title={title} data-status={server?.state ?? 'none'} color={color} />;
 }
 
 /** How full the model's context is: the last request's prompt + completion tokens over the model's context window (`window`,
- * status().ctx: the local server's -c, an external server's n_ctx, a Google model's input limit; a compaction runs at 80 %, SPEC
+ * status().ctx: the provider's window, a server's n_ctx, a Google model's input limit; a compaction runs at 80 %, SPEC
  * §7i Context). */
 function ContextRing({ usage, window }) {
   const used = usage?.used ?? 0;
@@ -162,7 +164,7 @@ function Message({ m, dim }) {
     const Icon = s.ok ? Check : s.code === 'denied' ? Ban : CircleAlert;
     return (
       <div data-role="step" data-ok={s.ok} data-suggested={s.suggested ? '' : undefined} className={cn('flex min-h-6 items-center gap-1.5 text-xs text-muted-foreground', dim && 'opacity-50')}>
-        {/* A change that waits as a suggestion (docs/plans/suggestions.md): a yellow dot in place of the check. */}
+        {/* A change that waits as a suggestion (docs/wiki/suggestions.md): a yellow dot in place of the check. */}
         {s.suggested && s.ok
           ? <span className="flex size-3.5 shrink-0 items-center justify-center"><Dot color="var(--suggest)" /></span>
           : <Icon className={cn('size-3.5 shrink-0', !s.ok && s.code !== 'denied' && 'text-destructive')} />}
@@ -190,6 +192,8 @@ function Message({ m, dim }) {
         </Markdown>
       )}
       {m.error && <p className="text-destructive">{m.error}</p>}
+      {/* A turn paused at its token limit (loop.js paused): Continue resumes it with a fresh budget. */}
+      {m.resume && <Button data-chat-continue variant="outline" size="xs" className="justify-self-start" onMouseDown={keep} onClick={m.resume}>Continue</Button>}
     </div>
   );
 }
@@ -311,7 +315,7 @@ function ChatPanel({ islandRef, closing, onClosed }) {
       element: boxRef.current, content: unsent, submit: () => submitRef.current(), onChange: changed, onImages: (files) => imagesRef.current?.(files),
       attributes: { 'aria-label': 'Message', 'aria-placeholder': 'Message the assistant', class: BOX },
     }));
-    autoRef.current = autoPill(ed, captureSelection, tray); // before the focus below: opening the panel attaches the selection
+    autoRef.current = autoPill(ed, captureSelectionNow, tray); // before the focus below: opening the panel attaches the selection
     changed(ed);
     ed.commands.focus('end');
     return () => {
@@ -361,8 +365,9 @@ function ChatPanel({ islandRef, closing, onClosed }) {
     const el = scrollRef.current;
     if (el && stick.current) el.scrollTop = el.scrollHeight;
   }, [a.messages, !!frame, ready]);
-  // The open sequence (motion.js 'panel'), in the manner of the dictation pane's: a pill in the panel's bottom-right corner (by
-  // the right island) widens to the panel's width, rises to its height, then its contents fade in. Closing plays it backwards
+  // The open sequence (motion.js 'panel'): a pill in the panel's bottom-right corner (by the right island) grows to the panel's
+  // width and height at once, out from the island on the diagonal (the user, 2026-10-28: widening first and rising after made the
+  // widening a jump), then its contents fade in. Closing plays it backwards
   // and then unmounts it (onClosed). Turning round midway (closed while opening, opened while closing) carries on from where
   // it is; a reopen of the closing panel also gives the text box the focus back (closing gave it to the draft).
   useLayoutEffect(() => {
@@ -382,7 +387,6 @@ function ChatPanel({ islandRef, closing, onClosed }) {
       play(el, [
         { clipPath: `inset(calc(100% - ${pill}) 0 0 calc(100% - ${pill}) round ${round})`, opacity: 0 },
         { clipPath: `inset(calc(100% - ${pill}) 0 0 calc(100% - ${pill}) round ${round})`, opacity: 1, offset: 0.12 },
-        { clipPath: `inset(calc(100% - ${pill}) 0 0 0 round ${round})`, offset: 0.5 },
         { clipPath: `inset(0 0 0 0 round ${radius})`, opacity: 1 },
       ]),
       ...[...el.children].map((child) => play(child, [{ opacity: 0 }, { opacity: 0, offset: 0.7 }, { opacity: 1 }])),
@@ -406,6 +410,12 @@ function ChatPanel({ islandRef, closing, onClosed }) {
   // Default place: right edges aligned with the right island, the bottom 8 px above it and the toolbar island, 26 × 36 rem.
   const place = stored ?? { x: 'right', dx: vp.right - btn.right, y: 'bottom', dy: vp.bottom - Math.min(btn.top, bar?.top ?? Infinity) + 8, w: 26 * r0, h: 36 * r0 };
   const r = live ?? placePanel(place, vp, min, m);
+  // Placed from the edges its place keeps (a drag from the left and top): opening or closing the sidebar moves the column's
+  // left edge but not its right one, so a panel kept at the right stays put in the frame before the next measure.
+  const edges = {
+    ...(live || place.x === 'left' ? { left: vp.left - box.left + r.left } : { right: box.right - vp.right + vp.width - r.left - r.width }),
+    ...(live || place.y === 'top' ? { top: vp.top - box.top + r.top } : { bottom: box.bottom - vp.bottom + vp.height - r.top - r.height }),
+  };
 
   const cornerAt = (e) => {
     if (e.target.closest('button')) return null;
@@ -438,14 +448,12 @@ function ChatPanel({ islandRef, closing, onClosed }) {
   };
 
   // The mic (hold to talk, as push-to-talk, §7h): a live waveform sits in the text box at the caret while it is held (no partial
-  // text); on release the box is read-only, the waveform working, until the final text replaces it; it never sends. Holding it
-  // also wakes the assistant. The focus stays where it is while held (a Space / Enter hold must get its keyup) and goes to the
+  // text); on release the box is read-only, the waveform working, until the final text replaces it; it never sends. The focus stays where it is while held (a Space / Enter hold must get its keyup) and goes to the
   // text box at the end.
   const micDown = () => {
     const ed = edRef.current;
     if (!ed || held.current || dictation.current) return;
     held.current = true;
-    wake();
     const d = (dictation.current = dictateInto(ed));
     pttDown((o) => {
       if (dictation.current !== d) return; // a session from before the text box was closed: its box is gone
@@ -465,10 +473,7 @@ function ChatPanel({ islandRef, closing, onClosed }) {
   };
   // The Mac (§7h Mac): a click starts macOS Dictation in the text box (it types there), the next one stops it.
   const micToggle = () => {
-    if (!macMic) {
-      wake();
-      edRef.current?.view.focus();
-    }
+    if (!macMic) edRef.current?.view.focus();
     toggleDictation();
   };
 
@@ -508,12 +513,11 @@ function ChatPanel({ islandRef, closing, onClosed }) {
   };
   const cut = a.messages.findLastIndex((x) => x.role === 'divider'); // messages before it are not sent: dimmed
   submitRef.current = submit;
-  // const missing = s?.missing.reduce((n, x) => n + x.bytes, 0); // LOCAL LLM (commented out 2026-10-07): the install size
   const badge = MODE_BADGE[assistantMode(conf).permission];
   return (
     <div ref={panelRef} id="assistant-panel" data-assistant-panel role="region" aria-label="Assistant" inert={closing || undefined}
       className="absolute z-[44] flex flex-col rounded-island border bg-island p-1 text-sm shadow-xl"
-      style={{ left: vp.left - box.left + r.left, top: vp.top - box.top + r.top, width: r.width, height: r.height }}
+      style={{ ...edges, width: r.width, height: r.height }}
       onPointerDownCapture={onPointerDownCapture} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onLostPointerCapture={onPointerUp}
       onDragOver={(e) => { if (ready && [...e.dataTransfer.items].some((i) => i.type.startsWith('image/'))) e.preventDefault(); }}
       onDrop={(e) => {
@@ -549,8 +553,6 @@ function ChatPanel({ islandRef, closing, onClosed }) {
         </>
       ) : !ready ? (
         <div data-not-installed className="flex flex-1 flex-col items-start gap-2 px-2 py-1">
-          {/* LOCAL LLM (commented out 2026-10-07): the install offer, "It is not installed yet. After one download it works offline."
-              or "It is turned off." with Install... (N GB) / Turn on... (openInstall). */}
           <p>{privacy(s?.providerLabel)}</p>
           <p className="text-muted-foreground">{s?.cli ? `${s.providerLabel} ${s.state === 'signed_out' ? 'is not signed in' : 'is not installed'}. ${s.cli.hint}`
             : `Add your ${s?.providerLabel ?? 'Google AI'} API key in Settings.`}
@@ -566,8 +568,6 @@ function ChatPanel({ islandRef, closing, onClosed }) {
             {!a.messages.length && <p className="text-muted-foreground">{privacy(s?.providerLabel)}</p>}
             {a.messages.map((msg, i) => <Message key={msg.id} m={msg} dim={i < cut} />)}
           </div>
-          {/* LOCAL LLM (commented out 2026-10-07): the local server's status lines, its error with Retry (warm) and "Loading the
-              model..." / "Waking...". */}
           {a.turn && working && (
             <div data-chat-status data-chat-working className="flex shrink-0 items-center gap-1.5 px-2 py-1 text-muted-foreground">
               <Spinner className="size-3.5" /><span className="min-w-0 truncate">Working on "{working}"</span>
@@ -627,93 +627,6 @@ function ChatPanel({ islandRef, closing, onClosed }) {
   );
 }
 
-// LOCAL LLM, commented out 2026-10-07 (the user: "i plan to abandon local llm usage, just stick to google api now. comment out all the code for local llm stuff"). Uncomment to restore.
-// /** First use: what is downloaded and from where, the backend, the licences, then the download with progress. */
-// function InstallForm({ open }) {
-//   const [status, setStatus] = useState(null);
-//   const [phase, setPhase] = useState('ready'); // 'ready' | 'download' | 'error'
-//   const [error, setError] = useState('');
-//   const [progress, setProgress] = useState(null);
-//   useEffect(() => {
-//     let live = true;
-//     window.api.assistant.status().then((st) => live && setStatus(st), (e) => live && setError(String(e.message || e)));
-//     return () => { live = false; };
-//   }, []);
-//   useEffect(() => window.api.assistant.onEvent((e) => e.type === 'progress' && setProgress(e)), []);
-//   const busy = phase === 'download';
-//   const start = async () => {
-//     setPhase('download');
-//     setProgress(null);
-//     setError('');
-//     try {
-//       await install();
-//     } catch (e) {
-//       if (getState().assistantInstall !== open) return;
-//       setPhase('error');
-//       setError(e.message === 'cancelled' ? 'The download was cancelled.' : e.message);
-//     }
-//   };
-//   const cancel = () => {
-//     if (busy) cancelInstall();
-//     closeInstall(false);
-//   };
-//   const total = status ? status.missing.reduce((n, x) => n + x.bytes, 0) : 0;
-//   const pct = progress?.total ? Math.round((progress.received / progress.total) * 100) : 0;
-//   const backend = BACKENDS.find(([id]) => id === status?.backend)?.[1];
-//   return (
-//     <Dialog open onOpenChange={(o) => !o && cancel()}>
-//       <DialogContent aria-describedby={undefined} onInteractOutside={(e) => e.preventDefault()}
-//         onCloseAutoFocus={(e) => !getState().dialog && refocusEditor(e)}
-//         className="max-h-[88vh] gap-2 overflow-y-auto p-3 text-sm sm:max-w-[min(560px,92vw)] *:data-[slot=dialog-close]:top-3 *:data-[slot=dialog-close]:right-3">
-//         <DialogHeader><DialogTitle>Set up the assistant</DialogTitle></DialogHeader>
-//         <p className="text-muted-foreground">
-//           {PRIVACY} It runs {status?.model.label ?? 'Qwen3.5-9B'} with llama.cpp. Downloaded once into the app's data folder, each file
-//           checked against its SHA-256 before it is kept:
-//         </p>
-//         <ul className="grid list-disc gap-0.5 pl-5" data-install-files>
-//           {!status ? <li>Checking…</li> : !status.missing.length ? <li>Nothing: every file is already here.</li>
-//             : status.missing.map((x) => <li key={x.label}>{x.label} ({size(x.bytes)})</li>)}
-//         </ul>
-//         <p className="text-muted-foreground">
-//           llama.cpp comes from GitHub (ggml-org/llama.cpp, a pinned release; MIT licence). The model and its image projector come from
-//           Hugging Face ({[...new Set([status?.model?.repo ?? 'unsloth/Qwen3.5-9B-GGUF', status?.model?.mmprojRepo ?? 'unsloth/Qwen3.5-9B-GGUF'])].join(' and ')});
-//           {' '}{status?.licence?.model ?? 'Qwen3.5'} is licensed under {status?.licence?.name ?? 'Apache-2.0'} (
-//           <a href={status?.licence?.url ?? 'https://www.apache.org/licenses/LICENSE-2.0'} target="_blank" rel="noreferrer" className="underline">licence text</a>
-//           ), and a copy of the licence notice stays in the model folder.
-//         </p>
-//         {backend && (
-//           <p>Graphics backend: {backend}{status.backend !== 'cpu' && ' (found from the graphics card)'}. Settings &gt; Assistant can change it.</p>
-//         )}
-//         {busy && (
-//           <div className="grid gap-1" role="status">
-//             <span>
-//               {progress ? `Downloading the ${progress.label} (${progress.step} of ${progress.steps})` : 'Starting…'}
-//               {progress?.total ? `: ${size(progress.received)} of ${size(progress.total)}` : ''}
-//             </span>
-//             <div className="h-1.5 overflow-hidden rounded-full bg-muted">
-//               <div className="h-full bg-primary transition-[width]" style={{ width: `${pct}%` }} />
-//             </div>
-//           </div>
-//         )}
-//         {error && <p className="text-destructive">{error}</p>}
-//         <DialogFooter>
-//           <Button type="button" variant="outline" size="sm" onClick={cancel}>Cancel</Button>
-//           <Button type="button" size="sm" disabled={busy || !status} onClick={start}>
-//             {phase === 'error' ? 'Retry' : total ? `Download and install (${size(total)})` : 'Turn on'}
-//           </Button>
-//         </DialogFooter>
-//       </DialogContent>
-//     </Dialog>
-//   );
-// }
-//
-// function InstallDialog() {
-//   const open = useStore((s) => s.assistantInstall);
-//   return open ? <InstallForm key={open.id} open={open} /> : null;
-// }
-//
-// /** Everything the assistant shows, mounted once in the main column's area; Ctrl+Shift+A toggles the panel from anywhere. */
-
 export function Assistant() {
   const islandRef = useRef(null);
   const open = useAssistant().open;
@@ -732,7 +645,8 @@ export function Assistant() {
   }, []);
   useEffect(() => {
     const onKey = (e) => {
-      if (!keyIs('app.assistant', e)) return; // §7k
+      // §7k; in a Document's text Ctrl+Shift+A is Word's All caps (docs/plans/word/plan.md §1.13)
+      if (!keyIs('app.assistant', e) || wordKeyWins(e)) return;
       const st = getState();
       if (st.dialog || st.confirm || setupOpen(st) || (st.settings?.assistant?.provider ?? ASSISTANT_DEFAULTS.provider) === 'none') return;
       e.preventDefault();
@@ -747,7 +661,6 @@ export function Assistant() {
       <RightIsland islandRef={islandRef} chat={!off && ready} />
       {!off && shown && <ChatPanel islandRef={islandRef} closing={!open} onClosed={() => setShown(false)} />}
       {pane && <BackgroundPane />}
-      {/* <InstallDialog /> LOCAL LLM (commented out 2026-10-07) */}
     </>
   );
 }

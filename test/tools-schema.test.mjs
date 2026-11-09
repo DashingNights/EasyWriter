@@ -48,15 +48,15 @@ test('toolsFor: the whole catalogue as tools with no $ref, oneOf, type list or d
 });
 
 const caps = CATALOGUE.map((d) => ({ id: d.id, title: d.title, args: d.args, needs: d.needs.map((n) => ({ gate: n.gate ?? n, fix: GATES[n.gate ?? n].fix })) }));
-const model = (ids, family = 'qwen') => toolsFor(caps, { ids, $defs: MODEL_DEFS, form: 'model', family });
+const model = (ids) => toolsFor(caps, { ids, $defs: MODEL_DEFS, form: 'model' });
 const size = (tools) => JSON.stringify(tools).length;
 const descriptions = (s) => (s && typeof s === 'object'
   ? [...(typeof s.description === 'string' ? [s.description] : []), ...Object.values(s).flatMap(descriptions)] : []);
 
 test('model form: title, brief, Not-for line, first example and guide lines; no limits, patterns or additionalProperties; every tool within MAX_TOOL', () => {
   assert.equal(MAX_TOOL, 3000);
-  for (const family of ['qwen', 'gemma']) {
-    const tools = model(undefined, family);
+  {
+    const tools = model();
     assert.equal(tools.length, CATALOGUE.length);
     const text = JSON.stringify(tools);
     for (const word of ['Needs:', '"$ref"', '"oneOf"', '"additionalProperties"', '"pattern"', '"minimum"', '"maxLength"', '"minItems"', '"default"']) {
@@ -69,7 +69,7 @@ test('model form: title, brief, Not-for line, first example and guide lines; no 
       const head = [end(def.title), def.brief, def.notFor && `Not for: ${end(def.notFor)}`, ex !== '{}' && `e.g. ${ex}`].filter(Boolean).join(' ');
       const guide = [['before', 'Before'], ['args', 'Args'], ['errors', 'Errors'], ['playbook', 'Playbook']].flatMap(([k, l]) => (def.guide?.[k] ? [`${l}: ${end(def.guide[k])}`] : []));
       assert.equal(t.function.description, [head, ...guide].join('\n'));
-      assert.ok(size(t) <= MAX_TOOL, `${family} ${t.function.name}: ${size(t)} characters`);
+      assert.ok(size(t) <= MAX_TOOL, `${t.function.name}: ${size(t)} characters`);
     }
   }
   const get = model(['board.get'])[0].function;
@@ -81,7 +81,7 @@ test('model form: title, brief, Not-for line, first example and guide lines; no 
   assert.equal(get.parameters.properties.path.type, 'array');
 });
 
-// The commands the brief of wave 1 names (docs/plans/assistant-reliability.md): a brief and every argument described.
+// The commands the brief of wave 1 names (docs/wiki/assistant-reliability.md): a brief and every argument described.
 const DESCRIBED = ['ui.state', 'ui.select', 'drafts.list', 'drafts.open', 'board.list', 'board.get', 'board.find', 'board.items.add', 'board.items.update',
   'board.items.remove', 'canvas.edit', 'canvas.close', 'batch', 'commands.index', 'commands.describe', 'doc.get', 'doc.find', 'doc.selection', 'doc.insert',
   'doc.replace', 'doc.delete', 'doc.format', 'drafts.create', 'drafts.get', 'drafts.setTag', 'drafts.delete', 'threads.list', 'tags.list', 'folders.list'];
@@ -109,46 +109,24 @@ test('computer use: described in keyboard characters, in no view set, off with o
   assert.equal(refusal(byId('background.open'), assistantMode({ permission: 'readonly' })), READ_ONLY);
 });
 
-test('the core and each view set exist, stay out of history.undo / redo, and fit MAX_SET as serialized tools in either family', () => {
-  assert.equal(MAX_SET, 14000);
+test('the core and each view set exist, stay out of history.undo / redo, and fit MAX_SET as serialized tools', () => {
+  assert.equal(MAX_SET, 15000);
   for (const [key, ids] of Object.entries({ core: [], ...VIEW_SETS })) {
     const all = [...CORE, ...ids];
     for (const id of all) assert.ok(byId(id), `${key}: ${id}`);
     assert.ok(!all.includes('history.undo') && !all.includes('history.redo'), key);
-    for (const family of ['qwen', 'gemma']) {
-      const tools = model(all, family);
+    {
+      const tools = model(all);
       assert.equal(tools.length, new Set(all).size, key);
-      assert.ok(size(tools) <= MAX_SET, `${family} core + ${key}: ${size(tools)} characters`);
+      assert.ok(size(tools) <= MAX_SET, `core + ${key}: ${size(tools)} characters`);
       // Property descriptions stay short in the offered sets (ITEM_BRIEF's field lists excepted).
       for (const d of tools.flatMap((t) => descriptions(t.function.parameters))) assert.ok(d.length <= 90 || descriptions(ITEM_BRIEF).includes(d), `${key}: ${d}`);
     }
   }
 });
 
-// Gemma 4's chat template renders a parameter from type, enum, items, properties, required and nullable only (wave 1c).
-test('gemma model form: no anyOf, oneOf or type list in any tool; a union is its first branch with the alternatives named; enums typed', () => {
-  const text = JSON.stringify(model(undefined, 'gemma'));
-  for (const word of ['"anyOf"', '"oneOf"', '"type":[']) assert.ok(!text.includes(word), word);
-  const props = (id) => model([id], 'gemma')[0].function.parameters.properties;
-  assert.deepEqual(props('doc.insert').at, { type: 'array', items: { type: 'integer' }, description: 'A block path such as [3], or one of start, end, cursor' });
-  assert.deepEqual(props('doc.insert').position, { enum: ['before', 'after'], description: 'Before or after the block at at', type: 'string' });
-  assert.deepEqual(props('drafts.setTag').tagId, { type: 'string', description: 'A tag id from tags_list, or null to clear it' });
-  assert.deepEqual(props('drafts.move').folderId, { type: 'string', description: 'Text, or null' }); // a type list, no words of its own
-  assert.ok(!('anyOf' in model(['doc.format'], 'gemma')[0].function.parameters)); // constraints only: the registry checks them
-  const walk = (s) => (s && typeof s === 'object' ? [s, ...Object.values(s).flatMap(walk)] : []);
-  for (const s of walk(JSON.parse(text))) if (Array.isArray(s.enum)) assert.ok(s.type === 'string' && !s.enum.includes(null), JSON.stringify(s));
-  const marks = props('doc.format').marks.properties; // enums with null, and numbers the template would not show
-  assert.deepEqual(marks.highlight, { enum: ['red', 'orange', 'yellow', 'green', 'blue', 'indigo', 'violet'], nullable: true, type: 'string' });
-  assert.deepEqual(marks.fontSize, { nullable: true, type: 'number', description: 'One of 80, 90, 100, 125, 150, 175, 200' });
-  assert.deepEqual(props('ui.zoom').value, { type: 'number', description: 'A number, or "fit"' }); // the common branch first
-  // The qwen form keeps the union: llama.cpp builds Qwen3.5's tool-call grammar from it, so "end" stays possible.
+test('model form: a union stays an anyOf', () => {
   assert.ok(Array.isArray(model(['doc.insert'])[0].function.parameters.properties.at.anyOf));
-  // rewrite's flat form on its own.
-  const schema = { type: 'object', properties: { at: { oneOf: [{ $ref: '#/$defs/PATH' }, { enum: ['start', 'end'] }] }, n: { anyOf: [{ type: 'integer', description: 'A count' }, { type: 'null' }] } } };
-  assert.deepEqual(rewrite(schema, $defs, { slim: true, flat: true }).properties, {
-    at: { type: 'array', items: { type: 'integer' }, description: 'A list, or one of start, end' },
-    n: { type: 'integer', description: 'A count, or null' },
-  });
 });
 
 test('ITEM_BRIEF: small, and accepts the board.items.add examples', () => {

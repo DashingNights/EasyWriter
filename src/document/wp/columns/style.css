@@ -1,0 +1,23 @@
+/* Newspaper columns (briefs/columns.md). The node view writes column-count, column-gap and column-rule; pagination (document/
+   pagination.js Engine.columns) picks each node's layout on pages: one row as tall as the room left ('fill', column 1 first), or rows
+   as tall as the page body with the page end as the row gap ('flow'). Without a mode (no pages drawn) the columns balance. */
+.page[data-format="document"] .ProseMirror [data-columns][data-cols-mode="fill"],
+.page[data-format="document"] .ProseMirror [data-columns][data-cols-mode="flow"] {
+  column-fill: auto;
+  column-height: var(--cols-h);
+  column-wrap: wrap;
+  row-gap: var(--cols-g, 0px);
+  /* Set when the last row's text ends in column 1 (Engine.colsEnd): what follows starts below that text. */
+  height: var(--cols-end, auto);
+}
+/* Printed pages have no gap between them (the sheet printing itself; the page copies of Print and PDF keep the screen's gap). */
+@media print {
+  html:not([data-printing]) .page[data-format="document"] .ProseMirror [data-columns][data-cols-mode="flow"] { row-gap: var(--cols-gp, 0px); }
+  html:not([data-printing]) .page[data-format="document"] .ProseMirror [data-columns][data-cols-mode="fill"],
+  html:not([data-printing]) .page[data-format="document"] .ProseMirror [data-columns][data-cols-mode="flow"] { height: var(--cols-endp, auto); }
+}
+/* Word keeps no space before at the top of a column after a column break (index-layout.md 122). */
+.page[data-format="document"] .ProseMirror [data-columns] > [data-column-break] + * { margin-top: 0; }
+/* Objects sit in their column (briefs/columns-objects.md): Word never splits one between columns, so one that does not fit the
+   rest of its column starts the next whole, and it is never wider than its column (canvas.js and plan-chart.js draw min(dw, 100%)). */
+.page[data-format="document"] .ProseMirror [data-columns] > :is(.sc, .pc, [data-textbox]) { break-inside: avoid; }

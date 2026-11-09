@@ -1,0 +1,40 @@
+/* List labels (docs/plans/word plan.md §1.9 and §3 lists): the number tab follows tabs' --w-num-tab when it is set; a 'space' or
+   'nothing' suffix drops the hanging box; right and centred numbers end or centre on the aligned-at position; a level's own label
+   font (Define New Bullet and Number Format's Font...) and picture bullets. Overrides document.css's [data-label]::before. */
+.page[data-format="document"] .ProseMirror [data-label]::before {
+  min-width: var(--w-num-tab, var(--list-hanging));
+  font-family: var(--list-font, inherit);
+  font-size: var(--list-size, inherit);
+  font-weight: var(--list-weight, inherit);
+  font-style: var(--list-style, inherit);
+  color: var(--list-color, inherit);
+  /* Word sizes a numbered line by its text: the number's box takes no height of its own, so a number in another font or size never
+     stretches the line. A number that rises higher than the text raises the line by that much, which the paragraph drawing gives
+     the paragraph as padding (paragraph/extension.js labelRaise); one taller than its whole line raises the box itself. */
+  line-height: 0;
+  padding-top: var(--list-raise, 0);
+}
+.page[data-format="document"] .ProseMirror [data-label][data-suff]::before { min-width: 0; }
+.page[data-format="document"] .ProseMirror [data-label][data-jc="right"]::before {
+  box-sizing: border-box;
+  min-width: 0;
+  width: calc(36pt + var(--list-hanging));
+  margin-left: -36pt;
+  padding-right: var(--list-hanging);
+  text-align: right;
+}
+.page[data-format="document"] .ProseMirror [data-label][data-jc="center"]::before {
+  box-sizing: border-box;
+  min-width: 0;
+  width: calc(2 * var(--list-hanging));
+  margin-left: calc(-1 * var(--list-hanging));
+  text-align: center;
+}
+.page[data-format="document"] .ProseMirror [data-label][data-pic]::before {
+  content: "\00a0";
+  /* The picture stands on the baseline, as Word's does (all-features.pdf: a 9.95 pt picture beside 12 pt text). An inline-block
+     that hides its overflow takes its bottom as its baseline. */
+  height: 0.8em;
+  overflow: hidden;
+  background: var(--list-pic) left bottom / 0.8em 0.8em no-repeat;
+}

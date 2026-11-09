@@ -20,14 +20,17 @@ function inOrder(q, s) {
 export const FLOW_SECTIONS = [['flowchart', 'Flowchart shapes'], ['text', 'Text'], ['basic', 'Basic shapes']];
 
 // A node-selected block (blockKind): [heading, its actions as on its bar (entry ids, the main one first), the suggested
-// entries]. Listed first with an empty query, and they win ties, as flowchart mode's sections do.
+// entries]. Listed first with an empty query, and they win ties, as flowchart mode's sections do. A Document's shape or line (a
+// canvas of one) also offers Set as Default Shape or Line (Word's right-click entries; only the one that applies is there).
+const SET_DEFAULT = ['contextMenu.shape.setAsDefaultShape', 'contextMenu.shape.setAsDefaultLine'];
 export const BLOCK_SECTIONS = {
   flowchart: ['Flowchart canvas', ['canvas-edit', 'canvas-library', 'flow-unlink', 'flow-save-to-library', 'canvas-actual-size', 'canvas-full-width',
-    'canvas-delete'], ['flow-library-open', 'assistant']],
-  canvas: ['Smart canvas', ['canvas-edit', 'flow-save-to-library', 'canvas-actual-size', 'canvas-full-width', 'canvas-delete'], ['flow-library-open', 'assistant']],
+    ...SET_DEFAULT, 'canvas-delete'], ['flow-library-open', 'assistant']],
+  canvas: ['Smart canvas', ['canvas-edit', 'flow-save-to-library', 'canvas-actual-size', 'canvas-full-width', ...SET_DEFAULT, 'canvas-delete'],
+    ['flow-library-open', 'assistant']],
   image: ['Image', ['canvas-edit', 'canvas-actual-size', 'canvas-full-width', 'canvas-delete'], ['assistant']],
-  planChart: ['Plan chart', ['chart-open', 'chart-kanban', 'chart-backlog', 'chart-gantt', 'chart-freeze', 'chart-refresh', 'chart-live', 'chart-full-width',
-    'chart-delete'], ['plan-open', 'assistant']],
+  planChart: ['Plan chart', ['plan.chart.open', 'plan.chart.kanban', 'plan.chart.backlog', 'plan.chart.gantt', 'plan.chart.freeze', 'plan.chart.refresh',
+    'plan.chart.live', 'plan.chart.fullWidth', 'plan.chart.delete'], ['plan.open', 'assistant']],
 };
 const TIE_ORDER = ['block', 'suggested', ...FLOW_SECTIONS.map(([category]) => category)];
 
@@ -64,7 +67,9 @@ export function paletteSections(entries, { flow, block }) {
   const first = heading ? [[heading, pick(own), 'block'], ['Suggested', pick(suggested), 'suggested']]
     : flow ? FLOW_SECTIONS.map(([category, title]) => [title, entries.filter((x) => x.category === category), category]) : [];
   const shown = new Set(first.flatMap(([, list]) => list));
-  return [...first, ...GROUPS.map((group) => [group, entries.filter((x) => x.group === group && !shown.has(x))])];
+  // Groups outside GROUPS (a Document's Layout and View, the Word tabs) follow in the order their first entry appears.
+  const groups = [...new Set([...GROUPS, ...entries.map((x) => x.group)])];
+  return [...first, ...groups.map((group) => [group, entries.filter((x) => x.group === group && !shown.has(x))])];
 }
 
 /** What the tool search calls a node-selected block of type `type` with `attrs`: flowchart (a canvas that is a flowchart, as

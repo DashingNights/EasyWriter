@@ -1,4 +1,4 @@
-import { saveSettings } from './actions.js';
+import { saveSettings, toast } from './actions.js';
 import { keyAmong } from './keybinds.js';
 import { getState, setState } from './store.js';
 import { openWorkspace } from './views.js';
@@ -10,27 +10,42 @@ import { openWorkspace } from './views.js';
 const state = getState();
 export const HOME = 'https://www.google.com/';
 const EMPTY = { tabs: [], active: null };
+// The search engine of the address bar and of the assistant's web.search; a harness points it at a local page (__wordTest.searchUrl).
+const SEARCH = 'https://www.google.com/search?q=';
+export const searchUrl = (q) => `${globalThis.__wordTest?.searchUrl ?? SEARCH}${encodeURIComponent(q)}`;
 
-/** The address bar's text as a URL: a scheme or a host → that URL, anything else → a Google search. */
+/** The address bar's text as a URL: a scheme or a host → that URL, anything else → a search. */
 export function toUrl(text) {
   const t = text.trim();
   if (!t) return HOME;
   if (/^[a-z][a-z0-9+.-]*:/i.test(t)) return t;
   if (/^(localhost|[^\s/?#]+\.[^\s/?#]+)(:\d+)?([/?#]|$)/i.test(t)) return `https://${t}`;
-  return `https://www.google.com/search?q=${encodeURIComponent(t)}`;
+  return searchUrl(t);
 }
+
+// An agent's tabs (assistant-web, SPEC §7j Agent tabs): `tab.agent` is the source that opened it ('agent:assistant', an MCP
+// client's 'agent:<name>'). Their pages load in AGENT_PARTITION, a session of their own that lives in memory only, so an agent never
+// browses with the user's sign-ins. They never become the active tab, their sound is muted (WebTab), and they are not saved.
+export const AGENT_PARTITION = 'assistant-web';
 
 let timer = null;
 function set(browser) {
   setState({ browser });
   clearTimeout(timer); // ponytail: trailing 300 ms write; a close inside it loses the last title or URL change
-  timer = setTimeout(() => saveSettings({ browser: state.browser }), 300);
+  timer = setTimeout(() => saveSettings({ browser: { ...state.browser, tabs: state.browser.tabs.filter((t) => !t.agent) } }), 300);
 }
 
-/** A new tab at `url` (Google by default), made active; returns its id. */
-export function newTab(url = HOME) {
+export const MAX_TABS = 12; // the tab manager's two columns of six (the user, 2026-10-28)
+
+/** A new tab at `url` (Google by default), made active; returns its id, or null at MAX_TABS tabs. `agent`: the source of an
+ * agent's tab, which stays in the background. */
+export function newTab(url = HOME, agent = null) {
+  if (state.browser.tabs.length >= MAX_TABS) {
+    if (!agent) toast(`${MAX_TABS} tabs is the most. Close one to open another.`);
+    return null;
+  }
   const id = crypto.randomUUID();
-  set({ tabs: [...state.browser.tabs, { id, url, title: '' }], active: id });
+  set({ tabs: [...state.browser.tabs, { id, url, title: '', ...(agent && { agent }) }], active: agent ? state.browser.active : id });
   return id;
 }
 
@@ -113,8 +128,8 @@ export function openBrowser(url, opts) {
 
 const rem = () => parseFloat(getComputedStyle(document.documentElement).fontSize) || 13;
 
-/** A new pane's place: the viewport's top-right below the tab strip, 48 × 40 rem. */
-export const defaultPlace = () => ({ x: 'right', dx: 0.5 * rem(), y: 'top', dy: 2.75 * rem(), w: 48 * rem(), h: 40 * rem() });
+/** A new pane's place: the viewport's top-right, 48 × 40 rem. */
+export const defaultPlace = () => ({ x: 'right', dx: 0.5 * rem(), y: 'top', dy: 0.5 * rem(), w: 48 * rem(), h: 40 * rem() });
 
 /** The open panes, on tabs that exist, bottom to top. */
 export function openPanes() {
@@ -145,8 +160,9 @@ export const placePane = (tab, place) => setPanes(openPanes().map((p) => (p.tab 
  * A tab without a pane gets one at the place it was minimized at (placePanel fits it to the viewport), else 2 rem down and in
  * from the top pane (or at the default place). */
 export async function openPane(id = null, url = null) {
-  if (url) newTab(url);
-  else if (id) activateTab(id);
+  if (url) {
+    if (!newTab(url)) return;
+  } else if (id) activateTab(id);
   else if (!state.browser.tabs.length) newTab();
   const tab = state.browser.active;
   const list = openPanes();

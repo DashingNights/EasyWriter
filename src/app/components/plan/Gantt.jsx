@@ -8,16 +8,18 @@ import {
   DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuRadioGroup,
   DropdownMenuRadioItem, DropdownMenuSeparator, DropdownMenuSub, DropdownMenuSubContent, DropdownMenuSubTrigger, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { fmt, fromDay, fromWork, nextWorkday, prevWorkday, toDay, work } from '../../../plan/dates.mjs';
 import { ganttLayout, hitTest, ZOOM_PX } from '../../../plan/gantt-layout.mjs';
 import { addDep, filterTickets, statusOf } from '../../../plan/plan-model.mjs';
 import { schedule } from '../../../plan/schedule.mjs';
 import { dismissOnly, edgeSpeed } from '../../../whiteboard.js';
 import { refocusEditor } from '../../actions.js';
-import { deleteTickets, dispatch, dispatchAll, editTicket, moveCards, newTicket } from '../../plans.js';
+import { dispatch, dispatchAll, editTicket, newTicket } from '../../plans.js';
 import { keyIs, withKey } from '../../keybinds.js';
 import { getState, setState, useStore } from '../../store.js';
+import { run } from '../../../tooling/registry.js';
+import { ToggleGroup } from '../../../tooling/ribbon/parts.jsx';
+import { GANTT_SHOW, live, scaleItems } from '../../pool-plan.js';
 import { backgroundClick } from '../../viewport.js';
 import { Tip } from '../Tip.jsx';
 import { keepFocus } from '../Toolbar.jsx';
@@ -34,10 +36,8 @@ import { GanttDeps, GanttGrid, GanttRows, GanttTicks } from './ChartView.jsx';
 
 // The chrome's colours (app.css tokens) for the accent and the neutral keys, so the chart follows the light and dark themes.
 const APP = { accent: 'var(--ui-accent)', critical: '#e05252', conflict: '#e09952', done: '#62d926', text: 'var(--foreground)', strong: 'var(--foreground)', muted: 'var(--muted-foreground)', border: 'var(--ring)' };
-const ZOOMS = [['day', 'Day'], ['week', 'Week'], ['month', 'Month'], ['quarter', 'Quarter'], ['fit', 'Fit']];
 const STEPS = ['day', 'week', 'month', 'quarter']; // Ctrl + wheel and + / − step through them
-const SHOW = [['showDeps', 'Dependencies'], ['showCritical', 'Critical path'], ['showBaseline', 'Baseline'], ['showToday', 'Today line'],
-  ['showWeekends', 'Weekends (off shows working days only)'], ['showTaskList', 'Task list']];
+
 const CURSOR = { lane: 'cell', bar: 'grab', 'edge-l': 'ew-resize', 'edge-r': 'ew-resize', progress: 'ew-resize', 'port-s': 'crosshair', 'port-e': 'crosshair', dep: 'pointer' };
 const LIST_MIN = 160;
 const NO_STATUS = '-'; // radio value of "No status"
@@ -103,12 +103,12 @@ function GanttMenu({ menu, ctx, sched, onClose }) {
     <DropdownMenu open modal={false} onOpenChange={(open) => !open && onClose()}>
       <DropdownMenuTrigger asChild><span className="pointer-events-none fixed size-0" style={{ left: menu.x, top: menu.y }} /></DropdownMenuTrigger>
       <DropdownMenuContent align="start" onCloseAutoFocus={refocusEditor}>
-        <DropdownMenuItem onSelect={() => editTicket(planId, t.id)}>Open...</DropdownMenuItem>
+        <DropdownMenuItem onSelect={() => run('plan.tickets.open', { value: t.id })}>Open...</DropdownMenuItem>
         <DropdownMenuItem onSelect={() => newTicket(planId, { parent: t.id }, { from: n.scheduled ? fromDay(fromWork(n.s, plan.calendar)) : ctx.today })}>Add subtask...</DropdownMenuItem>
         <DropdownMenuSub>
           <DropdownMenuSubTrigger>Status</DropdownMenuSubTrigger>
           <DropdownMenuSubContent>
-            <DropdownMenuRadioGroup value={statusOf(t, ctx) ?? NO_STATUS} onValueChange={(v) => moveCards(planId, ids, v === NO_STATUS ? null : v)}>
+            <DropdownMenuRadioGroup value={statusOf(t, ctx) ?? NO_STATUS} onValueChange={(v) => run('plan.tickets.status', { ids, value: v })}>
               {plan.columns.map((c) => <DropdownMenuRadioItem key={c.id} value={c.id}><Dot color={c.color} />{c.name}</DropdownMenuRadioItem>)}
               <DropdownMenuRadioItem value={NO_STATUS}><Dot />No status</DropdownMenuRadioItem>
             </DropdownMenuRadioGroup>
@@ -117,7 +117,7 @@ function GanttMenu({ menu, ctx, sched, onClose }) {
         <DropdownMenuSub>
           <DropdownMenuSubTrigger>Priority</DropdownMenuSubTrigger>
           <DropdownMenuSubContent>
-            <DropdownMenuRadioGroup value={String(t.priority)} onValueChange={(v) => update({ priority: +v })}>
+            <DropdownMenuRadioGroup value={String(t.priority)} onValueChange={(v) => run('plan.tickets.priority', { ids, value: +v })}>
               {PRIORITIES.map(([v, label, Icon]) => <DropdownMenuRadioItem key={v} value={String(v)}>{Icon ? <Icon /> : <span className="size-4" />}{label}</DropdownMenuRadioItem>)}
             </DropdownMenuRadioGroup>
           </DropdownMenuSubContent>
@@ -130,7 +130,7 @@ function GanttMenu({ menu, ctx, sched, onClose }) {
                 const on = t.labels.includes(l.id);
                 return (
                   <DropdownMenuCheckboxItem key={l.id} checked={on} onSelect={(e) => e.preventDefault()}
-                    onCheckedChange={() => dispatch(on ? 'plan.tickets.labels.remove' : 'plan.tickets.labels.add', { planId, ticketIds: ids, labelId: l.id })}>
+                    onCheckedChange={() => run('plan.tickets.labels', { ids, value: l.id, on })}>
                     <Dot color={l.color} />{l.name}
                   </DropdownMenuCheckboxItem>
                 );
@@ -138,13 +138,13 @@ function GanttMenu({ menu, ctx, sched, onClose }) {
             </DropdownMenuSubContent>
           </DropdownMenuSub>
         )}
-        <DropdownMenuCheckboxItem checked={t.milestone} onCheckedChange={(v) => update({ milestone: v })}><Milestone />Milestone</DropdownMenuCheckboxItem>
+        <DropdownMenuCheckboxItem checked={t.milestone} onCheckedChange={(v) => run('plan.tickets.milestone', { ids, value: v })}><Milestone />Milestone</DropdownMenuCheckboxItem>
         <DropdownMenuItem disabled={!t.start} onSelect={() => update({ start: null, end: null })}>Remove dates</DropdownMenuItem>
         <DropdownMenuSeparator />
         {t.draftId
           ? <DropdownMenuItem onSelect={() => openDraftFromPlan(t.draftId)}>Open draft</DropdownMenuItem>
           : <DropdownMenuItem onSelect={() => editTicket(planId, t.id)}>Link draft...</DropdownMenuItem>}
-        <DropdownMenuItem variant="destructive" onSelect={() => deleteTickets(planId, ids)}>Delete{ids.length > 1 ? ` ${ids.length} tickets` : ''}...</DropdownMenuItem>
+        <DropdownMenuItem variant="destructive" onSelect={() => run('plan.tickets.delete', { ids })}>Delete{ids.length > 1 ? ` ${ids.length} tickets` : ''}...</DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
   );
@@ -522,8 +522,8 @@ export function Gantt({ ctx, options }) {
     } else if (ctrl && e.key.toLowerCase() === 'a') go(() => ui({ selection: rowIds }));
     else if (ctrl) return;
     else if ((e.key === 'Delete' || e.key === 'Backspace') && dep) go(() => { dispatch('plan.deps.remove', { planId, ...dep }); setDep(null); });
-    else if ((e.key === 'Delete' || e.key === 'Backspace') && sel.length) go(() => deleteTickets(planId, sel));
-    else if (e.key === 'Enter' && focus) go(() => editTicket(planId, focus));
+    else if ((e.key === 'Delete' || e.key === 'Backspace') && sel.length) go(() => run('plan.tickets.delete', { ids: sel }));
+    else if (e.key === 'Enter' && focus) go(() => run('plan.tickets.open', { value: focus }));
     else if ((e.key === 'ArrowUp' || e.key === 'ArrowDown') && e.shiftKey) {
       go(() => sel.length && sel.every((id) => ticketOf(id).parent === ticketOf(sel[0]).parent) && shiftRows(plan, sel, e.key === 'ArrowUp' ? -1 : 1));
     } else if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
@@ -539,9 +539,9 @@ export function Gantt({ ctx, options }) {
       const i = list.findIndex((d) => d.from === dep?.from && d.to === dep?.to);
       const d = list[i < 0 ? (e.shiftKey ? list.length - 1 : 0) : (i + (e.shiftKey ? list.length - 1 : 1)) % list.length];
       go(() => setDep({ from: d.from, to: d.to }));
-    } else if (keyIs('plan.today', e)) go(scrollToday); // §7k
-    else if (keyIs('plan.zoomIn', e)) go(() => zoomBy(-1));
-    else if (keyIs('plan.zoomOut', e)) go(() => zoomBy(1));
+    } else if (keyIs('plan.today', e)) go(() => run('plan.today')); // §7k
+    else if (keyIs('plan.zoomIn', e)) go(() => run('plan.zoomIn'));
+    else if (keyIs('plan.zoomOut', e)) go(() => run('plan.zoomOut'));
   };
   useEffect(() => {
     const onKey = (e) => keys.current(e);
@@ -549,6 +549,8 @@ export function Gantt({ ctx, options }) {
     el.addEventListener('keydown', onKey);
     return () => el.removeEventListener('keydown', onKey);
   }, []);
+  live.gantt = { today: scrollToday, zoomBy }; // plan.today, plan.zoomIn and plan.zoomOut run this render's (pool-plan.js)
+  useEffect(() => () => { live.gantt = null; }, []);
 
   const conflicts = plan.tickets.filter((t) => base.byId[t.id].conflict).length;
   const bodyH = L.height - L.headerH;
@@ -559,12 +561,10 @@ export function Gantt({ ctx, options }) {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col text-xs select-none">
-      <div className="flex h-9 shrink-0 items-center gap-1 px-2">
-        <ToggleGroup type="single" size="xs" aria-label="Zoom" value={options.zoom} onValueChange={(v) => v && setOptions({ zoom: v })}>
-          {ZOOMS.map(([v, name]) => <ToggleGroupItem key={v} value={v} aria-label={name} className="px-2" onMouseDown={keepFocus}>{name}</ToggleGroupItem>)}
-        </ToggleGroup>
+      <div className="flex h-9 shrink-0 items-center gap-1 px-2 [&_[data-face-label]]:text-xs">
+        <ToggleGroup label="Zoom" size="medium" items={scaleItems()} />
         <Tip title={withKey('Scroll to today', 'plan.today')}>
-          <Button variant="ghost" size="xs" onMouseDown={keepFocus} onClick={scrollToday}>Today</Button>
+          <Button variant="ghost" size="xs" onMouseDown={keepFocus} onClick={() => run('plan.today')}>Today</Button>
         </Tip>
         <DropdownMenu modal={false}>
           <Tip title="What the chart shows">
@@ -573,13 +573,12 @@ export function Gantt({ ctx, options }) {
             </DropdownMenuTrigger>
           </Tip>
           <DropdownMenuContent align="start" onCloseAutoFocus={refocusEditor}>
-            {SHOW.map(([k, name]) => (
-              <DropdownMenuCheckboxItem key={k} checked={!!options[k]} onSelect={(e) => e.preventDefault()} onCheckedChange={(v) => setOptions({ [k]: v })}>{name}</DropdownMenuCheckboxItem>
+            {GANTT_SHOW.map(([id, k, name]) => (
+              <DropdownMenuCheckboxItem key={id} checked={!!(options[k] ?? true)} onSelect={(e) => e.preventDefault()} onCheckedChange={() => run(`plan.show.${id}`)}>{name}</DropdownMenuCheckboxItem>
             ))}
-            <DropdownMenuCheckboxItem checked={showUnscheduled} onSelect={(e) => e.preventDefault()} onCheckedChange={(v) => setOptions({ showUnscheduled: v })}>Unscheduled tickets</DropdownMenuCheckboxItem>
             <DropdownMenuSeparator />
             <DropdownMenuCheckboxItem checked={options.weekLabels === 'number'} disabled={!cal.weekOne} onSelect={(e) => e.preventDefault()}
-              onCheckedChange={(v) => setOptions({ weekLabels: v ? 'number' : 'date' })}>Week numbers (week zoom)</DropdownMenuCheckboxItem>
+              onCheckedChange={() => run('plan.show.weekNumbers')}>Week numbers (week zoom)</DropdownMenuCheckboxItem>
             {!cal.weekOne && <DropdownMenuLabel className="font-normal">Set week 1 first in More plan actions {'>'} Calendar...</DropdownMenuLabel>}
           </DropdownMenuContent>
         </DropdownMenu>

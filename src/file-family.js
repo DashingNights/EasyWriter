@@ -3,6 +3,7 @@
 // one folder: drafts, plans, flowcharts; SPEC §3, §4).
 const path = require('path');
 const fs = require('fs/promises');
+const { createReadStream } = require('fs');
 const crypto = require('crypto');
 
 const ID_RE = /^[a-f0-9-]{36}$/;
@@ -15,9 +16,22 @@ function serialized(fn) {
   return run;
 }
 
+// Windows: a virus scanner, the indexer or OneDrive holding a file open fails a read or rename with EPERM / EBUSY (EACCES too,
+// on a rename) for a moment, so `fn` runs again up to six times.
+async function retryBusy(fn, codes = ['EPERM', 'EBUSY']) {
+  for (let i = 1; ; i++) {
+    try {
+      return await fn();
+    } catch (e) {
+      if (i === 6 || !codes.includes(e.code)) throw e;
+      await new Promise((r) => setTimeout(r, 50 * i));
+    }
+  }
+}
+
 async function readJson(file) {
   try {
-    return JSON.parse(await fs.readFile(file, 'utf8'));
+    return JSON.parse(await retryBusy(() => fs.readFile(file, 'utf8')));
   } catch (e) {
     if (e.code === 'ENOENT') return null;
     throw e;
@@ -34,18 +48,19 @@ async function writeFileAtomic(file, data) {
   } finally {
     await fh.close();
   }
-  // Windows: a virus scanner or the indexer holding `file` open fails the rename with EPERM / EBUSY / EACCES for a moment.
-  for (let i = 1; ; i++) {
-    try {
-      return await fs.rename(tmp, file);
-    } catch (e) {
-      if (i === 6 || !['EPERM', 'EBUSY', 'EACCES'].includes(e.code)) throw e;
-      await new Promise((r) => setTimeout(r, 50 * i));
-    }
-  }
+  return retryBusy(() => fs.rename(tmp, file), ['EPERM', 'EBUSY', 'EACCES']);
 }
 
 const writeJsonAtomic = (file, data) => writeFileAtomic(file, JSON.stringify(data));
+
+// Throws unless `file`'s sha512 (base64, as electron-builder and the release workflow write it) is `expected`. No hash fails too.
+async function verifySha512(file, expected) {
+  const name = path.basename(file);
+  if (!expected) throw new Error(`The release has no checksum for ${name}, so it was not installed.`);
+  const hash = crypto.createHash('sha512');
+  for await (const chunk of createReadStream(file)) hash.update(chunk);
+  if (hash.digest('base64') !== expected) throw new Error(`${name} is damaged (checksum mismatch), so it was not installed.`);
+}
 
 // Pictures and videos out of the records (SPEC §3): a base64 data URL anywhere in a saved record is written once to
 // `images/<sha256 of the bytes>.<type>` and the record keeps `data:<image|video>/<type>;sha256,<hex>` in its place. Loading puts the
@@ -198,4 +213,4 @@ function fileFamily(dir, { summary, keepPrevious = false, maxBytes, validate, si
   return { file, list, load, save, remove };
 }
 
-module.exports = { fileFamily, isPlainObject, readJson, serialized, setAside, writeFileAtomic, writeJsonAtomic, externalize, inline, IMAGE_NAME };
+module.exports = { fileFamily, isPlainObject, readJson, serialized, setAside, verifySha512, writeFileAtomic, writeJsonAtomic, externalize, inline, IMAGE_NAME };

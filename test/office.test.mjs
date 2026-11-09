@@ -6,7 +6,7 @@ import {
 } from '../src/office.mjs';
 import { THEME } from '../src/document/defaults.mjs';
 import { validate } from '../src/app/schema.mjs';
-import { PARA_ARGS, RUN_ARGS } from '../src/office.mjs';
+import { BORDER_STYLES, borderCss, PARA_ARGS, RUN_ARGS, SHADING_PATTERNS, shadingCss } from '../src/office.mjs';
 
 test('points convert to twips, half-points, eighths and EMU and back', () => {
   for (const pt of [0.5, 1, 8, 10.5, 12, 72]) { // sizes and border widths
@@ -98,4 +98,30 @@ test('the run and paragraph arguments take points, hex and theme colours, and re
   bad(PARA_ARGS, { lineSpacing: 1.5 });
   bad(PARA_ARGS, { list: { kind: 'number', level: 9 } });
   bad(PARA_ARGS, { spaceAfterPt: -1 });
+});
+
+test('borderCss draws every ST_Border style with a CSS line style (plan.md §1.8)', () => {
+  assert.equal(borderCss({ style: 'single', width: 0.5, color: '#156082' }), '0.5pt solid #156082');
+  assert.equal(borderCss({ style: 'thickThinSmallGap', width: 1.5, color: null }), '4.5pt double #000000');
+  assert.equal(borderCss({ style: 'double', width: 0.5, color: 'auto' }), '2.25pt double #000000');
+  assert.equal(borderCss({ style: 'thick', width: 1 }), '1pt solid #000000');
+  assert.match(borderCss({ style: 'dotDotDash', width: 1 }), / dashed /);
+  assert.match(borderCss({ style: 'threeDEngrave', width: 1 }), / groove /);
+  assert.match(borderCss({ style: 'apples', width: 12 }), / solid /); // art borders draw solid
+  assert.equal(borderCss({ style: 'nil' }), 'none');
+  assert.equal(borderCss(null), 'none');
+  for (const style of BORDER_STYLES) assert.match(borderCss({ style, width: 1 }), /^(none|[\d.]+pt (solid|double|dotted|dashed|groove|ridge|inset|outset) )/);
+});
+
+test('shadingCss mixes Word\'s percentage patterns over the fill and draws stripes as gradients', () => {
+  assert.equal(shadingCss({ val: 'pct15', color: 'auto', fill: 'auto' }), '#D9D9D9'); // 15% black over white: Word's 15% grey
+  assert.equal(shadingCss({ val: 'pct50', color: '#FF0000', fill: '#0000FF' }), '#800080');
+  assert.equal(shadingCss({ val: 'pct12', color: 'auto', fill: 'auto' }), '#DFDFDF'); // 12.5%
+  assert.equal(shadingCss({ val: 'clear', color: 'auto', fill: '#FFF2CC' }), '#FFF2CC');
+  assert.equal(shadingCss({ val: 'clear', color: 'auto', fill: 'auto' }), null);
+  assert.equal(shadingCss({ val: 'solid', color: 'auto', fill: '#FFFFFF' }), '#000000');
+  assert.equal(shadingCss({ val: 'nil' }), null);
+  assert.match(shadingCss({ val: 'thinDiagCross', color: '#FF0000', fill: 'auto' }), /^repeating-linear-gradient\(45deg, #FF0000 0 1px.*-45deg.*, #FFFFFF$/);
+  assert.equal(SHADING_PATTERNS.length, 38); // the dialog's 37 styles and nil
+  for (const val of SHADING_PATTERNS) assert.ok(val === 'nil' || val === 'clear' || shadingCss({ val, color: 'auto', fill: 'auto' }), val);
 });

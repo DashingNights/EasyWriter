@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { boxBetween, groupBox, marqueeHits, parseBoard, smartArtboard } from '../src/whiteboard.js';
+import { boxBetween, groupBox, keptSpan, marqueeHits, parseBoard, smartArtboard, validFont } from '../src/whiteboard.js';
 
 const canvas = (extra = {}) => ({ id: 'c', type: 'canvas', x: 10, y: 20, w: 400, h: 225, aw: 800, ah: 450, bg: 'post', items: [], ...extra });
 const parse = (items) => parseBoard(JSON.stringify({ height: 400, items })).items;
@@ -50,6 +50,25 @@ test('flowchart items (§6d): a connector with three labels, a labelled shape, r
   assert.equal('flow' in items[5], false);
 });
 
+test('font: text items and shape labels keep a valid family; a bad one, or one on another type, is dropped', () => {
+  const shape = { type: 'shape', shape: 'rect', x: 0, y: 0, w: 10, h: 10, color: '#fff', width: 1, opacity: 1, fill: 'none', fillColor: '#fff' };
+  const stroke = { id: 's', type: 'stroke', x: 0, y: 0, w: 10, h: 10, vw: 10, vh: 10, d: 'M0 0', color: '#fff', width: 2, opacity: 1, font: 'Georgia' };
+  const items = parse([
+    { id: 't', type: 'text', html: 'a', x: 0, y: 0, w: 50, font: 'Times New Roman' },
+    { id: 'u', type: 'text', html: 'b', x: 0, y: 0, w: 50, font: 'x"; color: red' },
+    { id: 'v', type: 'text', html: 'c', x: 0, y: 0, w: 50, font: '' },
+    { ...shape, id: 'sh', html: 'Hi', font: 'Georgia' },
+    { ...shape, id: 'sh2', font: 7 },
+    stroke,
+    canvas({ id: 'cv', items: [{ id: 'in', type: 'text', html: 'd', x: 0, y: 0, w: 50, font: 'Courier' }, { ...stroke, id: 'in2' }] }),
+  ]);
+  const font = (id, list = items) => list.find((i) => i.id === id).font;
+  assert.deepEqual(['t', 'u', 'v', 'sh', 'sh2', 's'].map((id) => font(id)), ['Times New Roman', undefined, undefined, 'Georgia', undefined, undefined]);
+  assert.deepEqual(['in', 'in2'].map((id) => font(id, items.at(-1).items)), ['Courier', undefined]); // a canvas's own items too
+  assert.ok(!['u', 'v', 'sh2', 's'].some((id) => 'font' in items.find((i) => i.id === id)));
+  assert.deepEqual([validFont('Arial Black'), validFont('a\\b'), validFont('   '), validFont(null), validFont('x'.repeat(101))], [true, false, false, false, false]);
+});
+
 test('canvas items: a valid frame is kept, an invalid or missing one becomes null', () => {
   const frames = parse([canvas({ frame: { x: 32, y: 0, w: 800, h: 450 } }), canvas({ frame: { x: 0, y: 0, w: 0, h: 450 } }), canvas()]).map((i) => i.frame);
   assert.deepEqual(frames, [{ x: 32, y: 0, w: 800, h: 450 }, null, null]);
@@ -64,23 +83,47 @@ test('smart artboard: content inside the frame adds nothing', () => {
   assert.deepEqual(smartArtboard(FRAME, null, null), same);
 });
 
-test('smart artboard: grows right / bottom to the content plus 32 px, no shift', () => {
-  assert.deepEqual(smartArtboard(FRAME, null, { x: 0, y: 0, w: 2600, h: 1550 }), { w: 2632, h: 1582, dx: 0, dy: 0, frame: FRAME });
+test('smart artboard: grows right / bottom to exactly the content edge, no shift', () => {
+  assert.deepEqual(smartArtboard(FRAME, null, { x: 0, y: 0, w: 2600, h: 1550 }), { w: 2600, h: 1550, dx: 0, dy: 0, frame: FRAME });
+});
+
+test('smart artboard: content edges round to whole px, so less than half a px past the frame adds nothing', () => {
+  const same = { w: 2500, h: 1250, dx: 0, dy: 0, frame: FRAME };
+  assert.deepEqual(smartArtboard(FRAME, null, { x: -0.4, y: -0.4, w: 2500.8, h: 1250.8 }), same);
+  assert.deepEqual(smartArtboard(FRAME, null, { x: 0, y: 0, w: 2500.6, h: 1250.6 }), { w: 2501, h: 1251, dx: 0, dy: 0, frame: FRAME });
+  assert.deepEqual(smartArtboard(FRAME, null, { x: -0.6, y: 0, w: 10, h: 10 }), { w: 2501, h: 1250, dx: 1, dy: 0, frame: { ...FRAME, x: 1 } });
+  assert.ok(!Object.is(smartArtboard(FRAME, null, { x: -0.4, y: -0.4, w: 10, h: 10 }).dx, -0)); // never -0
 });
 
 test('smart artboard: grows left / top, items and frame shift to start at 0,0', () => {
-  assert.deepEqual(smartArtboard(FRAME, null, { x: -300, y: -50, w: 2800, h: 1300 }), { w: 2832, h: 1332, dx: 332, dy: 82, frame: { x: 332, y: 82, w: 2500, h: 1250 } });
+  assert.deepEqual(smartArtboard(FRAME, null, { x: -300, y: -50, w: 2800, h: 1300 }), { w: 2800, h: 1300, dx: 300, dy: 50, frame: { x: 300, y: 50, w: 2500, h: 1250 } });
 });
 
 test('smart artboard: shrinks back to the frame (and shifts back) when the content is inside again', () => {
-  const grown = { x: 332, y: 82, w: 2500, h: 1250 };
-  assert.deepEqual(smartArtboard(grown, null, { x: 332, y: 82, w: 2500, h: 1250 }), { w: 2500, h: 1250, dx: -332, dy: -82, frame: FRAME });
+  const grown = { x: 300, y: 50, w: 2500, h: 1250 };
+  assert.deepEqual(smartArtboard(grown, null, { x: 300, y: 50, w: 2500, h: 1250 }), { w: 2500, h: 1250, dx: -300, dy: -50, frame: FRAME });
+});
+
+test('kept span: a document canvas never narrows below its floor, its edges staying as near the left edge as they can', () => {
+  assert.deepEqual(keptSpan(300, 1550, 1850), { x: 0, w: 1850 }); // the left edge stays where it was (screenshot B)
+  assert.deepEqual(keptSpan(850, 1100, 1850), { x: 100, w: 1850 }); // as near 0 as holding 850…1950 allows
+  assert.deepEqual(keptSpan(-200, 300, 1850), { x: -200, w: 1850 }); // content past the left edge keeps its place
+  assert.deepEqual(keptSpan(40, 2000, 1850), { x: 40, w: 2000 }); // wide enough: unchanged
+  assert.deepEqual(keptSpan(40, 300, 0), { x: 40, w: 300 }); // no floor (the library editor)
+});
+
+test('smart artboard with a floor: the frame widens, unbound, instead of the artboard narrowing', () => {
+  const frame = { x: 850, y: 0, w: 1000, h: 450, item: 'a' };
+  // Screenshot B: the shape that held the left edge moved right, inside 300…1850; the left edge stays at 0.
+  assert.deepEqual(smartArtboard(frame, null, { x: 300, y: 40, w: 160, h: 90 }, 1850), { w: 1850, h: 450, dx: 0, dy: 0, frame: { x: 0, y: 0, w: 1850, h: 450 } });
+  assert.deepEqual(smartArtboard(frame, null, { x: 300, y: 40, w: 160, h: 90 }), { w: 1550, h: 450, dx: -300, dy: 0, frame: { ...frame, x: 550 } }); // no floor
+  assert.deepEqual(smartArtboard(FRAME, null, { x: -100, y: 0, w: 10, h: 10 }, 1000), { w: 2600, h: 1250, dx: 100, dy: 0, frame: { ...FRAME, x: 100 } }); // wide enough
 });
 
 test('smart artboard: frame null (old drafts) = the whole current artboard', () => {
   const whole = { x: 0, y: 0, w: 800, h: 450 };
   assert.deepEqual(smartArtboard(null, { w: 800, h: 450 }, null), { w: 800, h: 450, dx: 0, dy: 0, frame: whole });
-  assert.deepEqual(smartArtboard(null, { w: 800, h: 450 }, { x: 0, y: 0, w: 900, h: 100 }), { w: 932, h: 450, dx: 0, dy: 0, frame: whole });
+  assert.deepEqual(smartArtboard(null, { w: 800, h: 450 }, { x: 0, y: 0, w: 900, h: 100 }), { w: 900, h: 450, dx: 0, dy: 0, frame: whole });
 });
 
 const BOXES = [{ id: 'a', x: 0, y: 0, w: 100, h: 50 }, { id: 'b', x: 200, y: 0, w: 100, h: 50 }, { id: 'c', x: 0, y: 200, w: 50, h: 50 }];

@@ -1,0 +1,52 @@
+[package]
+name = "ew-doc-edit"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "EasyWriter engine: session, selection, undo, the command registry (every action is a command), Word's command catalog, file I/O dispatch"
+
+[lints]
+workspace = true
+
+[features]
+# Front-end producer tests need to simulate a globally exhausted IME revision allocator. It only
+# ever makes receipt classification fail closed. Never enable this for a production build; the
+# UI's dev-dependencies enable it for its tests.
+test-support = []
+
+[dependencies]
+ew-geom = { workspace = true, features = ["image"] }
+ew-doc = { workspace = true }
+ew-fonts = { workspace = true }
+ew-doc-layout = { workspace = true }
+ew-scene = { workspace = true }
+ew-proof = { workspace = true }
+ew-docx = { workspace = true }
+ew-docbin = { workspace = true }
+ew-pdf = { workspace = true }
+ew-formats = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+log = { workspace = true }
+chrono = { workspace = true }
+regex = { workspace = true }
+regex-automata = { workspace = true }
+image = { workspace = true }
+zeroize = { workspace = true }
+
+[target.'cfg(all(target_arch = "wasm32", target_os = "unknown"))'.dependencies]
+# The browser clock for `now_iso` (`SystemTime::now()` panics on wasm32-unknown-unknown).
+js-sys = "0.3"
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+getrandom = { workspace = true }
+
+[target.'cfg(unix)'.dependencies]
+# O_NONBLOCK, so a path swapped for a named pipe can't block `open` (#3666).
+libc = { workspace = true }
+
+[dev-dependencies]
+encoding_rs = { workspace = true }
+zip = { workspace = true }
+cfb = { workspace = true }

@@ -1,0 +1,65 @@
+{
+  "type": "doc",
+  "content": [
+    {
+      "type": "paragraph",
+      "attrs": {
+        "suggest": {
+          "ins": {
+            "id": "s1",
+            "g": "g1",
+            "by": "Assistant",
+            "at": 1793500000000,
+            "n": 1,
+            "sig": "3f9c1a",
+            "old": [
+              { "type": "paragraph", "content": [{ "type": "text", "text": "The first version of this line." }] }
+            ]
+          }
+        }
+      },
+      "content": [{ "type": "text", "text": "The assistant rewritten line." }]
+    },
+    {
+      "type": "paragraph",
+      "attrs": {
+        "suggest": {
+          "del": [
+            {
+              "id": "s2",
+              "g": "g1",
+              "by": "Assistant",
+              "at": 1793500000000,
+              "side": "after",
+              "up": 0,
+              "old": [
+                { "type": "paragraph", "content": [{ "type": "text", "text": "A line the assistant removed." }] }
+              ]
+            }
+          ]
+        }
+      },
+      "content": [{ "type": "text", "text": "Kept, with a line taken out after it." }]
+    },
+    {
+      "type": "paragraph",
+      "attrs": {
+        "suggest": {
+          "ins": {
+            "id": "s3",
+            "g": "g2",
+            "by": "Assistant",
+            "at": 1793500100000,
+            "n": 1,
+            "sig": "7d02be",
+            "old": []
+          }
+        }
+      },
+      "content": [
+        { "type": "text", "text": "A whole new paragraph, " },
+        { "type": "text", "text": "with bold", "marks": [{ "type": "bold" }] }
+      ]
+    }
+  ]
+}

@@ -1,4 +1,4 @@
-// The forum integration's renderer contributions (docs/plans/integrations.md Registry), listed by integrations/ui.js. Hooks
+// The forum integration's renderer contributions (docs/wiki/integrations.md Registry), listed by integrations/ui.js. Hooks
 // call through the actions namespace, never a bare imported binding: this module can be evaluated inside the
 // app/actions.js cycle, before forum/actions.js has run. The same goes for the app/* imports below: read only at render or call.
 import { useEffect, useRef, useState } from 'react';
@@ -87,7 +87,7 @@ function DraftRowActions({ d }) {
   return a && <IconButton label={a.label} data-agent-risk={a.risk} onClick={a.run}><a.Icon /></IconButton>;
 }
 
-/** The same action in the sidebar's right-click menu of a draft (docs/plans/sidebar-menu.md decision 4): `pick` runs it once
+/** The same action in the sidebar's right-click menu of a draft (docs/wiki/sidebar-menu.md decision 4): `pick` runs it once
  * the menu has closed. */
 function DraftMenuItems({ d, pick }) {
   const a = pushAction(d);

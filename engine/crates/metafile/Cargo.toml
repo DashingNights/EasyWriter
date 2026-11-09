@@ -1,0 +1,25 @@
+# EasyWriter's crates/metafile with its package fields, dependency versions and lints written out, so the metafile binding
+# (src/vendor/wordcraft-metafile/binding) builds it on its own without the workspace's kurbo features.
+[package]
+name = "ew-metafile"
+version = "0.12.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+rust-version = "1.95"
+description = "EasyWriter metafiles: parses Windows WMF and EMF records into a neutral vector model (paths and bitmaps)"
+publish = false
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+cognitive_complexity = "deny"
+wildcard_imports = "deny"
+dbg_macro = "warn"
+todo = "warn"
+too_many_arguments = "deny"
+type_complexity = "allow"
+
+[dependencies]
+kurbo = "0.13"
+thiserror = "2"

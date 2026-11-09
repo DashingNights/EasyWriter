@@ -9,7 +9,12 @@ import { parseMermaid, toMermaid } from '../flow/mermaid.mjs';
 import { defaultMeasure, moveItem } from '../flow/model.mjs';
 import { resolveConnectors } from '../flow/route.mjs';
 import { flowPreset, rotBox, rotOf } from '../flow/shapes.mjs';
-import { contentWidth, diagramPaste, groupBox, rasterizeWhiteboard, setConnTool, setShapeTool } from '../whiteboard.js';
+import { boardBeforeCaret, columnWidth, diagramPaste, exportDensity, groupBox, rasterizeWhiteboard, setConnTool, setShapeTool } from '../whiteboard.js';
+import { engineHost } from '../engine/client.js';
+import { adopt, isCanvas, modelBytes, unreadable } from '../engine/model/form.mjs';
+import { boardPicture } from '../export.js';
+import { base64 } from '../tooling/base64.mjs';
+import { areaOpens } from '../tooling/surface.js';
 import { afterNodeSel, confirmDialog } from './actions.js';
 import { can } from './gates.mjs';
 import { getState, setState } from './store.js';
@@ -188,34 +193,50 @@ export async function duplicateFlow(id) {
 }
 
 /** Delete (§3.9): a confirm naming where it is used; then the open draft's synced canvases of it become copies (one undo
- * step; undone, they show "missing") and the file goes to the trash. Other drafts are not rewritten: their canvases keep
- * their last picture and show "missing". `ask: false` skips the confirm (flow.library.delete: the agent card asked).
- * → whether it was removed. */
+ * step; undone, they show "missing") and the file goes to the trash. Other DOM drafts are not rewritten: their canvases keep
+ * their last picture and show "missing". Other canvas drafts' copies become plain copies of their last picture, rewritten in
+ * the engine's helper worker and saved (unlinkElsewhere). `ask: false` skips the confirm (flow.library.delete: the agent card
+ * asked). → whether it was removed. */
 export async function removeFlow(id, { ask = true } = {}) {
   const r = await loadFlow(id);
   if (!r) return false;
-  const ed = state.editor;
-  const here = ed ? flowRefs(ed.getJSON()).filter((ref) => ref.flowId === id).length : 0;
-  if (ask) {
-    let others = 0;
-    for (const d of state.drafts) {
-      if (d.id === state.draft?.id) continue;
-      const draft = await api.drafts.load(d.id).catch(() => null);
-      if (draft?.doc && flowRefs(draft.doc).some((ref) => ref.flowId === id)) others++;
-    }
-    const s = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
-    const used = [here && `this draft (${s(here, 'place')})`, others && s(others, 'other draft')].filter(Boolean).join(' and ');
-    const effect = [here && 'here the canvases become independent copies', others && 'elsewhere they keep their last picture and show "missing"']
-      .filter(Boolean).join('; ');
-    const description = `${used ? `Used in ${used}: ${effect}.` : 'It is not used in any draft.'} The file is moved to the flowcharts trash folder.`;
-    if (!(await confirmDialog({ title: `Delete "${r.title}"?`, description, confirmText: 'Delete', destructive: true }))) return false;
+  const session = openCanvasSession();
+  if (session === false) {
+    toast.error(STILL_OPENING);
+    return false;
   }
-  if (ed) {
-    const { tr } = ed.state;
-    ed.state.doc.descendants((node, pos) => {
-      if (node.type.name === 'canvas' && node.attrs.flow?.id === id) tr.setNodeMarkup(pos, undefined, { ...node.attrs, ...structuredClone(r.board), flow: null });
-    });
-    if (tr.docChanged) ed.view.dispatch(tr);
+  // The drafts holding it as a synced copy, but the open one: the drafts list's marks, which main.js reads from each record's
+  // doc or engine model (src/draft-marks.js), so no draft is loaded to count them.
+  const others = state.drafts.filter((d) => d.id !== state.draft?.id && d.flows?.includes(id)).map((d) => d.id);
+  try {
+    const ed = session ? null : state.editor;
+    // On a canvas draft its boxes, each of which keeps its own data: the engine's box shows that, not the library's board.
+    const linked = session ? (await boxList(session)).boxes.filter((b) => b.kind === 'canvas' && dataOf(b.data)?.flow?.id === id) : [];
+    const here = session ? linked.length : ed ? flowRefs(ed.getJSON()).filter((ref) => ref.flowId === id).length : 0;
+    if (ask) {
+      const s = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
+      const used = [here && `this draft (${s(here, 'place')})`, others.length && s(others.length, 'other draft')].filter(Boolean).join(' and ');
+      const effect = [here && 'here the canvases become independent copies', others.length && 'elsewhere they keep their last picture']
+        .filter(Boolean).join('; ');
+      const description = `${used ? `Used in ${used}: ${effect}.` : 'It is not used in any draft.'} The file is moved to the flowcharts trash folder.`;
+      if (!(await confirmDialog({ title: `Delete "${r.title}"?`, description, confirmText: 'Delete', destructive: true }))) return false;
+    }
+    if (linked.length) {
+      // One undo step, as the DOM editor's single transaction.
+      const done = await session.execMany(linked.map((b) => ['box.set', { id: b.id, data: JSON.stringify({ ...dataOf(b.data), flow: null }) }]));
+      if (!done?.ok) throw new Error(done?.error ?? 'the engine refused it');
+    } else if (ed) {
+      const { tr } = ed.state;
+      ed.state.doc.descendants((node, pos) => {
+        if (node.type.name === 'canvas' && node.attrs.flow?.id === id) tr.setNodeMarkup(pos, undefined, { ...node.attrs, ...structuredClone(r.board), flow: null });
+      });
+      if (tr.docChanged) ed.view.dispatch(tr);
+    }
+  } catch (e) {
+    toast.error(`Could not delete the flowchart: ${e.message || e}`);
+    return false;
+  } finally {
+    session?.release();
   }
   clearTimeout(timers.get(id));
   timers.delete(id);
@@ -233,7 +254,113 @@ export async function removeFlow(id, { ask = true } = {}) {
   summaries = summaries.filter((x) => x.id !== id);
   notify(id);
   if (state.view.type === 'flows' && state.view.flowId === id) openFlows(null);
+  await unlinkElsewhere(others, id);
   return true;
+}
+
+// --- boxes: EasyWriter's own objects in canvas drafts (engine-canvas-read, docs/plans/engine/stage2b.md decision 8) ---
+
+const STILL_OPENING = 'The draft is still opening in the canvas engine. Try again once it shows.';
+const PT = 0.75; // points per CSS px
+const FALLBACK_DPI = 300; // as the box edit mode's commits (src/document/canvas/boxes.jsx)
+
+/** A watcher of the open draft's engine session while the canvas page area shows it (release it after), false while the page area
+ * has not opened it yet, or null for a draft in the DOM editor. The session, not the hidden DOM editor under it, holds the text;
+ * the page area holds it open (engine-session-release). */
+export function openCanvasSession() {
+  const s = getState();
+  if (!areaOpens(s)) return null;
+  return engineHost().ids().includes(s.draft.id) ? engineHost().watch(s.draft.id) : false;
+}
+
+/** Canvas draft session `session`'s boxes → {boxes: [{id, kind, data (JSON text), w, h}], column: the caret's text width in pt}. */
+export const boxList = async (session) => (await session.query('box.list', {}))?.value ?? { boxes: [], column: 468 };
+
+const dataOf = (data) => {
+  try {
+    return JSON.parse(data);
+  } catch {
+    return null; // data its own code cannot read either
+  }
+};
+
+/** The boxes of engine model `model` (a record's, parsed) that show flowchart `flowId` as a synced copy → [{id, data}], `data`
+ * the copy's own data without the link. The walk is draft-marks.js engineMarks'. */
+function linkedIn(model, flowId) {
+  const out = [];
+  const walk = (v) => {
+    if (Array.isArray(v)) {
+      for (const x of v) if (x && typeof x === 'object') walk(x);
+      return;
+    }
+    for (const k in v) {
+      const x = v[k];
+      if (!x || typeof x !== 'object' || k === 'runs' || k === 'props') continue;
+      if (k === 'box' && x.kind === 'canvas' && typeof x.data === 'string') {
+        const a = dataOf(x.data);
+        if (a?.flow?.id === flowId && Number.isInteger(v.id)) out.push({ id: v.id, data: JSON.stringify({ ...a, flow: null }) });
+      } else walk(x);
+    }
+  };
+  walk(model);
+  return out;
+}
+
+/** Canvas drafts `ids` (not the open one) that hold flowchart `flowId` as synced copies: in each the copies become plain copies,
+ * `box.set` run on its model in the engine's helper worker, and the record is saved. A draft that cannot be read, or that the
+ * background window holds, keeps its copies, which then keep their last picture. */
+async function unlinkElsewhere(ids, flowId) {
+  for (const id of ids) {
+    if (state.worker?.draftId === id) continue;
+    try {
+      const record = await api.drafts.load(id);
+      if (!isCanvas(record) || unreadable(record.engine)) continue;
+      const model = typeof record.engine.model === 'string' ? JSON.parse(record.engine.model) : record.engine.model;
+      const steps = linkedIn(model, flowId).map(({ id: box, data }) => ['box.set', { id: box, data }]);
+      if (!steps.length) continue;
+      const bytes = await engineHost().convert(modelBytes(record.engine), 'engine', steps);
+      const { updated, marks } = await api.drafts.save(adopt(record, bytes));
+      setState({ drafts: state.drafts.map((d) => (d.id === id ? { ...d, updated, ...marks } : d)).sort((a, b) => b.updated - a.updated) });
+    } catch (e) {
+      console.warn(`The canvas draft ${id} keeps its synced copies of a deleted flowchart:`, e);
+    }
+  }
+}
+
+/** EasyWriter's object `kind` ('canvas' or 'planChart') as a box at the caret of canvas draft session `session`, one undo step:
+ * `attrs(column)` gives its attrs for the text column, `column` CSS px wide, and a picture of it is its fallback. A canvas then
+ * opens in box edit mode, in the Board's tool `mode` when given. → the new box's id, or null after a toast saying why not. */
+export async function insertBox(session, kind, attrs, { mode = null } = {}) {
+  const { boxes, column } = await boxList(session);
+  const a = attrs(Math.round(column / PT));
+  try {
+    // A canvas at 300 dpi of the box's width, as the box edit mode's commits; a plan chart at the column's width.
+    const width = kind === 'canvas' ? (column * FALLBACK_DPI) / 72 / exportDensity('file') : Math.round(column / PT);
+    const { blob } = await boardPicture({ ...a, kind }, width, 'light', 1);
+    const fallback = `data:image/png;base64,${base64(new Uint8Array(await blob.arrayBuffer()))}`;
+    const r = await session.exec('box.insert', { kind, data: JSON.stringify(a), fallback });
+    if (!r?.ok) throw new Error(r?.error ?? 'the engine refused it');
+  } catch (e) {
+    toast.error(`Could not insert the ${kind === 'canvas' ? 'canvas' : 'plan chart'}: ${e.message || e}`);
+    return null;
+  }
+  const had = new Set(boxes.map((b) => b.id));
+  const id = (await boxList(session)).boxes.find((b) => !had.has(b.id))?.id ?? null;
+  // Opened for editing once the page area draws it, as a new canvas opens in the DOM editor.
+  if (id != null && kind === 'canvas') (await import('../document/canvas/boxes.jsx')).openBox(id, { mode });
+  return id;
+}
+
+/** Insert > Canvas (and Shapes > New Drawing Canvas) on a canvas draft: an empty canvas across the text column, as canvas.js
+ * insertCanvas makes one (450 px high, shown 1:1), edited in place. → the box's id or null. */
+export async function insertCanvasBox() {
+  const session = openCanvasSession();
+  if (!session) return void toast.error(STILL_OPENING);
+  try {
+    return await insertBox(session, 'canvas', (w) => ({ w, h: 450, dw: w, frame: { x: 0, y: 0, w, h: 450 }, bg: 'post', items: [], flow: null, source: null }));
+  } finally {
+    session.release();
+  }
 }
 
 // --- the library editor's undo stack (§3.9: a restore is a new rev that counts as the restored state) ---
@@ -306,16 +433,32 @@ export async function insertFlowchartDialog(flowId) {
 export async function insertFlowchart({ flowId = null, mode = 'synced' }) {
   if (!can('view.editor', state)) await closeWorkspace();
   await frames(2); // the dialog and the workspace return the focus first: the canvas being edited keeps it
+  const session = openCanvasSession();
+  if (session === false) return void toast.error(STILL_OPENING);
   const ed = state.editor;
-  if (!ed) return;
+  if (!ed && !session) return;
   let r = flowId ? await loadFlow(flowId) : null;
-  if (flowId && !r) return void toast.error('That flowchart is missing from the library.');
+  if (flowId && !r) {
+    session?.release();
+    return void toast.error('That flowchart is missing from the library.');
+  }
   if (!r && mode === 'synced') r = createFlow({ threadUrl: draftThread() });
   const board = r ? structuredClone(r.board) : { ...FLOW_SIZE };
   const flow = r && mode === 'synced' ? { id: r.id, rev: r.rev } : null;
-  afterNodeSel(ed.chain()).insertCanvas({ ...board, dw: Math.min(board.w, contentWidth(ed.view)), flow, source: r?.source ?? null }).run();
-  const $after = ed.state.doc.resolve(ed.state.selection.$from.before(1)); // insertBoard put the caret in the block after it
-  openCanvasEditor(ed, $after.pos - $after.nodeBefore.nodeSize);
+  if (session) {
+    // A canvas draft: a canvas box across the text column (box.insert's width), the flowchart's own layout scaled to fit.
+    try {
+      await insertBox(session, 'canvas', (dw) => ({ frame: { x: 0, y: 0, w: board.w, h: board.h }, bg: 'post', items: [], ...board, dw, flow,
+        source: r?.source ?? null }), { mode: flowId ? null : 'shape' });
+    } finally {
+      session.release();
+    }
+    applyFlowPreset();
+    return;
+  }
+  // Shown across the text column as every new canvas is (canvas.js insertCanvas), the flowchart's own layout scaled to fit.
+  afterNodeSel(ed.chain()).insertCanvas({ ...board, dw: columnWidth(ed.view), flow, source: r?.source ?? null }).run();
+  openCanvasEditor(ed, boardBeforeCaret(ed.state)); // insertBoard put the caret in the block after it
   applyFlowPreset();
   if (!flowId) canvasEditor.get()?.board.setMode('shape');
 }
@@ -369,7 +512,8 @@ function keepSource(board, source) {
   schedule(r.id);
 }
 
-// Import diagram without a board: a new canvas holding the diagram after the selection, edited in place (one undo step).
+// Import diagram without a board: a new canvas holding the diagram after the selection, shown across the text column (the diagram
+// scaled to fit, as insertFlowchart), edited in place (one undo step).
 async function insertDiagram({ text, dir }, source) {
   if (!can('view.editor', state)) return;
   await frames(2); // the dialog returns the focus first: the canvas being edited keeps it
@@ -378,9 +522,8 @@ async function insertDiagram({ text, dir }, source) {
   if (!r || r.error) return;
   const [w, h] = [r.w + 2 * MARGIN, r.h + 2 * MARGIN];
   const items = r.items.map((i) => moveItem(i, MARGIN, MARGIN));
-  afterNodeSel(ed.chain()).insertCanvas({ w, h, bg: 'post', items, source, dw: Math.min(w, contentWidth(ed.view)) }).run();
-  const $after = ed.state.doc.resolve(ed.state.selection.$from.before(1)); // insertBoard put the caret in the block after it
-  openCanvasEditor(ed, $after.pos - $after.nodeBefore.nodeSize);
+  afterNodeSel(ed.chain()).insertCanvas({ w, h, bg: 'post', items, source, dw: columnWidth(ed.view) }).run();
+  openCanvasEditor(ed, boardBeforeCaret(ed.state)); // insertBoard put the caret in the block after it
 }
 
 /** Import diagram… (tool search; Mermaid text pasted onto a board offers it, prefilled): the dialog, then the diagram onto
@@ -447,12 +590,13 @@ export function copyMermaid(board) {
   navigator.clipboard.writeText(text).then(() => toast('Copied as Mermaid.', notes.length ? { description: notes.join(' ') } : {}), (e) => toast.error(String(e)));
 }
 
-/** Copy as PNG (tool search): the whole board as a picture on the clipboard, at twice its size. */
+/** Copy as PNG (tool search): the whole board as a picture on the clipboard, at its size times the clipboard's export density. */
 export async function copyPng(board) {
   board.finishEdit();
   const { w, h } = board.size();
   try {
-    const { blob } = await rasterizeWhiteboard({ height: h, bg: board.bg, items: board.items }, { width: w, theme: state.settings.theme, scale: 2 });
+    const scale = exportDensity('clipboard');
+    const { blob } = await rasterizeWhiteboard({ height: h, bg: board.bg, items: board.items }, { width: w, theme: state.settings.theme, scale });
     await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
     toast('Copied as PNG.');
   } catch (e) {

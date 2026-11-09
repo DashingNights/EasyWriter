@@ -146,7 +146,7 @@ export function blockAttachment(kind, { path, type, attrs = {}, mermaid = '', fl
 /** The display text of `parts`: an attachment as its label in brackets. */
 export const partsText = (parts) => parts.map((p) => (typeof p === 'string' ? p : `[${p.label}]`)).join('');
 
-/** What the model gets for a user message (wave 1c: the request last, where a small model looks for it): each attachment as a
+/** What the model gets for a user message (the request last): each attachment as a
  * labelled block, then `pictures` (OpenAI content parts: a caption and its picture each, assistant.js), then `note` (where it came
  * from), then "Request: " and the user's words: a pill among them as "[label]" ("Request: Make [Canvas] bigger", wave 2), the
  * pills before the first word left out (the auto-attached selection; the situation note's "Selected:" line names it); a message of

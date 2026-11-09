@@ -1,0 +1,57 @@
+{
+  "type": "doc",
+  "content": [
+    {
+      "type": "paragraph",
+      "content": [{ "type": "text", "text": "A canvas:" }]
+    },
+    {
+      "type": "canvas",
+      "attrs": {
+        "w": 400,
+        "h": 140,
+        "dw": 400,
+        "frame": null,
+        "bg": "post",
+        "items": [
+          { "type": "shape", "id": "a", "shape": "rect", "x": 20, "y": 20, "w": 120, "h": 80, "fill": "solid", "fillColor": "#4472C4", "color": "#1F3864", "width": 2 }
+        ],
+        "flow": null,
+        "source": null
+      }
+    },
+    {
+      "type": "canvas",
+      "attrs": {
+        "w": 300,
+        "h": 200,
+        "dw": 300,
+        "frame": null,
+        "bg": "post",
+        "items": [],
+        "flow": { "id": "flow1", "rev": 3 },
+        "source": null
+      }
+    },
+    {
+      "type": "planChart",
+      "attrs": { "id": "p1", "planId": null, "view": "kanban", "options": {}, "frozen": null, "dw": 600 }
+    },
+    {
+      "type": "media",
+      "attrs": { "src": "data:video/mp4;base64,AAAAIGZ0eXBpc29tAAACAGlzb21pc28y", "name": "clip.mp4", "dw": 360 }
+    },
+    {
+      "type": "media",
+      "attrs": { "src": "data:image/gif;base64,R0lGODlhAQABAAAAACw=", "name": "wave.gif", "dw": null }
+    },
+    {
+      "type": "media",
+      "attrs": { "src": "https://daf.staffs.ac.uk/uploads/monthly_2026_10/photo.jpg", "name": "photo.jpg", "dw": null }
+    },
+    {
+      "type": "paragraph",
+      "content": [{ "type": "text", "text": "And text after the objects." }]
+    }
+  ]
+}

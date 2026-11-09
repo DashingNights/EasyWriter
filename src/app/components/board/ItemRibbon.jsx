@@ -1,29 +1,29 @@
 import { useLayoutEffect, useRef } from 'react';
-import { AlignCenter, AlignLeft, AlignRight, ArrowLeftRight, Bold, Captions, Crop, MoveHorizontal, Palette, RouteOff, Scaling } from 'lucide-react';
+import { ArrowLeftRight, Baseline, Captions, Crop, MoveHorizontal, PaintBucket, Palette, RouteOff, Scaling, UnfoldVertical } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { turns } from '../../../flow/shapes.mjs';
-import { fillable, NOTE_COLORS } from '../../../whiteboard.js';
+import { ColorPick } from '../../../tooling/kit/ColorPick.jsx';
+import { run } from '../../../tooling/registry.js';
+import { fillable, TEXT_BACKGROUNDS } from '../../../whiteboard.js';
 import { IconButton, Tip } from '../Tip.jsx';
 import {
-  CHROME, ColorSwatch, ConnectorControls, FillSelect, keepFocus, LabelControls, LabelsPanel, OptionSelect, PopoverButton, PresetRow, RotateControls,
-  ShapePicker, SizeSelect, StrokeControls, useBoard, useSnapshot,
+  ALIGNS, BOLD, BoardColor, BoardFont, CHROME, ConnectorControls, FillSelect, keepFocus, LabelControls, LabelsPanel, PopoverButton, PresetRow, refocus,
+  RotateControls, ShapePicker, SizeSelect, StrokeControls, Toggles, useBoard, useSnapshot,
 } from './controls.jsx';
 import { placeRibbon } from './place.mjs';
 
-const ALIGNS = [['left', 'Align left', AlignLeft], ['center', 'Align centre', AlignCenter], ['right', 'Align right', AlignRight]];
 const FIRST = 17; // px from the ribbon's left edge to the centre of its first control (border, p-1, half a size-8)
 const HANDLES = ':scope > .wb-sel > :is(.wb-handle, .wb-rot, .wb-tip, .wb-qc, .wb-end, .wb-mid, .wb-wp)';
 const grow = (r, d) => ({ left: r.left - d, top: r.top - d, right: r.right + d, bottom: r.bottom + d });
 
 /** The selection's chrome on `board` as drawn (client px): [its box, the handle rects]. The box spans the selected items'
- * outlines (3 px beyond their elements), the group box's (6 px beyond) and the handles, rotate handle and quick-connect
+ * outlines (3 px beyond their elements), the group box's (1 px beyond) and the handles, rotate handle and quick-connect
  * dots (children of the item's element: they turn with a turned shape). */
 function chrome(board) {
-  const group = board.groupEl.hidden ? [] : [...board.groupEl.children]; // its rotate handle
+  const group = board.groupEl.hidden ? [] : [...board.groupEl.children]; // its resize handles and rotate zones
   const handles = [...board.layer.querySelectorAll(HANDLES), ...group].map((h) => h.getBoundingClientRect());
   const rects = [...board.layer.querySelectorAll(':scope > .wb-sel')].map((el) => grow(el.getBoundingClientRect(), 3));
-  if (!board.groupEl.hidden) rects.push(grow(board.groupEl.getBoundingClientRect(), 6));
+  if (!board.groupEl.hidden) rects.push(grow(board.groupEl.getBoundingClientRect(), 1));
   rects.push(...handles);
   const box = { left: Math.min(...rects.map((r) => r.left)), top: Math.min(...rects.map((r) => r.top)),
     right: Math.max(...rects.map((r) => r.right)), bottom: Math.max(...rects.map((r) => r.bottom)) };
@@ -80,11 +80,24 @@ export function ItemRibbon() {
   );
 }
 
+/** A text item's background colour (field `bg`; null: none): the flat presets (TEXT_BACKGROUNDS), the board's recent colours, a
+ * typed hex, the eyedropper and More Colors, whose picker gives any colour with transparency. The ribbon, the Text tool's options
+ * and the tool search show it. */
+export function TextBackground({ board, value, onChange }) {
+  return (
+    <ColorPick format="board" standard={TEXT_BACKGROUNDS} theme={null} automatic="None" eyedropper alpha value={value || null} icon={<PaintBucket />}
+      label="Background colour" contentProps={{ ...CHROME, onOpenAutoFocus: (e) => e.preventDefault(), onCloseAutoFocus: refocus(board) }}
+      onChange={(bg) => onChange(bg)} />
+  );
+}
+
 /** The properties of the selected `item` (the snapshot's) of `board`, most used first (the main colour first): the ribbon's
  * controls, also the tool search's options. `group` (several items selected, whiteboard.js groupProps): their type, or
  * 'lines' for shapes, connectors and pen strokes together; `item` is then the first one's and a change goes to each
- * (board.setItem → setItems). Controls that act on one item (rotate, labels of an arrow, reverse,
- * straighten) are left out then; 'lines' shows colour, width and line style. */
+ * (board.setItem → setItems); `mixed` names the fields they differ in. Controls that act on one item (rotate, labels of an
+ * arrow, reverse, straighten) are left out then; 'lines' shows colour, width and opacity. Every item with a line or a fill has
+ * its opacity (0 to 100 %) beside its colours. The kit draws the colours, font, sizes and toggles; the item actions are the
+ * board's pool commands (pool-board.js). */
 export function ItemControls({ board, item, group, mixed = [] }) {
   const set = (patch) => {
     board.setItem(patch);
@@ -93,50 +106,44 @@ export function ItemControls({ board, item, group, mixed = [] }) {
   const one = !group;
   let controls;
   if (group === 'lines') {
-    controls = <StrokeControls board={board} value={item} set={set} />;
+    controls = <StrokeControls board={board} value={item} set={set} opacity />;
   } else if (item.type === 'text') {
     controls = (
       <>
-        <ColorSwatch board={board} title="Text colour" value={item.color} onChange={(color) => set({ color })} />
+        <BoardColor board={board} title="Text colour" icon={<Baseline />} value={item.color} byTheme onChange={(color) => set({ color })} />
+        <BoardFont board={board} value={item.font} mixed={mixed.includes('font')} onChange={(font) => set({ font })} />
         <SizeSelect board={board} title="Text size" className="w-22" value={item.size} onChange={(size) => set({ size })} />
-        <IconButton size="regular" label="Bold" pressed={!!item.bold} tip={CHROME} onClick={() => set({ bold: !item.bold })}><Bold /></IconButton>
-        <ToggleGroup type="single" size="sm" value={item.align} onValueChange={(align) => align && set({ align })}>
-          {ALIGNS.map(([value, title, Icon]) => (
-            <Tip key={value} title={title} {...CHROME}>
-              <ToggleGroupItem value={value} aria-label={title} className="px-1.5"><Icon /></ToggleGroupItem>
-            </Tip>
-          ))}
-        </ToggleGroup>
+        <Toggles label="Bold" items={BOLD} value={!!item.bold} onChange={() => set({ bold: !item.bold })} />
+        <Toggles label="Alignment" items={ALIGNS} value={item.align} onChange={(align) => set({ align })} />
         <IconButton size="regular" label="Fit the width to the text" pressed={!!item.fit} tip={CHROME} onClick={() => set({ fit: !item.fit })}>
           <MoveHorizontal />
         </IconButton>
-        <OptionSelect board={board} title="Note colour" className="w-36" value={item.bg || 'none'}
-          options={NOTE_COLORS.map(([v, label]) => [v || 'none', label, v])} onChange={(v) => set({ bg: v === 'none' ? null : v })} />
+        <TextBackground board={board} value={item.bg} onChange={(bg) => set({ bg })} />
       </>
     );
   } else if (item.type === 'stroke') {
-    controls = <StrokeControls board={board} value={item} set={set} />;
+    controls = <StrokeControls board={board} value={item} set={set} opacity />;
   } else if (item.type === 'shape') {
     controls = (
       <>
-        {fillable(item.shape) && <ColorSwatch board={board} title="Fill colour" value={item.fillColor} onChange={(fillColor) => set({ fillColor })} />}
-        <StrokeControls board={board} value={item} set={set} />
+        {fillable(item.shape) && <BoardColor board={board} title="Fill colour" icon={<PaintBucket />} value={item.fillColor} transparent onChange={(fillColor) => set({ fillColor })} />}
+        <StrokeControls board={board} value={item} set={set} opacity noLine />
         {fillable(item.shape) && <FillSelect board={board} value={item} set={set} />}
         <PopoverButton board={board} title="Label (double-click, Enter, F2 to edit)" icon={<Captions />}>
-          <LabelControls board={board} value={item} set={set} align />
+          <LabelControls board={board} value={item} set={set} mixed={mixed} align />
+          <IconButton size="regular" label="Resize shape to fit text" tip={CHROME} disabled={board.can?.('fitText') === false}
+            pressed={board.can?.('fitText') !== false && board.fitsText(item)} onClick={() => run('board.items.fitText')}>
+            <UnfoldVertical />
+          </IconButton>
         </PopoverButton>
         {!mixed.includes('shape') && <ShapePicker board={board} value={item.shape} onChange={(shape) => set({ shape })} />}
         <PopoverButton board={board} title="Style presets" icon={<Palette />}><PresetRow set={set} /></PopoverButton>
       </>
     );
   } else if (item.type === 'connector') {
-    const act = (fn) => () => {
-      fn();
-      board.focus();
-    };
     controls = (
       <>
-        <ConnectorControls board={board} value={item} set={set} strokeFirst headsFirst />
+        <ConnectorControls board={board} value={item} set={set} strokeFirst headsFirst opacity />
         {one && (
           <PopoverButton board={board} title="Labels (double-click the line, Enter, F2)" icon={<Captions />}>
             <LabelsPanel board={board} item={item} />
@@ -145,10 +152,12 @@ export function ItemControls({ board, item, group, mixed = [] }) {
         <PopoverButton board={board} title="Style presets" icon={<Palette />}><PresetRow set={set} connector /></PopoverButton>
         {one && (
           <>
-            <IconButton size="regular" label="Reverse" tip={CHROME} onClick={act(() => board.reverseConnector())}><ArrowLeftRight /></IconButton>
-            <IconButton size="regular" label="Straighten (remove the bends)" tip={CHROME} disabled={!item.points?.length} onClick={act(() => board.straighten())}>
-              <RouteOff />
-            </IconButton>
+            <IconButton size="regular" label="Reverse" tip={CHROME} onClick={() => run('board.items.reverse')}><ArrowLeftRight /></IconButton>
+            {!item.free && (
+              <IconButton size="regular" label="Straighten (remove the bends)" tip={CHROME} disabled={!item.points?.length} onClick={() => run('board.items.straighten')}>
+                <RouteOff />
+              </IconButton>
+            )}
           </>
         )}
       </>
@@ -157,10 +166,10 @@ export function ItemControls({ board, item, group, mixed = [] }) {
     controls = (
       <>
         <Tip title="Natural size of the visible part, capped to the board" {...CHROME}>
-          <Button variant="ghost" size="sm" onClick={() => { board.resetSize(); board.focus(); }}><Scaling />Reset size</Button>
+          <Button variant="ghost" size="sm" onClick={() => run('board.items.resetSize')}><Scaling />Reset size</Button>
         </Tip>
         <Tip title="Show the whole image again" {...CHROME}>
-          <Button variant="ghost" size="sm" disabled={!item.cropped} onClick={() => { board.resetCrop(); board.focus(); }}><Crop />Reset crop</Button>
+          <Button variant="ghost" size="sm" disabled={!item.cropped} onClick={() => run('board.items.resetCrop')}><Crop />Reset crop</Button>
         </Tip>
       </>
     );

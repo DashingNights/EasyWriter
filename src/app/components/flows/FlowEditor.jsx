@@ -61,6 +61,12 @@ export function FlowEditor({ id, onBoard }) {
     place.mark();
     const unsubscribe = flowSource.subscribe((changed) => changed === id && getFlow(id) && board.setAttrs(getFlow(id).board));
     window.addEventListener('paste', board.pasteEvent, true); // outside ProseMirror, as a canvas being edited
+    // Picture files dropped on the area land on the board at the pointer, as on a canvas being edited (canvas.js onDrop).
+    area.addEventListener('dragover', (e) => e.dataTransfer.types.includes('Files') && e.preventDefault());
+    area.addEventListener('drop', (e) => {
+      e.preventDefault();
+      board.addImageFiles([...e.dataTransfer.files], board.pointAt(e));
+    });
     onBoard(board);
     setBoard(board);
     requestAnimationFrame(() => requestAnimationFrame(() => board.focus())); // after openWorkspace focused the workspace

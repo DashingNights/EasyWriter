@@ -1,0 +1,22 @@
+[package]
+name = "ew-scene"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "EasyWriter's 2D renderer: display lists of vector primitives painted with vello_cpu (tiles, surfaces, thumbnails), hit testing, PNG/JPEG export"
+
+[lints]
+workspace = true
+
+[dependencies]
+ew-geom = { workspace = true, features = ["image"] }
+ew-doc = { workspace = true }
+ew-fonts = { workspace = true }
+ew-metafile = { workspace = true }
+kurbo = { workspace = true }
+vello_cpu = { workspace = true }
+image = { workspace = true }
+log = { workspace = true }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+vello_cpu = { workspace = true, features = ["multithreading"] }

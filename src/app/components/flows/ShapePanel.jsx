@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { keyIs } from '../../keybinds.js';
-import { armTile, CHROME, ShapeList, useSnapshot } from '../board/controls.jsx';
+import { lineOf, toolLine } from '../../../tooling/shape-picker.mjs';
+import { armTile, BoardShapeList, CHROME, useSnapshot } from '../board/controls.jsx';
 import { IconButton } from '../Tip.jsx';
 
-// The library editor's shape panel (SPEC §6g; draw.io-like): the shape list docked on the left of the board. Its width,
+// The library editor's shape panel (SPEC §6g; draw.io-like): the shape picker (BoardShapeList) docked on the left of the board. Its width,
 // collapsed state and closed sections are the user's, kept in localStorage.
 const KEY = 'daf-writer.shapePanel';
 const [MIN, MAX] = [200, 360]; // px
@@ -20,11 +21,11 @@ function load() {
 }
 
 /** The shape panel of `board` (the library editor's; laid out before it exists, so the editor's opening view is final): search ( / ), collapsible sections; a tile's click arms the tool, a drag
- * places it where it is released on the board, a double-click adds it at the centre of the view (ShapeList). Escape in it
+ * places it where it is released on the board, a double-click adds it at the centre of the view (BoardShapeList). Escape in it
  * hands the focus back to the board. Its right edge drags its width (200–360 px). */
 export function ShapePanel({ board }) {
   const [ui, setUi] = useState(load);
-  const [last, setLast] = useState(null); // the connector / text tile last armed (the snapshot does not tell them apart)
+  const [last, setLast] = useState(null); // the pen line or text tile last armed (the snapshot does not tell them apart)
   const ref = useRef(null);
   const snap = useSnapshot(board);
   const update = (patch) => setUi((u) => ({ ...u, ...patch }));
@@ -82,8 +83,10 @@ export function ShapePanel({ board }) {
     return <aside ref={ref} {...CHROME} aria-label="Shapes" className="flex w-8 shrink-0 flex-col items-center border-r bg-card pt-1">{toggle}</aside>;
   }
   const s = snap ?? {};
-  const current = s.mode === 'shape' ? (s.prefab ? `prefab:${s.prefab}` : `kind:${s.shape?.shape}`)
-    : (s.mode === 'connector' && last?.startsWith('conn:')) || (s.mode === 'text' && last?.startsWith('text:')) ? last : null;
+  // The pressed tile: the shape tool's kind or prefab, the Lines entry the connector tool or the board tool draws, else the text tile armed.
+  const line = s.mode === 'connector' ? lineOf(s.conn) : toolLine(s.mode);
+  const current = s.mode === 'shape' ? (s.prefab ? `prefab:${s.prefab}` : `kind:${s.shape?.shape}`) : line ? `line:${line}`
+    : s.mode === 'text' && last?.startsWith('text:') ? last : null;
   const pick = (r, x) => {
     if (!x || !board) return;
     armTile(board, x);
@@ -97,7 +100,7 @@ export function ShapePanel({ board }) {
         {toggle}
       </div>
       {board && (
-        <ShapeList board={board} current={current} withPrefabs panel closed={ui.closed} pick={pick}
+        <BoardShapeList board={board} current={current} tools panel closed={ui.closed} pick={pick}
           toggle={(id) => update({ closed: ui.closed.includes(id) ? ui.closed.filter((c) => c !== id) : [...ui.closed, id] })} />
       )}
       <div role="separator" aria-orientation="vertical" aria-label="Resize the shapes panel" onPointerDown={resize}

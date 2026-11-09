@@ -1,0 +1,13 @@
+/* Table Layout (briefs/table-layout.md). View Gridlines: a dashed line on every cell edge, drawn under the cell's own borders
+   (z-index -1 inside the cell), so it shows only where a cell has no border. A view setting: never printed. */
+@media screen {
+  #editor-area[data-word-view][data-table-gridlines] .page[data-format="document"] .ProseMirror :is(td, th) { position: relative; }
+  #editor-area[data-word-view][data-table-gridlines] .page[data-format="document"] .ProseMirror :is(td, th)::after {
+    content: '';
+    position: absolute;
+    inset: -0.5px;
+    z-index: -1;
+    border: 1px dashed #9db6d6;
+    pointer-events: none;
+  }
+}

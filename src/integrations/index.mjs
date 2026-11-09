@@ -1,4 +1,4 @@
-// The integrations registry (docs/plans/integrations.md Registry). Pure: main.js (getSettings, setSettings), node tests and
+// The integrations registry (docs/wiki/integrations.md Registry). Pure: main.js (getSettings, setSettings), node tests and
 // the renderer read it. It imports the manifests only; command defs are spread by catalogue.mjs, because define.mjs imports
 // gates.mjs, which imports this file.
 import forum from './forum/manifest.mjs';

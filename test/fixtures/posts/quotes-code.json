@@ -1,0 +1,35 @@
+{
+  "type": "doc",
+  "content": [
+    {
+      "type": "blockquote",
+      "content": [
+        { "type": "paragraph", "content": [{ "type": "text", "text": "A quote, said twice: ", "marks": [{ "type": "italic" }] }, { "type": "text", "text": "once here" }] },
+        {
+          "type": "blockquote",
+          "content": [
+            { "type": "paragraph", "content": [{ "type": "text", "text": "and once inside it" }] }
+          ]
+        },
+        { "type": "paragraph", "content": [{ "type": "text", "text": "after the nested quote" }] }
+      ]
+    },
+    {
+      "type": "codeBlock",
+      "attrs": { "language": "javascript" },
+      "content": [
+        { "type": "text", "text": "const answer = 42;\nconsole.log(answer);\n" }
+      ]
+    },
+    {
+      "type": "codeBlock",
+      "attrs": { "language": null },
+      "content": [{ "type": "text", "text": "no language named" }]
+    },
+    { "type": "horizontalRule" },
+    {
+      "type": "paragraph",
+      "content": [{ "type": "text", "text": "After the rule" }]
+    }
+  ]
+}

@@ -1,0 +1,81 @@
+{
+  "type": "doc",
+  "content": [
+    {
+      "type": "paragraph",
+      "attrs": { "textAlign": "left" },
+      "content": [
+        { "type": "text", "text": "Plain " },
+        { "type": "text", "text": "bold", "marks": [{ "type": "bold" }] },
+        { "type": "text", "text": " " },
+        { "type": "text", "text": "italic", "marks": [{ "type": "italic" }] },
+        { "type": "text", "text": " " },
+        { "type": "text", "text": "underline", "marks": [{ "type": "underline" }] },
+        { "type": "text", "text": " " },
+        { "type": "text", "text": "strike", "marks": [{ "type": "strike" }] },
+        { "type": "text", "text": " " },
+        { "type": "text", "text": "sub", "marks": [{ "type": "subscript" }] },
+        { "type": "text", "text": " " },
+        { "type": "text", "text": "super", "marks": [{ "type": "superscript" }] },
+        { "type": "text", "text": " " },
+        { "type": "text", "text": "code", "marks": [{ "type": "code" }] },
+        { "type": "text", "text": " " },
+        { "type": "text", "text": "more code", "marks": [{ "type": "code" }] }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "attrs": { "textAlign": "center" },
+      "content": [
+        { "type": "text", "text": "small", "marks": [{ "type": "fontSize", "attrs": { "size": "80" } }] },
+        { "type": "text", "text": " " },
+        { "type": "text", "text": "large", "marks": [{ "type": "fontSize", "attrs": { "size": "125" } }] },
+        { "type": "text", "text": " " },
+        { "type": "text", "text": "huge", "marks": [{ "type": "fontSize", "attrs": { "size": "200" } }] },
+        { "type": "text", "text": " " },
+        { "type": "text", "text": "same size", "marks": [{ "type": "fontSize", "attrs": { "size": "100" } }] }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "attrs": { "textAlign": "right" },
+      "content": [
+        { "type": "text", "text": "faint", "marks": [{ "type": "textColor", "attrs": { "color": "soft" } }] },
+        { "type": "text", "text": " " },
+        { "type": "text", "text": "prominent", "marks": [{ "type": "textColor", "attrs": { "color": "hard" } }] },
+        { "type": "text", "text": " " },
+        { "type": "text", "text": "red", "marks": [{ "type": "textColor", "attrs": { "color": "red" } }] },
+        { "type": "text", "text": " " },
+        { "type": "text", "text": "violet", "marks": [{ "type": "textColor", "attrs": { "color": "violet" } }] },
+        { "type": "text", "text": " " },
+        { "type": "text", "text": "marked red", "marks": [{ "type": "highlight", "attrs": { "color": "red" } }] },
+        { "type": "text", "text": " " },
+        { "type": "text", "text": "marked yellow", "marks": [{ "type": "highlight", "attrs": { "color": "yellow" } }] }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "content": [
+        { "type": "text", "text": "Georgia", "marks": [{ "type": "fontFamily", "attrs": { "font": "Georgia" } }] },
+        { "type": "text", "text": " " },
+        { "type": "text", "text": "Arial Black", "marks": [{ "type": "fontFamily", "attrs": { "font": "Arial Black" } }] }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "content": [
+        { "type": "text", "text": "a link to the thread", "marks": [{ "type": "link", "attrs": { "href": "https://daf.staffs.ac.uk/topic/89849", "target": "_blank", "rel": "noopener noreferrer nofollow", "class": null } }] },
+        { "type": "text", "text": " and a " },
+        { "type": "text", "text": "mail link", "marks": [{ "type": "link", "attrs": { "href": "mailto:help@example.com" } }] }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "content": [
+        { "type": "text", "text": "line one" },
+        { "type": "hardBreak" },
+        { "type": "text", "text": "line two" }
+      ]
+    }
+  ]
+}

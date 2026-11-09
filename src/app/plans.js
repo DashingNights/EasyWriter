@@ -7,8 +7,9 @@ import { PLAN_COMMANDS, PLAN_GATES } from '../plan/plan-commands.mjs';
 import { describe, doneColumnOf, estimateDays, parseOptions, parsePlan, pruneDrafts, statusOf, syncCompleted, unmapTag } from '../plan/plan-model.mjs';
 import { autoScheduled } from '../plan/schedule.mjs';
 import { isThreadKey } from '../thread-url.mjs';
-import { planSource, tabOf } from '../plan-chart.js';
+import { parseChart, planSource, tabOf } from '../plan-chart.js';
 import { afterNodeSel, confirmDialog, saveSettings, threadLabel } from './actions.js';
+import { boxList, insertBox, openCanvasSession } from './flows.js';
 import { ChartView } from './components/plan/ChartView.jsx';
 import { tagList } from './drafts-meta.js';
 import { can, GATES } from './gates.mjs';
@@ -346,14 +347,19 @@ export function setPlanTab(tab) {
   saveSettings({ lastView: view, planTab: tab });
 }
 
-// How many drafts hold a plan chart of the plan (the open one as edited; every other one loaded once).
+// How many drafts hold a plan chart of the plan: the open one as edited (a canvas draft's boxes from its engine), every other one
+// from the drafts list's marks, which main.js reads from each record's doc or engine model (src/draft-marks.js).
 async function draftsCharting(id) {
-  let n = 0;
-  for (const d of state.drafts) {
-    const doc = d.id === state.draft?.id ? state.editor?.getJSON() : (await api.drafts.load(d.id).catch(() => null))?.doc;
-    if (doc && chartRefs(doc).some((r) => r.planId === id)) n++;
+  const others = state.drafts.filter((d) => d.id !== state.draft?.id && d.plans?.includes(id)).length;
+  const session = openCanvasSession();
+  let here = false;
+  try {
+    if (session) here = (await boxList(session)).boxes.some((b) => b.kind === 'planChart' && parseChart(b.data).planId === id);
+    else if (session === null && state.editor) here = chartRefs(state.editor.getJSON()).some((r) => r.planId === id);
+  } finally {
+    session?.release();
   }
-  return n;
+  return others + (here ? 1 : 0);
 }
 
 /** Delete plan (header, picker): a confirm (naming the drafts that chart it), then the file goes to the plans trash. */
@@ -528,7 +534,17 @@ export async function insertPlanChartDialog() {
 /** A live plan chart of the plan after the selection (one undo step), from the workspace back in the editor first. */
 export async function insertPlanChart({ planId, view = 'kanban', options = {} }) {
   if (!can('view.editor', state)) await closeWorkspace();
+  const session = openCanvasSession();
+  if (session) {
+    // A canvas draft: a plan chart box across the text column, its fallback the chart as the DOM editor exports it.
+    try {
+      await insertBox(session, 'planChart', () => parseChart({ planId, view, options: parseOptions(options) }));
+    } finally {
+      session.release();
+    }
+    return;
+  }
   const ed = state.editor;
-  if (!ed) return;
+  if (!ed || session === false) return;
   afterNodeSel(ed.chain().focus()).insertPlanChart({ planId, view, options: parseOptions(options) }).run();
 }

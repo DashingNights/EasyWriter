@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { can, GATES } from '../src/app/gates.mjs';
+import { FORMATS } from '../src/formats.mjs';
 
 const SUBJECTS = ['ui', 'board', 'doc', 'history', 'draft', 'node', 'flow', 'window', 'settings'];
 
@@ -19,6 +20,18 @@ test('ui gates read the view and the editor (the store state fits)', () => {
   assert.equal(can('doc.open', { view: ui.view, editor: null }), false);
   assert.deepEqual(['view.editor', 'view.plan', 'view.flows', 'view.browser'].map((id) => can(id, ui)), [false, false, true, false]);
   assert.equal(can('view.editor', { view: { type: 'editor' } }), true);
+});
+
+test('doc.open is false on a whiteboard, whose hidden editor is not a document', () => {
+  assert.equal(can('doc.open', { editor: {}, draft: { format: 'document' } }), true);
+  assert.equal(can('doc.open', { editor: {}, draft: { format: 'board' } }), false);
+  assert.equal(can('doc.open', { editor: {}, draft: { format: 'forum-post' } }), true);
+  // A background session's subject carries no draft: its editor is the one the command works in.
+  assert.equal(can('doc.open', { editor: {}, view: { type: 'editor' } }), true);
+});
+
+test('board.on follows formats.mjs boardsOn (settings.boardEngine)', () => {
+  assert.deepEqual([{}, null, { boardEngine: true }, { boardEngine: false }].map((s) => can('board.on', s)), [false, false, true, false]);
 });
 
 test('window.visible reads {visible} (needed by the in-app assistant for headless: false commands)', () => {
@@ -78,7 +91,7 @@ test('format.post and format.document read the draft subject (no draft or no for
   const drafts = [null, {}, { format: null }, { format: 'forum-post' }, { format: 'page' }, { format: 'document' }];
   assert.deepEqual(drafts.map((d) => can('format.post', d)), [true, true, true, true, true, false]);
   assert.deepEqual(drafts.map((d) => can('format.document', d)), [false, false, false, false, false, true]);
-  assert.equal(can('format.post', { format: 'forum-post', formatVersion: 2 }), false); // a newer build's draft is neither
+  assert.equal(can('format.post', { format: 'forum-post', formatVersion: FORMATS['forum-post'].version + 1 }), false); // a newer build's draft is neither
 });
 
 test("format.box follows the draft's format, not the app default", () => {
@@ -134,7 +147,7 @@ test("wake.forum: the open draft's project links a forum thread, untagged so it 
   assert.match(GATES['integration.forum'].fix, /Push to forum/);
 });
 
-test('draft.settled: no suggestion waits in the draft (docs/plans/suggestions.md)', () => {
+test('draft.settled: no suggestion waits in the draft (docs/wiki/suggestions.md)', () => {
   assert.equal(can('draft.settled', { suggestions: 2 }), false);
   assert.equal(can('draft.settled', {}), true);
   assert.equal(can('draft.settled', { suggestions: 0 }), true);

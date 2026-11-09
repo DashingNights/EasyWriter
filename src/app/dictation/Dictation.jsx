@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { refocusEditor, setupOpen } from '../actions.js';
 import { Help, IconButton, Tip } from '../components/Tip.jsx';
+import { wordKeyWins } from '../../document/word/keys.js';
 import { keyIs, withKey } from '../keybinds.js';
 import { motion } from '../motion.js';
 import { getState, useStore } from '../store.js';
@@ -334,7 +335,7 @@ function InstallForm({ open }) {
           (all MIT licensed):
         </p>
         <ul className="grid list-disc gap-0.5 pl-5">
-          <li>whisper.cpp server, CPU build: GitHub, ggml-org/whisper.cpp release file whisper-bin-x64.zip (about 9 MB)</li>
+          <li>whisper.cpp server, CPU build: GitHub, ggml-org/whisper.cpp release file whisper-bin-x64.zip (about 8 MB)</li>
           <li>Speech model: Hugging Face, ggerganov/whisper.cpp (size below)</li>
           <li>Voice activity model ggml-silero-v5.1.2.bin: Hugging Face, ggml-org/whisper-vad (1 MB)</li>
         </ul>
@@ -477,7 +478,7 @@ export function Dictation({ children }) {
     let held = null; // the held key event's {code, ctrl, shift, alt}
     const up = () => { if (held) { held = null; pttUp(); } };
     const onDown = (e) => {
-      if (!keyIs('app.dictate', e)) return;
+      if (!keyIs('app.dictate', e) || wordKeyWins(e)) return; // Word's double underline in a Document's text (plan.md §1.13)
       const st = getState();
       if (st.dialog || st.confirm || setupOpen(st)) return;
       e.preventDefault();

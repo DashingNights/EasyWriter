@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { cn } from 'cn';
 import { SpellCheck } from 'lucide-react';
 import { toast } from 'sonner';
@@ -7,11 +7,11 @@ import { Combobox } from '@/components/ui/combobox';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Slider } from '@/components/ui/slider';
 import { openSettings, refocusEditor, saveSettings, setZoom } from '../actions.js';
-import { paginationKey } from '../../document/pagination.js';
 import { SuggestionsSlot } from '../../suggest/Review.jsx';
 import { Slot } from '../../integrations/ui.js';
+import { activeSurface } from '../../tooling/surface.js';
 import { on } from '../commands.js';
-import { getState, setState, useEditor, useStore } from '../store.js';
+import { getState, useStore } from '../store.js';
 import { Tip } from './Tip.jsx';
 
 const ZOOMS = ['fit', 50, 67, 75, 90, 100, 125, 150];
@@ -68,64 +68,53 @@ function Model() {
   );
 }
 
-const countWords = (text) => text.split(/\s+/).filter(Boolean).length;
+const BAR = 'col-span-2 flex h-8 min-w-0 items-center gap-4 overflow-hidden border-t px-2 text-xs whitespace-nowrap text-muted-foreground'; // one line at any width
 
-/** Word's statistics of `doc` (a Document's ProseMirror doc; the Word count popover adds the pages): words, characters with and without spaces (paragraph marks not
- * counted), and the paragraphs that hold text. Words are read as the selection count reads them, so a line break (Shift+Enter)
- * splits two words, as in the status bar's total. */
-function counts(doc) {
-  const blocks = [];
-  doc.descendants((n) => {
-    if (n.isTextblock) blocks.push(n.textContent);
-    return !n.isTextblock;
-  });
-  return { words: countWords(doc.textBetween(0, doc.content.size, ' ', ' ')), chars: blocks.join('').length, noSpaces: blocks.join('').replace(/\s/g, '').length, paragraphs: blocks.filter((b) => b.trim()).length };
+/** A canvas draft's words, read from the engine as Word's status bar reads them (WordStatusBar's useEngineCounts): the draft's
+ * ProseMirror doc is empty, so review.wordCount on its session is the document. Read a moment after each layout or selection
+ * change → the word count. */
+function useEngineWords(session) {
+  const [words, setWords] = useState(0);
+  useEffect(() => {
+    if (!session) return undefined;
+    let live = true;
+    let timer = 0;
+    const read = () => session.query('review.wordCount', { includeTextBoxes: true }).then((r) => {
+      if (live) setWords(r?.ok ? (r.value?.words ?? 0) : 0);
+    }, () => {});
+    const later = () => {
+      clearTimeout(timer);
+      timer = setTimeout(read, 150);
+    };
+    const offs = ['layout', 'selection', 'reopened'].map((e) => session.on?.(e, later));
+    later();
+    return () => {
+      live = false;
+      clearTimeout(timer);
+      for (const off of offs) off?.();
+    };
+  }, [session]);
+  return words;
 }
 
-/** A Document's pages (document/pagination.js): {page: the caret's, pages}, or null without an editor. */
-const pagesOf = (ed) => (ed ? paginationKey.getState(ed.state) ?? null : null);
-
-/** 'Page X of Y' (Word's status bar): the caret's page and the page count. */
-function DocumentPage() {
-  const p = pagesOf(useEditor());
-  return p && <span data-page-count="" className="tabular-nums">{`Page ${p.page} of ${p.pages}`}</span>;
-}
-
-/** A Document's word count (Word's status bar): 'N of M words' while text is selected; a press opens the Word count popover
- * (also from the tool search, document/tools.js openWordCount). */
-function DocumentWords({ total }) {
-  const ed = useEditor();
-  const open = useStore((s) => s.wordCount);
-  const { from, to, empty } = ed?.state.selection ?? { empty: true };
-  const selected = !empty && ed ? countWords(ed.state.doc.textBetween(from, to, ' ', ' ')) : null;
-  const c = open && ed ? { pages: pagesOf(ed)?.pages, ...counts(ed.state.doc) } : null;
-  return (
-    <Popover open={open} onOpenChange={(o) => setState({ wordCount: o })}>
-      <PopoverTrigger asChild>
-        <Button variant="ghost" size="xs" className="-mx-1 font-normal text-muted-foreground" data-word-count="">
-          {selected != null ? `${selected} of ${total} ${total === 1 ? 'word' : 'words'}` : `${total} ${total === 1 ? 'word' : 'words'}`}
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent side="top" align="start" className="w-64 p-3 text-xs" onCloseAutoFocus={refocusEditor}>
-        <div className="mb-2 text-sm font-medium">Word count</div>
-        {c && [['Pages', c.pages], ['Words', c.words], ['Characters (no spaces)', c.noSpaces], ['Characters (with spaces)', c.chars], ['Paragraphs', c.paragraphs]].map(([label, n]) => (
-          <div key={label} className="flex justify-between py-0.5"><span className="text-muted-foreground">{label}</span><span className="tabular-nums">{n}</span></div>
-        ))}
-      </PopoverContent>
-    </Popover>
-  );
-}
-
-export function StatusBar() {
+/** The app's status bar. `Word`: while App.jsx shows the Word chrome (an open Document in the editor view), the statusbar package's
+ * bar, which renders this bar's own items (`lead`, `tail`) around Word's and replaces the word count and zoom below. */
+export function StatusBar({ Word }) {
   const saveLabel = useStore((s) => s.saveLabel);
   const saveError = useStore((s) => s.saveError);
-  const words = useStore((s) => s.words);
+  useStore((s) => s.focusedSession); // a canvas post's words come from its engine session
+  // A Document shows Word's bar (its own count item) around this one's lead and tail: there is no word span to fill.
+  const session = Word ? null : activeSurface()?.session ?? null;
+  const engineWords = useEngineWords(session);
+  const storeWords = useStore((s) => s.words);
+  const words = session ? engineWords : storeWords;
+  // A whiteboard has no text of its own (its items live in draft.board): its status bar shows no word count.
+  const board = useStore((s) => s.draft?.format === 'board');
   const zoom = useStore((s) => s.zoom);
   const zoomPct = useStore((s) => s.zoomPct);
   const spell = useStore((s) => s.settings?.spellCheck ?? true);
-  const isDocument = useStore((s) => s.draft?.format === 'document');
-  return (
-    <footer className="col-span-2 flex h-8 items-center gap-4 border-t px-2 text-xs text-muted-foreground">
+  const lead = (
+    <>
       {/* The main window's spell checker (settings.spellCheck, main.js setSpellCheckerEnabled): off clears the underlines. */}
       <Tip title={spell ? 'Turn spell check off' : 'Turn spell check on'} side="top">
         <Button variant="ghost" size="xs" aria-pressed={spell} className="-mx-1 font-normal text-muted-foreground"
@@ -134,12 +123,22 @@ export function StatusBar() {
         </Button>
       </Tip>
       <span className={cn(saveError && 'text-destructive')}>{saveLabel}</span>
-      {isDocument && <DocumentPage />}
-      {isDocument ? <DocumentWords total={words} /> : <span>{`${words} ${words === 1 ? 'word' : 'words'}`}</span>}
+    </>
+  );
+  const tail = (
+    <>
       <Slot name="StatusBarItem" />
       <Model />
       <Agents />
       <SuggestionsSlot />
+    </>
+  );
+  if (Word) return <Word className={BAR} lead={lead} tail={tail} />;
+  return (
+    <footer className={BAR}>
+      {lead}
+      {!board && <span data-word-count="">{`${words} ${words === 1 ? 'word' : 'words'}`}</span>}
+      {tail}
       <div className="ml-auto flex items-center gap-2">
         Zoom
         <Slider aria-label="Page zoom" className="w-28" min={25} max={200} step={1} value={[Math.min(200, Math.max(25, zoomPct))]}

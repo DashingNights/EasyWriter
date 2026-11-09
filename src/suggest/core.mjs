@@ -1,14 +1,24 @@
-// Agent edits as suggestions (docs/plans/suggestions.md dataModel): an agent's change is applied to the draft as usual, and the
+// Agent edits as suggestions (docs/wiki/suggestions.md dataModel): an agent's change is applied to the draft as usual, and the
 // same dispatch records on the changed top-level blocks how to take it back (attrs.suggest). Pure: ProseMirror and digest.mjs
 // only, so Node tests and both editor kits (extension.js) share it.
-//   block: null | {ins?: {id, g, by, at, note?, n, sig, old?: [block JSON]}, del?: [{id, g, by, at, note?, side, old}]}
-//   doc:   null | {attrs: [{id, g, by, at, note?, key, old, sig}]}
+//   block: null | {ins?: {id, g, by, at, note?, n, sig, old?: [block JSON]}, del?: [{id, g, by, at, note?, side, up?, old}]}
+//   doc:   null | {attrs: [{id, g, by, at, note?, key, parts?: [{k, old?}], old?, sig}]}
 // ins marks a block a change proposed (old, the blocks it replaced, on the run's first block only); del holds blocks a change
-// removed next to this block (side 'before' or 'after' it); the doc record holds a doc attribute's old value (page setup).
+// removed next to this block (side 'before' or 'after' it, or `up` open wrappers further out: a block deleted next to a columns node
+// sits outside it, though the record is on the wrapper's edge child); a doc record holds, for one doc attribute (key 'sect',
+// 'styles'), the old value of each key agents changed in it (parts: k 'margin', 'list.Heading1'; old left out when the key was
+// absent), so a reject restores those keys together and keeps the user's own changes to the others; a value that was or becomes no
+// object is recorded whole (old).
+// The blocks that carry records (units) are the top-level blocks, and the children of a columns, sdtBlock or fieldBlock wrapper that
+// carries no record itself (docs/plans/word/plan.md §1.8 Wrapper nodes): an agent edit inside a three-page columns node is one
+// changed paragraph.
 import { ChangeSet, simplifyChanges } from '@tiptap/pm/changeset';
 import { closeHistory } from '@tiptap/pm/history';
-import { StepMap } from '@tiptap/pm/transform';
+import { EditorState } from '@tiptap/pm/state';
+import { StepMap, Transform } from '@tiptap/pm/transform';
 import { cyrb53 } from '../app/digest.mjs';
+import { WRAPPERS } from '../document/model/blocks.mjs';
+import { newId as revId, recordRound, trackingOn } from '../document/wp/tracking/record.mjs';
 
 /** The meta key of the extension's own transactions (conversion, normalize, accept, reject, the active change). */
 export const META = 'suggest';
@@ -18,7 +28,8 @@ const NOTE_MAX = 140;
 
 // The label of a block shown as a whole (a new or deleted object, the deleted-block widget's placeholders).
 export const LABELS = { canvas: 'Smart canvas', planChart: 'Plan chart', table: 'Table', image: 'Picture', media: 'Video', pageBreak: 'Page break',
-  box: 'Titled box', horizontalRule: 'Line' };
+  box: 'Titled box', horizontalRule: 'Line', sectionBreak: 'Section break', columnBreak: 'Column break', columns: 'Columns', textBox: 'Text box',
+  fieldBlock: 'Field', sdtBlock: 'Content control' };
 /** The label of block JSON or a node (type and attrs): a linked canvas is a Flowchart, a still media file a Picture. */
 export function labelOf(type, attrs) {
   if (type === 'canvas' && attrs?.flow) return 'Flowchart';
@@ -28,11 +39,46 @@ export function labelOf(type, attrs) {
 
 const rec = (node) => node.attrs.suggest ?? null;
 const pack = (ins, del) => (ins || del?.length ? { ...(ins && { ins }), ...(del?.length && { del }) } : null);
-const children = (doc) => {
+const kidsOf = (node, start = 0) => {
   const out = [];
-  doc.forEach((n, pos) => out.push({ n, pos }));
+  node.forEach((n, off) => out.push({ n, pos: start + off }));
   return out;
 };
+// A wrapper with no record of its own: its children carry the records.
+const opens = (n, r) => WRAPPERS.has(n.type.name) && !r;
+/** The place a del record of unit `n` at `pos` in `doc` stands for: before or after the unit, or before or after its wrapper `up`
+ * levels out. */
+function placeOf(doc, pos, n, side, up) {
+  if (!up) return side === 'before' ? pos : pos + n.nodeSize;
+  const $p = doc.resolve(pos);
+  const d = Math.max(1, $p.depth - up + 1);
+  return side === 'before' ? $p.before(d) : $p.after(d);
+}
+// How many wrappers around the unit at `pos` place `m` lies outside of, on `side` of the unit.
+function upOf(doc, pos, side, m) {
+  const $p = doc.resolve(pos);
+  let up = 0;
+  while (up < $p.depth && (side === 'before' ? $p.before($p.depth - up) >= m : $p.after($p.depth - up) <= m)) up++;
+  return up;
+}
+// Del record `d` placed on `side`, `up` levels out.
+const delAt = (d, side, up) => {
+  const { up: _u, ...rest } = d;
+  return { ...rest, side, ...(up && { up }) };
+};
+
+/** The units of `node`'s content starting at `start` (the doc: 0), in order: [{n, pos}]. `over` (pos → record) stands in for the
+ * records a transaction being built has set. */
+function units(node, start = 0, over = null) {
+  const out = [];
+  const walk = (parent, from) => parent.forEach((n, off) => {
+    const pos = from + off;
+    if (opens(n, over?.has(pos) ? over.get(pos) : rec(n))) walk(n, pos + 1);
+    else out.push({ n, pos });
+  });
+  walk(node, start);
+  return out;
+}
 
 /** A new change or group id: 's' or 'g' and 6 base-36 characters. */
 export function newId(prefix) {
@@ -53,7 +99,7 @@ export function sigOf(node) {
 const valueSig = (v) => cyrb53(JSON.stringify(v ?? null));
 
 // ---------- hunks ----------
-const same = (x, y) => x === y || x.eq(y);
+const sameNode = (x, y) => x === y || x.eq(y);
 
 /** The runs of top-level blocks that differ between docs `a` and `b`, [{a: [i, j), b: [p, q)}]: a common prefix and suffix, then
  * an LCS on Node.eq in the middle. */
@@ -62,6 +108,11 @@ export function hunks(a, b) {
   const B = [];
   a.forEach((n) => A.push(n));
   b.forEach((n) => B.push(n));
+  return runs(A, B);
+}
+
+// The differing runs of node lists `A` and `B` (hunks), nodes matching by `same`.
+function runs(A, B, same = sameNode) {
   let s = 0;
   while (s < A.length && s < B.length && same(A[s], B[s])) s++;
   let ea = A.length;
@@ -104,10 +155,42 @@ export function hunks(a, b) {
 // ---------- conversion ----------
 const metaOf = (id, call) => ({ id, g: call.g, by: call.by, at: call.at, ...(call.note && { note: String(call.note).slice(0, NOTE_MAX) }) });
 
+// Doc attributes no agent command writes (and numbering, which lists.js grows with nums; an unused one is harmless): never recorded.
+const SKIP_ATTRS = new Set(['suggest', 'numbering', 'comments', 'people', 'props', 'settings', 'vars', 'merge', 'background']);
+const isObj = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
+
+/** The value at dotted `key` ('sect.margin') of doc attrs `attrs`, or undefined. */
+export const attrAt = (attrs, key) => key.split('.').reduce((o, k) => (isObj(o) ? o[k] : undefined), attrs);
+
+// Object `obj` with `value` at path `keys`, copying the objects on the path; undefined removes the key.
+function putAt(obj, [k, ...rest], value) {
+  const out = { ...(isObj(obj) ? obj : {}) };
+  const v = rest.length ? putAt(out[k], rest, value) : value;
+  if (v === undefined) delete out[k];
+  else out[k] = v;
+  return out;
+}
+
+// Attribute value `value` with each of `parts` put back to its old value.
+const restore = (value, parts) => parts.reduce((v, x) => putAt(v, x.k.split('.'), 'old' in x ? x.old : undefined), value);
+// The signature of the values doc record `r` covers in doc attrs `attrs`.
+const recSig = (attrs, r) => valueSig(r.parts ? r.parts.map((x) => attrAt(attrs[r.key], x.k)) : attrs[r.key]);
+
+// The changed keys between attribute values `x` and `y` at `path`: one level into each attribute, two into styles.list (one key per
+// style); a whole value where either side is no object.
+function changedKeys(x, y, path, out) {
+  if (JSON.stringify(x ?? null) === JSON.stringify(y ?? null)) return;
+  const deeper = path.length === 1 || (path.length === 2 && path[0] === 'styles' && path[1] === 'list');
+  if (!deeper || !isObj(x) || !isObj(y)) {
+    out.push(path.join('.'));
+    return;
+  }
+  for (const k of new Set([...Object.keys(x), ...Object.keys(y)])) changedKeys(x[k], y[k], [...path, k], out);
+}
+
 /** The transaction recording one agent round (oldState → newState) as suggestions of `call` {g, by, at, note?, ids}, or null.
- * Every changed top-level block gets ins (the first also old, the blocks it replaced); blocks removed with nothing in their place
- * become a del record on the next block (the previous one at the end); a changed doc attribute a doc record. Pushes each id to
- * call.ids. */
+ * Every changed unit gets ins (the first also old, the units it replaced); units removed with nothing in their place become a del
+ * record on the next unit (the previous one at the end); a changed key of a doc attribute a doc record. Pushes each id to call.ids. */
 export function convert(oldState, newState, call) {
   const a = oldState.doc;
   const b = newState.doc;
@@ -115,84 +198,152 @@ export function convert(oldState, newState, call) {
   const tr = newState.tr;
   const ids = new Set();
 
-  // Doc attributes (a Document's page setup): one record per key, keeping the first old value.
+  // Doc attributes (page setup, styles): one record per attribute, keeping each key's first old value; a later group takes the
+  // record over as it takes a pending block change over.
   const list = [...(b.attrs.suggest?.attrs ?? [])];
-  let docChanged = false;
-  for (const key of Object.keys(b.attrs)) {
-    if (key === 'suggest' || key === 'numbering') continue; // numbering: lists.js adds nums, an unused one is harmless
-    const nv = JSON.stringify(b.attrs[key] ?? null);
-    if (nv === JSON.stringify(a.attrs[key] ?? null)) continue;
-    docChanged = true;
-    const k = list.findIndex((r) => r.key === key);
-    if (k < 0) {
-      const id = newId('s');
-      list.push({ ...metaOf(id, call), key, old: a.attrs[key] ?? null, sig: cyrb53(nv) });
-      ids.add(id);
-    } else if (JSON.stringify(list[k].old ?? null) === nv) list.splice(k, 1); // back to its old value
-    else {
-      const id = list[k].g === call.g ? list[k].id : newId('s');
-      list[k] = { ...metaOf(id, call), key, old: list[k].old, sig: cyrb53(nv) }; // only the base carries over, never the old note
-      ids.add(id);
-    }
-  }
-  if (docChanged) tr.setDocAttribute('suggest', list.length ? { attrs: list } : null);
-
-  // Blocks.
-  const kids = children(b);
-  const set = new Map(); // index in b → its new record
-  const touched = new Set(); // ids whose blocks this round changed or removed, for n
-  for (const h of hunks(a, b)) {
-    const olds = [];
-    for (let i = h.a[0]; i < h.a[1]; i++) olds.push(a.child(i));
-    for (const n of olds) if (rec(n)?.ins) touched.add(rec(n).ins.id);
-    const base = [];
-    for (const n of olds) {
-      const r = rec(n);
-      for (const d of r?.del ?? []) if (d.side === 'before') base.push(...d.old);
-      if (r?.ins) {
-        if (r.ins.old) base.push(...r.ins.old); // an ins block without old never existed in the base
-      } else base.push(plainJSON(n));
-      for (const d of r?.del ?? []) if (d.side !== 'before') base.push(...d.old);
-    }
-    const news = h.b[1] - h.b[0];
-    const first = olds.length ? rec(olds[0])?.ins : null;
-    // A later call of the same group over its own pending change keeps that change's id.
-    const reuse = news && first?.g === call.g && olds.every((n) => rec(n)?.ins?.id === first.id && !rec(n).del?.length);
-    const id = reuse ? first.id : newId('s');
-    if (news) {
-      for (let k = 0; k < news; k++) {
-        const { n } = kids[h.b[0] + k];
-        set.set(h.b[0] + k, { ins: { ...metaOf(id, call), sig: sigOf(n), ...(k === 0 && base.length && { old: base }) } });
-        // Records below the top level (a wrapped suggested paragraph) belong to this change now.
-        n.descendants((c, p) => {
-          if (c.attrs.suggest) tr.setNodeAttribute(kids[h.b[0] + k].pos + 1 + p, 'suggest', null);
-        });
+  let attrChanged = false;
+  for (const top of new Set([...Object.keys(a.attrs), ...Object.keys(b.attrs)])) {
+    if (SKIP_ATTRS.has(top)) continue;
+    const keys = [];
+    changedKeys(a.attrs[top], b.attrs[top], [top], keys);
+    if (!keys.length) continue;
+    attrChanged = true;
+    const subs = keys.map((key) => key.slice(top.length + 1)); // '' for the whole value
+    const k = list.findIndex((r) => r.key === top);
+    const prev = list[k];
+    let r;
+    if (subs.includes('') || (prev && !prev.parts) || prev?.parts.some((x) => subs.some((sub) => x.k.startsWith(`${sub}.`)))) {
+      r = { key: top, old: (prev ? (prev.parts ? restore(a.attrs[top], prev.parts) : prev.old) : a.attrs[top]) ?? null };
+    } else {
+      const parts = [...(prev?.parts ?? [])];
+      for (const sub of subs) {
+        if (parts.some((x) => sub === x.k || sub.startsWith(`${x.k}.`))) continue;
+        const old = attrAt(a.attrs[top], sub);
+        parts.push(old === undefined ? { k: sub } : { k: sub, old });
       }
-      ids.add(id);
-    } else if (base.length) {
-      const end = h.b[0] >= kids.length;
-      const ci = end ? kids.length - 1 : h.b[0];
-      const cur = set.has(ci) ? set.get(ci) : rec(kids[ci].n);
-      set.set(ci, { ...cur, del: [...(cur?.del ?? []), { ...metaOf(id, call), side: end ? 'after' : 'before', old: base }] });
-      ids.add(id);
+      r = { key: top, parts };
     }
+    const back = r.parts ? restore(b.attrs[top], r.parts) : r.old;
+    if (valueSig(back) === valueSig(b.attrs[top])) {
+      if (k >= 0) list.splice(k, 1); // back to its old value
+      continue;
+    }
+    const id = prev?.g === call.g ? prev.id : newId('s');
+    const entry = { ...metaOf(id, call), ...r, sig: recSig(b.attrs, r) }; // only the base carries over, never the old note
+    if (k >= 0) list[k] = entry;
+    else list.push(entry);
+    ids.add(id);
   }
-  // n: the blocks carrying each touched id (this call's, and any whose blocks it changed or removed), its blocks outside these
-  // hunks included.
+  if (attrChanged) tr.setDocAttribute('suggest', list.length ? { attrs: list } : null);
+
+  // Units: hunks of each container's children; a wrapper kept with its attributes is entered, so its changed children are the units.
+  const set = new Map(); // pos in b → its new record
+  const touched = new Set(); // ids whose units this round changed or removed, for n
+  const recAt = (u) => (set.has(u.pos) ? set.get(u.pos) : rec(u.n));
+  // The unit carrying a del record on `side` of block `u`: an open wrapper's edge child, `up` levels in.
+  const edge = (u, side) => {
+    let up = 0;
+    while (opens(u.n, recAt(u))) {
+      const kids = kidsOf(u.n, u.pos + 1);
+      u = side === 'before' ? kids[0] : kids[kids.length - 1];
+      up++;
+    }
+    return { u, up };
+  };
+  // Two open wrappers of one type and attributes pair up like equal blocks, and their children are compared inside them.
+  const shell = (x, y) => sameNode(x, y) || (x.type === y.type && opens(x, rec(x)) && opens(y, rec(y)) && blockAttrs(x) === blockAttrs(y));
+  const walk = (aParent, bParent, bStart) => {
+    const A = kidsOf(aParent);
+    const B = kidsOf(bParent, bStart);
+    const hs = runs(A.map((x) => x.n), B.map((x) => x.n), shell);
+    // The pairs between the hunks: a wrapper whose children changed is entered.
+    let i = 0;
+    let j = 0;
+    for (const h of [...hs, { a: [A.length, A.length], b: [B.length, B.length] }]) {
+      for (; i < h.a[0]; i++, j++) if (!sameNode(A[i].n, B[j].n)) walk(A[i].n, B[j].n, B[j].pos + 1);
+      i = h.a[1];
+      j = h.b[1];
+    }
+    for (const h of hs) {
+      const olds = A.slice(h.a[0], h.a[1]).map((x) => x.n);
+      const news = B.slice(h.b[0], h.b[1]);
+      for (const n of olds) for (const u of [{ n }, ...units(n)]) if (rec(u.n)?.ins) touched.add(rec(u.n).ins.id);
+      const base = baseOf(olds);
+      const first = olds.length ? rec(olds[0])?.ins : null;
+      // A later call of the same group over its own pending change keeps that change's id.
+      const reuse = news.length && first?.g === call.g && olds.every((n) => rec(n)?.ins?.id === first.id && !rec(n).del?.length);
+      const id = reuse ? first.id : newId('s');
+      if (news.length) {
+        news.forEach((u, k) => {
+          set.set(u.pos, { ins: { ...metaOf(id, call), sig: sigOf(u.n), ...(k === 0 && base.length && { old: base }) } });
+          // Records below this unit (a wrapped suggested paragraph, a wrapper's children) belong to this change now.
+          u.n.descendants((c, p) => {
+            if (c.attrs.suggest) tr.setNodeAttribute(u.pos + 1 + p, 'suggest', null);
+          });
+        });
+        ids.add(id);
+      } else if (base.length && B.length) {
+        const end = h.b[0] >= B.length;
+        const side = end ? 'after' : 'before';
+        const { u: c, up } = edge(end ? B[B.length - 1] : B[h.b[0]], side);
+        const cur = recAt(c);
+        set.set(c.pos, { ...cur, del: [...(cur?.del ?? []), delAt({ ...metaOf(id, call), old: base }, side, up)] });
+        ids.add(id);
+      }
+    }
+  };
+  walk(a, b, 0);
+  // n: the units carrying each touched id (this call's, and any whose units it changed or removed), its units outside these hunks
+  // included.
   for (const id of ids) touched.add(id);
+  const all = units(b, 0, set);
   const count = new Map();
-  kids.forEach(({ n }, i) => {
-    const id = (set.has(i) ? set.get(i) : rec(n))?.ins?.id;
+  for (const u of all) {
+    const id = recAt(u)?.ins?.id;
     if (touched.has(id)) count.set(id, (count.get(id) ?? 0) + 1);
-  });
-  kids.forEach(({ n }, i) => {
-    const r = set.has(i) ? set.get(i) : rec(n);
-    if (r?.ins && count.has(r.ins.id) && r.ins.n !== count.get(r.ins.id)) set.set(i, { ...r, ins: { ...r.ins, n: count.get(r.ins.id) } });
-  });
-  for (const [i, r] of set) tr.setNodeAttribute(kids[i].pos, 'suggest', pack(r.ins, r.del));
+  }
+  for (const u of all) {
+    const r = recAt(u);
+    if (r?.ins && count.has(r.ins.id) && r.ins.n !== count.get(r.ins.id)) set.set(u.pos, { ...r, ins: { ...r.ins, n: count.get(r.ins.id) } });
+  }
+  for (const [pos, r] of set) tr.setNodeAttribute(pos, 'suggest', pack(r.ins, r.del));
   if (!tr.steps.length) return null;
   for (const id of ids) if (!call.ids?.includes(id)) call.ids?.push(id);
   return tr.setMeta(META, 'convert');
+}
+
+// The base (the blocks before any pending change) of sibling nodes `nodes` as JSON: a record's old blocks in place of its own, a
+// wrapper without a record with its children's base, a del record `up` levels out beside its wrapper.
+function baseOf(nodes) {
+  const { out, pre, post } = baseParts(nodes);
+  // ponytail: a del record stepping out of the hunk's own parent lands at the edge of the base, one level in; carry it to the new
+  // units if agents rewrite a wrapper's first or last child over a pending deletion beside the wrapper.
+  return [...pre.flatMap((d) => d.old), ...out, ...post.flatMap((d) => d.old)];
+}
+// → {out, pre, post}: pre and post are the del records stepping out of the parent of `nodes`, with `up` one less.
+function baseParts(nodes) {
+  const out = [];
+  const pre = [];
+  const post = [];
+  for (const n of nodes) {
+    const r = rec(n);
+    const after = [];
+    const put = (d, here) => (d.up ? (d.side === 'before' ? pre : post).push({ ...d, up: d.up - 1 }) : here.push(...d.old));
+    for (const d of r?.del ?? []) put(d, d.side === 'before' ? out : after);
+    if (r?.ins) {
+      if (r.ins.old) out.push(...r.ins.old); // an ins block without old never existed in the base
+    } else if (opens(n, r)) {
+      const kids = [];
+      n.forEach((c) => kids.push(c));
+      const inner = baseParts(kids);
+      for (const d of inner.pre) put(d, out);
+      const { content: _c, ...shell } = plainJSON(n.type.create(n.attrs));
+      out.push({ ...shell, content: inner.out });
+      for (const d of inner.post) put(d, after);
+    } else out.push(plainJSON(n));
+    out.push(...after);
+  }
+  return { out, pre, post };
 }
 
 // ---------- normalize ----------
@@ -206,19 +357,24 @@ function blocksIn(doc, from, to) {
   let pos = $f.posAtIndex(i0, 0);
   for (let i = i0; i < i1 && i < doc.childCount; i++) {
     const n = doc.child(i);
-    out.push({ n, pos, i });
+    // An open wrapper: only its units the range touches.
+    if (opens(n, rec(n))) out.push(...units(n, pos + 1).filter((u) => u.pos < to && u.pos + u.n.nodeSize > from));
+    else out.push({ n, pos });
     pos += n.nodeSize;
   }
   return out;
 }
 
-/** The top-level block holding position `m` of `doc` and the side a moved record takes there: a block that starts before `m`
- * holds it after; at a block boundary the next block holds it before; at the doc end the last block holds it after. */
-function holder(doc, m) {
-  const $m = doc.resolve(Math.min(m, doc.content.size));
-  if ($m.depth) return { i: $m.index(0), side: 'after' };
-  const i = $m.index(0);
-  return i < doc.childCount ? { i, side: 'before' } : { i: doc.childCount - 1, side: 'after' };
+/** The unit of units `list` (of `doc`) holding position `m` and the side a moved record takes there: a unit that starts before `m`
+ * holds it after; at a unit boundary the next unit holds it before; at the end the last unit holds it after; `up`, the wrappers
+ * around that unit that `m` lies outside of. → {i, side, up}, i in `list`. */
+function holder(doc, list, m) {
+  const i = list.findIndex((u) => u.pos < m && m < u.pos + u.n.nodeSize);
+  if (i >= 0) return { i, side: 'after', up: 0 };
+  const j = list.findIndex((u) => u.pos >= m);
+  const k = j >= 0 ? j : list.length - 1;
+  const side = j >= 0 ? 'before' : 'after';
+  return { i: k, side, up: upOf(doc, list[k].pos, side, m) };
 }
 
 /** Attribute fixes [{pos, value}] that keep records whole after a round of the user's (or any unconverted) edits from doc `a` to
@@ -262,15 +418,15 @@ export function normalize(a, b, mapping) {
       if (r.ins.old) e.ins = r.ins;
       before.set(r.ins.id, e);
     }
-    for (const d of r?.del ?? []) before.set(`del:${d.id}`, { del: d, from: pos, to: pos + n.nodeSize });
+    for (const d of r?.del ?? []) before.set(`del:${d.id}`, { del: d, at: placeOf(a, pos, n, d.side, d.up) });
   }
   // The user's own block joined into a suggested one (Backspace at its start keeps the first block's attrs): the merged block is
   // the user's now, so it leaves the run, and an old it held comes back below (on the run's next block, else as a del record
   // beside it). An empty block (Enter at a run's end, then Backspace) just rejoins the run.
   for (const { n, pos } of A) {
     if (rec(n) || !n.content.size) continue;
-    const $m = b.resolve(mapping.map(pos + 1, -1));
-    const s = $m.depth ? cur.find((x) => x.pos === $m.before(1)) : null;
+    const m = mapping.map(pos + 1, -1);
+    const s = cur.find((x) => x.pos < m && m < x.pos + x.n.nodeSize);
     if (!s?.ins) continue;
     s.ins = null;
     s.dirty = true;
@@ -287,22 +443,22 @@ export function normalize(a, b, mapping) {
       s.dirty = true;
     } else oldAt.set(s.ins.id, s);
   }
-  const delAt = new Map();
+  const carrierOf = new Map();
   for (const s of cur) {
     for (const d of s.del) {
-      const prev = delAt.get(d.id);
-      if (!prev) delAt.set(d.id, s);
+      const prev = carrierOf.get(d.id);
+      if (!prev) carrierOf.set(d.id, s);
       else if (d.side !== 'before') {
         prev.del = prev.del.filter((x) => x.id !== d.id); // side after: the last carrier keeps it
         prev.dirty = true;
-        delAt.set(d.id, s);
+        carrierOf.set(d.id, s);
       } else {
         s.del = s.del.filter((x) => x !== d);
         s.dirty = true;
       }
     }
   }
-  const all = children(b);
+  const all = units(b);
   const at = new Map(cur.map((s) => [s.pos, s]));
   const slot = ({ n, pos }) => {
     if (!at.has(pos)) {
@@ -313,15 +469,15 @@ export function normalize(a, b, mapping) {
     return at.get(pos);
   };
   const placeDel = (record, m) => {
-    const { i, side } = holder(b, m);
+    const { i, side, up } = holder(b, all, m);
     const s = slot(all[i]);
-    s.del.push({ ...record, side });
+    s.del.push(delAt(record, side, up));
     s.dirty = true;
   };
   // Payloads that vanished come back.
   for (const e of before.values()) {
     if (e.del) {
-      if (!delAt.has(e.del.id)) placeDel(e.del, mapping.map(e.del.side === 'before' ? e.from : e.to, e.del.side === 'before' ? 1 : -1));
+      if (!carrierOf.has(e.del.id)) placeDel(e.del, mapping.map(e.at, e.del.side === 'before' ? 1 : -1));
       continue;
     }
     if (!e.ins || oldAt.has(e.id)) continue;
@@ -368,20 +524,78 @@ export function normalize(a, b, mapping) {
 // ---------- accept and reject ----------
 const filterRec = (r, drop) => pack(r?.ins && !drop.has(r.ins.id) ? r.ins : null, (r?.del ?? []).filter((d) => !drop.has(d.id)));
 
-/** Accepting changes `ids`: their records go, the blocks stay. One undo step. Null when none is in the doc. */
-export function accept(state, ids) {
+/** Accepting changes `ids`: their records go, the blocks stay; with `track` (Track Changes on) the changed words become Word
+ * revisions by ASSISTANT (revise). One undo step. Null when none is in the doc. */
+export function accept(state, ids, track = trackingOn(state.doc)) {
   const drop = new Set(ids);
   const tr = state.tr;
-  state.doc.forEach((n, pos) => {
+  for (const { n, pos } of units(state.doc)) {
     const r = rec(n);
-    if (!r) return;
+    if (!r) continue;
     const next = filterRec(r, drop);
     if (JSON.stringify(next) !== JSON.stringify(r)) tr.setNodeAttribute(pos, 'suggest', next);
-  });
+  }
   const list = state.doc.attrs.suggest?.attrs ?? [];
   const keep = list.filter((x) => !drop.has(x.id));
   if (keep.length !== list.length) tr.setDocAttribute('suggest', keep.length ? { attrs: keep } : null);
+  if (track) revise(tr, piecesOf(entries(state.doc).filter((e) => drop.has(e.id)), state.schema));
   return tr.steps.length ? closeHistory(tr.setMeta(META, 'accept')) : null;
+}
+
+// ---------- as Word revisions ----------
+/** The author of revisions an accepted or saved suggestion becomes. */
+export const ASSISTANT = 'Assistant';
+
+// Changes `list` (entries() rows) as revise() pieces, one per changed run of words (the word diff). A change one of whose word
+// runs spans blocks the user put between its own blocks is left out.
+function piecesOf(list, schema) {
+  const out = [];
+  for (const e of list) {
+    if (e.kind === 'attr') continue;
+    const { A, changes } = wordChanges(oldNodesOf(e, schema), e.nodes, schema);
+    const offs = [];
+    let o = 0;
+    for (const n of e.nodes) {
+      offs.push(o);
+      o += n.nodeSize;
+    }
+    // A joined-blocks offset as a doc position, through the block it falls in (`side` -1: an end, so a block's own end).
+    const at = (x, side) => {
+      const k = offs.findIndex((s, i) => (side < 0 ? x <= s + e.nodes[i].nodeSize : x < s + e.nodes[i].nodeSize));
+      const i = k < 0 ? offs.length - 1 : k;
+      return i < 0 ? e.from + x : x + e.starts[i] - offs[i];
+    };
+    const mine = changes.map((c) => ({ from: at(c.fromB, 1), to: at(c.toB, -1), old: A.slice(c.fromA, c.toA), len: c.toB - c.fromB }));
+    if (mine.every((p) => p.to - p.from === p.len)) out.push(...mine);
+  }
+  return out;
+}
+
+/** Writes `pieces` ([{from, to, old}]: range [from, to) of tr.doc holds a suggestion's words, `old` the Slice they replaced) into
+ * `tr` as Word revisions by ASSISTANT: each range goes back to its old words and changes again in one round the Track Changes
+ * engine records, so the old words come back marked deleted and the new ones marked inserted. → the Mapping of the steps it
+ * added, or null (tr unchanged) when there is nothing to record or the round would not give tr.doc back exactly. */
+function revise(tr, pieces) {
+  if (!pieces.length) return null;
+  const doc = tr.doc;
+  const back = [...pieces].sort((a, b) => b.from - a.from);
+  let steps;
+  try {
+    const rev = new Transform(doc);
+    for (const p of back) rev.replace(p.from, p.to, p.old);
+    const fwd = new Transform(rev.doc);
+    for (const p of back) fwd.replace(rev.mapping.map(p.from, -1), rev.mapping.map(p.to, 1), doc.slice(p.from, p.to));
+    if (!fwd.doc.eq(doc)) return null;
+    const user = { name: ASSISTANT, initials: 'A' };
+    const rec = recordRound(fwd, [], EditorState.create({ doc: fwd.doc }), { user, date: new Date().toISOString(), id: revId, moves: false, formatting: false });
+    if (!rec) return null;
+    steps = [...rev.steps, ...fwd.steps, ...rec.steps];
+  } catch {
+    return null;
+  }
+  const start = tr.steps.length;
+  for (const s of steps) tr.step(s);
+  return tr.mapping.slice(start);
 }
 
 /** Rejecting changes `ids`: each change's blocks are deleted one by one and its old blocks put back at the first one's place
@@ -392,15 +606,16 @@ export function reject(state, ids) {
   const tr = state.tr;
   const { schema } = state;
   const first = new Map();
-  state.doc.forEach((n, pos) => {
+  for (const { n, pos } of units(state.doc)) {
     const r = rec(n);
     for (const id of [r?.ins?.id, ...(r?.del ?? []).map((d) => d.id)]) if (want.has(id) && !first.has(id)) first.set(id, pos);
-  });
+  }
   for (const id of [...first.keys()].sort((x, y) => first.get(y) - first.get(x))) rejectOne(tr, id, schema);
   const list = tr.doc.attrs.suggest?.attrs ?? [];
   const keep = list.filter((x) => !want.has(x.id));
   if (keep.length !== list.length) {
-    for (const x of list) if (want.has(x.id)) tr.setDocAttribute(x.key, x.old);
+    // Each record puts back only its keys.
+    for (const x of list) if (want.has(x.id)) tr.setDocAttribute(x.key, x.parts ? restore(tr.doc.attrs[x.key], x.parts) : x.old ?? null);
     tr.setDocAttribute('suggest', keep.length ? { attrs: keep } : null);
   }
   return tr.steps.length ? closeHistory(tr.setMeta(META, 'reject')) : null;
@@ -409,22 +624,20 @@ export function reject(state, ids) {
 function rejectOne(tr, id, schema) {
   // Del records, from the last: the record goes, its blocks go back before or after the carrier.
   const dels = [];
-  tr.doc.forEach((n, pos) => {
-    for (const d of rec(n)?.del ?? []) if (d.id === id) dels.push({ n, pos, d });
-  });
+  for (const { n, pos } of units(tr.doc)) for (const d of rec(n)?.del ?? []) if (d.id === id) dels.push({ n, pos, d });
   for (const { n, pos, d } of dels.reverse()) {
     const r = rec(tr.doc.nodeAt(pos));
     tr.setNodeAttribute(pos, 'suggest', pack(r?.ins ?? null, (r?.del ?? []).filter((x) => x.id !== id)));
-    tr.insert(d.side === 'before' ? pos : pos + n.nodeSize, d.old.map((j) => schema.nodeFromJSON(j)));
+    tr.insert(placeOf(tr.doc, pos, n, d.side, d.up), d.old.map((j) => schema.nodeFromJSON(j)));
   }
   const carriers = [];
   let old = null;
-  tr.doc.forEach((n, pos) => {
+  for (const { n, pos } of units(tr.doc)) {
     const r = rec(n);
-    if (r?.ins?.id !== id) return;
+    if (r?.ins?.id !== id) continue;
     carriers.push({ n, pos, r });
     if (r.ins.old && !old) old = r.ins.old;
-  });
+  }
   if (!carriers.length) return;
   const oldNodes = (old ?? []).map((j) => schema.nodeFromJSON(j));
   // Other changes' del records on these blocks stay in the draft.
@@ -435,24 +648,28 @@ function rejectOne(tr, id, schema) {
     return;
   }
   const start = one.pos;
-  const empty = !oldNodes.length && carriers.length === tr.doc.childCount; // the draft would be empty: one empty block stays
-  const put = empty ? [schema.topNodeType.contentMatch.defaultType.create()] : oldNodes;
+  // The draft or a wrapper would be empty: one empty block stays.
+  const parent = tr.doc.resolve(start).parent;
+  const empty = !oldNodes.length && carriers.length === parent.childCount && carriers.every((c) => tr.doc.resolve(c.pos).parent === parent);
+  const put = empty ? [parent.type.contentMatch.defaultType.create()] : oldNodes;
   const size = put.reduce((s, n) => s + n.nodeSize, 0);
   if (put.length) tr.insert(start, put);
   for (const { n, pos } of [...carriers].reverse()) tr.delete(pos + size, pos + size + n.nodeSize);
   if (!others.length) return;
   // A before-record goes on the first block at the place, an after-record on the block ending there.
   for (const d of others) {
+    const list = units(tr.doc);
     const m = d.side === 'before' ? start : start + size;
-    let { i, side } = holder(tr.doc, m);
-    if (d.side !== 'before' && m > 0) {
-      i = tr.doc.resolve(m).index(0) - 1;
+    let { i, side, up } = holder(tr.doc, list, m);
+    const j = d.side !== 'before' && m > 0 ? list.findLastIndex((u) => u.pos + u.n.nodeSize <= m) : -1;
+    if (j >= 0) {
+      i = j;
       side = 'after';
+      up = upOf(tr.doc, list[j].pos, side, m);
     }
-    let pos = 0;
-    for (let k = 0; k < i; k++) pos += tr.doc.child(k).nodeSize;
-    const r = rec(tr.doc.child(i));
-    tr.setNodeAttribute(pos, 'suggest', pack(r?.ins ?? null, [...(r?.del ?? []), { ...d, side }]));
+    const { n, pos } = list[i];
+    const r = rec(n);
+    tr.setNodeAttribute(pos, 'suggest', pack(r?.ins ?? null, [...(r?.del ?? []), delAt(d, side, up)]));
   }
 }
 
@@ -476,9 +693,9 @@ export function entries(doc) {
     }
     return e;
   };
-  doc.forEach((n, pos) => {
+  for (const { n, pos } of units(doc)) {
     const r = rec(n);
-    if (!r) return;
+    if (!r) continue;
     if (r.ins) {
       const e = get(r.ins);
       e.nodes.push(n);
@@ -492,11 +709,11 @@ export function entries(doc) {
       const e = get(d);
       e.old ??= d.old;
       if (e.from == null) {
-        e.from = e.to = d.side === 'before' ? pos : pos + n.nodeSize;
+        e.from = e.to = placeOf(doc, pos, n, d.side, d.up);
         e.side = d.side;
       }
     }
-  });
+  }
   for (const e of out) e.kind = e.nodes.length ? (e.old ? 'replace' : 'insert') : 'delete';
   const attrs = (doc.attrs.suggest?.attrs ?? []).map((x) => ({ id: x.id, g: x.g, by: x.by, at: x.at, note: x.note ?? null, kind: 'attr', from: 0, to: 0,
     old: x.old, nodes: [], starts: [], key: x.key }));
@@ -528,17 +745,17 @@ export function edited(doc, id) {
   let count = 0;
   let n = 0;
   let diff = false;
-  doc.forEach((b) => {
+  for (const { n: b } of units(doc)) {
     if (rec(b)?.del?.some((d) => d.id === id && d.edited)) diff = true;
     const ins = rec(b)?.ins;
-    if (ins?.id !== id) return;
+    if (ins?.id !== id) continue;
     count++;
     n = ins.n ?? n;
     if (ins.sig !== sigOf(b)) diff = true;
-  });
+  }
   if (count || diff) return diff || count < n;
   const a = doc.attrs.suggest?.attrs?.find((x) => x.id === id);
-  return a ? valueSig(doc.attrs[a.key]) !== a.sig : false;
+  return a ? recSig(doc.attrs, a) !== a.sig : false;
 }
 
 /** Content JSON (one node, or an array of them) without any record: what agents write never carries or forges one. Copies only
@@ -570,7 +787,11 @@ export function strip(json) {
  * blocks stay out. Copies only the changed path; never writes into `json`. */
 export function brief(json) {
   const replaced = new Set();
-  for (const b of json?.content ?? []) if (b?.attrs?.suggest?.ins?.old) replaced.add(b.attrs.suggest.ins.id);
+  const scan = (b) => {
+    if (b?.attrs?.suggest?.ins?.old) replaced.add(b.attrs.suggest.ins.id);
+    if (Array.isArray(b?.content)) b.content.forEach(scan);
+  };
+  (json?.content ?? []).forEach(scan);
   const one = (node, top) => {
     if (!node || typeof node !== 'object') return node;
     let out = node;
@@ -630,6 +851,13 @@ const oldNodesOf = (e, schema) => {
   }
 };
 const diffCache = new WeakMap();
+// The word changes from blocks `olds` to blocks `nodes`, each list joined in a doc: {A, B, changes: [{fromA, toA, fromB, toB}]}.
+function wordChanges(olds, nodes, schema) {
+  const A = schema.topNodeType.create(null, olds);
+  const B = schema.topNodeType.create(null, nodes);
+  const set = ChangeSet.create(A, (x) => x, ENCODER).addSteps(B, [new StepMap([0, A.content.size, B.content.size])], null);
+  return { A, B, changes: simplifyChanges(set.changes, B) };
+}
 
 /** The word changes of replace change `e` (an entries() row of `doc`) as [{kind: 'add' | 'del' | 'fmt', from, to, text}], doc
  * positions: added and reformatted ranges in the doc, deleted text at the place it was (from = to). Through prosemirror-changeset,
@@ -639,12 +867,9 @@ export function diff(e, doc, schema) {
   const key = e.nodes[0];
   let hit = diffCache.get(key);
   if (!hit || hit.old !== e.old || hit.last !== e.nodes[e.nodes.length - 1] || hit.count !== e.nodes.length) {
-    const olds = oldNodesOf(e, schema);
-    const A = schema.topNodeType.create(null, olds);
-    const B = schema.topNodeType.create(null, e.nodes);
-    const set = ChangeSet.create(A, (x) => x, ENCODER).addSteps(B, [new StepMap([0, A.content.size, B.content.size])], null);
+    const { A, B, changes } = wordChanges(oldNodesOf(e, schema), e.nodes, schema);
     const rel = [];
-    for (const c of simplifyChanges(set.changes, B)) {
+    for (const c of changes) {
       const gone = A.textBetween(c.fromA, c.toA, ' ', ' ');
       const added = B.textBetween(c.fromB, c.toB, ' ', ' ');
       if (c.toA > c.fromA && c.toB > c.fromB && gone === added) rel.push({ kind: 'fmt', from: c.fromB, to: c.toB, text: added });
@@ -771,10 +996,7 @@ function pickPlaces(doc, schema, pids) {
 // they are, other changes' del records with them); otherwise a block whose text the decision changed takes its new signature,
 // unless the user had edited the change (`keepSig`), which then still counts as edited.
 function settle(tr, id, schema, keepSig) {
-  const carriers = [];
-  tr.doc.forEach((n, pos) => {
-    if (rec(n)?.ins?.id === id) carriers.push({ n, pos });
-  });
+  const carriers = units(tr.doc).filter(({ n }) => rec(n)?.ins?.id === id);
   if (!carriers.length) return;
   const old = carriers.map(({ n }) => rec(n).ins.old).find(Boolean) ?? [];
   let olds;
@@ -793,22 +1015,28 @@ function settle(tr, id, schema, keepSig) {
 }
 
 /** Accepting places `pids` (places() ids): each one's proposed words go into its change's old blocks, so only the rest of that
- * change still differs; a change left with no difference goes. The text stays. One undo step. Null when none is in the doc. */
-export function acceptPlaces(state, pids) {
+ * change still differs; a change left with no difference goes. The text stays; with `track` each place becomes Word revisions
+ * (revise), which go into the old blocks with it. One undo step. Null when none is in the doc. */
+export function acceptPlaces(state, pids, track = trackingOn(state.doc)) {
   const { schema } = state;
   const tr = state.tr;
-  for (const [id, { e, list }] of pickPlaces(state.doc, schema, pids)) {
-    const olds = oldNodesOf(e, schema);
+  const picked = pickPlaces(state.doc, schema, pids);
+  const oldOf = new Map([...picked].map(([id, { e }]) => [id, oldNodesOf(e, schema)]));
+  const map = track && revise(tr, [...picked].flatMap(([id, { list }]) => list.map((p) => ({ from: p.from, to: p.to, old: oldOf.get(id)[p.k].slice(p.fromA, p.toA) }))));
+  for (const [id, { e, list }] of picked) {
+    const olds = oldOf.get(id);
+    const now = (p) => {
+      if (!map) return e.nodes[p.k].slice(p.fromB, p.toB);
+      const at = map.map(e.starts[p.k], 1);
+      return tr.doc.nodeAt(at).slice(map.map(p.from, -1) - at - 1, map.map(p.to, 1) - at - 1);
+    };
     // From the end of each block, so the earlier places' old positions still hold.
-    for (const p of [...list].sort((a, b) => b.k - a.k || b.fromA - a.fromA)) olds[p.k] = olds[p.k].replace(p.fromA, p.toA, e.nodes[p.k].slice(p.fromB, p.toB));
-    let at = -1;
-    tr.doc.forEach((n, pos) => {
-      if (at < 0 && rec(n)?.ins?.id === id && rec(n).ins.old) at = pos;
-    });
+    for (const p of [...list].sort((a, b) => b.k - a.k || b.fromA - a.fromA)) olds[p.k] = olds[p.k].replace(p.fromA, p.toA, now(p));
+    const at = units(tr.doc).find(({ n }) => rec(n)?.ins?.id === id && rec(n).ins.old)?.pos ?? -1;
     if (at < 0) continue;
     const r = rec(tr.doc.nodeAt(at));
     tr.setNodeAttribute(at, 'suggest', pack({ ...r.ins, old: olds.map(plainJSON) }, r.del));
-    settle(tr, id, schema, true);
+    settle(tr, id, schema, !map || edited(state.doc, id)); // the revisions changed the text: its signature follows
   }
   return tr.steps.length ? closeHistory(tr.setMeta(META, 'accept')) : null;
 }
@@ -832,14 +1060,16 @@ export function rejectPlaces(state, pids) {
 }
 
 // ---------- row text ----------
-const q = (s) => {
+/** `s` in quotes for a row, cut at a word near 40 characters (the cards of a canvas draft use it too, cards.mjs). */
+export const q = (s) => {
   const t = String(s).replace(/\s+/g, ' ').trim();
   if (t.length <= 40) return `“${t}”`;
   const cut = t.slice(0, 40);
   const sp = cut.lastIndexOf(' ');
   return `“${(sp > 20 ? cut.slice(0, sp) : cut).trim()}…”`;
 };
-const jsonText = (j) => (j?.type === 'text' ? j.text ?? '' : (j?.content ?? []).map(jsonText).join(j?.content?.every((c) => c.type === 'text' || c.type === 'hardBreak') ? '' : ' '));
+/** The text of block JSON `j`: inline content joined as is, blocks with a space. */
+export const jsonText = (j) => (j?.type === 'text' ? j.text ?? '' : (j?.content ?? []).map(jsonText).join(j?.content?.every((c) => c.type === 'text' || c.type === 'hardBreak') ? '' : ' '));
 const MARK_NAMES = { textStyle: 'font', fontSize: 'font size', textColor: 'colour', fontFamily: 'font', strike: 'strikethrough', code: 'code' };
 const TYPE_NAMES = { paragraph: 'normal text', bulletList: 'bulleted list', orderedList: 'numbered list', blockquote: 'quote', codeBlock: 'code block' };
 const typeName = (n) => (n.type.name === 'heading' ? `heading ${n.attrs.level}` : TYPE_NAMES[n.type.name] ?? labelOf(n.type.name, n.attrs)?.toLowerCase() ?? n.type.name);
@@ -859,7 +1089,10 @@ const plural = (k, one, many) => `${k} ${k === 1 ? one : many}`;
  * Change to heading 2, Add smart canvas, Add 3 items, change 1, remove 2, Change 3 places in “...”, Change page setup. Empty
  * default paragraphs (TrailingNode's) are left out; a change of only them is "Add empty line". */
 export function describe(e, schema) {
-  if (e.kind === 'attr') return e.key === 'sect' ? 'Change page setup' : `Change ${e.key}`;
+  if (e.kind === 'attr') {
+    const top = e.key.split('.')[0];
+    return top === 'sect' ? 'Change page setup' : top === 'styles' ? 'Change styles' : `Change ${top}`;
+  }
   const deleted = () => {
     const old = (e.old ?? []).filter((j) => jsonText(j).trim() || labelOf(j.type, j.attrs) || j.type !== schema.topNodeType.contentMatch.defaultType.name);
     if (!old.length) return 'Delete empty line';

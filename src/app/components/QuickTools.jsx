@@ -1,17 +1,22 @@
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { cn } from 'cn';
 import { TITLEBAR } from '@/components/ui/bounds';
 import { canvasEditor } from '../../canvas.js';
 import { activeBoard } from '../../whiteboard.js';
 import { closeQuickTools } from '../actions.js';
-import { getState, useEditor, useStore } from '../store.js';
+import { motion } from '../motion.js';
+import { useWordCtx } from '../../tooling/registry.js';
+import { getState, useStore } from '../store.js';
 import { AlignMenu, BoardTools, RailLayout } from './board/BoardRail.jsx';
 import { CHROME, keepFocus } from './board/controls.jsx';
-import { DocumentQuickTools } from '../../document/Ribbon.jsx';
-import { BlockSelect, Group, GroupRows, PresetsMenu, SelectRow, SizeSelect, SwatchMenu, TableTools, textTools, ToolButton, useBox } from './Toolbar.jsx';
+import { MiniBar } from '../../document/wp/context-menu/MiniToolbar.jsx';
+import {
+  BlockSelect, Group, GroupRows, PresetsMenu, SelectRow, SizeBox, TableTools, TextColors, textTools, Toggles, ToolButton, useBox,
+} from './Toolbar.jsx';
 
 // §7d quick tools (Ctrl+Tab): the bottom toolbar island and the §6c rail merged into one island at the pointer, built
 // from their own controls. It never takes the focus. Escape, a pointer-down outside it, Ctrl+Tab again and the end of
-// the mode it was opened for close it.
+// the mode it was opened for close it; after a board tool pick, so does the pointer leaving it.
 
 const GAP = 6; // px between the pointer and the island
 const SWATCH_MID = 17; // px from a tool options card's left edge to the centre of its first control (p-1 + half a size-8)
@@ -19,38 +24,29 @@ const SWATCH_MID = 17; // px from a tool options card's left edge to the centre 
 /** Text mode: the toolbar's controls and the rail's Align, each once, without the font select, Undo, Redo and Add image
  * (keys and paste / drop cover them). */
 function TextTools({ anchor }) {
-  const ed = useEditor();
-  const T = textTools(ed);
+  useWordCtx(); // the controls follow the editor's transactions
+  const T = textTools();
   const box = useBox();
   return (
     <GroupRows>
       <Group>
         <SelectRow>
           <BlockSelect T={T} />
-          <SizeSelect T={T} />
+          <SizeBox T={T} />
         </SelectRow>
       </Group>
       <Group>
-        <ToolButton {...T.bold} />
-        <ToolButton {...T.italic} />
-        <ToolButton {...T.underline} />
-        <ToolButton {...T.strike} />
-        <ToolButton {...T.sub} />
-        <ToolButton {...T.sup} />
-        <ToolButton {...T.code} />
+        <Toggles label="Text formatting" items={[T.bold, T.italic, T.underline, T.strike, T.sub, T.sup, T.code]} />
       </Group>
       <Group>
-        <SwatchMenu {...T.color} anchor={anchor} />
-        <SwatchMenu {...T.highlight} anchor={anchor} />
+        <TextColors T={T} anchor={anchor} />
       </Group>
       <Group>
         <AlignMenu aligns={[T.alignLeft, T.alignCenter, T.alignRight, T.justify]} />
-        <ToolButton {...T.bulletList} />
-        <ToolButton {...T.orderedList} />
+        <Toggles label="Lists" items={[T.bulletList, T.orderedList]} />
       </Group>
       <Group>
-        <ToolButton {...T.quote} />
-        <ToolButton {...T.codeBlock} />
+        <Toggles label="Blocks" items={[T.quote, T.codeBlock]} />
         <ToolButton {...T.rule} />
       </Group>
       <Group>
@@ -58,7 +54,7 @@ function TextTools({ anchor }) {
         <ToolButton {...T.references} />
       </Group>
       <Group>
-        <TableTools T={T} ed={ed} />
+        <TableTools T={T} />
         {box && <ToolButton {...T.box} />}
         <ToolButton {...T.link} />
         <ToolButton {...T.canvas} />
@@ -83,6 +79,8 @@ function Island({ open }) {
   const ref = useRef(null);
   const inside = useRef(false); // the current pointer-down is in the island or in a popup of its controls
   const pointerX = useRef(open.x); // anchors the tool options
+  const picked = useRef(false); // a board tool was picked in it: from then on the pointer leaving it hides it
+  const [hiding, setHiding] = useState(false); // fading out (app.css [data-hiding]), closed at the end unless the pointer comes back
   // Tool options: a zero-width anchor along the island's top / bottom edge at the pointer's x: where the island was
   // summoned, then where the last click in it was (e.g. on a tool button); kept within the island.
   const [layout] = useState(() => ({
@@ -99,13 +97,19 @@ function Island({ open }) {
     },
   }));
   const active = useSyncExternalStore(activeBoard.subscribe, activeBoard.get);
-  const isDocument = useStore((s) => s.draft?.format === 'document'); // its own text tools (Ribbon.jsx DocumentQuickTools)
+  const isDocument = useStore((s) => s.draft?.format === 'document'); // the mini toolbar's rows (registry commands)
   const session = useSyncExternalStore(canvasEditor.subscribe, canvasEditor.get);
   const board = session?.board ?? active; // what Ctrl+Tab would open it for now
 
   useEffect(() => {
     if (board !== open.board) closeQuickTools(); // its mode ended
   }, [board, open.board]);
+
+  useEffect(() => {
+    if (!hiding) return undefined;
+    const t = setTimeout(closeQuickTools, motion('hide')); // 0 when the hide animation does not play
+    return () => clearTimeout(t);
+  }, [hiding]);
 
   // Window capture: before the boards, canvas edit mode and Radix popups (an open select or flyout closes with it). A
   // pointer-down outside still does its job, except on a board, which it only closes (§6c Dismiss-only clicks); React's
@@ -152,11 +156,18 @@ function Island({ open }) {
           inside.current = true;
           if (ref.current.contains(e.target)) pointerX.current = e.clientX; // not in its popups (they portal)
         }}
+        onClickCapture={(e) => { if (e.target.closest('[data-board-tool]')) picked.current = true; }}
+        // React's enter and leave follow its own tree, so its popups (the tool options card, a select's list, a colour menu)
+        // count as inside although they portal. Crossing the gap to the card starts the fade, and entering the card ends it.
+        onPointerLeave={() => picked.current && setHiding(true)} onPointerEnter={() => setHiding(false)} data-hiding={hiding ? '' : undefined}
         // Drawn at the pointer from the first frame (the layout effect only corrects it at the window edges) and only fades in:
-        // no scale or slide, so it never seems to fly in.
-        style={{ left: `calc(${open.x}px - 10rem)`, top: open.y + GAP }}
-        className="fixed z-50 w-[20rem] rounded-island border bg-island px-1.5 py-1 text-sm shadow-xl animate-in fade-in-0 duration-(--motion-menus)">
-        {open.board ? <BoardQuickTools board={open.board} /> : isDocument ? <DocumentQuickTools anchor={ref} /> : <TextTools anchor={ref} />}
+        // no scale or slide, so it never seems to fly in. The length is the fade's only: a duration-* class would also time a
+        // transition of every property, sliding the island when the layout effect corrects its left.
+        style={{ left: `calc(${open.x}px - 10rem)`, top: open.y + GAP }} data-mini-quick={isDocument && !open.board ? '' : undefined}
+        // Board mode hugs its widest group (min-content: wrapped groups count one at a time, where max-content is one long row),
+        // so the 7-button rows have the same gap on both sides and the actions and Background share the last row.
+        className={cn('fixed z-50 rounded-island', open.board ? 'w-min' : isDocument ? 'w-auto' : 'w-[20rem]', 'border bg-island px-1.5 py-1 text-sm shadow-xl animate-in fade-in-0 [animation-duration:var(--motion-menus)]')}>
+        {open.board ? <BoardQuickTools board={open.board} /> : isDocument ? <MiniBar /> : <TextTools anchor={ref} />}
       </div>
     </RailLayout.Provider>
   );

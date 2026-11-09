@@ -1,0 +1,52 @@
+{
+  "type": "doc",
+  "content": [
+    {
+      "type": "bulletList",
+      "content": [
+        {
+          "type": "listItem",
+          "content": [
+            { "type": "paragraph", "content": [{ "type": "text", "text": "top" }] },
+            {
+              "type": "bulletList",
+              "content": [
+                {
+                  "type": "listItem",
+                  "content": [
+                    { "type": "paragraph", "content": [{ "type": "text", "text": "second level" }] },
+                    {
+                      "type": "orderedList",
+                      "attrs": { "start": 2 },
+                      "content": [
+                        {
+                          "type": "listItem",
+                          "content": [{ "type": "paragraph", "content": [{ "type": "text", "text": "third level, item two" }] }]
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "listItem",
+                  "content": [{ "type": "paragraph", "content": [{ "type": "text", "text": "second level again" }] }]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "listItem",
+          "content": [
+            { "type": "paragraph", "content": [{ "type": "text", "text": "another top" }] },
+            { "type": "paragraph", "content": [{ "type": "text", "text": "a second paragraph in the same item" }] },
+            {
+              "type": "blockquote",
+              "content": [{ "type": "paragraph", "content": [{ "type": "text", "text": "a quote in the item" }] }]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

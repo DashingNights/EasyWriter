@@ -1,9 +1,8 @@
 import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { cn } from 'cn';
 import {
-  AlignCenterHorizontal, AlignCenterVertical, AlignEndHorizontal, AlignEndVertical, AlignHorizontalDistributeCenter, AlignStartHorizontal,
-  AlignStartVertical, AlignVerticalDistributeCenter, BringToFront, Copy, Eraser, ImagePlus, Layers, Magnet, MousePointer2,
-  MoveHorizontal, MoveVertical, PaintBucket, Pen, Pin, Redo2, SendToBack, Shapes, Spline, Trash2, Type, Undo2,
+  AlignStartVertical, BringToFront, Copy, Eraser, FileInput, ImagePlus, Layers, Magnet, MousePointer2, MoveUpRight, PaintBucket, Pen, Pin, Redo2,
+  SendToBack, Shapes, Slash, Spline, Trash2, Type, Undo2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -17,22 +16,32 @@ import { Separator } from '@/components/ui/separator';
 import { Switch } from '@/components/ui/switch';
 import { Toggle } from '@/components/ui/toggle';
 import { KINDS } from '../../../flow/shapes.mjs';
-import { BG_OPTIONS, resolveBg } from '../../../whiteboard.js';
+import { SNAP_DISTANCES } from '../../../flow/snap.mjs';
+import { BG_OPTIONS, PATH_TOOLS, resolveBg } from '../../../whiteboard.js';
 import { keyLabel, withKey } from '../../keybinds.js';
 import { SHAPE_KEYS } from '../../keys.mjs';
 import { closeQuickTools, refocusEditor } from '../../actions.js';
 import { can } from '../../gates.mjs';
-import { useEditor, useStore } from '../../store.js';
-import { Group as ToolGroup, SwatchMenu, textTools } from '../Toolbar.jsx';
-import { Tip } from '../Tip.jsx';
+import { ARRANGE, boardCan } from '../../pool-board.js';
+import { useStore } from '../../store.js';
+import { run, useWordCtx } from '../../../tooling/registry.js';
+import { LINE_KINDS, shapeName } from '../../../tooling/shape-picker.mjs';
+import { Group as ToolGroup, TextColors, textTools } from '../Toolbar.jsx';
+import { Help, Tip } from '../Tip.jsx';
 import {
-  armTile, CHROME, ConnectorControls, keepFocus, OptionSelect, PresetRow, refocus, ShapeControls, ShapeIcon, StrokeControls, useBoard, useSnapshot,
+  CHROME, ConnectorControls, isArrow, keepFocus, OptionSelect, PresetRow, refocus, ShapeControls, ShapeIcon, StrokeControls, useBoard, useSnapshot,
 } from './controls.jsx';
-import { LayersPanel, toggleLayers } from './LayersPanel.jsx';
+import { TextBackground } from './ItemRibbon.jsx';
+import { LayersPanel } from './LayersPanel.jsx';
 
 const BASIC = KINDS.filter((k) => k.group === 'basic'); // the quick tools' shapes (§7d), two rows of 7
 const ACTIVE = 'size-8 data-[state=on]:bg-(--ui-accent) data-[state=on]:text-white hover:data-[state=on]:bg-(--ui-accent) hover:data-[state=on]:text-white'; // the active board tool: the only use of the rail's blue
-const SNAP_RULES = [['items', 'Other items'], ['board', 'Board edges and centre'], ['grid', '10 px grid', 'board.grid']]; // the third: its keybind (§7k)
+// [rule, label, keybind (§7k), help]
+const SNAP_RULES = [['items', 'Other items'], ['board', 'Canvas edges and centre'],
+  ['spacing', 'Equal spacing', null, 'An item you move snaps to the same gap as the items beside it, or to the middle between two.'],
+  ['grid', '10 px grid', 'board.grid']];
+const SNAP_DISTANCE = SNAP_DISTANCES.map((d) => [d, `${d} px`]);
+const GUIDES = [['simple', 'Simple'], ['standard', 'Standard'], ['detailed', 'Detailed']];
 const CHECKER = 'repeating-conic-gradient(#8a8ca0 0 25%, #d0d0da 0 50%) 0 0 / 8px 8px';
 
 /** How the rail's controls are laid out: `dir` 'col' (the vertical rail) or 'wrap' (the quick tools island, §7d, and the
@@ -54,7 +63,7 @@ function usePopup() {
  * (PopoverAnchor / PopoverTrigger / DropdownMenuTrigger) wraps the button for its flyout. */
 function RailButton({ title, active, tool, disabled, onClick, slot: Slot, children }) {
   const { side, anchor, toolAnchor, off } = useContext(RailLayout);
-  const props = { 'aria-label': title, disabled: disabled || off };
+  const props = { 'aria-label': title, disabled: disabled || off, 'data-board-tool': tool ? '' : undefined }; // a pick, for the quick tools' hide on leave (§7d)
   let button = active === undefined
     ? <Button variant="ghost" size="icon-sm" onClick={onClick} {...props}>{children}</Button>
     : <Toggle size="sm" className={tool ? ACTIVE : 'size-8'} pressed={active && !off} onPressedChange={() => onClick()} {...props}>{children}</Toggle>;
@@ -79,7 +88,13 @@ function ToolFlyout({ board, children }) {
         // left edge at the pointer (toolAnchor), so the first control, the line colour, is right above / below it
         : 'flex w-max min-w-40 flex-col gap-1 p-1 [&_[data-slot=select-trigger]]:w-full [&_[data-slot=select-trigger]]:min-w-0 [&_span:has(>[data-slot=select-trigger])]:min-w-0 [&_span:has(>[data-slot=select-trigger])]:flex-1'}
       onOpenAutoFocus={(e) => e.preventDefault()} onCloseAutoFocus={(e) => e.preventDefault()}
-      onEscapeKeyDown={() => board.setMode(null)}>
+      onEscapeKeyDown={(e) => {
+        if (!board.draft) return board.setMode(null);
+        // A path tool placing a line: Escape ends the line and keeps the tool, as on the board. The board's own key handler does
+        // that when it has focus; with focus in this card, the card ends it.
+        e.preventDefault();
+        if (!board.dom.contains(e.target)) board.endPath();
+      }}>
       {children}
     </PopoverContent>
   );
@@ -99,27 +114,8 @@ function Group({ first, children }) {
   return <>{!first && <Sep />}{children}</>;
 }
 
-/** Arrange (§6d): align, distribute and same size, each one Board call (the tool search has the same entries). */
-export const ARRANGE = [
-  [
-    ['align-left', 'Align left', AlignStartVertical, (b) => b.align('left')],
-    ['align-centre', 'Align centre', AlignCenterVertical, (b) => b.align('centre')],
-    ['align-right', 'Align right', AlignEndVertical, (b) => b.align('right')],
-    ['align-top', 'Align top', AlignStartHorizontal, (b) => b.align('top')],
-    ['align-middle', 'Align middle', AlignCenterHorizontal, (b) => b.align('middle')],
-    ['align-bottom', 'Align bottom', AlignEndHorizontal, (b) => b.align('bottom')],
-  ],
-  [
-    ['distribute-h', 'Distribute horizontally', AlignHorizontalDistributeCenter, (b) => b.distribute('h')],
-    ['distribute-v', 'Distribute vertically', AlignVerticalDistributeCenter, (b) => b.distribute('v')],
-  ],
-  [
-    ['same-width', 'Same width', MoveHorizontal, (b) => b.sameSize('w')],
-    ['same-height', 'Same height', MoveVertical, (b) => b.sameSize('h')],
-  ],
-];
-
-/** Snapping: the master toggle and one checkbox per rule (`snap` = the snapshot's rules). Also the tool search's options. */
+/** Snapping: the master toggle, one checkbox per rule, the snap distance and how much the guides show (`snap` = the snapshot's
+ * rules). Also the tool search's options. */
 export function SnapControls({ board, snap }) {
   return (
     <div className="flex w-58 flex-col gap-2">
@@ -128,13 +124,28 @@ export function SnapControls({ board, snap }) {
         <Switch checked={snap.on} onCheckedChange={(on) => board.setSnap({ on })} />
       </Label>
       <Separator />
-      {SNAP_RULES.map(([key, label, keys]) => (
+      {SNAP_RULES.map(([key, label, keys, help]) => (
         <Label key={key} className="font-normal">
           <Checkbox checked={snap[key]} disabled={!snap.on} onCheckedChange={(v) => board.setSnap({ [key]: v === true })} />
           {label}
+          {help && <Help>{help}</Help>}
           {keys && keyLabel(keys) && <span className="ml-auto text-xs text-muted-foreground">{keyLabel(keys)}</span>}
         </Label>
       ))}
+      <Separator />
+      <div className="flex items-center gap-1">
+        <span className="text-sm">Snap distance</span>
+        <Help>How close an edge comes, in screen pixels, before it snaps.</Help>
+        <OptionSelect board={board} title="Snap distance" value={snap.distance} options={SNAP_DISTANCE} className="ml-auto"
+          onChange={(v) => board.setSnap({ distance: Number(v) })} />
+      </div>
+      <div className="flex items-center gap-1">
+        <span className="text-sm">Guides</span>
+        <Help>Simple shows the line that snapped. Standard adds every lined-up edge and equal gaps. Detailed adds the distances to
+          the nearest items and the size.</Help>
+        <OptionSelect board={board} title="Guides" value={snap.guides} options={GUIDES} className="ml-auto"
+          onChange={(guides) => board.setSnap({ guides })} />
+      </div>
     </div>
   );
 }
@@ -144,7 +155,7 @@ export function BgSelect({ board, bg }) {
   const theme = document.documentElement.dataset.theme;
   return (
     <OptionSelect board={board} title="Background" className="w-36" value={bg} onChange={(v) => board.setBg(v)}
-      options={BG_OPTIONS.map(([value, label]) => [value, label, resolveBg(value, theme) ?? CHECKER])} />
+      options={(board?.bgOptions ?? BG_OPTIONS).map(([value, label]) => [value, label, resolveBg(value, theme) ?? CHECKER])} />
   );
 }
 
@@ -166,7 +177,8 @@ export function AlignMenu({ aligns }) {
 /** Text mode (no active board): duplicates of toolbar controls, from the toolbar's own definitions. Nothing here takes
  * focus and the popups refocus the editor when they close, so the document keeps its selection. */
 function TextRail() {
-  const t = textTools(useEditor());
+  useWordCtx(); // the slots follow the editor's transactions
+  const t = textTools();
   return (
     <>
       <RailButton {...t.undo} />
@@ -178,8 +190,7 @@ function TextRail() {
       <RailButton {...t.underline} />
       <RailButton {...t.strike} />
       <Sep />
-      <SwatchMenu {...t.color} side="right" />
-      <SwatchMenu {...t.highlight} side="right" />
+      <TextColors T={t} side="right" />
       <Sep />
       <AlignMenu aligns={[t.alignLeft, t.alignCenter, t.alignRight, t.justify]} />
       <RailButton {...t.bulletList} />
@@ -194,7 +205,7 @@ function TextRail() {
 }
 
 // The snapshot the toolbar's board tools show with no canvas open (all greyed out).
-const IDLE_SNAP = { mode: null, count: 0, canUndo: false, canRedo: false, keepTool: false, bg: null, prefab: null, snap: {}, pen: {}, shape: {}, conn: {} };
+const IDLE_SNAP = { mode: null, count: 0, canUndo: false, canRedo: false, keepTool: false, bg: null, prefab: null, snap: {}, pen: {}, shape: {}, conn: {}, line: {} };
 
 /** Board mode: the anchored slots acting on `board`, then its tools. In the quick tools island (§7d) the mode tools come
  * first (nearest the pointer), then the basic shapes; Undo, Redo, Add image and Snapping are left out (keys, paste / drop
@@ -211,13 +222,17 @@ function BoardSlots({ board }) {
   const [open, setOpen] = useState(null); // 'snap' | 'bg' | 'arrange' | null
   useEffect(() => setOpen(null), [board]); // the toolbar's slots outlive a board: its flyout goes with it
   const { mode, count } = snap; // count: selected items; the item actions act on all of them
+  // What this board can do: a slot for a method it lacks (the DOM Board's Place draft) or a later module's shows disabled.
+  const may = (name) => !board || boardCan(board, name);
   const act = (fn) => () => {
     fn();
     board.focus(); // the 6c shortcuts keep working right after a click here
   };
-  const tool = (m) => act(() => board.setMode(mode === m ? null : m));
+  // The slots run the board's pool commands (pool-board.js), which focus the board after acting.
+  const cmd = (id, arg) => () => run(id, arg);
+  const tool = (m) => cmd(`board.${m}`, { toggle: true });
   const flyout = (key) => ({ open: !!board && open === key, onOpenChange: (o) => setOpen(o ? key : null) });
-  const strokes = <StrokeControls board={board} value={snap.pen} set={(p) => board.setPen(p)} live />;
+  const strokes = <StrokeControls board={board} value={snap.pen} set={(p) => board.setPen(p)} />;
   const theme = document.documentElement.dataset.theme;
   // A tool's options show once: under the quick tools island while it is open for this board, else beside the rail.
   const { anchor, bar } = useContext(RailLayout);
@@ -225,18 +240,34 @@ function BoardSlots({ board }) {
   const quickHere = useStore((s) => s.quickTools?.board === board);
   const layers = useStore((s) => s.settings?.layersPanel ?? true);
   const showTool = (m) => mode === m && !bar && (inIsland || !quickHere);
-  const kindButton = (k) => (
-    <RailButton key={k.kind} tool title={withKey(k.label, SHAPE_KEYS[k.kind])} active={mode === 'shape' && !snap.prefab && snap.shape.shape === k.kind}
-      onClick={act(() => armTile(board, { kind: k.kind }))}><ShapeIcon shape={k.kind} /></RailButton>
-  );
+  const pathTool = PATH_TOOLS.includes(mode);
+  // The Line and Arrow tools (free lines: their ends go where they are put, nothing sticks), each with the line tool's options.
+  const lineButton = (arrow) => {
+    const on = mode === 'line' && isArrow(snap.line) === arrow;
+    return (
+      <Popover key={arrow ? 'arrow' : 'line'} open={on && !bar && (inIsland || !quickHere)}>
+        <RailButton tool title={withKey(arrow ? 'Arrow' : 'Line', arrow ? 'board.arrow' : 'board.line')} active={on}
+          onClick={cmd(arrow ? 'board.arrow' : 'board.line', { toggle: true })} slot={PopoverAnchor}>{arrow ? <MoveUpRight /> : <Slash />}</RailButton>
+        <ToolFlyout board={board}>
+          <ConnectorControls board={board} value={snap.line} set={(p) => board.setLineTool(p)} strokeFirst={inIsland} />
+          {!inIsland && <PresetRow set={(p) => board.setLineTool(p)} connector />}
+        </ToolFlyout>
+      </Popover>
+    );
+  };
+  // A quick shape under its name in every picker; the board's line kinds are the Line and Arrow tools.
+  const kindButton = (k) => (LINE_KINDS[k.kind] ? lineButton(k.kind === 'arrow') : (
+    <RailButton key={k.kind} tool title={withKey(shapeName(k.kind), SHAPE_KEYS[k.kind])} active={mode === 'shape' && !snap.prefab && snap.shape.shape === k.kind}
+      onClick={cmd(`board.shape.${k.kind}`)}><ShapeIcon shape={k.kind} /></RailButton>
+  ));
 
   const background = (
     <DropdownMenu {...flyout('bg')}>
       <RailButton title="Background" slot={DropdownMenuTrigger}><PaintBucket /></RailButton>
       <DropdownMenuContent {...CHROME} {...popup} className="w-44" onCloseAutoFocus={refocus(board)}>
         <DropdownMenuLabel>Background</DropdownMenuLabel>
-        <DropdownMenuRadioGroup value={snap.bg} onValueChange={(bg) => board.setBg(bg)}>
-          {BG_OPTIONS.map(([value, label]) => (
+        <DropdownMenuRadioGroup value={snap.bg} onValueChange={(bg) => run('board.background', bg)}>
+          {(board?.bgOptions ?? BG_OPTIONS).map(([value, label]) => (
             <DropdownMenuRadioItem key={value} value={value}>
               <span className="size-4 rounded-sm border" style={{ background: resolveBg(value, theme) ?? CHECKER }} />
               {label}
@@ -253,35 +284,43 @@ function BoardSlots({ board }) {
         <Group first>
           {!bar && <RailButton title={withKey('Undo', 'edit.undo')} disabled={!snap.canUndo} onClick={act(() => board.undo())}><Undo2 /></RailButton>}
           {!bar && <RailButton title={withKey('Redo', 'edit.redo')} disabled={!snap.canRedo} onClick={act(() => board.redo())}><Redo2 /></RailButton>}
-          <RailButton tool title={withKey('Add image', 'board.image')} active={mode === 'image'} onClick={act(() => (mode === 'image' ? board.setMode(null) : board.pickImages()))}><ImagePlus /></RailButton>
+          <RailButton tool title={withKey('Add image', 'board.image')} active={mode === 'image'} disabled={!may('pickImages')} onClick={cmd('board.image', { toggle: true })}><ImagePlus /></RailButton>
+          <RailButton title="Place draft" disabled={!may('placeDraft')} onClick={cmd('board.placeDraft')}><FileInput /></RailButton>
         </Group>
       )}
       <Group first={inIsland}>
         <RailButton tool title={withKey('Select', 'board.select')} active={!mode}
-          onClick={act(() => { if (mode) board.setMode(null); if (inIsland) closeQuickTools(); })}><MousePointer2 /></RailButton>
-        <RailButton tool title={withKey('Add text', 'board.text')} active={mode === 'text'} onClick={tool('text')}><Type /></RailButton>
+          onClick={() => { run('board.select'); if (inIsland) closeQuickTools(); }}><MousePointer2 /></RailButton>
+        <Popover open={showTool('text')}>
+          <RailButton tool title={withKey('Add text', 'board.text')} active={mode === 'text'} onClick={tool('text')} slot={PopoverAnchor}><Type /></RailButton>
+          <ToolFlyout board={board}><TextBackground board={board} value={snap.text?.bg} onChange={(bg) => board.setTextTool({ bg })} /></ToolFlyout>
+        </Popover>
         <Popover open={showTool('pen')}>
           <RailButton tool title={withKey('Pen', 'board.pen')} active={mode === 'pen'} onClick={tool('pen')} slot={PopoverAnchor}><Pen /></RailButton>
           <ToolFlyout board={board}>{strokes}</ToolFlyout>
         </Popover>
         {/* The eraser removes whole strokes it crosses: it has no settings, so no options flyout. */}
         <RailButton tool title={withKey('Eraser', 'board.eraser')} active={mode === 'eraser'} onClick={tool('eraser')}><Eraser /></RailButton>
-        <Popover open={showTool('shape')}>
-          <RailButton tool title={withKey('Shape', 'board.shape')} active={mode === 'shape'} onClick={tool('shape')} slot={PopoverAnchor}><Shapes /></RailButton>
+        {/* Curve and Freeform: Shape (PATH_TOOLS) draw in their own look (snap.path: the shape tool's line and fill, in a Document its
+            default line, closed in its default shape): its card shows it, without the shape list. */}
+        <Popover open={showTool(pathTool ? mode : 'shape')}>
+          <RailButton tool title={withKey('Shape', 'board.shape')} active={mode === 'shape' || pathTool} onClick={tool('shape')} slot={PopoverAnchor}><Shapes /></RailButton>
           <ToolFlyout board={board}>
             {/* The island already shows the shapes and the ribbon the styles, so its card has no shape list and no presets (§7d). */}
-            <ShapeControls board={board} value={snap.shape} set={(p) => board.setShapeTool(p)} live strokeFirst={inIsland} picker={!inIsland} />
-            {!inIsland && <PresetRow set={(p) => board.setShapeTool(p)} />}
+            <ShapeControls board={board} value={pathTool ? snap.path : snap.shape} set={(p) => (pathTool ? board.setPathTool(p) : board.setShapeTool(p))} live
+              strokeFirst={inIsland} picker={!inIsland && !pathTool} />
+            {!inIsland && <PresetRow set={(p) => (pathTool ? board.setPathTool(p) : board.setShapeTool(p))} />}
           </ToolFlyout>
         </Popover>
+        {!inIsland && [lineButton(false), lineButton(true)]}
         <Popover open={showTool('connector')}>
           <RailButton tool title={withKey('Connector', 'board.connector')} active={mode === 'connector'} onClick={tool('connector')} slot={PopoverAnchor}><Spline /></RailButton>
           <ToolFlyout board={board}>
-            <ConnectorControls board={board} value={snap.conn} set={(p) => board.setConnTool(p)} live strokeFirst={inIsland} />
+            <ConnectorControls board={board} value={snap.conn} set={(p) => board.setConnTool(p)} strokeFirst={inIsland} />
             {!inIsland && <PresetRow set={(p) => board.setConnTool(p)} connector />}
           </ToolFlyout>
         </Popover>
-        <RailButton title={withKey('Keep tool on', 'board.keepTool')} active={snap.keepTool} onClick={act(() => board.setKeepTool(!snap.keepTool))}><Pin /></RailButton>
+        <RailButton title={withKey('Keep tool on', 'board.keepTool')} active={snap.keepTool} onClick={cmd('board.keepTool')}><Pin /></RailButton>
       </Group>
       {inIsland && (
         <>
@@ -290,19 +329,19 @@ function BoardSlots({ board }) {
         </>
       )}
       <Group>
-        <RailButton title={withKey('Duplicate', 'board.duplicate')} disabled={!count} onClick={act(() => board.duplicate())}><Copy /></RailButton>
-        <RailButton title={withKey('Bring to front', 'board.front')} disabled={!count} onClick={act(() => board.arrange('front'))}><BringToFront /></RailButton>
-        <RailButton title={withKey('Send to back', 'board.back')} disabled={!count} onClick={act(() => board.arrange('back'))}><SendToBack /></RailButton>
+        <RailButton title={withKey('Duplicate', 'board.duplicate')} disabled={!count || !may('duplicate')} onClick={cmd('board.items.duplicate')}><Copy /></RailButton>
+        <RailButton title={withKey('Bring to front', 'board.front')} disabled={!count} onClick={cmd('board.items.arrange.front')}><BringToFront /></RailButton>
+        <RailButton title={withKey('Send to back', 'board.back')} disabled={!count} onClick={cmd('board.items.arrange.back')}><SendToBack /></RailButton>
         <DropdownMenu {...flyout('arrange')}>
           <RailButton title="Arrange (two or more items)" disabled={!can('board.selectionMany', snap)} slot={DropdownMenuTrigger}><AlignStartVertical /></RailButton>
           <DropdownMenuContent {...CHROME} {...popup} className="w-52" onCloseAutoFocus={refocus(board)}>
             {ARRANGE.flatMap((group, k) => [
               ...(k ? [<DropdownMenuSeparator key={k} />] : []),
-              ...group.map(([id, label, Icon, run]) => <DropdownMenuItem key={id} onSelect={() => run(board)}><Icon />{label}</DropdownMenuItem>),
+              ...group.map(([id, label, Icon]) => <DropdownMenuItem key={id} onSelect={() => run(id)}><Icon />{label}</DropdownMenuItem>),
             ])}
           </DropdownMenuContent>
         </DropdownMenu>
-        <RailButton title={withKey('Delete', 'board.delete')} disabled={!count} onClick={act(() => board.removeItem())}><Trash2 /></RailButton>
+        <RailButton title={withKey('Delete', 'board.delete')} disabled={!count} onClick={cmd('board.items.remove')}><Trash2 /></RailButton>
       </Group>
       {inIsland ? (
         <Group>{background}</Group>
@@ -314,7 +353,7 @@ function BoardSlots({ board }) {
               <SnapControls board={board} snap={snap.snap} />
             </PopoverContent>
           </Popover>
-          <RailButton title="Layers" active={layers} onClick={act(toggleLayers)}><Layers /></RailButton>
+          <RailButton title="Layers" active={layers} onClick={act(() => run('board.layers'))}><Layers /></RailButton>
           <Sep />
           {background}
         </Group>
@@ -336,8 +375,9 @@ try {
  * active board of the document (also a canvas being edited); with none it is in text mode. It is always shown, and the
  * anchored zone (Undo, Redo, Add image) starts both modes; a board's adds Add canvas. Its height follows the mode's
  * slots with a quick transition. `className` can cap its height further (App: room for the sidebar button below it). The
- * layers panel (§6c) docks right of it, level with its top and down to its cap's end. */
-export function BoardRail({ className }) {
+ * layers panel (§6c) docks right of it, level with its top and down to its cap's end; with `end` the rail is at the ancestor's
+ * right edge instead (beside a Document's page) and `layers` puts the panel 'before' (left of) or 'after' (right of) it. */
+export function BoardRail({ className, end = false, layers = 'after' }) {
   const board = useBoard();
   const inner = useRef(null);
   const [size, setSize] = useState(null); // px along the rail, border included
@@ -369,12 +409,12 @@ export function BoardRail({ className }) {
     <RailLayout.Provider value={VERTICAL}>
       <div {...CHROME} role="toolbar" aria-label={board ? 'Board tools' : 'Text tools'} aria-orientation="vertical"
         onMouseDown={keepFocus} style={style}
-        className={cn('absolute left-2 z-30 max-h-[calc(100%-1rem)] overflow-y-auto rounded-island border bg-island shadow-xl transition-[height] duration-(--motion-islands) ease-out [scrollbar-width:none]', className)}>
+        className={cn('absolute z-30 max-h-[calc(100%-1rem)]', end ? 'right-2' : 'left-2', 'overflow-y-auto rounded-island border bg-island shadow-xl transition-[height] duration-(--motion-islands) ease-out [scrollbar-width:none]', className)}>
         <div ref={inner} className="flex flex-col items-center gap-0.5 p-1">
           {board ? <BoardTools board={board} /> : <TextRail />}
         </div>
       </div>
-      <LayersPanel board={board} className={className} style={{ top: style.top, maxHeight: `calc(0.5rem + ${cap} - ${style.top})` }} />
+      <LayersPanel board={board} side={end ? layers : 'rail'} className={className} style={{ top: style.top, maxHeight: `calc(0.5rem + ${cap} - ${style.top})` }} />
     </RailLayout.Provider>
   );
 }

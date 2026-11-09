@@ -14,8 +14,8 @@
 import { fillable } from '../../flow/shapes.mjs';
 
 export const STYLE_KEYS = {
-  text: ['size', 'color', 'bold', 'align', 'bg'],
-  shape: ['color', 'width', 'opacity', 'fill', 'fillColor', 'size', 'textColor'],
+  text: ['size', 'color', 'bold', 'align', 'bg', 'font'],
+  shape: ['color', 'width', 'opacity', 'fill', 'fillColor', 'size', 'textColor', 'font'],
   connector: ['color', 'width', 'opacity', 'dash', 'route', 'corner', 'heads', 'jump'],
   stroke: ['color', 'width', 'opacity'],
 };

@@ -1,5 +1,5 @@
 'use strict';
-const { contextBridge, ipcRenderer } = require('electron');
+const { contextBridge, ipcRenderer, webFrame } = require('electron');
 
 const call = (channel) => (...args) => ipcRenderer.invoke(channel, ...args);
 
@@ -12,9 +12,13 @@ contextBridge.exposeInMainWorld('api', {
     list: call('drafts.list'),
     load: call('drafts.load'),
     save: call('drafts.save'),
+    savePart: call('drafts.savePart'),
     remove: call('drafts.remove'),
     loadHistory: call('drafts.loadHistory'),
     saveHistory: call('drafts.saveHistory'),
+    saveHistoryPart: call('drafts.saveHistoryPart'),
+    loadLayout: call('drafts.loadLayout'),
+    saveLayout: call('drafts.saveLayout'),
   },
   plans: { list: call('plans.list'), load: call('plans.load'), save: call('plans.save'), remove: call('plans.remove') },
   flows: { list: call('flows.list'), load: call('flows.load'), save: call('flows.save'), remove: call('flows.remove') },
@@ -28,7 +32,7 @@ contextBridge.exposeInMainWorld('api', {
     posts: call('forum.posts'), // the import (docs/plans/onboarding.md Forum import): the member's own posts of topic URLs
     download: call('forum.download'), // one picture or video of an imported post, with the forum's sign-in → {type, data}
   },
-  references: { fetch: call('references.fetch') }, // {url, accept}: one GET for a source's details (docs/plans/references.md)
+  references: { fetch: call('references.fetch') }, // {url, accept}: one GET for a source's details (docs/wiki/references.md)
   window: {
     zoom: call('window.zoom'),
     titleBar: call('window.titleBar'),
@@ -68,12 +72,6 @@ contextBridge.exposeInMainWorld('api', {
   },
   assistant: {
     status: call('assistant.status'),
-    install: call('assistant.install'),
-    cancel: call('assistant.cancel'),
-    warm: call('assistant.warm'),
-    stop: call('assistant.stop'),
-    delete: call('assistant.delete'),
-    deleteLeftover: call('assistant.deleteLeftover'),
     chat: call('assistant.chat'),
     cancelChat: call('assistant.cancelChat'),
     cliRun: call('assistant.cliRun'), // {rid, prompt, system, session}: one Claude Code or Codex turn (SPEC §7i Coding CLIs)
@@ -147,6 +145,36 @@ contextBridge.exposeInMainWorld('api', {
       return () => ipcRenderer.off('github.event', listener);
     },
   },
+  // Word parity (docs/plans/word plan.md §1.17). print → {ok, error}; printToPDF → base64; saveFile({name, data, filters, as}) writes
+  // text for text files and base64 otherwise unless `as` ('text' | 'base64') says; openFile({filters, as}) → {name, data} or null;
+  // spell.misspelled and spell.suggest answer at once from the renderer's checker, languages() → {current, available}.
+  word: {
+    print: call('word.print'),
+    printPdf: call('word.printPdf'), // (bytes, word.print's options): the engine's print job → {ok, error}
+    printToPDF: call('word.printToPDF'),
+    printers: call('word.printers'),
+    saveFile: call('word.saveFile'),
+    openFile: call('word.openFile'),
+    captureSources: call('word.captureSources'),
+    metafiles: call('word.metafiles'),
+    spell: {
+      misspelled: (word) => webFrame.isWordMisspelled(String(word)),
+      suggest: (word) => webFrame.getWordSuggestions(String(word)),
+      languages: call('word.spell.languages'),
+      setLanguages: call('word.spell.setLanguages'),
+      add: call('word.spell.add'),
+    },
+    clipboard: { read: call('word.clipboard.read'), write: call('word.clipboard.write') },
+    store: { get: call('word.store.get'), set: call('word.store.set') },
+    region: call('word.region'),
+    userName: call('word.userName'), // the OS account's name
+    versions: call('word.versions'),
+    versionAt: call('word.versionAt'),
+  },
+  // The installed fonts for the canvas engine (electron/fonts-main.js): families() → {families, files, ms}; family(name) →
+  // [{name, source}], the files of an installed family (system, per-user or Office's cloud fonts); file(family, name) → the
+  // bytes of one of them, or null.
+  fonts: { families: call('fonts.families'), family: call('fonts.family'), file: call('fonts.file') },
   // Self-update: `update.event` {type: available|progress|ready, version, percent}; download() resolves once the update is
   // ready; install() quits and runs the installer. onEvent first replays the last offer or ready event sent before it.
   update: {
@@ -161,3 +189,7 @@ contextBridge.exposeInMainWorld('api', {
     },
   },
 });
+
+// Document text focus and the Word chords (docs/plans/word plan.md §1.13, §1.17): WordKeys reports them, so main leaves the
+// developer tools chord to the editor while it is one of those chords.
+contextBridge.exposeInMainWorld('docText', (on, chords) => ipcRenderer.send('word.docText', !!on, Array.isArray(chords) ? chords.map(String) : []));

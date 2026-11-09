@@ -1,0 +1,25 @@
+{
+  "w": 400,
+  "h": 300,
+  "aw": 400,
+  "ah": 300,
+  "frame": { "x": 0, "y": 0, "w": 400, "h": 300 },
+  "bg": "post",
+  "flow": { "library": "flow-1", "node": "n1" },
+  "items": [
+    {
+      "id": "flowbox",
+      "type": "shape",
+      "shape": "rect",
+      "x": 20,
+      "y": 20,
+      "w": 80,
+      "h": 40,
+      "color": "#000000",
+      "width": 1,
+      "opacity": 1,
+      "fill": "solid",
+      "fillColor": "#ffffff"
+    }
+  ]
+}

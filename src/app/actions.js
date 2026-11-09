@@ -4,26 +4,41 @@ import { Frame } from 'lucide-react';
 import { createElement as h } from 'react';
 import { toast as sonner } from 'sonner';
 import { canvasEditor, openCanvasEditor } from '../canvas.js';
+import { blankBoard } from '../board/store.mjs';
 import { applyPreset } from '../extensions.js';
-import { kitOf, loadable } from '../editors.js';
+import { kitOf, loadable, setModuleExtensions } from '../editors.js';
 import { cleanTitle, copyTitle } from '../doc-utils.mjs';
 import { draftMarks } from '../draft-marks.js';
 import { draftTitle, wordCount } from '../export.js';
 import { newDocumentJson } from '../document/defaults.mjs';
+import { dropOrphanComments } from '../document/model/review.mjs';
+import { geometryOf, paginationKey } from '../document/geometry.js';
+import { stageCache } from '../document/layout-cache.mjs';
+import { layoutCacheOf } from '../document/pagination.js';
+import { runWordKey, wordKeyWins } from '../document/word/keys.js';
+import { EXTENSIONS as MODULE_EXTENSIONS, setupModules } from '../document/wp/index.js';
+import { preloadRatios } from '../document/wp/paragraph/extension.js';
 import { numberNewLists } from '../document/numbering.mjs';
 import { listFonts } from '../document/fonts.js';
-import { defaultFormat, drawTheme, FORMATS, formatOf, pageOf } from '../formats.mjs';
+import { saveOnce } from '../engine/model/autosave.mjs';
+import { adopt, isCanvas, recordText } from '../engine/model/form.mjs';
+import { defaultFormat, drawTheme, formatOf, formatVersionOf, pageOf } from '../formats.mjs';
 import { each, first, UI } from '../integrations/ui.js';
 import { legacyTopic } from '../thread-url.mjs';
+import { commandOf, run as runCommand, targetEditor } from '../tooling/registry.js';
+import { activeSurface, areaOpens, boardOpens } from '../tooling/surface.js';
 import { edited, entries, groups as groupsOf, items as suggestionItems, META as SUGGEST_META } from '../suggest/core.mjs';
-import { activeOf, agentInputOpen, resolve as resolveChanges, setActive, setWindowEditor, setWorkerCall, workerIds } from '../suggest/extension.js';
-import { activeBoard, contentWidth, finishBoardEdits, migrateBoards } from '../whiteboard.js';
-import { captureSelection } from './assistant/capture.js';
+import { activeOf, agentInputOpen, logDecisions, resolve as resolveChanges, setActive, setWindowEditor, setWorkerCall, workerIds } from '../suggest/extension.js';
+import { activeCard, caretOf, cardsNow, decideCards, freshCards, onEngine, setActiveCard, showCard, watchCards } from '../suggest/canvas.js';
+import { cardOf, cmpPos, stepFrom } from '../suggest/cards.mjs';
+import { activeBoard, boardBeforeCaret, finishBoardEdits, migrateBoards } from '../whiteboard.js';
+import { captureSelectionNow } from './assistant/capture.js';
 import { backgroundDraft, dropSession, flushSessions, handOver } from './assistant/sessions.js';
 import { installAgent } from './commands.js';
 import { scrollToBlock } from './commands/ui.mjs';
 import { openFind, openReplace } from './components/FindBar.jsx';
 import { notify, PasteNotice } from './components/Notices.jsx';
+import { endOpening, failOpening, painted, startOpening, stepOpening } from './components/OpenProgress.jsx';
 import { dropDraft, moveBeside, sortDrafts } from './draft-order.mjs';
 import { defaultTag, draftTag, pruneMap, tagDraft } from './drafts-meta.js';
 import { initBrowser } from './browser.js';
@@ -32,6 +47,7 @@ import { keybindsKey } from './keys.mjs';
 import { flushFlows, initFlows, insertFlowchartDialog } from './flows.js';
 import { can } from './gates.mjs';
 import * as history from './history.js';
+import { setLiveZoom } from './livezoom.js';
 import { bindPanZoom, keepPlace, zoomAround } from './panzoom.js';
 import { flushPlans, initPlans } from './plans.js';
 import { clearRevLog, recordRev } from './rev.js';
@@ -70,9 +86,55 @@ export function hideOverlay() {
   setState({ overlay: null });
 }
 
-/** Opens a form dialog (DialogHost renders it by type). Resolves with its result, or null on Cancel/Escape. */
+let dialogCount = 0;
+
+/** The open dialogs, last on top (docs/plans/word/plan.md §1.6 Dialog stack): state.dialogs, plus an entry plans.js, flows.js or
+ * prefabs.js put straight into state.dialog. state.dialog is always the top one, so its readers keep working. */
+export function dialogStack() {
+  const list = state.dialogs ?? [];
+  return state.dialog && !list.includes(state.dialog) ? [...list, state.dialog] : list;
+}
+
+/** Opens a form dialog (DialogHost renders it by type), over any open one, which stays mounted with its state. Resolves with its
+ * result, or null on Cancel/Escape. Opening the dialog already on top again replaces it (cancelled), as before the stack, so a
+ * second Ctrl+, never shows two Settings. */
 export function openDialog(type, props = {}) {
-  return new Promise((resolve) => setState({ dialog: { type, props, resolve } }));
+  return new Promise((resolve) => {
+    // Where the focus goes back on close: `board` when it was on a board or its chrome (WordDialog then carries the chrome mark,
+    // so a text edit stays open), else the element that had it.
+    const focus = document.activeElement;
+    const b = activeBoard.get();
+    const board = b && (b.owns(focus) || !!focus?.closest?.('[data-board-chrome]')) ? b : null;
+    const entry = { type, props, resolve, n: ++dialogCount, focus, board };
+    const below = [...dialogStack()];
+    const same = below.at(-1)?.type === type ? below.pop() : null;
+    if (same) Object.assign(entry, { focus: same.focus, board: same.board });
+    setState({ dialogs: [...below, entry], dialog: entry });
+    same?.resolve?.(null);
+  });
+}
+
+/** Closes dialog `entry` with `result`: the dialog under it (if any) is on top again and gets the focus back where it was. */
+export function closeDialog(entry, result) {
+  const dialogs = dialogStack().filter((d) => d !== entry);
+  setState({ dialogs, dialog: dialogs.at(-1) ?? null });
+  entry.resolve(result);
+  // After Radix's own focus return (refocusEditor declines while a dialog is open): the control that opened the closed dialog, else
+  // the dialog now on top, so its keys (Enter, Esc, access keys) work again.
+  if (dialogs.length) setTimeout(() => (entry.focus?.isConnected ? entry.focus : [...document.querySelectorAll('[role="dialog"]')].at(-1))?.focus());
+  else closedDialog = entry; // the last one: its onCloseAutoFocus (refocusEditor) gives the focus back where it opened
+}
+
+let closedDialog = null;
+
+/** The focus back where dialog `entry` opened: its board (a text edit gets its caret back), else the element that had the focus
+ * while it is still there, else the editor. Not when something else took the focus meanwhile (a new draft's editor). */
+function focusOpener(entry) {
+  const a = document.activeElement;
+  if (a && a !== document.body) return;
+  if (entry.board && !entry.board.destroyed) entry.board.focus();
+  else if (entry.focus?.isConnected && entry.focus !== document.body) entry.focus.focus({ preventScroll: true });
+  else focusMain();
 }
 
 let autoConfirm = 0; // > 0 while the assistant in Allow all presses a control (ui-control.js): its confirm passes unseen
@@ -99,7 +161,7 @@ export function confirmDialog({ title, description = '', confirmText = 'OK', des
 export const alertDialog = (title, description) => confirmDialog({ title, description, alert: true });
 
 // ---------------------------------------------------------------------------------------------
-// Suggestions (docs/plans/suggestions.md Accept, reject and undo)
+// Suggestions (docs/wiki/suggestions.md Accept, reject and undo)
 
 /** Accepts or rejects (`action`) the suggestions `sel` picks ({ids} | {group} | {all: true}) in `editor` (draft `draftId`), as
  * `by` (a source). Every accept and reject path comes here: rejecting a change the user edited asks first. → the ids resolved,
@@ -126,6 +188,54 @@ export async function resolveSuggestions(editor, draftId, sel, action, { by = 'u
 const NO_SUGGESTIONS = { groups: [], count: 0, active: null };
 let syncedDoc = null;
 
+/** resolveSuggestions on draft `draftId` whose suggestions are the engine's (src/suggest/canvas.js onEngine): `sel` picks its cards
+ * ({ids}: a card's id or one of its revisions', {group} or {all: true}). Rejecting a card the user edited asks first, as above,
+ * unless `confirm` is false (an agent's call asked on its own card); each decision goes to the same log. → the card ids resolved
+ * ([] when the engine refused), or null when the user kept them. */
+export async function resolveCanvasSuggestions(draftId, sel, action, { by = 'ui', confirm = true } = {}) {
+  const cards = await freshCards(draftId);
+  const picked = sel?.all ? cards : sel?.group ? cards.filter((c) => c.g === sel.group)
+    : [...new Set((sel?.ids ?? []).map((id) => cardOf(cards, id)).filter(Boolean))];
+  if (!picked.length) return [];
+  if (confirm && action === 'reject' && picked.some((c) => c.edited) && !(await confirmDialog({
+    title: picked.length > 1 ? 'Reject these suggestions?' : 'Reject this suggestion?',
+    description: 'You edited this suggestion. Rejecting it also removes your edits.',
+    confirmText: 'Reject',
+    destructive: true,
+  }))) return null;
+  if (!(await decideCards(draftId, picked, action))) return [];
+  // Logged by revision ids too ('r' and the number: a replace card has two), which an agent's call reports as its changes.
+  logDecisions(picked.map((c) => ({ ...c, ids: c.revs.map((r) => `r${r}`) })), action, { by, draftId });
+  return picked.map((c) => c.id);
+}
+
+/** The engine's cards for the suggestions.* commands, which take them through ctx.actions (commands/suggestions.mjs). */
+export const engineSuggestions = { onEngine, freshCards, activeCard, caretOf, showCard };
+
+const CANVAS_NONE = { groups: [], count: 0, active: null, cards: [], canvas: true };
+let watched = null; // {id, off}: the draft whose engine cards state.suggestions mirrors
+
+/** Mirrors the open draft's engine cards (src/suggest/canvas.js) into state.suggestions: {groups: [] (the DOM editor's), count,
+ * active, cards, canvas: true}. */
+function syncCanvas() {
+  const { id } = state.draft;
+  if (!id) { // a Word file's new draft before its first save: no session yet
+    watched?.off();
+    watched = null;
+    if (!state.suggestions.canvas || state.suggestions.count) setState({ suggestions: CANVAS_NONE });
+    return;
+  }
+  if (watched?.id !== id) {
+    watched?.off();
+    watched = { id, off: watchCards(id, () => state.draft?.id === id && syncSuggestions()) };
+  }
+  const cards = cardsNow(id);
+  const active = activeCard(id);
+  const s = state.suggestions;
+  if (s.canvas && s.cards === cards && s.active === active) return;
+  setState({ suggestions: cards.length ? { groups: [], count: cards.length, active, cards, canvas: true } : CANVAS_NONE });
+}
+
 /** The decision in `list` (core.items) at position `pos`: a place whose words hold it (ends included, a deletion at its point),
  * else a change decided whole whose blocks hold it (a deletion has no text to hold the caret). A block's end is strict: it is the
  * next block's start, where a node selection or gap cursor on that next block sits. */
@@ -138,7 +248,11 @@ export const itemAt = (list, pos) => list.find(({ e, place }) => (place ? place.
 export function syncSuggestions(tr) {
   const ed = state.editor;
   if (tr && !tr.docChanged && !tr.selectionSet && tr.getMeta(SUGGEST_META) == null) return;
-  if (!ed || ed.isDestroyed) {
+  // The engine holds a canvas draft's suggestions as the assistant's tracked changes (the hidden editor holds none).
+  if (onEngine(state.draft)) return syncCanvas();
+  watched?.off();
+  watched = null;
+  if (!ed || ed.isDestroyed || isCanvas(state.draft)) {
     syncedDoc = null;
     if (state.suggestions.count) setState({ suggestions: NO_SUGGESTIONS });
     return;
@@ -168,6 +282,11 @@ export function syncSuggestions(tr) {
 /** Makes decision `id` of the open draft (a change, or a place of one: core.items) the active one and centres it in the page's
  * viewport (a card, Next, Previous, an agent's suggestions.show). A change decided place by place shows its first place. */
 export function showSuggestion(id) {
+  if (onEngine(state.draft)) {
+    const c = cardOf(cardsNow(state.draft.id), id);
+    if (c) showCard(state.draft.id, c);
+    return !!c;
+  }
   const ed = state.editor;
   const list = ed ? suggestionItems(ed.state.doc, ed.schema) : [];
   const it = list.find((x) => x.id === id) ?? list.find((x) => x.e.id === id);
@@ -186,6 +305,16 @@ const itemFrom = (it) => (it.place ? it.place.from : it.e.from);
 
 /** Moves to the next (`dir` 1) or previous (-1) decision in document order, wrapping; from the caret when none is active. */
 function stepSuggestion(dir) {
+  if (onEngine(state.draft)) {
+    // A canvas draft's cards, not every reviewer's changes (review.nextChange walks those).
+    const id = state.draft.id;
+    if (!cardsNow(id).length) return false;
+    const go = (head) => {
+      const c = stepFrom(cardsNow(id), activeCard(id), head, dir);
+      return !!c && showSuggestion(c.id);
+    };
+    return activeCard(id) ? go(null) : caretOf(id).then(go);
+  }
   const ed = state.editor;
   const list = ed ? suggestionItems(ed.state.doc, ed.schema) : [];
   if (!list.length) return false;
@@ -203,6 +332,7 @@ export const previousSuggestion = () => stepSuggestion(-1);
 /** Accepts or rejects the changes `sel` picks in the open draft (resolveSuggestions); when the active change went, the first change
  * left after it becomes active. */
 async function review(sel, action) {
+  if (onEngine(state.draft)) return reviewCanvas(sel, action);
   const ed = state.editor;
   if (!ed) return null;
   // Places renumber once one is decided (`<change>-<n>`), so the next active one is found by where it sits.
@@ -216,7 +346,19 @@ async function review(sel, action) {
   setActive(ed, now.find((it) => it.e.kind !== 'attr' && itemFrom(it) >= from)?.id ?? null);
   return done;
 }
+/** review() on the open canvas draft: its cards through the engine; when the active card went, the first card left from where it
+ * was becomes active. */
+async function reviewCanvas(sel, action) {
+  const id = state.draft.id;
+  const was = cardsNow(id).find((c) => c.id === activeCard(id));
+  const done = await resolveCanvasSuggestions(id, sel, action);
+  if (!done?.length || !was || state.draft?.id !== id) return done;
+  const now = cardsNow(id);
+  if (!now.some((c) => c.id === was.id)) setActiveCard(id, now.find((c) => cmpPos(c.start, was.start) >= 0)?.id ?? null);
+  return done;
+}
 const activeGroup = () => {
+  if (onEngine(state.draft)) return cardsNow(state.draft.id).find((c) => c.id === state.suggestions.active)?.g;
   const ed = state.editor;
   return ed && suggestionItems(ed.state.doc, ed.schema).find((it) => it.id === state.suggestions.active)?.e.g;
 };
@@ -258,8 +400,8 @@ export const PALETTE = [
   ['foreground', 'Text', 'Text and icons', ['foreground', 'card-foreground', 'popover-foreground', 'secondary-foreground', 'accent-foreground']],
   ['muted-foreground', 'Soft text', 'Labels, hints and shortcuts', ['muted-foreground']],
   ['primary', 'Buttons', 'Main buttons and ticked boxes', ['primary']],
-  // The canvas (the editor's and flowcharts' area around the page) apart from the page itself: unset, it follows the page
-  // theme (page.css --pg-bg); the palette's style element comes after app.css, so a pick wins at equal specificity.
+  // The canvas (the editor's and flowcharts' area around the page) apart from the page itself: unset, it is a step off the
+  // panels (page.css --pg-bg); the palette's style element comes after app.css, so a pick wins at equal specificity.
   ['pg-bg', 'Canvas', 'The area around the page in the editor and flowcharts', ['pg-bg']],
 ];
 export const PALETTE_KEY = 'daf-writer.palette';
@@ -310,14 +452,12 @@ function applyPage() {
 
 /** The root data-theme: the page theme (settings.theme), light while a Document's sheet is shown, since canvases, flowcharts
  * and plan charts read it and the paper is white (docs/plans/document.md Paper colour). A workspace page keeps the page theme:
- * the flowchart library's preset and new flowcharts follow it (flows.js). data-canvas-theme always holds the page theme, so the
- * area around the sheet keeps its colour (page.css --pg-bg). Canvases and plan charts read the theme when they draw: on a
+ * the flowchart library's preset and new flowcharts follow it (flows.js). Canvases and plan charts read the theme when they draw: on a
  * change the open editor's are redrawn. Views call it after changing state.view. */
 export function applyPageTheme() {
   const root = document.documentElement;
   const page = state.settings.theme === 'light' ? 'light' : 'dark';
   const theme = state.view.type === 'editor' ? drawTheme(state.draft, state.settings) : page;
-  root.dataset.canvasTheme = page;
   if (root.dataset.theme === theme) return;
   root.dataset.theme = theme;
   for (const el of document.querySelectorAll('#editor :is(.sc, .pc)')) (el.scView ?? el.pcView)?.render();
@@ -338,56 +478,96 @@ export async function saveSettings(partial) {
 
 // anchor: area-relative point {x, y} that stays over the same spot of the page (default: the centre of the view).
 function applyZoom(anchor) {
+  // A board's app zoom is its camera's (src/board/BoardArea.jsx), not the hidden DOM page under it.
+  if (boardCamera) {
+    if (state.zoom === 'fit') boardCamera.fit();
+    else boardCamera.setCamera({ zoom: state.zoom / 100 });
+    if (state.zoom !== 'fit' && state.zoomPct !== Math.round(state.zoom)) setState({ zoomPct: Math.round(state.zoom) });
+    return;
+  }
   const area = $('#editor-area');
+  // A Document zooms about its pages' centre line across (they stay centred), at the view's middle down.
+  if (!anchor && area.hasAttribute('data-word-view')) {
+    const [v, r] = [area.getBoundingClientRect(), $('#page-wrap').getBoundingClientRect()];
+    anchor = { x: r.left + r.width / 2 - v.left, y: area.clientHeight / 2 };
+  }
   let zoom = state.zoom / 100;
   if (state.zoom === 'fit') {
-    const { width, padding, paper } = pageOf(state.draft, state.settings, sectNow());
-    zoom = Math.min(1, (area.clientWidth - viewLeft() - VIEW_RIGHT) / (paper?.w ?? width + 2 * padding));
+    const { width, padding } = pageOf(state.draft, state.settings, sectNow());
+    zoom = Math.min(1, (area.clientWidth - VIEW_LEFT - VIEW_RIGHT) / (paperNow()?.w ?? width + 2 * padding));
   }
   zoom = Math.max(0.1, zoom);
   zoomAround(area, $('#page-wrap'), zoom, anchor);
-  setState({ zoomPct: Math.round(zoom * 100) });
+  // Only a new zoom: every resize of the area runs this, and each setState re-renders every Word control (registry ctxOf).
+  if (state.zoomPct !== Math.round(zoom * 100)) setState({ zoomPct: Math.round(zoom * 100) });
 }
 
-/** 'fit' or a percent (clamped to 10…400; kept to 0.01 so wheel zoom can move in small steps; the UI shows whole
- * percents). `anchor` as for applyZoom. Fit also brings the page home. */
+let boardCamera = null; // the open board's {setCamera(camera), fit()}
+
+/** While a board is open, the status bar's zoom shows and drives its camera (src/board/BoardArea.jsx) → a function that ends
+ * it and puts the app's zoom back, so the next draft opens at the one it had. */
+export function attachBoardCamera(view) {
+  boardCamera = view;
+  const was = state.zoom;
+  return () => {
+    if (boardCamera !== view) return;
+    boardCamera = null;
+    if (state.zoom !== was) setState({ zoom: was });
+  };
+}
+
+let zoomer = null; // bindPanZoom's {preview, settle} for the editor area
+
+/** The zoom slider moved: shows the page at `pct` percent by a transform (no layout), about the page's centre line in a
+ * Document, until settleZoom or a short pause applies it. */
+export const previewZoom = (pct) => zoomer?.preview(pct);
+/** The zoom slider let go: applies the previewed zoom now. */
+export const settleZoom = () => zoomer?.settle();
+
+/** 'fit' or a percent (clamped to 10…500, Word's range, or 2…800 on a board: kept to 0.01 so wheel zoom can move in small
+ * steps; the UI shows whole percents). `anchor` as for applyZoom. Fit also brings the page home, or fits a board's items. */
 export function setZoom(value, anchor) {
-  setState({ zoom: value === 'fit' ? value : Math.min(400, Math.max(10, Math.round(value * 100) / 100)) });
+  const [lo, hi] = boardCamera ? [2, 800] : [10, 500];
+  setState({ zoom: value === 'fit' ? value : Math.min(hi, Math.max(lo, Math.round(value * 100) / 100)) });
   applyZoom(anchor);
-  if (value === 'fit') homeView();
+  if (value === 'fit' && !boardCamera) homeView();
 }
 
 /** View > One page (`whole`) and Page width in a Document (docs/plans/document.md Ribbon View): the zoom at which the whole
  * sheet, or its width, fits the view, then the home view. Unlike fit it may go past 100%. */
 export function fitSheet(whole) {
   const area = $('#editor-area');
-  const { paper } = pageOf(state.draft, state.settings, sectNow());
+  const paper = paperNow();
   if (!paper) return;
-  const across = (area.clientWidth - viewLeft() - VIEW_RIGHT) / paper.w;
+  const across = (area.clientWidth - VIEW_LEFT - VIEW_RIGHT) / paper.w;
   setZoom(100 * (whole ? Math.min(across, (area.clientHeight - 2 * VIEW_TOP) / paper.h) : across));
   homeView();
 }
 
-// Room the "home" view keeps clear on the left (the board rail) and right, and above the page.
+/** The paper the zoom fits, in px: the section's, or the widest page's while page-engine (geometry engine 2) lays out pages of
+ * several sizes (plan.md §1.9). Undefined for a draft without paper (a forum post). */
+function paperNow() {
+  const { paper } = pageOf(state.draft, state.settings, sectNow());
+  const geo = paper && state.editor && geometryOf(state.editor.state);
+  if (geo?.engine !== 2 || !geo.pages.length) return paper;
+  return geo.pages.reduce((w, p) => (p.box.w > w.w ? { w: p.box.w, h: p.box.h } : w), { w: 0, h: 0 });
+}
+
+// Room the "home" view keeps clear on the left (the board rail) and right, and above the page. A Document keeps the same: its
+// ribbon sits above the editor area, not beside it (docs/plans/word/plan.md §2.6).
 const VIEW_LEFT = 56;
 const VIEW_RIGHT = 24;
 const VIEW_TOP = 24;
-// A Document's left room: its tools island (Ribbon.jsx DocIsland, left-2 and w-60: 15.5rem of the root font size, app.css's
-// compact density) and a 16 px gap (docs/plans/document.md step 10). It holds while a canvas is edited too (the narrower board
-// rail then), so the sheet does not jump.
-const viewDoc = () => 15.5 * parseFloat(getComputedStyle(document.documentElement).fontSize) + 16;
-const viewLeft = () => (state.draft?.format === 'document' ? viewDoc() : VIEW_LEFT);
 
 /** Home view: the page centred between the rail and the right edge, its top VIEW_TOP below the top of the view. A Document's
- * sheet wider than that room starts at its left end, so the island never covers the sheet's left edge. The place is marked at
- * once: opening a draft can show or hide the navigation pane in the same render, and that resize must keep this place. */
+ * sheet wider than that room starts at its left end, as Word's does. The place is marked at once: opening a draft can show or
+ * hide the navigation pane in the same render, and that resize must keep this place. */
 function homeView() {
   const area = $('#editor-area');
   const a = area.getBoundingClientRect();
   const p = $('#page-wrap').getBoundingClientRect();
-  const left = viewLeft();
-  const room = area.clientWidth - left - VIEW_RIGHT;
-  area.scrollLeft += p.left - a.left - (left + (state.draft?.format === 'document' ? Math.max(0, room - p.width) : room - p.width) / 2);
+  const room = area.clientWidth - VIEW_LEFT - VIEW_RIGHT;
+  area.scrollLeft += p.left - a.left - (VIEW_LEFT + (state.draft?.format === 'document' ? Math.max(0, room - p.width) : room - p.width) / 2);
   area.scrollTop += p.top - a.top - VIEW_TOP;
   place?.mark();
 }
@@ -395,7 +575,11 @@ function homeView() {
 let place = null; // the editor area's keepPlace (bindStatic)
 
 /** Hides or shows the sidebar (Ctrl+\); the editor area's keepPlace re-fits and places the page. */
-export const toggleSidebar = () => saveSettings({ sidebarCollapsed: !state.settings.sidebarCollapsed });
+// Under this window width the sidebar's 290 px would leave the main column less than 700 px: the sidebar minimizes to its rail by
+// itself and its button shows it over the column instead (state.sidebarPeek), leaving settings.sidebarCollapsed as the user set it.
+export const NARROW = '(max-width: 989px)';
+export const toggleSidebar = () => (matchMedia(NARROW).matches ? setState({ sidebarPeek: !state.sidebarPeek })
+  : saveSettings({ sidebarCollapsed: !state.settings.sidebarCollapsed }));
 
 // ---------------------------------------------------------------------------------------------
 // Toolbar
@@ -410,16 +594,14 @@ export const afterNodeSel = (c) => c.command(({ tr }) => {
   return true;
 });
 
-/** Inserts a smart canvas after the selection and edits it in place; `{edit: false}` (the tutorial) leaves it closed. */
+/** Inserts a smart canvas (at the text width, canvas.js) after the selection and edits it in place; `{edit: false}` (the tutorial)
+ * leaves it closed. */
 export function insertCanvas(opts) {
   const ed = state.editor;
   if (!ed) return;
-  // A Document's canvas starts at the text width (document.md App objects); a forum post keeps the 800 px default
-  const attrs = formatOf(state.draft, state.settings)?.id === 'document' ? { dw: contentWidth(ed.view) } : undefined;
-  afterNodeSel(ed.chain()).insertCanvas(attrs).run(); // not run(): focus() would pull focus back out of the canvas in a frame
+  afterNodeSel(ed.chain()).insertCanvas().run(); // not focus().run(): focus() would pull focus back out of the canvas in a frame
   if (opts?.edit === false) return;
-  const $after = ed.state.doc.resolve(ed.state.selection.$from.before(1)); // insertBoard put the caret in the block after it
-  openCanvasEditor(ed, $after.pos - $after.nodeBefore.nodeSize);
+  openCanvasEditor(ed, boardBeforeCaret(ed.state)); // insertBoard put the caret in the block after it
 }
 
 /** Board text edits reach the doc only when they end; commit an open one before saving or closing. Pending plan and
@@ -430,31 +612,70 @@ export function commitBoardEdit() {
   flushFlows();
 }
 
-/** Focus to the editor, which restores its selection; while a workspace is open (§7g), to its active board, else to the
- * workspace. */
+/** While the canvas page area shows the open draft (surface.js areaOpens), the focus goes to its root, never to the hidden DOM
+ * editor under it → whether it does. */
+export function focusArea() {
+  // A whiteboard's board takes the focus, never the hidden DOM editor under it, which is empty and uneditable (makeEditor).
+  if (boardOpens(state)) {
+    $('[data-board-slot]')?.focus({ preventScroll: true });
+    return true;
+  }
+  if (!areaOpens(state)) return false;
+  $('[data-canvas-pages]')?.focus({ preventScroll: true }); // none yet: the page area takes the focus when it mounts
+  return true;
+}
+
+/** Focus to the editor commands act on (the registry's target: a header or footnote being edited, else the open draft's editor, or
+ * the canvas page area), which restores its selection; while a workspace is open (§7g), to its active board, else to the workspace. */
 function focusMain() {
-  if (can('view.editor', state)) state.editor?.view.focus();
+  if (can('view.editor', state)) focusArea() || (targetEditor() ?? state.editor)?.view.focus();
   else (activeBoard.get() ?? $('#workspace-root'))?.focus();
 }
 
 /** onCloseAutoFocus of toolbar menus, selects, popovers and dialogs: focus goes back to the editor, which restores its
- * selection (unless the menu item just opened a dialog, e.g. "Manage presets…"). */
+ * selection (unless the menu item just opened a dialog, e.g. "Manage presets…"); a dialog's goes back where it opened. */
 export function refocusEditor(e) {
   e?.preventDefault();
-  if (!state.dialog && !state.confirm) focusMain();
+  if (dialogStack().length || state.confirm) return; // a dialog under a closed one takes the focus back (closeDialog)
+  // Only a closed dialog's own content takes its opener back; a menu or popover (Radix gives popovers role=dialog) never does.
+  const closed = e?.target?.closest?.('[data-word-dialog], [data-slot=dialog-content]') ? closedDialog : null;
+  if (!closed) return focusMain();
+  closedDialog = null;
+  focusOpener(closed);
 }
 
+/** A typed address as a link: trimmed, and https:// added when it has no scheme; '' stays '' (no link). */
+const address = (value) => {
+  const href = String(value ?? '').trim();
+  return href && !/^[a-z][a-z0-9+.-]*:/i.test(href) ? `https://${href}` : href;
+};
+
 export async function openLinkDialog() {
+  const surf = activeSurface();
+  // A post in the canvas page area: the value goes to the engine's hyperlink command (insert.link, as rows/references.mjs runs it).
+  // A canvas Document keeps Word's Insert Hyperlink below.
+  if (surf?.kind === 'text' && !surf.editor) {
+    if (!surf.session) return; // the page area has not opened the draft yet
+    const now = await surf.session.query('post.context', {});
+    const value = await openDialog('link', { href: now?.value?.link ?? '' });
+    if (value == null) return;
+    const url = address(value);
+    if (url) await surf.session.exec('insert.link', { url });
+    else await surf.session.exec('insert.removeLink', {});
+    return;
+  }
   const ed = state.editor;
   if (!ed) return;
+  // In a Document, Word's Insert Hyperlink dialog (fields-ref) replaces this one; Word's commands serve only the Document surface,
+  // so commandOf is null elsewhere (a forum post's profile grants `insert.` but not Word's ids).
+  if (commandOf('insert.links.link.insertLink')) return void runCommand('insert.links.link.insertLink');
   const value = await openDialog('link', { href: ed.getAttributes('link').href || '' });
   if (value == null) return;
-  let href = value.trim();
+  const href = address(value);
   if (!href) {
     run((c) => c.extendMarkRange('link').unsetLink());
     return;
   }
-  if (!/^[a-z][a-z0-9+.-]*:/i.test(href)) href = `https://${href}`;
   if (ed.state.selection.empty && !ed.isActive('link')) {
     run((c) => c.insertContent({ type: 'text', text: href, marks: [{ type: 'link', attrs: { href } }] }));
   } else {
@@ -463,10 +684,16 @@ export async function openLinkDialog() {
 }
 
 /** Applies font preset `index` (Alt+1..9, the toolbar, tool search): forum posts only, since presets are forum marks (gate
- * format.post). */
+ * format.post). A post in the canvas page area runs them as post.mark steps through the engine (rows/post.mjs text.preset). */
 export function applyPresetAt(index) {
   const preset = state.settings.presets[index];
-  if (!preset || !state.editor || !can('format.post', state.draft)) return;
+  if (!preset || !can('format.post', state.draft)) return;
+  const surf = activeSurface();
+  if (surf?.kind === 'text' && !surf.editor) {
+    if (surf.session) runCommand('text.preset', index);
+    return;
+  }
+  if (!state.editor) return;
   state.editor.commands.focus();
   applyPreset(state.editor, preset);
 }
@@ -492,11 +719,14 @@ export function toggleToolSearch() {
   const at = summonAt();
   let attach = null;
   try {
-    attach = captureSelection();
+    attach = captureSelectionNow();
   } catch (e) {
     console.warn('No selection attachment:', e); // the palette opens anyway
   }
-  setState({ toolSearch: { board, focus: document.activeElement, at, attach } });
+  const ctx = { board, focus: document.activeElement, at, attach: typeof attach?.then === 'function' ? null : attach };
+  setState({ toolSearch: ctx });
+  // A canvas draft's selection comes from the engine a moment later: it joins the search still open.
+  if (attach !== ctx.attach) attach.then((a) => state.toolSearch === ctx && setState({ toolSearch: { ...ctx, attach: a } }), () => {});
 }
 
 export function closeToolSearch() {
@@ -543,6 +773,9 @@ export const closeQuickTools = () => setState({ quickTools: null });
 
 const ISLAND_CLEARANCE = { top: 8, right: 8, bottom: 96, left: 8 };
 
+// Every Document editor (main, story and session) carries the work packages' extensions; read when one is built (editors.js).
+setModuleExtensions(() => MODULE_EXTENSIONS);
+
 let undoLog = null; // the open draft's undo steps, saved with it (§7e, history.js)
 
 /** A TipTap editor on `doc` in `element` with the open draft's extensions and node views; with `historyFile` its undo history
@@ -551,15 +784,18 @@ let undoLog = null; // the open draft's undo steps, saved with it (§7e, history
  * (assistant/sessions.js). */
 export function makeEditor(element, doc, historyFile, keep, onUpdate, draft) {
   // Whiteboards become canvases before `new Editor`, which blanks a doc with an unknown node; the history file the same way and
-  // at the same width, so its replay reaches the converted doc (§6b Converted whiteboards).
+  // at the same width, so its replay reaches the converted doc (§6b Converted whiteboards). Comment marks without a thread go
+  // here too, before any transaction; a saved history that led to them no longer replays and starts afresh.
   const { width } = pageOf(draft, state.settings);
-  doc = migrateBoards(doc, width);
+  doc = dropOrphanComments(migrateBoards(doc, width));
   historyFile = migrateBoards(historyFile, width);
   const editor = new Editor({
     element,
     // The draft's format's own extensions (editors.js); 0 keeps no undo steps after closing, still 50 while open.
     extensions: [...kitOf(formatOf(draft, state.settings).id).extensions(state.settings.historyLimit || 50), PasteNotice],
     content: doc || '',
+    // A whiteboard's hidden editor is a mount, not a text: nothing typed into it may reach a save (doSave keeps a board's board).
+    editable: formatOf(draft, state.settings)?.id !== 'board',
     // The toolbar island floats over the bottom of the editor area: keep the caret scrolled clear of it. data-doc-id names the
     // draft, so a copied list knows a reopened Document as the same one (document/lists.js; not data-draft, the sidebar rows').
     editorProps: { attributes: { spellcheck: 'true', ...(draft?.id && { 'data-doc-id': draft.id }) }, scrollMargin: ISLAND_CLEARANCE,
@@ -576,31 +812,71 @@ export function makeEditor(element, doc, historyFile, keep, onUpdate, draft) {
 
 /** Mounts a new editor on `doc`; with `historyFile` its undo history is rebuilt from it, keeping `keep` undo steps. */
 function mountEditor(doc, historyFile = null, keep = state.settings.historyLimit) {
+  // EditorPage renders #editor once and keeps it on every page, so it is missing only when the app's shell is gone (the error
+  // screen). TipTap given no element builds an editor that is in no page, so the open fails here with the reason instead.
+  const host = $('#editor');
+  if (!host) throw new Error('The editor area is not in the window.');
   clearTimeout(state.saveTimer);
   state.dirty = false;
   state.editor?.destroy();
   state.editor = null;
-  $('#editor').replaceChildren();
+  host.replaceChildren();
   applyPage(); // before the editor: node views measure the page
-  const { editor: ed, log } = makeEditor($('#editor'), doc, historyFile, keep, () => {
-    updateWordCount();
-    if (!state.smoke) markDirty();
+  const { editor: ed, log } = makeEditor(host, doc, historyFile, keep, () => {
+    countSoon();
+    // A canvas draft's editor here shows its DOM form from the last switch, which no save writes: its edits come from the engine.
+    if (!state.smoke && !isCanvas(state.draft)) markDirty();
   }, state.draft);
   state.editor = ed;
   undoLog = log;
+  focusMs = 0;
+  focusAt = document.hasFocus() ? Date.now() : null;
   clearRevLog(); // a new doc: the next rev, and no older one maps onto it (§8 Revisions)
   ed.on('transaction', ({ transaction, appendedTransactions }) => recordRev(transaction, appendedTransactions));
   // A Document's page setup changed (tr.setDocAttribute, undo too): the sheet follows.
   ed.on('transaction', ({ transaction }) => transaction.before.attrs.sect !== ed.state.doc.attrs.sect && applyPage());
   ed.on('transaction', ({ transaction }) => syncSuggestions(transaction));
+  // The work packages' setup runs on a Document's main editor only (plan.md §1.2), never on story or session editors.
+  if (formatOf(state.draft, state.settings)?.id === 'document') {
+    ed.on('destroy', setupModules(ed));
+    const draft = state.draft;
+    ed.on('transaction', () => keepLayout(ed, draft));
+  }
   syncSuggestions();
   updateWordCount();
-  renderSaveStatus(); // also re-renders the toolbar, which follows the new editor (useEditor)
+  setState({ editor: ed }); // re-renders the toolbar, which follows the new editor (useEditor)
+  renderSaveStatus();
   homeView(); // every draft opens with its page in the home view
 }
 
+/** mountEditor that leaves no half-built editor when it throws (open-worker): the editor area stays empty, the error goes on to
+ * the caller, and the sidebar, the menus and the other drafts keep working. */
+function mountSafely(...args) {
+  try {
+    mountEditor(...args);
+  } catch (e) {
+    try {
+      state.editor?.destroy();
+    } catch { /* it broke while it was built */ }
+    state.editor = null;
+    $('#editor')?.replaceChildren();
+    setState({ editor: null });
+    throw e;
+  }
+}
+
 function updateWordCount() {
-  setState({ words: state.editor ? wordCount(state.editor.getJSON()) : 0 });
+  clearTimeout(countTimer);
+  // A canvas draft's hidden editor is empty: the Word status bar counts from the engine (WordStatusBar.jsx).
+  const words = state.editor && !isCanvas(state.draft) ? wordCount(state.editor.getJSON()) : 0;
+  if (words !== state.words) setState({ words });
+}
+
+// Counting serialises the whole document, about 6 ms at 200 pages, so typing counts once it pauses (plan.md section 6 risk 6).
+let countTimer = null;
+function countSoon() {
+  clearTimeout(countTimer);
+  countTimer = setTimeout(updateWordCount, 300);
 }
 
 function renderSaveStatus(error) {
@@ -609,6 +885,8 @@ function renderSaveStatus(error) {
   else if (state.dirty) label = 'Unsaved';
   else if (state.lastSaved) label = `Saved ${new Date(state.lastSaved).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
   else label = state.draft?.id ? 'Saved' : 'New draft';
+  // markDirty runs on every keypress: an unchanged label notifies no store reader (each notice re-renders every Word ctx reader).
+  if (label === state.saveLabel && !!error === state.saveError) return;
   setState({ saveLabel: label, saveError: !!error });
 }
 
@@ -621,32 +899,175 @@ export function markDirty() {
 
 let saveChain = Promise.resolve(true);
 
-/** Saves the current draft if dirty. Saves are serialized. Resolves true on success (or nothing to save). */
-export function saveNow() {
-  clearTimeout(state.saveTimer);
-  saveChain = saveChain.then(doSave, doSave);
+// Time the window had the focus with the open draft, not yet added to its editMinutes. ponytail: time since the last save is lost
+// when another draft opens unsaved; count it at the switch if fields-info's EDITTIME needs it exact.
+let focusMs = 0;
+let focusAt = null;
+const focusTick = () => {
+  if (focusAt) focusMs += Date.now() - focusAt;
+  focusAt = document.hasFocus() && state.draft ? Date.now() : null;
+};
+
+/** A Document's record keys its save adds (docs/plans/word/plan.md §1.12 Draft record): editing minutes, revision, last saved by. */
+function savedStats(draft) {
+  if (draft.format === 'board') return {}; // a whiteboard has no doc for stats to read (its items are draft.board)
+  focusTick();
+  const minutes = (draft.editMinutes ?? 0) + focusMs / 60000;
+  focusMs = 0;
+  return { editMinutes: Math.round(minutes * 100) / 100, revision: (draft.revision ?? 0) + 1, savedBy: state.settings.word?.user?.name ?? '' };
+}
+
+/** Merges `patch` into the open draft's record outside its doc (print's `printed`, mailings' `mergeSource`) and saves the record with
+ * the doc as last saved, so the doc, its undo history and the dirty flag stay as they are. Resolves true on success. */
+export function draftMeta(patch) {
+  const draft = state.draft;
+  if (!draft) return Promise.resolve(false);
+  Object.assign(draft, patch);
+  if (!draft.id || state.smoke) return Promise.resolve(true); // the first save writes it
+  if (held()) return Promise.resolve(false);
+  const save = async () => {
+    try {
+      // A canvas draft goes as its record's text, the model as last saved spliced in (form.mjs recordText), so the record keeps
+      // the model in object form; the engine's unsaved edits stay for its next save.
+      const { updated, marks } = await api.drafts.save(isCanvas(draft) ? recordText(draft) : draft);
+      Object.assign(draft, { updated });
+      upsertDraftEntry(draft, marks);
+      return true;
+    } catch (e) {
+      toast(`Could not save the draft: ${e.message || e}`, true);
+      return false;
+    }
+  };
+  saveChain = saveChain.then(save, save);
   return saveChain;
 }
 
-async function doSave() {
-  if (!state.dirty || !state.draft || !state.editor || state.smoke) return true;
-  const doc = state.editor.getJSON();
-  const historyFile = history.encode(undoLog, state.settings.historyLimit);
-  const draft = state.draft;
-  // The title stays: it is set at creation and by a rename only (docs/plans/sidebar-menu.md decision 1).
-  Object.assign(draft, { doc, formatVersion: formatOf(draft, state.settings).version });
+/** Saves the current draft if dirty. Saves are serialized. Resolves true on success (or nothing to save). */
+export function saveNow() {
+  clearTimeout(state.saveTimer);
+  saveChain = saveChain.then(doSave, doSave).then((ok) => {
+    keepLayout(state.editor, state.draft);
+    return writeLayout().then(() => ok);
+  });
+  return saveChain;
+}
+
+// The open Document's layout cache (document/layout-cache.mjs, docs/plans/word/briefs/layout-cache.md), in the draft's own layout
+// file beside it (main.js drafts.saveLayout: not in the record, so taking it neither marks the draft updated nor reaches the
+// backup, and it holds this machine's fonts). Taken each time the pages settle and written then, at most every LAYOUT_EVERY ms,
+// and with the next save: a close or a switch to another draft saves, and typing writes it at most once a burst.
+const LAYOUT_EVERY = 30000;
+let kept = { ed: null, at: null }; // the editor and pages' layout version (geometry's) the layout was last taken at
+let pendingLayout = null; // {id, record} not written yet
+let layoutWritten = 0; // when one was last written
+const layoutGone = new Set(); // drafts deleted this session: a layout taken before the delete must not write their file again
+
+/** Takes the layout of `draft`'s editor `ed` when its pages are settled and laid out again since it was last taken. */
+function keepLayout(ed, draft) {
+  if (WORKER || state.smoke || !ed || ed !== state.editor || !draft?.id || formatOf(draft, state.settings)?.id !== 'document' || isCanvas(draft)) return;
+  const st = paginationKey.getState(ed.state);
+  const at = st?.geo?.version;
+  if (!st?.progress?.settled || at == null || (kept.ed === ed && kept.at === at)) return;
+  kept = { ed, at };
+  const record = layoutCacheOf(ed.view);
+  if (!record) return;
+  pendingLayout = { id: draft.id, record };
+  if (Date.now() - layoutWritten > LAYOUT_EVERY) writeLayout();
+}
+
+/** Writes the layout kept and not written yet. A failed write costs only the next open's speed: it resolves either way. */
+function writeLayout() {
+  const p = pendingLayout;
+  if (!p || !api.drafts.saveLayout) return Promise.resolve();
+  pendingLayout = null;
+  if (layoutGone.has(p.id)) return Promise.resolve();
+  layoutWritten = Date.now();
+  return api.drafts.saveLayout(p.id, p.record).catch((e) => console.warn('The layout cache was not written.', e));
+}
+
+// While GitHub sync covers the window (busy() sets state.syncing), saves wait, except flush()'s own, so nothing written during a
+// pull overwrites the files it brings (AR8). A held save keeps the draft dirty.
+let flushing = false;
+const held = () => state.syncing && !flushing;
+
+/** The formatVersion a save of `draft` stamps: formats.mjs formatVersionOf, which every path that writes a draft's record uses. */
+const versionOf = formatVersionOf;
+
+// Canvas drafts (docs/plans/engine/model.md): the engine holds the document, and state.editor shows the DOM form from the last
+// switch, so doSave never saves one from state.editor. The canvas page area hands its engine save here (attachCanvas), which
+// runs in this save chain and sync hold like every save, so no two runs of a record's pieces (drafts.savePart) interleave.
+let canvasSave = null; // {draft, save: () → the store's {id, updated}}
+
+/** While the page area holds `draft`, doSave saves it with `save` (autosave.mjs saveOnce: the engine serialises, this thread
+ * sends the record in pieces) → a function that ends it. The first save of a DOM draft switched to the canvas goes this way too:
+ * it makes the draft a canvas draft. */
+export function attachCanvas(draft, save) {
+  const mine = { draft, save };
+  canvasSave = mine;
+  return () => {
+    if (canvasSave === mine) canvasSave = null;
+  };
+}
+
+/** Saves the open canvas draft `draft`: from its engine while the page area holds it, else (the engine could not open it, the page
+ * area is closed, or a Word file's new draft before its first save) the record as last saved with the rest of the draft's keys,
+ * such as a new title. */
+async function saveCanvas(draft) {
+  if (!draft.uid) draft.uid = crypto.randomUUID(); // a board's reference (bd-instance): a record saved before uid had one
+  Object.assign(draft, savedStats(draft));
   state.dirty = false;
   state.saving = true;
   setState({ saveLabel: 'Saving...' });
   try {
-    const { id, updated } = await api.drafts.save(draft);
+    const isNew = !draft.id;
+    const { marks, ...saved } = canvasSave?.draft === draft ? await canvasSave.save() : await api.drafts.save(recordText(draft));
+    Object.assign(draft, saved);
+    state.lastSaved = draft.updated;
+    upsertDraftEntry(draft, marks);
+    if (state.draft === draft) {
+      // A DOM draft switched to the canvas: its suggestions went to the engine, and the Word status bar counts from there.
+      syncSuggestions();
+      updateWordCount();
+    }
+    if (isNew) await firstSave(draft);
+    renderSaveStatus();
+    return true;
+  } catch (e) {
+    if (state.draft === draft) state.dirty = true;
+    renderSaveStatus(true);
+    toast(`Could not save the draft: ${e.message || e}`, true);
+    return false;
+  } finally {
+    state.saving = false;
+  }
+}
+
+async function doSave() {
+  if (!state.dirty || !state.draft || state.smoke || held()) return true;
+  if (isCanvas(state.draft) || canvasSave?.draft === state.draft) return saveCanvas(state.draft);
+  if (!state.editor) return true;
+  const doc = state.editor.getJSON();
+  const historyFile = history.encode(undoLog, state.settings.historyLimit);
+  const draft = state.draft;
+  if (!draft.uid) draft.uid = crypto.randomUUID(); // a board's reference (bd-instance): a record saved before uid had one
+  // The title stays: it is set at creation and by a rename only (docs/wiki/sidebar-menu.md decision 1). A whiteboard keeps no
+  // doc (its items are draft.board): the hidden editor under it is empty, and writing it would give the record a text it has not.
+  if (draft.format === 'board') draft.formatVersion = versionOf(draft);
+  else Object.assign(draft, { doc, formatVersion: versionOf(draft) });
+  if (draft.format === 'document') Object.assign(draft, savedStats(draft));
+  state.dirty = false;
+  state.saving = true;
+  setState({ saveLabel: 'Saving...' });
+  try {
+    // As JSON text (main.js saveDraft parses it): sending the 16 MB fixture draft as an object held the page 377 to 420 ms (the
+    // context bridge copies it, then IPC clones it); as text, stringify and send take about half (open-worker, measured in
+    // .smoke-data/word/cases/open-worker.js). The background window sends the object, which computer-main.js checks.
+    const { id, updated } = await api.drafts.save(WORKER ? draft : JSON.stringify(draft));
     const isNew = !draft.id;
     Object.assign(draft, { id, updated });
     state.lastSaved = updated;
     upsertDraftEntry(draft);
-    if (isNew && state.draft === draft) await saveSettings({ lastDraftId: id });
-    if (isNew && defaultTag(state.settings)) await setDraftTag(id, defaultTag(state.settings).id); // Settings > Tags, New drafts get
-    if (isNew) await saveDraftOrder();
+    if (isNew) await firstSave(draft);
     await api.drafts.saveHistory(id, historyFile);
     renderSaveStatus();
     return true;
@@ -660,13 +1081,29 @@ async function doSave() {
   }
 }
 
+/** The bookkeeping of new draft `draft`'s first save, which gave it its id: the draft the app reopens (createDraft's Word file
+ * marked as opening, watchOpen), Settings > Tags' tag for new drafts and the draft order. */
+async function firstSave(draft) {
+  const { id } = draft;
+  if (state.draft === draft) await saveSettings({ lastDraftId: id, ...(markNew && { opening: id }) });
+  if (defaultTag(state.settings)) await setDraftTag(id, defaultTag(state.settings).id);
+  await saveDraftOrder();
+}
+
 /** Saves `draft` held by an editor `ed` other than the open draft's (an assistant background session, assistant/sessions.js), with
  * its undo steps `log`: the same draft file, history file and save chain as the open draft's. Resolves true on success. */
 export function saveOther(draft, ed, log) {
+  // Its doc is not what a canvas draft opens from: a save would report success and lose the edits (sessions.js saves a canvas
+  // draft with saveCanvasOther).
+  if (isCanvas(draft)) {
+    toast(`Could not save the draft "${draft.title}": it is in the canvas engine.`, true);
+    return Promise.resolve(false);
+  }
   const save = async () => {
+    if (held()) return false;
     try {
       const doc = ed.getJSON();
-      Object.assign(draft, { doc, formatVersion: formatOf(draft, state.settings).version }); // the title stays, as in doSave
+      Object.assign(draft, { doc, formatVersion: versionOf(draft) }); // the title stays, as in doSave
       Object.assign(draft, await api.drafts.save(draft));
       upsertDraftEntry(draft);
       await api.drafts.saveHistory(draft.id, history.encode(log, state.settings.historyLimit));
@@ -680,37 +1117,111 @@ export function saveOther(draft, ed, log) {
   return saveChain;
 }
 
-// `draft`: a draft (its marks read from its doc) or a summary entry (the background window's save, marks included).
-function upsertDraftEntry(draft) {
+/** Saves canvas draft `draft` held by engine session `client` (an assistant background session, assistant/sessions.js) as the page
+ * area saves the open one (autosave.mjs saveOnce: the record, then its undo history), in the same save chain and sync hold.
+ * Resolves true on success. */
+export function saveCanvasOther(draft, client) {
+  const save = async () => {
+    if (held()) return false;
+    try {
+      const store = (part, i, n) => api.drafts.savePart(draft.id, i, n, part);
+      const hist = (part, i, n) => api.drafts.saveHistoryPart(draft.id, i, n, part);
+      const { marks } = (await saveOnce(client, draft, store, {}, { store: hist, limit: state.settings.historyLimit ?? 50 })) ?? {};
+      upsertDraftEntry(draft, marks);
+      return true;
+    } catch (e) {
+      toast(`Could not save the draft "${draft.title}": ${e.message || e}`, true);
+      return false;
+    }
+  };
+  saveChain = saveChain.then(save, save);
+  return saveChain;
+}
+
+const marksOf =(d) => ({ suggestions: d?.suggestions ?? 0, flows: d?.flows ?? [], plans: d?.plans ?? [] });
+
+// `draft`: a draft or a summary entry (the background window's save, marks included). Its marks: `marks` (main.js saveDraft's for a
+// canvas draft, read from the engine model), else a DOM draft's from its doc, else the summary's, else a canvas draft's last.
+function upsertDraftEntry(draft, marks = null) {
+  const old = state.drafts.find((d) => d.id === draft.id);
+  marks ??= isCanvas(draft) ? marksOf(old) : draft.doc ? draftMarks(draft.doc) : marksOf(draft);
+  // The open canvas draft's count is its cards' (main.js reads none from an engine model).
+  if (draft === state.draft && state.suggestions.canvas) marks = { ...marks, suggestions: state.suggestions.count };
+  // `uid`: what a board's doc item refers to (bd-instance findDraft). `engine`: the Place list shows engine drafts only.
+  // `placed`: a whiteboard's live doc items, for the board tree under its sidebar row (Sidebar.jsx): from the live board when
+  // this is its record, else kept from its summary.
+  const placed = draft.placed ?? (draft.board ? placedIds(draft.board) : old?.placed);
   const entry = { id: draft.id, title: draft.title, threadUrl: draft.threadUrl, updated: draft.updated, pushedAt: draft.pushedAt,
-    format: draft.format ?? null, ...(draft.doc ? draftMarks(draft.doc) : { suggestions: draft.suggestions ?? 0, flows: draft.flows ?? [] }) };
+    format: draft.format ?? null, uid: draft.uid ?? null, engine: !!draft.engine, ...marks, ...(placed !== undefined && { placed }) };
   setState({ drafts: [entry, ...state.drafts.filter((d) => d.id !== draft.id)].sort((a, b) => b.updated - a.updated) });
 }
 
+/** A whiteboard's placed drafts (main.js placedDrafts, for the sidebar's board tree): its live doc items' draft ids in board
+ * order, each once. */
+function placedIds(board) {
+  const items = Object.values(board?.items ?? {}).filter((i) => i && !i.gone && i.type);
+  const keyOf = (i) => i.at?.[1] ?? '';
+  const byOrder = (a, b) => keyOf(a) < keyOf(b) ? -1 : keyOf(a) > keyOf(b) ? 1 : a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+  const out = [];
+  const walk = (parent) => {
+    for (const item of items.filter((i) => (i.at?.[0] ?? null) === parent).sort(byOrder)) {
+      if (item.type === 'doc' && item.draft && !out.includes(item.draft)) out.push(item.draft);
+      walk(item.id);
+    }
+  };
+  walk(null);
+  return out;
+}
+
+/** The drafts-list entry a board's doc item names: the one with its `draft` id and `uid`, else the one carrying that `uid`
+ * (another machine or a later server, where the ids differ), else null. */
+export function findDraft(item) {
+  const drafts = state.drafts ?? [];
+  const byId = drafts.find((d) => d.id === item.draft);
+  if (byId && byId.uid === item.uid) return byId;
+  if (item.uid == null) return null;
+  return drafts.find((d) => d.uid === item.uid) ?? null;
+}
+
 // A new draft of `format` holding `doc` (TipTap JSON in that format's schema; null: empty), not saved yet. createDraft saves it
-// at once; it stays unsaved only in the plain smoke run and when createDraft's save fails (docs/plans/sidebar-menu.md decision 2).
-function newDraft(doc = null, { format, focus = true } = {}) {
+// at once; it stays unsaved only in the plain smoke run and when createDraft's save fails (docs/wiki/sidebar-menu.md decision 2).
+// `engine`: a Document's engine model (the helper's engineForm bytes), which makes it a canvas draft; the hidden DOM editor under
+// the page area is empty.
+function newDraft(doc = null, { format, focus = true, engine = null } = {}) {
   // A Document starts with its own copy of the styles, theme, lists and page setup (docs/plans/document.md Document-level data).
   // Lists in `doc` (drafts.create content) get their own nums.
   if (format === 'document') doc = numberNewLists({ ...newDocumentJson(state.settings), ...doc });
-  state.draft = { title: 'Untitled', threadUrl: state.settings.selectedThread || null, created: Date.now(), pushedAt: null,
-    format, formatVersion: FORMATS[format].version, doc };
+  // `uid`: the reference a board keeps to this draft, synced with the record, so a board on another machine or a later server
+  // finds it when the local id differs (docs/plans/board/briefs/bd-instance.md).
+  state.draft = { title: 'Untitled', threadUrl: shownThread(), created: Date.now(), pushedAt: null, uid: crypto.randomUUID(),
+    format, doc };
+  // A whiteboard holds its items in draft.board (src/board/store.mjs) and keeps doc null.
+  if (format === 'board') state.draft.board = blankBoard();
+  state.draft.formatVersion = versionOf(state.draft);
+  if (engine) adopt(state.draft, engine);
   state.lastSaved = null;
-  mountEditor(doc);
-  if (focus) state.editor.commands.focus();
+  mountSafely(doc);
+  if (focus) focusArea() || state.editor.commands.focus();
 }
 
 /** A new draft of `format` holding `doc` (TipTap JSON; null: empty) titled `title` (cleanTitle; empty: the first line of `doc`,
  * else 'Untitled') in thread `threadUrl` (undefined: the selected thread), saved at once so it has an id (an empty one too),
  * then filed in `folderId` and tagged `tagId`; shown in the editor without taking the focus. Every new draft comes through here
- * (docs/plans/sidebar-menu.md decision 2). Resolves {draftId}; throws when it could not be saved. */
-export async function createDraft({ title, threadUrl, folderId = null, tagId = null, doc = null, format } = {}) {
+ * (docs/wiki/sidebar-menu.md decision 2). `opening`: the key of the opening card a Word file's draft opens behind (files.js),
+ * whose first save also marks it as opening (watchOpen). `engine`: a Document's engine model, which makes it a canvas draft whose
+ * first save writes the canvas record; its card ends when the page area paints its first pages (canvasOpen). Resolves {draftId};
+ * throws when it could not be saved. */
+export async function createDraft({ title, threadUrl, folderId = null, tagId = null, doc = null, format, opening = null, engine = null } = {}) {
   if (!(await saveNow())) throw new Error('The open draft could not be saved');
-  newDraft(doc, { format, focus: false });
+  newDraft(doc, { format, focus: false, engine });
+  if (engine && opening) following = { draft: state.draft, card: opening };
   state.draft.title = cleanTitle(title || (doc ? draftTitle(doc) : ''));
   if (threadUrl !== undefined) state.draft.threadUrl = draftThreadUrl(threadUrl);
   markDirty();
-  if (!(await saveNow()) || !state.draft.id) throw new Error('The new draft could not be saved');
+  stepOpening(opening, { stage: 'Saving the draft' });
+  markNew = !!opening;
+  const saved = await saveNow().finally(() => { markNew = false; });
+  if (!saved || !state.draft.id) throw new Error('The new draft could not be saved');
   const draftId = state.draft.id;
   if (folderId) await moveDraft(draftId, folderId);
   if (tagId) await setDraftTag(draftId, tagId);
@@ -730,7 +1241,8 @@ export async function openDraft(id, { show = true, remember = true } = {}) {
   // The assistant's background session of this draft hands over (§7i Background drafts): its document and undo steps after its
   // last command and save, not the disk copy. A missing or unreadable history file only means no undo history (§7e).
   const bg = await handOver(id);
-  const [draft, historyFile] = bg ? [bg.draft, bg.history] : await Promise.all([api.drafts.load(id), api.drafts.loadHistory(id).catch(() => null)]);
+  const [[draft, historyFile], layout] = await Promise.all([bg ? [bg.draft, bg.history] : Promise.all([api.drafts.load(id), api.drafts.loadHistory(id).catch(() => null)]),
+    api.drafts.loadLayout?.(id).catch(() => null) ?? null]);
   if (!draft) {
     toast('That draft could not be loaded.', true);
     setState({ drafts: await api.drafts.list() });
@@ -742,25 +1254,155 @@ export async function openDraft(id, { show = true, remember = true } = {}) {
     toast(NEWER_FORMAT, true);
     return false;
   }
+  // A large draft, or the one that was still opening when the app last closed, opens behind the opening card, marked as opening
+  // until its pages settle (watchOpen).
+  const back = state.draft?.id;
+  const title = draft.title || 'Untitled';
+  // A canvas draft's size is its model's top-level blocks: the engine opens it in the page area, and a `doc` that a record saved
+  // before still holds is stale.
+  const canvas = isCanvas(draft);
+  const blocks = canvas ? draft.engine.model?.body?.length : (bg?.doc ?? draft.doc)?.content?.length;
+  const loud = id === suspect || (blocks ?? 0) > BIG;
+  const card = loud && startOpening(title, { stage: 'Drawing the pages' });
+  if (loud) {
+    suspect = null;
+    if (remember) await saveSettings({ lastDraftId: id, opening: id });
+    await painted();
+  }
+  // Word's line heights from the font files, before the first layout (font-metrics: otherwise its pages lay out twice).
+  if (formatOf(draft, state.settings).id === 'document' && !canvas) await preloadRatios(bg?.doc ?? draft.doc);
   state.draft = draft;
   state.lastSaved = draft.updated;
-  if (bg) mountEditor(bg.doc, historyFile, state.settings.historyLimit || 50); // the session's steps, also with 0 kept after closing
-  else mountEditor(draft.doc, historyFile);
+  stageCache(layout); // the draft's last layout: its editor opens from it (document/layout-cache.mjs)
+  if (canvas && loud) following = { draft, card };
+  // A canvas draft's undo history is the engine's: its page area takes the file (takeHistory).
+  canvasHistory = canvas && !bg ? { draft, file: historyFile } : null;
+  try {
+    // The session's steps, also with 0 kept after closing. A canvas draft's session stays in the engine for the page area.
+    if (bg && !bg.canvas) mountSafely(bg.doc, historyFile, state.settings.historyLimit || 50);
+    // The hidden DOM editor under a canvas draft's page area is empty, with no undo history (the engine keeps its own).
+    else if (canvas) mountSafely(newDocumentJson(state.settings));
+    else mountSafely(draft.doc, historyFile);
+  } catch (e) {
+    console.error(e);
+    failOpening(title, e.message, () => state.editor || leave(id, back));
+    return false;
+  }
   if (show) await showPage('editor');
-  if (remember) await saveSettings({ lastDraftId: id });
+  if (loud) {
+    stepOpening(card, { stage: 'Laying out pages', cancel: () => leave(id, back) });
+    if (!canvas) watchOpen(state.editor, draft, card); // a canvas draft's page area reports to canvasOpen
+  } else if (remember) await saveSettings({ lastDraftId: id });
   return true;
 }
 
-/** The format a new draft without the New draft dialog takes (init, doDeleteDraft): as the dialog preselects. */
-const fallbackFormat = () => defaultFormat(state.settings, state.settings.selectedThread, { last: true });
+let canvasHistory = null; // {draft, file}: the history file openDraft loaded for a canvas draft, until its page area takes it
 
-/** With nothing left to open (init, doDeleteDraft): a saved empty draft (docs/plans/sidebar-menu.md decision 2), focused as
+/** The undo history file openDraft loaded for canvas draft `draft` (engine-undo-file), once: the page area takes it into the engine
+ * when it opens the draft (src/document/canvas/session.js), which checks that it belongs to the record. Null for another draft. */
+export function takeHistory(draft) {
+  const h = canvasHistory?.draft === draft ? canvasHistory.file : null;
+  canvasHistory = null;
+  return h;
+}
+
+/** Puts `next`, the open draft in another form (src/document/canvas/session.js: a canvas draft back in the DOM editor), in the
+ * editor with a new undo history, since the old one belongs to the other form, and saves it: the save writes the record and the
+ * new history over the old. Resolves true once saved. */
+export async function replaceOpenDraft(next) {
+  const prev = state.draft;
+  if (prev?.id !== next.id) return false;
+  state.draft = next;
+  try {
+    mountSafely(next.doc);
+  } catch (e) {
+    state.draft = prev;
+    refresh();
+    throw e;
+  }
+  state.dirty = true;
+  return saveNow();
+}
+
+// ---------------------------------------------------------------------------------------------
+// Opening safely (docs/plans/word/briefs/open-worker.md): a Word file or a large draft opens behind the opening card, and while
+// the draft the app reopens at start (settings.lastDraftId) lays out its pages, settings.opening holds its id. A draft that froze
+// or crashed the app while it opened then waits for a click at the next start instead of freezing the app again.
+
+const BIG = 1000; // ponytail: top-level blocks (about 40 pages) that make an open show the card; the file's size if blocks mislead
+const CALM = 10000; // ms the page answered on time while a draft laid out: its mark goes, settled or not
+let suspect = null; // the draft that was still opening when the app last closed (init): it opens on a click, behind the card
+let markNew = false; // createDraft's first save of a Word file's draft marks it as opening, with lastDraftId in the same write
+
+/** Follows the pages of `draft`, open in editor `ed`, as they lay out: the opening card `card` (startOpening's key, or null) counts
+ * them and ends once they settle; the mark goes then, or once the page has answered on time for CALM ms. Until perf-core
+ * publishes paginationKey's progress {done, estimate, settled}, a page count that stands still for a second counts as settled. */
+export function watchOpen(ed, draft, card) {
+  let last = -1;
+  let still = 0;
+  let calm = 0;
+  let at = Date.now();
+  let marked = true;
+  const timer = setInterval(() => {
+    const now = Date.now();
+    calm = now - at < 1000 ? calm + now - at : 0; // a late tick: the page was busy
+    at = now;
+    const st = ed?.isDestroyed === false ? paginationKey.getState(ed.state) : null;
+    const done = st?.progress?.done ?? st?.pages ?? 1;
+    still = done === last ? still + 1 : 0;
+    last = done;
+    if (st) stepOpening(card, { done, estimate: st.progress?.estimate ?? ed.state.doc.attrs.props?.pages ?? null });
+    const settled = !st || (st.progress ? st.progress.settled : still >= 4);
+    if (marked && (settled || calm >= CALM) && draft.id && state.settings.opening === draft.id) {
+      marked = false;
+      saveSettings({ opening: null }).catch(() => {});
+    }
+    if (!settled) return;
+    clearInterval(timer);
+    endOpening(card);
+  }, 250);
+}
+
+let following = null; // {draft, card}: a canvas draft opening behind the opening card `card`, which its page area reports to
+
+/** The canvas page area's open of `draft` (session.js, PageArea.jsx) reached `step`: 'painted' (its first pages show, so the
+ * opening card ends), 'settled' (every page laid out, so its opening mark goes too), 'failed' (the area says why) or 'closed'. */
+export function canvasOpen(draft, step) {
+  const f = following;
+  if (!f || f.draft !== draft) return;
+  endOpening(f.card);
+  if (step === 'painted') return;
+  following = null;
+  if (draft.id && state.settings.opening === draft.id) saveSettings({ opening: null }).catch(() => {});
+}
+
+/** Draft `id` will not paint its pages now (a board took it instead of the page area): its opening card ends here, since no
+ * page area will report for it. */
+export function openingDone(id) {
+  const f = following;
+  if (!f || f.draft?.id !== id) return;
+  endOpening(f.card);
+  following = null;
+  if (state.settings?.opening === id) saveSettings({ opening: null }).catch(() => {});
+}
+
+/** Closes draft `id` (null: a new one that never saved), keeping it in the list: Cancel while its pages lay out, or Close after
+ * it failed to open. Opens draft `back` (the one open before) instead, else the newest other draft, else a new one. */
+export async function leave(id, back) {
+  const to = [back, ...state.drafts.map((d) => d.id)].find((d) => d && d !== id);
+  if (!to || !(await openDraft(to))) await fallbackDraft();
+}
+
+/** The format a new draft without the New draft dialog takes (init, doDeleteDraft): as the dialog preselects. */
+const fallbackFormat = () => defaultFormat(state.settings, shownThread(), { last: true });
+
+/** With nothing left to open (init, doDeleteDraft): a saved empty draft (docs/wiki/sidebar-menu.md decision 2), focused as
  * newDraft focuses. The plain smoke run keeps it unsaved: it runs on the real profile. A failed save leaves the unsaved draft
  * in the editor, as a failed autosave does (doSave's toast explains). */
 async function fallbackDraft() {
   if (SMOKE) return newDraft(null, { format: fallbackFormat() });
   await createDraft({ format: fallbackFormat() }).catch(() => {});
-  state.editor?.commands.focus();
+  focusArea() || state.editor?.commands.focus();
 }
 
 /** New draft (sidebar button, Ctrl+N, tool search, the sidebar menu's New draft here with `folderId`, null: the top level): the
@@ -782,7 +1424,7 @@ export async function startNewDraft({ folderId } = {}) {
     return toast(e.message, true);
   }
   await showPage('editor');
-  state.editor.commands.focus(); // FormDialog gave the focus back before this editor existed; createDraft mounts it unfocused
+  focusArea() || state.editor.commands.focus(); // FormDialog gave the focus back before this editor existed; createDraft mounts it unfocused
 }
 
 // Writes a draft that may not be the open one: the open one through the editor and autosave, another by load → save.
@@ -799,8 +1441,9 @@ export async function updateDraft(id, patch) {
   const write = async () => {
     const draft = await api.drafts.load(id);
     if (!draft) return false;
-    Object.assign(draft, patch, await api.drafts.save({ ...draft, ...patch }));
-    upsertDraftEntry(draft);
+    const { marks, ...saved } = await api.drafts.save({ ...draft, ...patch });
+    Object.assign(draft, patch, saved);
+    upsertDraftEntry(draft, marks);
     return true;
   };
   const done = saveChain.then(write, write);
@@ -812,7 +1455,7 @@ export async function updateDraft(id, patch) {
  * its `updated` (it moves up the sidebar when the list follows it). */
 export const setDraftThreadFor = (id, url) => updateDraft(id, { threadUrl: draftThreadUrl(url) });
 
-/** Renames the draft `id` to cleanTitle(`title`) (docs/plans/sidebar-menu.md decision 1). Resolves false when it could not be
+/** Renames the draft `id` to cleanTitle(`title`) (docs/wiki/sidebar-menu.md decision 1). Resolves false when it could not be
  * saved, and writes nothing while the background window of computer use holds the draft: that window saves the draft object it
  * loaded, so its next save would put the old title back. */
 export async function renameDraft(id, title) {
@@ -844,6 +1487,12 @@ export async function doDeleteDraft(id) {
     await saveChain; // the same for an assistant background session of it (closed unsaved)
   }
   if (state.worker?.draftId === id) await api.computer.close(); // the background window's last save comes before the removal
+  // A board's camera and its open draft tree go with it: nothing must write settings for a draft that no longer exists.
+  const purge = {};
+  if (state.settings?.boardViews?.[id]) purge.boardViews = Object.fromEntries(Object.entries(state.settings.boardViews).filter(([k]) => k !== id));
+  if (state.settings?.boardTreeOpen?.[id]) purge.boardTreeOpen = Object.fromEntries(Object.entries(state.settings.boardTreeOpen).filter(([k]) => k !== id));
+  if (Object.keys(purge).length) await saveSettings(purge);
+  layoutGone.add(id); // the next draft's open saves, which would write this one's layout file back beside the trashed draft
   await api.drafts.remove(id);
   setState({ drafts: state.drafts.filter((d) => d.id !== id), ...(state.draftClip?.id === id && { draftClip: null }) });
   if (!isCurrent) return;
@@ -871,7 +1520,7 @@ const draftThreadUrl = (url) => {
     ?? (topic ? threads.find((t) => legacyTopic(t.url) === topic)?.url ?? url : null)) || null;
 };
 
-/** A thread row (or All drafts): filters the drafts and shows the editor page (§7g). */
+/** A project row: shows its drafts and the editor page (§7g). */
 export async function selectThread(url) {
   await showPage('editor');
   await saveSettings({ selectedThread: url });
@@ -908,10 +1557,23 @@ export async function addProject(title) {
   return url;
 }
 
+/** The project the Drafts list shows: the selected one while it is listed, else the first (the user, 2026-10-28: no All drafts);
+ * null with no projects. */
+export function shownThread() {
+  const { threads, selectedThread } = state.settings;
+  return threads.some((t) => t.url === selectedThread) ? selectedThread : threads[0]?.url ?? null;
+}
+
+/** The shown project's drafts; every draft with no projects. */
 export function visibleDrafts() {
-  const sel = state.settings.selectedThread;
+  const sel = shownThread();
   return sel ? state.drafts.filter((d) => d.threadUrl === sel) : state.drafts;
 }
+
+/** The drafts in no listed project (none, or one removed from the list), in the Drafts order: the sidebar's Unlinked drafts,
+ * shown once there is a project. */
+export const unlinkedDrafts = () => (state.settings.threads.length
+  ? sortDrafts(state.drafts.filter((d) => !state.settings.threads.some((t) => t.url === d.threadUrl)), state.settings.draftOrder) : []);
 
 // Draft folders live in settings only, so moving a draft never rewrites its file.
 const folderList = () => state.settings.folders || [];
@@ -973,6 +1635,12 @@ export async function createFolder(name) {
 
 export const toggleFolder = (id) => setFolder(id, (f) => ({ open: !f.open }));
 
+/** Shows or hides the drafts placed on whiteboard `id`, under its sidebar row (Sidebar.jsx board tree), kept across restarts. */
+export function toggleBoardTree(id) {
+  const open = state.settings?.boardTreeOpen ?? {};
+  return saveSettings({ boardTreeOpen: { ...open, [id]: !open[id] } });
+}
+
 export function renameFolder(id, name) {
   if (name.trim()) setFolder(id, () => ({ name: name.trim() }));
 }
@@ -1000,7 +1668,7 @@ export const doDeleteFolder = (id) => saveDraftFolders(state.settings.draftFolde
 /** Tags a draft (tagId null: untagged). In settings only, like folders: the draft file is never rewritten. */
 export const setDraftTag = (id, tagId) => saveSettings({ draftTags: tagDraft(state.settings, state.drafts, id, tagId) });
 
-/** A copy of the draft `id` titled '<title> (copy)' (docs/plans/sidebar-menu.md decision 6), not opened: its file with a new id
+/** A copy of the draft `id` titled '<title> (copy)' (docs/wiki/sidebar-menu.md decision 6), not opened: its file with a new id
  * and created (main's file family), pushedAt null and no history file, so its undo starts empty. The source's tag; placed just
  * after the source in its folder, or first in `folderId` when given (null: the top level). `threadUrl` given: the copy's
  * project. The open source and the assistant's background sessions save first, so the copy has their last edits. Resolves
@@ -1013,10 +1681,13 @@ export async function duplicateDraft(id, { folderId, threadUrl } = {}) {
   await flushSessions();
   const source = await api.drafts.load(id);
   if (!source) throw new Error('That draft could not be loaded');
-  // id null: main's save gives it a new id and created, and updated now.
-  const copy = { ...source, id: null, title: copyTitle(source.title), pushedAt: null, ...(threadUrl !== undefined && { threadUrl }) };
-  Object.assign(copy, await api.drafts.save(copy));
-  upsertDraftEntry(copy); // placeDraft, moveDraft and pruneMap keep only drafts in state.drafts
+  // id null: main's save gives it a new id and created, and updated now. The uid is the copy's own: a board keeps a reference
+  // to one draft by it, so a duplicate must not answer to the original's.
+  const copy = { ...source, id: null, uid: crypto.randomUUID(), title: copyTitle(source.title), pushedAt: null,
+    ...(threadUrl !== undefined && { threadUrl }) };
+  const { marks, ...saved } = await api.drafts.save(copy);
+  Object.assign(copy, saved);
+  upsertDraftEntry(copy, marks); // placeDraft, moveDraft and pruneMap keep only drafts in state.drafts
   const tag = draftTag(state.settings, id);
   if (tag) await setDraftTag(copy.id, tag.id);
   if (folderId === undefined) await placeDraft(copy.id, id, true);
@@ -1033,7 +1704,7 @@ export const cutDraft = (id) => setState({ draftClip: { id, cut: true } });
 
 /** The project a pasted draft joins: the selected one when the draft is in another, else undefined (it keeps its own). */
 const pasteProject = (d) => {
-  const sel = state.settings.selectedThread;
+  const sel = shownThread();
   return sel && d.threadUrl !== sel ? sel : undefined;
 };
 
@@ -1111,23 +1782,40 @@ const go = (e, fn) => {
 };
 
 // The app's own shortcuts (§7k keybinds: keyIs / keyAmong match the user's chords).
+// A modeless dialog (Find and Replace) leaves the app's keys to the text behind it; a modal dialog, a confirmation or the setup
+// keeps them.
+const keysHeld = (e) => state.confirm || setupOpen()
+  || (dialogStack().length && !(document.querySelector('[data-modeless]') && !e.target.closest?.('[role="dialog"], [role="alertdialog"]')));
+
 function onKeyDown(e) {
+  // Word's chords in a Document's text (plan.md §1.13): WordKeys (document/word/keys.js) runs them there, and Word's window-wide
+  // keys run here while the focus is in the Document's ribbon, panes, status bar or backstage. Before window zoom: Ctrl+= zooms
+  // the page in the text.
+  if (wordKeyWins(e)) {
+    if (!e.target.closest?.('[data-doc-text]')) runWordKey(e);
+    return;
+  }
   // Window zoom, over dialogs too (Settings > General UI scale shows it): the main window has no menu, so no accelerators. In the
   // browser's pane or page the browser's own zoom keys zoom its tab instead (§7j browserKey).
   const zoom = keyAmong(Object.keys(WINDOW_ZOOM), e);
   if (zoom && !e.target.closest?.('[data-browser-pane], [data-browser-page]')) {
     return go(e, () => api.window.zoom(WINDOW_ZOOM[zoom]).then((settings) => setState({ settings }))); // saved as uiScale
   }
-  if (state.dialog || state.confirm || setupOpen()) return; // the setup is modal to the keyboard too
+  if (keysHeld(e)) return; // the setup is modal to the keyboard too
+  const isDocument = state.draft?.format === 'document';
   if (keyIs('app.save', e)) {
     go(e, () => {
       commitBoardEdit();
       saveNow();
     });
-  } else if (keyIs('app.toolSearch', e)) {
+  } else if (keyIs('app.toolSearch', e) && !(isDocument && e.target.closest?.('[data-pane], [data-reading]'))) {
     // Tool search, also in canvas edit mode, a text item or an input. Window capture: before ProseMirror and the boards;
-    // never types a space.
+    // never types a space. In a Document's pane Ctrl+Space opens the pane's menu instead (ribbon-chrome), and while Read Aloud
+    // reads it plays or pauses (proofing).
     e.stopPropagation();
+    go(e, toggleToolSearch);
+  } else if (isDocument && keyIs('app.toolSearchDoc', e)) {
+    e.stopPropagation(); // Alt+Q, Word's search box key, in a Document wherever the focus is
     go(e, toggleToolSearch);
   } else if (keyIs('app.quickTools', e)) {
     // Quick tools, in the same places as the tool search. Never moves the focus or cycles a board's items; holding the
@@ -1147,7 +1835,7 @@ function onKeyDown(e) {
   } else if (!can('view.editor', state)) {
     // A workspace (§7g): no document shortcuts.
   } else if (state.suggestions.count && keyAmong(SUGGEST_KEYS, e) && !e.target.closest?.('input, textarea, select')) {
-    // The open draft's waiting agent edits (docs/plans/suggestions.md Keys). An agent's keys never decide them (Open decision 11):
+    // The open draft's waiting agent edits (docs/wiki/suggestions.md Keys). An agent's keys never decide them (Open decision 11):
     // the background window's input is all an agent's, and the main window's is while a computer.act or press scope is open.
     go(e, agentInputOpen() || window.__worker ? () => {} : SUGGEST_ACTIONS[keyAmong(SUGGEST_KEYS, e)]);
   } else if (keyIs('text.link', e)) {
@@ -1160,7 +1848,8 @@ function onKeyDown(e) {
     go(e, openReplace);
   } else if (keyIs('insert.canvas', e)) {
     go(e, insertCanvas);
-  } else if (keyAmong(PRESETS, e) && !e.target.closest?.('.wb')) {
+  } else if (keyAmong(PRESETS, e) && can('format.post', state.draft) && !e.target.closest?.('.wb')) {
+    // Font presets are forum marks: in a Document Alt+1..9 stay free for the Quick Access Toolbar's KeyTips (ribbon-chrome).
     go(e, () => applyPresetAt(PRESETS.indexOf(keyAmong(PRESETS, e))));
   }
 }
@@ -1181,7 +1870,7 @@ function onBeforeUnload(e) {
   if (state.syncReload) return; // GitHub backup: the files on disk are newer than anything in memory
   commitBoardEdit();
   const bg = flushSessions(); // the assistant's background sessions save their last change; null when none has one
-  if (state.forceClose || state.smoke || !(state.dirty || state.saving || bg)) return;
+  if (state.forceClose || state.smoke || !(state.dirty || state.saving || bg || pendingLayout)) return;
   e.preventDefault();
   e.returnValue = false; // cancel this close, save, then close again
   Promise.resolve(bg).then(saveNow).then(async (ok) => {
@@ -1268,15 +1957,18 @@ function marginClick(e) {
 
 function bindStatic() {
   // A resize of the editor area (the window, the sidebar, the navigation pane, the chat panel) keeps the page's gaps to the
-  // home view's room in proportion, re-fitting the zoom first; a Document's sheet right of its island stays right of it.
-  place = keepPlace($('#editor-area'), $('#page-wrap'), () => ({ left: viewLeft(), right: VIEW_RIGHT, top: VIEW_TOP, bottom: 0 }), () => applyZoom());
+  // home view's room in proportion, re-fitting the zoom first.
+  place = keepPlace($('#editor-area'), $('#page-wrap'), () => ({ left: VIEW_LEFT, right: VIEW_RIGHT, top: VIEW_TOP, bottom: 0 }), () => applyZoom());
   // Middle-drag pans the editor area; Ctrl + wheel zooms the page around the pointer (also while a canvas is edited in place).
-  bindPanZoom($('#editor-area'), $('#page-wrap'), setZoom, (pct) => setState({ zoomPct: Math.round(pct) }));
+  zoomer = bindPanZoom($('#editor-area'), $('#page-wrap'), setZoom, (pct) => setLiveZoom(pct == null ? null : Math.round(pct)),
+    () => $('#editor-area').hasAttribute('data-word-view'));
   $('#editor-area').addEventListener('pointerdown', marginClick);
   window.addEventListener('keydown', onKeyDown, true);
   api.keys?.onGlobe(globeKey);
   window.addEventListener('pointermove', (e) => { pointer = { x: e.clientX, y: e.clientY }; }, true);
   window.addEventListener('beforeunload', onBeforeUnload);
+  window.addEventListener('focus', focusTick); // the open draft's editing minutes (savedStats)
+  window.addEventListener('blur', focusTick);
   // Entering canvas edit mode shows the notice pill (§6b); leaving it, like every other mode change, shows nothing.
   let editing = null;
   canvasEditor.subscribe(() => {
@@ -1307,8 +1999,10 @@ async function init() {
   // The demo draft (samples/demo.js) is no longer created on a new profile (docs/plans/onboarding.md); the flag is still set
   // once, so a profile reads the same to an older build, which would otherwise seed it.
   if (!state.settings.demoSeeded && !SMOKE) await saveSettings({ demoSeeded: true }).catch(() => {});
-  const { lastDraftId } = state.settings;
-  const id = state.drafts.some((d) => d.id === lastDraftId) ? lastDraftId : state.drafts[0]?.id;
+  const { lastDraftId, opening } = state.settings;
+  let id = state.drafts.some((d) => d.id === lastDraftId) ? lastDraftId : state.drafts[0]?.id;
+  // Still opening when the app last closed: that draft froze or crashed it. It stays in the list and opens on a click.
+  if (id && id === opening) [suspect, id] = [id, state.drafts.find((d) => d.id !== opening)?.id];
   if (!id || !(await openDraft(id))) await fallbackDraft();
   await restoreView(state.settings.lastView); // last: a workspace opens over the open draft
   installAgent(); // window.__agent and the command events (§8)
@@ -1320,10 +2014,15 @@ async function init() {
 function startGitHub() {
   window.__sync = {
     flush: async () => {
-      commitBoardEdit();
-      await flushSessions();
-      await Promise.all([flushPlans(), flushFlows()]);
-      return saveNow();
+      flushing = true;
+      try {
+        commitBoardEdit();
+        await flushSessions();
+        await Promise.all([flushPlans(), flushFlows()]);
+        return await saveNow();
+      } finally {
+        flushing = false;
+      }
     },
     reload: () => {
       state.syncReload = true; // saved by flush(): the files on disk are the new ones, so no unload handler saves
@@ -1331,6 +2030,7 @@ function startGitHub() {
     },
     busy: (text) => {
       document.body.inert = !!text; // no typing or clicks under the overlay
+      state.syncing = !!text; // no agent commands (commands.js invoke) or saves (held) either
       setState({ overlay: text });
     },
   };

@@ -1,0 +1,143 @@
+/* Formatting marks (docs/plans/word/briefs/marks.md). Everything that draws sits under @media screen, so no mark prints and
+   printToPDF output has none. Glyphs are absolutely positioned at their static place (or over the character they mark), so
+   they take no width and no line wraps differently; only hidden text takes its room when shown, as in Word. */
+
+/* Decoration glyphs (plugin.js) draw nothing unless a kind shows and the medium is a screen. */
+.page[data-format="document"] .ProseMirror .wm { display: none; }
+.page[data-format="document"] .pg-layer[data-layer="marks.page"] > * { display: none; }
+
+/* An empty paragraph's ¶ widget sits before ProseMirror's trailing break, which ends document.css's 1 px rule for a line that
+   holds only a break: the same 1 px box keeps the line out of the page gap. */
+.page[data-format="document"] .ProseMirror > :is(p, h1, h2, h3, h4, h5, h6):not([data-label]):has(> .wm-empty:first-child + br.ProseMirror-trailingBreak:last-child)::before,
+.page[data-format="document"] .ProseMirror :is([data-columns], div[data-sdt], [data-field-block]) > :is(p, h1, h2, h3, h4, h5, h6):not([data-label]):has(> .wm-empty:first-child + br.ProseMirror-trailingBreak:last-child)::before {
+  content: "";
+  display: inline-block;
+  width: 1px;
+}
+
+@media screen {
+  #editor-area[data-word-view] { --wm-color: #4a86c5; }
+
+  /* ¶, ↵ and ¤ at their static position: where the next inline content would start. */
+  #editor-area[data-word-view][data-marks] .ProseMirror .wm {
+    display: inline;
+    position: absolute;
+    color: var(--wm-color);
+    font-style: normal;
+    font-weight: normal;
+    text-decoration: none;
+    text-indent: 0;
+    white-space: pre;
+    pointer-events: none;
+    user-select: none;
+  }
+  /* A style separator's ¶ (specVanish) has a dotted outline. */
+  #editor-area[data-word-view][data-marks] .ProseMirror .wm.wm-sep { outline: 1px dotted var(--wm-color); outline-offset: -1px; }
+
+  /* Spaces, nonbreaking spaces and optional hyphens: the glyph over the character's own box. */
+  #editor-area[data-word-view][data-marks] .ProseMirror .wm-ch { position: relative; }
+  #editor-area[data-word-view][data-marks] .ProseMirror .wm-ch::after {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 0;
+    text-align: center;
+    color: var(--wm-color);
+    font-style: normal;
+    font-weight: normal;
+    white-space: pre;
+    pointer-events: none;
+  }
+  #editor-area[data-word-view][data-marks] .ProseMirror .wm-space::after { content: "\b7"; }
+  #editor-area[data-word-view][data-marks] .ProseMirror .wm-nbsp::after { content: "\b0"; }
+  #editor-area[data-word-view][data-marks] .ProseMirror .wm-optionalHyphen::after { content: "\ac"; text-align: left; }
+
+  /* Tab arrows on tabs' laid-out boxes (plan.md §1.9), centred across the tab's width, pointing the way the text runs. */
+  #editor-area[data-word-view][data-marks~="tabs"] .ProseMirror :is(span[data-tab], [data-ptab]) { position: relative; }
+  #editor-area[data-word-view][data-marks~="tabs"] .ProseMirror :is(span[data-tab], [data-ptab])::after {
+    content: "\2192";
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 0;
+    text-align: center;
+    color: var(--wm-color);
+    font-style: normal;
+    font-weight: normal;
+    pointer-events: none;
+  }
+  #editor-area[data-word-view][data-marks~="tabs"] .ProseMirror :is(span[data-tab], [data-ptab]):dir(rtl)::after { content: "\2190"; }
+
+  /* Hidden text shows with a dotted underline and takes its room; pagination measures it like any text. */
+  #editor-area[data-word-view][data-marks~="hidden"] .ProseMirror [data-vanish="true"] {
+    display: inline;
+    text-decoration: underline dotted;
+    text-decoration-color: var(--wm-color);
+  }
+
+  /* End-of-row mark right of each row's last cell (cells are positioned: page.css's column resize handle). */
+  #editor-area[data-word-view][data-marks~="paragraphs"] .ProseMirror tr > :is(td, th):last-child::before {
+    content: "\a4";
+    position: absolute;
+    left: 100%;
+    margin-left: 4px;
+    color: var(--wm-color);
+    pointer-events: none;
+  }
+
+  /* Break labels (plugin.js data-wm-label) on the breaks that are a page gap (a page break, a new-page section break; see
+     document.css): a dotted line across the column with Word's label in its middle, in the bottom margin just under the text
+     area. Continuous and column breaks already show their label in the text (document.css); restyling them could move lines. */
+  #editor-area[data-word-view][data-marks~="all"] .ProseMirror [data-page-break][data-wm-label] { position: relative; }
+  #editor-area[data-word-view][data-marks~="all"] .ProseMirror [data-page-break][data-wm-label]::before,
+  #editor-area[data-word-view][data-marks~="all"] .ProseMirror [data-page-break][data-wm-label]::after {
+    position: absolute;
+    top: 8px;
+    pointer-events: none;
+    color: var(--wm-color);
+  }
+  #editor-area[data-word-view][data-marks~="all"] .ProseMirror [data-page-break][data-wm-label]::before {
+    content: "";
+    left: var(--sheet-left);
+    right: var(--sheet-right);
+    height: 0;
+    border-top: 1px dotted var(--wm-color);
+  }
+  #editor-area[data-word-view][data-marks~="all"] .ProseMirror [data-section-break][data-page-break][data-wm-label]::before { height: 2px; border-bottom: 1px dotted var(--wm-color); }
+  #editor-area[data-word-view][data-marks~="all"] .ProseMirror [data-page-break][data-wm-label]::after {
+    content: attr(data-wm-label);
+    left: calc(var(--sheet-left) + (100% - var(--sheet-left) - var(--sheet-right)) / 2);
+    transform: translate(-50%, -50%);
+    padding: 0 4px;
+    background: var(--page-color, #ffffff);
+    font: 8pt/1.2 "Segoe UI", sans-serif;
+    white-space: nowrap;
+  }
+  /* A page break inside a table cell is a dashed rule (document.css): its label sits on the rule. */
+  #editor-area[data-word-view][data-marks~="all"] .ProseMirror :is(td, th) [data-page-break][data-wm-label]::before { top: -1px; left: 0; right: 0; }
+  #editor-area[data-word-view][data-marks~="all"] .ProseMirror :is(td, th) [data-page-break][data-wm-label]::after { top: -1px; left: 50%; }
+
+  /* Crop marks and text boundaries (index.js page layer), in Print Layout only. The bare [data-word-view] first is the
+     Document scope test/word-css-scope.test.mjs looks for. */
+  #editor-area[data-word-view][data-word-view="print"] .ProseMirror[data-wm-crop] .pg-layer[data-layer="marks.page"] > .wm-crop {
+    display: block;
+    position: absolute;
+    left: 0;
+    top: 0;
+    overflow: visible;
+    stroke: #a6a6a6;
+    stroke-width: 1;
+    shape-rendering: crispEdges;
+  }
+  #editor-area[data-word-view][data-word-view="print"] .ProseMirror[data-wm-bounds] .pg-layer[data-layer="marks.page"] > .wm-bounds {
+    display: block;
+    position: absolute;
+    box-sizing: border-box;
+    border: 1px dotted #a6a6a6;
+  }
+}
+
+/* Printing with Print hidden text on (print sets data-print-hidden on <html>). */
+@media print {
+  html[data-print-hidden="on"] .page[data-format="document"] .ProseMirror [data-vanish="true"] { display: inline; }
+}

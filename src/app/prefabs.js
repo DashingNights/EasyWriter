@@ -1,7 +1,7 @@
 import { useSyncExternalStore } from 'react';
 import { toast } from 'sonner';
 import { makePrefab, parsePrefab, prefabItems, summaryOfPrefab } from '../flow/prefab.mjs';
-import { KINDS } from '../flow/shapes.mjs';
+import { SHAPE_KINDS } from '../flow/shapes.mjs';
 import { flattenCanvases, rasterizeWhiteboard } from '../whiteboard.js';
 import { confirmDialog, saveSettings } from './actions.js';
 import { cleanRefs, defaultFavourites, liveRefs, moveRef, resetOrder, shapeSections, toggleFavourite } from './shape-list.mjs';
@@ -168,11 +168,11 @@ export async function prefabTile(board, id) {
 const favourites = () => state.settings?.shapeFavourites ?? [];
 const sectionOrder = () => state.settings?.shapeOrder ?? {};
 /** The shape list's sections (shape-list.mjs shapeSections) for prefab summaries `prefabs`. */
-export const shapeLayout = (prefabs = summaries) => shapeSections(KINDS, prefabs, favourites(), sectionOrder());
+export const shapeLayout = (prefabs = summaries) => shapeSections(SHAPE_KINDS, prefabs, favourites(), sectionOrder());
 
 // One saveSettings call per change; refs to deleted prefabs and unknown kinds go (all prefab refs stay until the list is in).
 function writeShapeList(favs, order) {
-  const live = liveRefs(KINDS, summaries);
+  const live = liveRefs(SHAPE_KINDS, summaries);
   if (!loaded) for (const r of [...favs, ...Object.values(order).flat()]) if (String(r).startsWith('prefab:')) live.add(r);
   const c = cleanRefs(favs, order, live);
   return saveSettings({ shapeFavourites: c.favs, shapeOrder: c.order });
@@ -198,10 +198,10 @@ export function dropShape(ref, section, target = null, after = false) {
 export function customOrder(section) {
   if (section !== 'favourites') return Array.isArray(sectionOrder()[section]);
   const live = shapeLayout()[0].refs;
-  return live.join() !== defaultFavourites(live, KINDS, summaries).join();
+  return live.join() !== defaultFavourites(live, SHAPE_KINDS, summaries).join();
 }
 
 export function resetShapeSection(section) {
-  if (section === 'favourites') return writeShapeList(defaultFavourites(shapeLayout()[0].refs, KINDS, summaries), sectionOrder());
+  if (section === 'favourites') return writeShapeList(defaultFavourites(shapeLayout()[0].refs, SHAPE_KINDS, summaries), sectionOrder());
   return writeShapeList(favourites(), resetOrder(sectionOrder(), section));
 }

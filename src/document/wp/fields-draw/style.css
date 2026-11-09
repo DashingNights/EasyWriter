@@ -1,0 +1,16 @@
+/* fields-draw (docs/plans/word/plan.md §3 fields-draw): drawn fields sit inline on the text baseline and scale with the page zoom. */
+[data-doc-text] .fd-barcode {
+  display: inline-block;
+  vertical-align: baseline;
+}
+
+/* EQ draws in the text's own font and colour (eqbox.mjs); its glyphs may reach past the box Word gives it. */
+[data-doc-text] .fd-eq {
+  display: inline-block;
+  overflow: visible;
+  white-space: pre;
+}
+
+[data-doc-text] .fd-error {
+  font-weight: 700;
+}

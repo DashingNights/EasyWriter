@@ -1,7 +1,7 @@
 // The assistant's plain output rules (automation plan §13.13 (c), user rules 2026-10-06): keyboard characters, no dashes, no
 // contrast frames, no rhythmic triplets, no stacked intensifiers, no filler openers or hedges. Pure: loop.js lints the model's
-// replies and the text arguments of its write commands, test/style-lint.test.mjs tests it. The cloud APIs take no character
-// grammar (§13.13 (a)), so the mechanical fixes run on every text and only the rest goes back to the model, once.
+// chat replies, test/style-lint.test.mjs tests it. Text a write puts into a draft is never fixed or linted (cleanup AS3). The cloud
+// APIs take no character grammar (§13.13 (a)), so the mechanical fixes run on every reply and only the rest goes back, once.
 // Text the user wrote (`known`: the open draft and their message) is left as it is: a match found in it is not an issue.
 
 const LETTER = '\\p{L}';
@@ -16,8 +16,10 @@ const FIXES = [
   ['dash', /[ \t]*[\u2013\u2014\u2015][ \t]*/gu, ', '],
   ['dash', new RegExp(`(?<=${LETTER}) (?:-|--) (?=${LETTER})|(?<=${LETTER})--(?=${LETTER})`, 'gu'), ', '],
 ];
-const ALLOWED = /[\u00a3\u20ac]/u; // symbols kept beyond printable ASCII (letters of any script are kept too: names, other languages)
-const SYMBOL = /[\p{P}\p{S}\p{Extended_Pictographic}]/gu; // beyond ASCII: an emoji, an arrow, a bullet
+// Flagged symbols: dashes, curly quotes, arrows and emoji only. CJK and full-width punctuation (U+3000-303F, U+FF00-FFEF) is
+// never flagged, nor any letter, currency sign or other symbol.
+const SYMBOL = /[\u2010-\u2015\u2018-\u201f\u2190-\u21ff\u27f0-\u27ff\u2900-\u297f\u2b00-\u2bff\p{Extended_Pictographic}]/gu;
+const CJK = /[\u3000-\u303f\uff00-\uffef]/u;
 
 const INTENSE = 'really|very|truly|extremely|incredibly|super|so|absolutely|totally|deeply|highly|utterly';
 const PATTERNS = [
@@ -40,9 +42,24 @@ function codeRanges(text) {
   return out;
 }
 
-/** Whether the match at [from, to] of `text` is the user's own: inside code, or found in `known` with a few characters around it. */
+// Chinese punctuation outside the CJK blocks (破折號 ——, ……, “” ‘’): a dash, ellipsis or curly quote whose nearest character past
+// its run (spaces and more of these skipped) on either side is Han or CJK / full-width punctuation.
+const RUN = /[ \t‐-―‘-‟…]/u;
+const HAN = /[\p{Script=Han}　-〿＀-￯]/u;
+function chinese(text, from, to) {
+  if (![...text.slice(from, to)].every((c) => RUN.test(c))) return false;
+  let a = from - 1;
+  while (a >= 0 && RUN.test(text[a])) a--;
+  let b = to;
+  while (b < text.length && RUN.test(text[b])) b++;
+  return HAN.test(text[a] ?? '') || HAN.test(text[b] ?? '');
+}
+
+/** Whether the match at [from, to] of `text` is kept: inside code, Chinese punctuation, or the user's own (found in `known` with a
+ * few characters around it). */
 function kept(text, from, to, known, code) {
   if (code.some(([a, b]) => from < b && to > a)) return true;
+  if (chinese(text, from, to)) return true;
   if (!known) return false;
   const pad = to - from > 12 ? 0 : 6;
   return known.includes(text.slice(Math.max(0, from - pad), to + pad).trim());
@@ -69,7 +86,7 @@ export function lint(text, known = '') {
   const add = (rule, match, from) => {
     if (!kept(s, from, from + match.length, known, code) && !out.some((i) => i.rule === rule && i.match === match)) out.push({ rule, match: match.trim() });
   };
-  for (const m of s.matchAll(SYMBOL)) if (m[0].charCodeAt(0) > 127 && !ALLOWED.test(m[0])) add('symbol', m[0], m.index);
+  for (const m of s.matchAll(SYMBOL)) if (!CJK.test(m[0])) add('symbol', m[0], m.index);
   for (const [rule, re] of PATTERNS) for (const m of s.matchAll(re)) add(rule, m[0], m.index);
   if (s.split(/\s+/).filter(Boolean).length >= LONG) {
     for (const m of s.matchAll(TRIPLET)) add('triplet', m[1], m.index);
@@ -84,33 +101,6 @@ export function lint(text, known = '') {
     }
   }
   return out;
-}
-
-// Argument keys that hold ids, paths, URLs, colours and other values, not prose: never linted or fixed.
-const SKIP = /^(?:id|ids|path|paths|itemPath|itemPaths|draftId|planId|flowchartId|url|src|href|color|colour|fill|stroke|bg|background|font|fontFamily|shape|type|kind|mode|target|action|keys|format|align|valign|query|selector|role|ref|anchor|from|to|side|route|dash|head|startHead|endHead)$/i;
-
-/** Tool call arguments `json` (a string) \u2192 {arguments: the JSON with every prose string fixed, issues: lint's issues of them}. */
-export function styleArgs(json, known = '') {
-  let args;
-  try {
-    args = JSON.parse(json || '{}');
-  } catch {
-    return { arguments: json, issues: [] };
-  }
-  const issues = [];
-  const walk = (v, key) => {
-    if (typeof v === 'string') {
-      if (SKIP.test(key ?? '')) return v;
-      const fixed = fix(v, known);
-      for (const i of lint(fixed, known)) if (!issues.some((x) => x.rule === i.rule && x.match === i.match)) issues.push(i);
-      return fixed;
-    }
-    if (Array.isArray(v)) return v.map((x) => walk(x, key));
-    if (v && typeof v === 'object') return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, walk(x, k)]));
-    return v;
-  };
-  const fixed = walk(args);
-  return { arguments: JSON.stringify(fixed), issues };
 }
 
 const RULE_TEXT = {

@@ -3,6 +3,35 @@
 // format's code read it. Lengths are points; each file format's unit is converted at its edge (twips, half-points, eighths,
 // EMU). Colours are '#RRGGBB' uppercase; a theme colour is {slot, lum} next to it (lum < 0 darkens, > 0 lightens).
 
+// ---------- JSON values ----------
+/** Whether `v` is a plain object (not null, not an array). */
+export const isPlain = (v) => v != null && typeof v === 'object' && !Array.isArray(v);
+
+/** The JSON in `s`, or null when it is empty or not JSON. */
+export const readJson = (s) => {
+  try {
+    return s ? JSON.parse(s) : null;
+  } catch {
+    return null;
+  }
+};
+
+/** `old` with `patch` merged in (plan.md §1.8: JSON attributes keep what they do not know): nested objects merge key by key,
+ * arrays and other values replace, and a null removes its key. Neither argument changes. */
+export function deepPatch(old, patch) {
+  const out = { ...old };
+  for (const [k, v] of Object.entries(patch ?? {})) {
+    if (v === null) delete out[k];
+    else out[k] = isPlain(v) && isPlain(out[k]) ? deepPatch(out[k], v) : v;
+  }
+  return out;
+}
+
+/** The four box edges in CSS shorthand order. */
+export const EDGES = ['top', 'right', 'bottom', 'left'];
+/** A CSS four-value shorthand of `m` {top, right, bottom, left} in points (a missing edge is 0). */
+export const edgesPt = (m) => EDGES.map((e) => `${m[e] ?? 0}pt`).join(' ');
+
 // ---------- Units ----------
 export const ptToTwips = (pt) => Math.round(pt * 20);
 export const ptToHalfPoints = (pt) => Math.round(pt * 2);
@@ -40,7 +69,8 @@ export const FONTS = ['Aptos', 'Aptos Display', 'Arial', 'Arial Black', 'Bahnsch
   'Cascadia Code', 'Comic Sans MS', 'Consolas', 'Constantia', 'Corbel', 'Courier New', 'Georgia', 'Impact', 'Lucida Console',
   'Segoe Print', 'Segoe Script', 'Segoe UI', 'Sitka Text', 'Tahoma', 'Times New Roman', 'Trebuchet MS', 'Verdana'];
 
-/** Metric-compatible fallbacks, so a machine without the font keeps the line breaks (no Microsoft font is bundled). */
+/** Fallbacks, so a machine without the font keeps the line breaks: metric-compatible open fonts where one exists (the app bundles or
+ * downloads them, src/document/fonts/provider.mjs; no Microsoft font is bundled), else the nearest font. */
 export const FALLBACKS = {
   Aptos: ['Calibri', 'Carlito'],
   'Aptos Display': ['Calibri Light', 'Calibri', 'Carlito'],
@@ -50,8 +80,26 @@ export const FALLBACKS = {
   Arial: ['Liberation Sans'],
   'Times New Roman': ['Liberation Serif'],
   'Courier New': ['Liberation Mono'],
+  'Segoe UI': ['Selawik'],
+  'Microsoft JhengHei': ['Noto Sans TC'],
+  'Microsoft JhengHei UI': ['Noto Sans TC'],
+  '微軟正黑體': ['Noto Sans TC'],
+  PMingLiU: ['Noto Serif TC'],
+  MingLiU: ['Noto Serif TC'],
+  '新細明體': ['PMingLiU', 'Noto Serif TC'],
+  '細明體': ['MingLiU', 'Noto Serif TC'],
+  // The theme's East Asian script fonts by the names theme1.xml gives them (a:font script); the font files carry the English ones.
+  '等线': ['DengXian'],
+  '等线 Light': ['DengXian Light', 'DengXian'],
+  '游ゴシック': ['Yu Gothic'],
+  '游ゴシック Light': ['Yu Gothic Light', 'Yu Gothic'],
+  '游明朝': ['Yu Mincho'],
+  '맑은 고딕': ['Malgun Gothic'],
+  // Office ships MS Mincho as a cloud font that Chromium does not see; SimSun has its em-box metrics (220 and 36 of 256).
+  'MS Mincho': ['SimSun'],
 };
-const SERIF = new Set(['Cambria', 'Caladea', 'Times New Roman', 'Liberation Serif', 'Georgia', 'Constantia', 'Sitka Text']);
+const SERIF = new Set(['Cambria', 'Caladea', 'Times New Roman', 'Liberation Serif', 'Georgia', 'Constantia', 'Sitka Text', 'PMingLiU', 'MingLiU',
+  '新細明體', '細明體', 'Noto Serif TC']);
 const MONO = new Set(['Courier New', 'Liberation Mono', 'Consolas', 'Cascadia Code', 'Lucida Console']);
 
 /** The CSS font-family of `name` ('+major' and '+minor' are the theme's heading and body fonts), with its fallbacks and a
@@ -59,8 +107,31 @@ const MONO = new Set(['Courier New', 'Liberation Mono', 'Consolas', 'Cascadia Co
 export function fontStack(name, theme) {
   const family = name === '+major' ? theme?.fonts?.major ?? 'Aptos Display' : name === '+minor' ? theme?.fonts?.minor ?? 'Aptos' : name;
   const generic = SERIF.has(family) ? 'serif' : MONO.has(family) ? 'monospace' : 'sans-serif';
-  return [family, ...(FALLBACKS[family] ?? [])].map((f) => `"${f.replace(/["\\]/g, '')}"`).concat(generic).join(', ');
+  // A theme font's East Asian text draws in the theme's East Asian font, as Word draws a run's East Asian characters in its East
+  // Asian font: the browser falls back to it for the characters the Latin font lacks.
+  // ponytail: only the theme fonts carry it; a run naming its own Latin font draws East Asian text in the browser's fallback.
+  const ea = name?.startsWith('+') ? eaFamily(name, theme) : null;
+  const ext = ea && ea !== family ? [ea, ...(FALLBACKS[ea] ?? [])] : [];
+  return [family, ...(FALLBACKS[family] ?? []), ...ext].map((f) => `"${f.replace(/["\\]/g, '')}"`).concat(generic).join(', ');
 }
+
+/** The East Asian font Word draws a run's East Asian characters in, for its East Asian font `name` ('+major' and '+minor' are the
+ * theme's): the theme's own (a:ea), else the one the theme names for the document's East Asian script (import's majorEAScript and
+ * minorEAScript), else null; any other name is itself. */
+export function eaFamily(name, theme) {
+  if (name === '+major') return theme?.fonts?.majorEA || theme?.fonts?.majorEAScript || null;
+  if (name === '+minor') return theme?.fonts?.minorEA || theme?.fonts?.minorEAScript || null;
+  return name || null;
+}
+
+// The characters Word draws in the East Asian font: Hangul jamo, CJK ideographs and punctuation, kana, bopomofo, Hangul syllables,
+// compatibility ideographs and the full-width forms (Word's eastAsia font slot by Unicode block).
+const EAST_ASIAN = '[\u1100-\u11ff\u2e80-\u9fff\ua960-\ua97f\uac00-\ud7ff\uf900-\ufaff\ufe30-\ufe4f\uff00-\uffef]|[\ud840-\ud87f][\udc00-\udfff]';
+const EA_ONE = new RegExp(EAST_ASIAN);
+const EA_RUNS = new RegExp(`(?:${EAST_ASIAN})+`, 'g');
+
+/** The stretches of East Asian characters in `text`, as [[start, end]] offsets. */
+export const eastAsianRuns = (text) => (EA_ONE.test(text) ? [...text.matchAll(EA_RUNS)].map((m) => [m.index, m.index + m[0].length]) : []);
 
 // ---------- Colours ----------
 /** The theme's colour slots in theme1.xml order. */
@@ -82,6 +153,8 @@ export const THEME_GRID = [
 
 /** Word's Standard Colors row. */
 export const STANDARD_COLORS = ['#C00000', '#FF0000', '#FFC000', '#FFFF00', '#92D050', '#00B050', '#00B0F0', '#0070C0', '#002060', '#7030A0'];
+/** Word's names for STANDARD_COLORS, in the same order (the swatches' labels). */
+export const STANDARD_NAMES = ['Dark Red', 'Red', 'Orange', 'Yellow', 'Light Green', 'Green', 'Light Blue', 'Blue', 'Dark Blue', 'Purple'];
 
 const hexOf = (rgb) => `#${rgb.map((v) => Math.round(Math.min(255, Math.max(0, v))).toString(16).padStart(2, '0')).join('').toUpperCase()}`;
 const rgbOf = (hex) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
@@ -200,6 +273,69 @@ export function numberLabel(n, fmt) {
     case 'upperRoman': return roman(n).toUpperCase();
     default: return String(n);
   }
+}
+
+// ---------- Word enums (docs/plans/word/plan.md §1.8; values are the OOXML names, so docx maps one to one) ----------
+/** Tab stop alignments (w:tab w:val). The Tabs dialog offers the first five; 'clear' is stored to remove an inherited stop. */
+export const TAB_ALIGNS = ['left', 'center', 'right', 'decimal', 'bar', 'clear'];
+/** Tab leaders (w:tab w:leader). */
+export const LEADERS = ['none', 'dot', 'hyphen', 'underscore', 'heavy', 'middleDot'];
+/** Border line styles (ST_Border) in the Borders and Shading dialog's order. The art borders (apples and the rest) are valid
+ * stored values too and draw as solid lines (borderCss). */
+export const BORDER_STYLES = ['nil', 'none', 'single', 'dotted', 'dashSmallGap', 'dashed', 'dotDash', 'dotDotDash', 'double', 'triple',
+  'thinThickSmallGap', 'thickThinSmallGap', 'thinThickThinSmallGap', 'thinThickMediumGap', 'thickThinMediumGap', 'thinThickThinMediumGap',
+  'thinThickLargeGap', 'thickThinLargeGap', 'thinThickThinLargeGap', 'wave', 'doubleWave', 'dashDotStroked', 'threeDEmboss', 'threeDEngrave',
+  'outset', 'inset', 'thick'];
+/** Shading patterns (ST_Shd) in the order of the dialog's Style list: Clear, Solid, the 23 percentages (pct12 is 12.5%, pct37
+ * 37.5% and so on), then Dk Horizontal to Dk Trellis and Lt Horizontal to Lt Trellis. 'nil' is no shading at all. */
+export const SHADING_PATTERNS = ['clear', 'solid', 'pct5', 'pct10', 'pct12', 'pct15', 'pct20', 'pct25', 'pct30', 'pct35', 'pct37', 'pct40',
+  'pct45', 'pct50', 'pct55', 'pct60', 'pct62', 'pct65', 'pct70', 'pct75', 'pct80', 'pct85', 'pct87', 'pct90', 'pct95',
+  'horzStripe', 'vertStripe', 'reverseDiagStripe', 'diagStripe', 'horzCross', 'diagCross',
+  'thinHorzStripe', 'thinVertStripe', 'thinReverseDiagStripe', 'thinDiagStripe', 'thinHorzCross', 'thinDiagCross', 'nil'];
+/** Section break kinds (w:type of the section that follows the break). */
+export const SECTION_KINDS = ['nextPage', 'continuous', 'evenPage', 'oddPage', 'nextColumn'];
+/** Page number formats (w:pgNumType w:fmt) in the Page Number Format dialog's order (1, 2, 3 to the zodiac). */
+export const PAGE_NUMBER_FORMATS = ['decimal', 'numberInDash', 'decimalFullWidth', 'lowerLetter', 'upperLetter', 'lowerRoman', 'upperRoman',
+  'ideographLegalTraditional', 'taiwaneseCountingThousand', 'chineseCountingThousand', 'chineseLegalSimplified', 'ideographTraditional',
+  'ideographZodiac'];
+
+const isAuto = (c) => !c || c === 'auto';
+
+/** The CSS border shorthand of a border edge {style, width (pt), color ('#RRGGBB', null or 'auto': black)}, or 'none'. Every reader
+ * (paragraphs, runs, cells, tables, pages) draws borders through this, so they look the same. CSS has fewer line styles than
+ * Word: the thick-thin families draw double, the dash families dashed, the 3-D ones groove and ridge, waves and art borders solid. */
+export function borderCss(edge) {
+  const s = edge?.style;
+  if (!s || s === 'nil' || s === 'none') return 'none';
+  const css = s === 'dotted' ? 'dotted' : /^(double|triple)$|Thin|Thick(?!$)/.test(s) && s !== 'thick' ? 'double'
+    : /dash/i.test(s) ? 'dashed' : s === 'threeDEngrave' ? 'groove' : s === 'threeDEmboss' ? 'ridge' : s === 'inset' || s === 'outset' ? s : 'solid';
+  const w = edge.width || 0.5; // w:sz 4, Word's default
+  // A CSS double line needs 3 px to show its two lines; Word's width is one line's. Word draws an automatic border black, not
+  // in the text colour (a white header row keeps black borders).
+  return `${css === 'double' ? Math.max(w * 3, 2.25) : w}pt ${css} ${isAuto(edge.color) ? '#000000' : edge.color}`;
+}
+
+const mix = (a, b, t) => `#${[1, 3, 5].map((i) => Math.round(parseInt(a.slice(i, i + 2), 16) * t + parseInt(b.slice(i, i + 2), 16) * (1 - t))
+  .toString(16).padStart(2, '0')).join('').toUpperCase()}`;
+const STRIPES = { horzStripe: [0], vertStripe: [90], reverseDiagStripe: [45], diagStripe: [-45], horzCross: [0, 90], diagCross: [45, -45] };
+
+/** The CSS background of shading {fill, color, val} (w:shd), or null for none: clear and nil show the fill, solid the pattern
+ * colour, pctN the colour at N percent over the fill (an automatic colour is black and an automatic fill white, as Word draws
+ * them), and the stripes and crosses as repeating gradients over the fill. */
+export function shadingCss(shd) {
+  if (!shd) return null;
+  const { val = 'clear', fill, color } = shd;
+  if (val === 'nil' || val === 'clear') return isAuto(fill) ? null : fill;
+  const fg = isAuto(color) ? '#000000' : color;
+  if (val === 'solid') return fg;
+  const pct = /^pct(\d+)$/.exec(val);
+  const bg = isAuto(fill) ? '#FFFFFF' : fill;
+  if (pct) return mix(fg, bg, (+pct[1] + ({ 12: 0.5, 37: 0.5, 62: 0.5, 87: 0.5 }[pct[1]] ?? 0)) / 100);
+  const name = val.replace(/^thin(\w)/, (_, c) => c.toLowerCase());
+  const line = val.startsWith('thin') ? 1 : 2;
+  const angles = STRIPES[name];
+  if (!angles) return isAuto(fill) ? null : fill;
+  return [...angles.map((a) => `repeating-linear-gradient(${a}deg, ${fg} 0 ${line}px, transparent ${line}px 4px)`), bg].join(', ');
 }
 
 // ---------- Agent arguments ----------

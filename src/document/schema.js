@@ -1,73 +1,58 @@
-// The Document's schema, schema v1 (docs/plans/document.md dataModel, editorAndUi): Word's run and paragraph properties on
-// TipTap's nodes and marks. Lengths are points, colours '#RRGGBB'. Imports no app DOM module, so Node tests can getSchema it;
+// The Document's schema, schema v2 (docs/plans/document.md dataModel, editorAndUi; docs/plans/word/plan.md §1.8): Word's run
+// and paragraph properties on TipTap's nodes and marks, and v2's nodes (model/nodes.js), marks (model/marks.js) and attributes
+// (model/attrs.js). Lengths are points, colours '#RRGGBB'. Imports no app DOM module, so Node tests can getSchema it;
 // src/editors.js adds the shared app blocks and the keys. Direct formatting renders as inline style (so text copied into Word
-// keeps it), style definitions come from the stylesheet plugin (stylesheet.js). After 1.3.0 every change here is additive and
-// bumps the format's version (formats.mjs DOCUMENT; test/document-schema.test.mjs pins the names).
-import { Extension, isNodeActive, Node } from '@tiptap/core';
+// keeps it), style definitions come from the stylesheet plugin (stylesheet.js). Version 2 (formats.mjs DOCUMENT): every change
+// is additive, and once the schema freezes at the Word-parity merge any change bumps the version again
+// (test/document-schema.test.mjs pins the names).
+import { Extension, isNodeActive, mergeAttributes, Node } from '@tiptap/core';
 import { Document } from '@tiptap/extension-document';
 import { Image } from '@tiptap/extension-image';
 import Subscript from '@tiptap/extension-subscript';
 import Superscript from '@tiptap/extension-superscript';
-import { Table, TableCell, TableHeader, TableRow, TableView } from '@tiptap/extension-table';
+import { Table, TableCell, TableHeader, TableRow } from '@tiptap/extension-table';
 import TextAlign from '@tiptap/extension-text-align';
 import { TextStyle } from '@tiptap/extension-text-style';
 import { Underline } from '@tiptap/extension-underline';
 import StarterKit from '@tiptap/starter-kit';
-import { fontStack, growSize, HIGHLIGHTS, INDENT_STEP, shrinkSize, size1, UNDERLINES } from '../office.mjs';
+import { deepPatch, fontStack, growSize, HIGHLIGHTS, INDENT_STEP, isPlain, shrinkSize, size1, UNDERLINES } from '../office.mjs';
 import { docMarkdown, Lists, textblocks } from './lists.js';
+import './fields/engine.js'; // the field engine rides with the Document schema until fields-core wires its node view
 import { Pagination } from './pagination.js';
+import { cssHex, cssPt, ModelAttrs, mso, round2, RUN_ATTRS_V2, style, UNDERLINE_CSS } from './model/attrs.js';
+import { MARKS_V2 } from './model/marks.js';
+import { NODES_V2, resetNoteCount } from './model/nodes.js';
+import { styleIdOf } from './model/styles.mjs';
 import { resolved, StyleSheet } from './stylesheet.js';
+import { DocTableView, mergeSlots } from './table-view.js';
+import { Chart } from './chart/node.js';
+import { whenNear } from './lazy.mjs';
+import { stripRuns, without } from './wp/fields-core/runs.mjs';
+import { splitTable, tableOf } from './wp/table-tools/ops.js';
+
+export { cssHex, cssPt };
 
 export const MIN_COLUMN = 20; // px, as the forum editor's (extensions.js); table widths stay px (docs/plans/document.md Units)
 
-// ---------- CSS values to points and hex (Word clipboard HTML and our own rendered HTML) ----------
-const PT_PER = { pt: 1, px: 0.75, in: 72, cm: 72 / 2.54, mm: 72 / 25.4, pc: 12 };
 const NAMED_SIZES = { 'xx-small': 6.75, 'x-small': 7.5, small: 9.75, medium: 12, large: 13.5, 'x-large': 18, 'xx-large': 24 };
-const round2 = (n) => Math.round(n * 100) / 100;
-
-/** A CSS length in points, or null. */
-export function cssPt(v) {
-  const m = /^(-?[\d.]+)(pt|px|in|cm|mm|pc)$/.exec(String(v ?? '').trim());
-  return m ? round2(parseFloat(m[1]) * PT_PER[m[2]]) : null;
-}
-
-// The 16 basic colour names, which Word writes for its basic colours (color:red).
-const BASIC = { black: '#000000', silver: '#C0C0C0', gray: '#808080', white: '#FFFFFF', maroon: '#800000', red: '#FF0000', purple: '#800080',
-  fuchsia: '#FF00FF', green: '#008000', lime: '#00FF00', olive: '#808000', yellow: '#FFFF00', navy: '#000080', blue: '#0000FF', teal: '#008080',
-  aqua: '#00FFFF' };
-
-/** A CSS colour (#rgb, #rrggbb, rgb(), a basic name) as '#RRGGBB', or null (other names and transparent too). */
-export function cssHex(v) {
-  const s = String(v ?? '').trim();
-  if (BASIC[s.toLowerCase()]) return BASIC[s.toLowerCase()];
-  let m = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(s);
-  if (m) return `#${(m[1].length === 3 ? m[1].replace(/./g, '$&$&') : m[1]).toUpperCase()}`;
-  m = /^rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*([\d.]+))?\)$/.exec(s);
-  if (!m || m[4] === '0') return null;
-  return `#${m.slice(1, 4).map((x) => (+x).toString(16).padStart(2, '0')).join('').toUpperCase()}`;
-}
-
-// Word's mso-* properties survive only in the style attribute's text (the CSSOM drops them).
-const mso = (el, prop) => new RegExp(`(?:^|;)\\s*${prop}\\s*:\\s*([^;]+)`, 'i').exec(el.getAttribute('style') ?? '')?.[1].trim() ?? null;
 const WORD_THEME = { text1: 'dk1', background1: 'lt1', text2: 'dk2', background2: 'lt2', hyperlink: 'hlink', followedhyperlink: 'folHlink' };
 const HIGHLIGHT_BY_HEX = Object.fromEntries(Object.entries(HIGHLIGHTS).map(([n, h]) => [h, n]));
 const highlightName = (v) => Object.keys(HIGHLIGHTS).find((n) => n.toLowerCase() === String(v).toLowerCase()) ?? null;
 
-/** The style attribute of `props` ({css property: value | null}), or null when every value is null. */
-const style = (props) => {
-  const s = Object.entries(props).filter(([, v]) => v != null && v !== '').map(([k, v]) => `${k}: ${v}`).join('; ');
-  return s || null;
-};
-
 // ---------- doc ----------
-/** The doc node with the document-level data (docs/plans/document.md Document-level data): sect, styles, numbering and theme,
- * changed only with tr.setDocAttribute, so undo, history and autosave carry them. Its Markdown writes list paragraphs as
- * Markdown lists (lists.js). */
+/** The doc node with the document-level data (docs/plans/document.md Document-level data; plan.md §1.8 Doc attrs): sect,
+ * styles, numbering and theme, and v2's settings, props, vars, comments, people, background and merge (defaults.mjs writes
+ * them for a new Document), changed only with tr.setDocAttribute, so undo, history and autosave carry them. Its Markdown writes
+ * list paragraphs as Markdown lists (lists.js) and numbers notes from 1. */
+export const DOC_ATTRS = ['sect', 'styles', 'numbering', 'theme', 'settings', 'props', 'vars', 'comments', 'people', 'background', 'merge'];
 const DocNode = Document.extend({
   addAttributes() {
-    return Object.fromEntries(['sect', 'styles', 'numbering', 'theme'].map((k) => [k, { default: null, rendered: false }]));
+    return Object.fromEntries(DOC_ATTRS.map((k) => [k, { default: null, rendered: false }]));
   },
-  renderMarkdown: (node, h) => docMarkdown(node, h),
+  renderMarkdown: (node, h) => {
+    resetNoteCount();
+    return docMarkdown(node, h);
+  },
 });
 
 // ---------- paragraph properties ----------
@@ -100,7 +85,7 @@ function parseIndent(el) {
 export function effectiveProps(doc, node) {
   const { defaults = {}, list = {} } = doc.attrs.styles ?? {};
   const own = node.attrs;
-  const styleId = own.styleId ?? (node.type.name === 'heading' ? `Heading${own.level}` : 'Normal');
+  const styleId = styleIdOf(node);
   const s = resolved(list, styleId);
   return {
     styleId,
@@ -139,6 +124,17 @@ const leftAttr = (tr, node, left) => {
 
 const lineCss = (line) => (!line ? null : line.rule === 'auto' ? String(line.value) : `${line.value}pt`); // atLeast drawn as exact
 
+/** Sets textblock `node` at `pos` to paragraph style `id` in `tr`: Heading1 to Heading6 make a heading node of that level (as
+ * headings stay heading nodes), Normal or null a plain paragraph, any other id a paragraph with that styleId. Outline view's
+ * level changes share it. */
+export function restyleBlock(tr, node, pos, id) {
+  const h = typeof id === 'string' && /^Heading([1-6])$/.exec(id);
+  const { level, ...attrs } = node.attrs;
+  const { nodes } = tr.doc.type.schema;
+  if (h) return tr.setNodeMarkup(pos, nodes.heading, { ...attrs, level: +h[1], styleId: null });
+  return tr.setNodeMarkup(pos, nodes.paragraph, { ...attrs, styleId: !id || id === 'Normal' ? null : id });
+}
+
 /** Paragraph properties on paragraph and heading: styleId (null: Normal, or HeadingN on a heading), spacing {before, after, line}
  * and indent {left, right, firstLine (negative: hanging)}, each null to inherit from the style; numbering {numId, ilvl} makes
  * the paragraph a list item (lists.js). */
@@ -153,12 +149,7 @@ const ParaProps = Extension.create({
       setStyle: (id) => (props) => {
         const h = typeof id === 'string' && /^Heading([1-6])$/.exec(id);
         if (id != null && id !== 'Normal' && !h && props.state.doc.attrs.styles?.list?.[id]?.type !== 'paragraph') return false;
-        return each((tr, node, pos) => {
-          const { level, ...attrs } = node.attrs;
-          const { nodes } = tr.doc.type.schema;
-          if (h) tr.setNodeMarkup(pos, nodes.heading, { ...attrs, level: +h[1], styleId: null });
-          else tr.setNodeMarkup(pos, nodes.paragraph, { ...attrs, styleId: !id || id === 'Normal' ? null : id });
-        })(props);
+        return each((tr, node, pos) => restyleBlock(tr, node, pos, id))(props);
       },
       // {before?, after?, line?} in points; null resets one to the style.
       setSpacing: (spacing) => each((tr, node, pos) => tr.setNodeAttribute(pos, 'spacing', patch(node.attrs.spacing, spacing))),
@@ -176,14 +167,33 @@ const ParaProps = Extension.create({
         tr.setNodeAttribute(pos, 'indent', patch(node.attrs.indent, on ? { left: leftAttr(tr, node, left + INDENT_STEP), firstLine: -INDENT_STEP }
           : { left: leftAttr(tr, node, left - INDENT_STEP), firstLine: null }));
       }),
+      // plan.md §1.8 generic commands. {attr: value} on every selected paragraph and heading: an object merges into the
+      // attribute's object key by key (null removes a key), so keys a newer build wrote survive; null resets the attribute.
+      setParaProps: (props) => each((tr, node, pos) => {
+        for (const [k, v] of Object.entries(props ?? {})) {
+          if (!(k in node.type.spec.attrs)) continue;
+          const old = tr.doc.nodeAt(pos).attrs[k];
+          const next = isPlain(v) && isPlain(old) ? deepPatch(old, v) : v;
+          tr.setNodeAttribute(pos, k, isPlain(next) && !Object.keys(next).length ? null : next);
+        }
+      }),
+      // Merges `patch` into doc.attrs.settings in one step (null removes a key).
+      setDocSettings: (patch) => ({ tr, dispatch }) => {
+        if (dispatch) tr.setDocAttribute('settings', deepPatch(tr.doc.attrs.settings ?? {}, patch));
+        return true;
+      },
       // Ctrl+Q: the paragraph's own alignment, spacing and indents go; its style and list stay.
       clearParagraph: () => each((tr, node, pos) => tr.setNodeMarkup(pos, null, { ...node.attrs, textAlign: null, spacing: null, indent: null })),
-      // Word's Clear All Formatting: the runs lose their formatting but keep their hyperlinks, as in Word, and the paragraph
-      // goes back to Normal without its own alignment, spacing and indents; a list stays.
+      // Word's Clear All Formatting: the runs lose their formatting but keep their hyperlinks, comments, tracked changes and
+      // editing permissions, as in Word, and the paragraph goes back to Normal without its own alignment, spacing and indents; a
+      // list stays.
       clearFormatting: () => ({ tr, dispatch, chain }) => {
         if (dispatch) {
-          const { link, ...marks } = tr.doc.type.schema.marks;
-          for (const { $from, $to } of tr.selection.ranges) for (const type of Object.values(marks)) tr.removeMark($from.pos, $to.pos, type);
+          const { link, comment, insertion, deletion, formatChange, permission, ...marks } = tr.doc.type.schema.marks;
+          for (const { $from, $to } of tr.selection.ranges) {
+            for (const type of Object.values(marks)) tr.removeMark($from.pos, $to.pos, type);
+            stripRuns(tr, $from.pos, $to.pos, without(Object.keys(marks))); // a field result's own runs, which removeMark misses
+          }
         }
         return chain().setStyle('Normal').clearParagraph().run();
       },
@@ -193,7 +203,7 @@ const ParaProps = Extension.create({
     return {
       // Enter at the end of a paragraph whose style names a next style (Title, Subtitle, Quote: Normal) goes on in that style,
       // as in Word. Elsewhere a split keeps the attributes (TipTap keepOnSplit), so both halves keep the style. The new paragraph
-      // never takes the suggestion record (docs/plans/suggestions.md).
+      // never takes the suggestion record (docs/wiki/suggestions.md).
       Enter: ({ editor }) => {
         const { $from, empty } = editor.state.selection;
         const p = $from.parent;
@@ -289,7 +299,7 @@ const ownThemeColor = (el) => {
 const ownColorPair = (el) => ownColor(el) ?? ownThemeColor(el);
 
 // RunProps' attributes, which its span rule also asks.
-const RUN_ATTRS = {
+const RUN_V1 = {
   font: {
     default: null,
     parseHTML: inherit((el) => {
@@ -322,11 +332,18 @@ const RUN_ATTRS = {
   },
   highlight: {
     default: null,
+    // A background is a highlight unless it is run shading (ours, or Word's mso-shading), which draws through background too.
     parseHTML: inherit((el) => highlightName(el.getAttribute('data-highlight') ?? mso(el, 'mso-highlight') ?? '')
-      ?? HIGHLIGHT_BY_HEX[cssHex(el.style.backgroundColor) ?? ''] ?? highlightName(el.style.backgroundColor)),
+      ?? (el.hasAttribute('data-shading') || mso(el, 'mso-shading') ? null
+        : HIGHLIGHT_BY_HEX[cssHex(el.style.backgroundColor) ?? ''] ?? highlightName(el.style.backgroundColor))),
     renderHTML: ({ highlight }) => (HIGHLIGHTS[highlight] ? { 'data-highlight': highlight, style: `background-color: ${HIGHLIGHTS[highlight]}` } : {}),
   },
 };
+// v2's run properties inherit from enclosing spans the same way. Highlight renders last, so it wins over shading, as in Word.
+const { highlight: HIGHLIGHT, ...V1 } = RUN_V1;
+// A span with its own style or data attribute; without one, the inherited attributes would make any plain inner span a run.
+const ownRun = (el) => el.hasAttribute('style') || el.getAttributeNames().some((n) => n.startsWith('data-'));
+const RUN_ATTRS = { ...V1, ...Object.fromEntries(Object.entries(RUN_ATTRS_V2).map(([k, a]) => [k, { ...a, parseHTML: inherit(a.parseHTML) }])), highlight: HIGHLIGHT };
 
 /** The textStyle mark with Word's run properties: font (a family, '+major' or '+minor'), size (pt), color ('#RRGGBB', null is
  * Automatic), themeColor ({slot, lum} the colour was picked from; rendering reads only color) and highlight (one of the 16
@@ -347,28 +364,69 @@ const stepSize = (fn) => () => ({ state, tr, dispatch, commands }) => {
   return true;
 };
 
+/** plan.md §1.8 generic command: {attr: value} into the textStyle of every run and inline object in the selection (at a caret,
+ * the formatting typing goes on with). An object merges into the attribute's object key by key and null resets it, so keys a
+ * newer build wrote survive; a textStyle left with nothing set is removed, as removeEmptyTextStyle does. */
+const setRunProps = (props) => ({ state, tr, dispatch }) => {
+  const type = state.schema.marks.textStyle;
+  const merged = (old = {}) => {
+    const out = { ...old };
+    for (const [k, v] of Object.entries(props ?? {})) if (k in type.spec.attrs) out[k] = isPlain(v) && isPlain(old[k]) ? deepPatch(old[k], v) : v;
+    return out;
+  };
+  const apply = (old, add, remove) => {
+    const attrs = merged(old);
+    return Object.values(attrs).some((v) => v != null) ? add(type.create(attrs)) : remove();
+  };
+  const { empty, $from, ranges } = state.selection;
+  if (!dispatch) return true;
+  if (empty) {
+    apply(type.isInSet(state.storedMarks ?? $from.marks())?.attrs, (m) => tr.addStoredMark(m), () => tr.removeStoredMark(type));
+    return true;
+  }
+  // Every range, so a CellSelection formats each selected cell (its from..to covers one cell), as TipTap's setMark does.
+  for (const { $from: { pos: from }, $to: { pos: to } } of ranges) {
+    state.doc.nodesBetween(from, to, (node, pos, parent) => {
+      if (!node.isInline || !parent.type.allowsMarkType(type)) return;
+      const a = Math.max(from, pos);
+      const b = Math.min(to, pos + node.nodeSize);
+      apply(type.isInSet(node.marks)?.attrs, (m) => tr.addMark(a, b, m), () => tr.removeMark(a, b, type));
+    });
+  }
+  return true;
+};
+
+/** TipTap's removeEmptyTextStyle drops a textStyle whose values are all falsy, but v2's false and 0 are set values (a style's
+ * caps switched off, spacing 0), so Font Color Automatic would bring the style's back. Empty here means every value is null. */
+const removeEmptyTextStyle = () => ({ state, tr }) => {
+  const type = state.schema.marks.textStyle;
+  for (const { $from, $to } of tr.selection.ranges) {
+    tr.doc.nodesBetween($from.pos, $to.pos, (node, pos) => {
+      if (!node.isInline) return true;
+      const own = node.marks.filter((m) => m.type === type);
+      if (own.length && !own.some((m) => Object.values(m.attrs).some((v) => v != null))) tr.removeMark(pos, pos + node.nodeSize, type);
+    });
+  }
+  return true;
+};
+
 const RunProps = TextStyle.extend({
   // Grow and Shrink font (Ctrl+Shift+. and Ctrl+Shift+,: the next listed size) and Ctrl+] and Ctrl+[ (one point).
   addCommands() {
     return { ...this.parent?.(), growFont: stepSize(growSize), shrinkFont: stepSize(shrinkSize), growFont1: stepSize((pt) => size1(pt, 1)),
-      shrinkFont1: stepSize((pt) => size1(pt, -1)) };
+      shrinkFont1: stepSize((pt) => size1(pt, -1)), setRunProps, removeEmptyTextStyle };
   },
-  // Only a span holding a run property: Word's and web pages' other spans (mso-ansi-language, font-weight: 400) would leave a
-  // textStyle with every attribute null (docs/plans/document.md dataModel: removeEmptyTextStyle drops those). Each attribute
-  // falls back to the closest ancestor span (inherit), so <span style="font-size:20pt"><span style="color:red"> keeps both.
+  // Only a span holding a run property, in its style or (for those with no CSS, such as charStyle and fontEA) a data attribute:
+  // Word's and web pages' other spans (mso-ansi-language, font-weight: 400) would leave a textStyle with every attribute null
+  // (docs/plans/document.md dataModel: removeEmptyTextStyle drops those). Each attribute falls back to the closest ancestor span
+  // (inherit), so <span style="font-size:20pt"><span style="color:red"> keeps both.
   // TextStyle's mergeNestedSpanStyles is not used: its 'outer;inner' style text makes the mso-* reads take the outer values.
   parseHTML() {
-    return [{ tag: 'span', consuming: false, getAttrs: (el) => (el.hasAttribute('style') && Object.values(RUN_ATTRS).some((a) => a.parseHTML(el) != null) ? {} : false) }];
+    return [{ tag: 'span', consuming: false, getAttrs: (el) => (ownRun(el) && Object.values(RUN_ATTRS).some((a) => a.parseHTML(el) != null) ? {} : false) }];
   },
   addAttributes() {
     return RUN_ATTRS;
   },
-});
-
-// ST_Underline to CSS: the line style and whether it is heavy.
-const UNDERLINE_CSS = (val) => ({
-  'text-decoration-style': /^double|wavyDouble$/.test(val) ? 'double' : /^dotted/.test(val) ? 'dotted' : /^dash|dotDash|dotDotDash/.test(val) ? 'dashed' : /^wav/.test(val) ? 'wavy' : null,
-  'text-decoration-thickness': /thick|Heavy/.test(val) ? '2px' : null,
 });
 
 /** Underline with Word's style (val, one of the 17 ST_Underline names; 'single' by default). */
@@ -403,72 +461,10 @@ const cellAttrs = {
 };
 const DocTableCell = TableCell.extend({ addAttributes() { return { ...this.parent?.(), ...cellAttrs }; } });
 const DocTableHeader = TableHeader.extend({ addAttributes() { return { ...this.parent?.(), ...cellAttrs }; } });
-// The resizable table's view (columnResizing makes it without the node's HTML attributes): it carries data-style, which the
-// table style's rules (stylesheet.js) select. Pages split a table between rows (pagination.js): each row is a grid of its own
-// (document.css), its columns copied from the colgroup into --cols on the wrapper, also while a column is dragged (the
-// colgroup changes without a transaction). A table with a cell spanning rows cannot split that way and moves whole
-// (data-whole), and so does one with a row taller than a page's text area (document.css --fit-h), which no page could hold.
-// A whole table taller than that is scaled down to fit one page, as a picture is, since it cannot cross a page end.
-// ponytail: rowspan and tall-row tables move whole; split them per row group, and a tall row per line, if long ones matter.
-class DocTableView extends TableView {
-  constructor(node, ...rest) {
-    super(node, ...rest);
-    this.table.dataset.style = node.attrs.styleId;
-    this.cols = new MutationObserver(() => this.sync());
-    this.cols.observe(this.colgroup, { attributes: true, childList: true, subtree: true });
-    this.cols.observe(this.table, { attributes: true, attributeFilter: ['style'] });
-    // The table's own height (a transform does not change it) while no transaction runs, a font arriving say; next frame,
-    // since fit() may change the observed size. Pagination fits it before each measure too (pagination.js), after every
-    // change and resize, so a page count never counts it unscaled, and a split table's rows (display: contents) are seen.
-    this.tall = new ResizeObserver(() => requestAnimationFrame(() => this.fit()));
-    this.tall.observe(this.table);
-    this.dom.dataset.pgFit = '';
-    this.dom.pgFit = () => this.fit();
-    this.sync();
-  }
-
-  update(node) {
-    if (!super.update(node)) return false;
-    this.table.dataset.style = node.attrs.styleId;
-    this.sync();
-    return true;
-  }
-
-  /** The columns as a grid template: a set width in px, else an equal share with the column's minimum. */
-  sync() {
-    const cols = [...this.colgroup.children].map((c) => c.style.width || `minmax(${c.style.minWidth || '0px'}, 1fr)`);
-    this.dom.style.setProperty('--cols', cols.join(' '));
-    this.dom.style.setProperty('--table-w', this.table.style.width || '100%');
-    this.dom.style.setProperty('--table-min', this.table.style.minWidth || '0px');
-    this.spans = false;
-    this.node.forEach((row) => row.forEach((cell) => { this.spans ||= cell.attrs.rowspan > 1; }));
-    this.fit();
-  }
-
-  /** Whole when a cell spans rows or a row is taller than a page's text area; a whole table taller than that is drawn scaled
-   * to it, the wrapper as tall as the drawing. */
-  fit() {
-    const max = parseFloat(getComputedStyle(this.dom).getPropertyValue('--fit-h')) - 2;
-    // Rows are measured unscaled in either layout; 4 px of slack keeps a row near the limit from switching back and forth.
-    const was = this.table.hasAttribute('data-whole');
-    const tall = (was || this.dom.offsetHeight > max) && [...this.table.rows].some((r) => r.offsetHeight > max - (was ? 4 : 0));
-    this.table.toggleAttribute('data-whole', this.spans || tall);
-    const h = this.table.offsetHeight;
-    const s = this.table.hasAttribute('data-whole') && h > max ? Math.floor((max / h) * 1e4) / 1e4 : 1; // 4 places read back as written
-    const transform = s === 1 ? '' : `scale(${s})`;
-    if (this.table.style.transform === transform) return; // also ends the style observer's round trip
-    this.table.style.transformOrigin = s === 1 ? '' : '0 0';
-    this.table.style.transform = transform;
-    this.dom.style.height = s === 1 ? '' : `${h * s}px`;
-  }
-
-  destroy() {
-    this.cols.disconnect();
-    this.tall.disconnect();
-  }
-}
-
 const DocTable = Table.extend({
+  addProseMirrorPlugins() {
+    return [...(this.parent?.() ?? []), mergeSlots];
+  },
   addAttributes() {
     return {
       ...this.parent?.(),
@@ -488,16 +484,22 @@ const PageBreak = Node.create({
   // Word's clipboard writes a page break as a <br> with page-break-before (inside a paragraph, which the parser closes).
   parseHTML: () => [{ tag: 'div[data-page-break]' },
     { tag: 'br', priority: 60, getAttrs: (el) => (/page-break-before:\s*always/i.test(el.getAttribute('style') ?? '') ? {} : false) }],
-  renderHTML: () => ['div', { 'data-page-break': '', style: 'page-break-after: always' }],
+  renderHTML: ({ HTMLAttributes }) => ['div', mergeAttributes({ 'data-page-break': '', style: 'page-break-after: always' }, HTMLAttributes)],
   renderMarkdown: () => '<!-- page break -->',
   addCommands() {
     return {
       // At a caret in top-level text, as Word's Ctrl+Enter: the text after the caret goes on the new sheet; at the start of a
-      // paragraph the break goes before it. False in a table or across blocks. At a paragraph's end the new empty paragraph never
-      // takes the suggestion record (docs/plans/suggestions.md), as with Enter.
-      setPageBreak: () => ({ tr, dispatch }) => {
+      // paragraph the break goes before it. In a cell of a top-level table it splits the table above the caret's row with the
+      // break between, as Word does and the canvas engine's text.pageBreak does. False across blocks or cells. At a paragraph's
+      // end the new empty paragraph never takes the suggestion record (docs/wiki/suggestions.md), as with Enter.
+      setPageBreak: () => ({ state, tr, dispatch }) => {
         const { $from, $to } = tr.selection;
-        if ($from.depth !== 1 || !$from.parent.isTextblock || !$from.sameParent($to)) return false;
+        if (!$from.parent.isTextblock || !$from.sameParent($to)) return false;
+        if ($from.depth !== 1) {
+          if (tableOf($from)?.depth !== 1) return false;
+          if (dispatch) tr.deleteSelection();
+          return !!splitTable(state, this.type.create()); // state.tr is this command's tr, so the split lands in it
+        }
         if (dispatch) {
           tr.deleteSelection();
           const $p = tr.selection.$from;
@@ -522,6 +524,65 @@ const Picture = Image.extend({
     : token.text ? { type: 'text', text: token.text } : []),
   // doc.get markdown names the picture instead of carrying its data.
   renderMarkdown: (node) => `![${node.attrs.alt ?? ''}](picture)`,
+  // TipTap's resizable view (ResizableNodeView) puts the rendered attributes on the img and, on each update, replaces the img's
+  // style attribute with the rendered one, which drops the size it set. So after each update the size goes back on, and the
+  // layout's data attributes (data-layout, data-wrap, data-z) move to the outer wrapper, where float-layout draws the wrap:
+  // never a CSS float, which would land at the end of its page run under the page floats (plan.md §1.9).
+  // A picture of a known size loads its bitmap only once it comes near the view (lazy.mjs): its box has that size already, so
+  // the page is laid out the same before and after. Until then the view holds the node without its src.
+  addNodeView() {
+    const make = this.parent?.();
+    if (!make) return null;
+    return (props) => {
+      let real = props.node;
+      const sized = real.attrs.width != null && real.attrs.height != null && !!real.attrs.src;
+      let drawn = !sized;
+      const bare = (n) => (drawn ? n : n.type.create({ ...n.attrs, src: null }, null, n.marks));
+      const view = make(drawn ? props : { ...props, node: bare(real), HTMLAttributes: { ...props.HTMLAttributes, src: null } });
+      const img = view.element;
+      img.decoding = 'async';
+      const apply = (node) => {
+        for (const k of ['data-layout', 'data-wrap', 'data-z']) {
+          const v = img.getAttribute(k);
+          img.removeAttribute(k);
+          if (v == null) view.dom.removeAttribute(k);
+          else view.dom.setAttribute(k, v);
+        }
+        // A zero size is kept (a Word picture with a zero extent draws at no size), not left to the picture's own.
+        if (node.attrs.width != null) img.style.width = `${node.attrs.width}px`;
+        if (node.attrs.height != null) img.style.height = `${node.attrs.height}px`;
+      };
+      apply(props.node);
+      const update = view.update.bind(view);
+      view.update = (node, ...rest) => {
+        const ok = update(bare(node), ...rest);
+        if (ok) {
+          real = node;
+          apply(node);
+        }
+        return ok;
+      };
+      if (!sized) return view;
+      // TipTap shows the picture once it loads, to learn its size; this one knows it, so it shows at once.
+      const lazy = whenNear(props.view, view.dom, () => {
+        drawn = true;
+        img.src = real.attrs.src;
+        Object.assign(view.dom.style, { visibility: '', pointerEvents: '' });
+        return img.decode().catch(() => {});
+      });
+      // Reached by the keyboard or a search (a node selection): drawn at once. The class is ProseMirror's own selectNode.
+      view.selectNode = () => {
+        lazy.now();
+        view.dom.classList.add('ProseMirror-selectednode');
+      };
+      const destroy = view.destroy.bind(view);
+      view.destroy = () => {
+        lazy.stop();
+        destroy();
+      };
+      return view;
+    };
+  },
   addCommands() {
     return {
       ...this.parent?.(),
@@ -539,6 +600,20 @@ const Picture = Image.extend({
   },
 }).configure({ inline: true, allowBase64: true, resize: { enabled: true, alwaysPreserveAspectRatio: true, minWidth: 16, minHeight: 16 } });
 
+// Word's Distributed alignment (w:jc distribute) spreads every line, the last too: CSS justify plus text-align-last.
+const WordAlign = TextAlign.extend({
+  addGlobalAttributes() {
+    const [g] = this.parent();
+    const a = g.attributes.textAlign;
+    return [{ ...g, attributes: { textAlign: {
+      ...a,
+      parseHTML: (el) => (el.style.textAlign === 'justify' && (el.style.textAlignLast === 'justify' || /distribute/i.test(mso(el, 'text-justify') ?? ''))
+        ? 'distribute' : a.parseHTML(el)),
+      renderHTML: (attrs) => (attrs.textAlign === 'distribute' ? { style: 'text-align: justify; text-align-last: justify' } : a.renderHTML(attrs)),
+    } } }];
+  },
+});
+
 // ---------- markdown ----------
 /** Markdown code in a Document: Word has no code, so a fenced or indented block becomes one plain paragraph per line and inline
  * code its text (docs/plans/document.md Headings, styles and omitted nodes: pasted code becomes plain text). */
@@ -549,8 +624,10 @@ const PlainCode = [
 ];
 
 /** The Document's own extensions for an undo depth (docs/plans/document.md editorAndUi). No blockquote, code, code block,
- * horizontal rule, box, media (video) or nested lists: Word has none of them (lists are flat list paragraphs, lists.js). */
-export function documentExtensions(historyDepth) {
+ * horizontal rule, box, media (video) or nested lists: Word has none of them (lists are flat list paragraphs, lists.js).
+ * Schema v2's nodes, marks and global attributes come last (model/). `objects` names the kit's own block objects (src/editors.js:
+ * canvas, planChart), which newspaper columns hold too, as Word keeps an object in its column. */
+export function documentExtensions(historyDepth, objects = []) {
   return [
     StarterKit.configure({
       document: false, code: false, codeBlock: false, blockquote: false, horizontalRule: false, underline: false,
@@ -558,6 +635,9 @@ export function documentExtensions(historyDepth) {
       heading: { levels: [1, 2, 3, 4, 5, 6] },
       link: { openOnClick: false, autolink: true, defaultProtocol: 'https' },
       undoRedo: { depth: historyDepth },
+      // Columns over the whole document hold its last paragraph, as Word's last section does: no empty paragraph after them,
+      // which would count as text after the columns (balance) and take a page of its own.
+      trailingNode: { notAfter: ['columns'] },
     }),
     DocNode,
     ParaProps,
@@ -565,7 +645,7 @@ export function documentExtensions(historyDepth) {
     Lists,
     RunProps,
     WordUnderline,
-    TextAlign.configure({ types: ['heading', 'paragraph'] }),
+    WordAlign.configure({ types: ['heading', 'paragraph'], alignments: ['left', 'center', 'right', 'justify', 'distribute'] }),
     Subscript.extend({ excludes: 'superscript' }), // w:vertAlign holds one of them
     Superscript.extend({ excludes: 'subscript' }),
     DocTable.configure({ resizable: true, cellMinWidth: MIN_COLUMN, View: DocTableView }),
@@ -574,6 +654,10 @@ export function documentExtensions(historyDepth) {
     DocTableCell,
     PageBreak,
     Picture,
+    Chart,
+    ...NODES_V2.map((n) => (n.name === 'columns' ? n.configure({ objects }) : n)),
+    ...MARKS_V2,
+    ModelAttrs,
     StyleSheet,
     Pagination,
     ...PlainCode,

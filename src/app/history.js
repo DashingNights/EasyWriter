@@ -4,8 +4,8 @@ import { closeHistory, isHistoryTransaction, redoDepth, undoDepth, undoNoScroll 
 
 // Persistent undo history (§7e). A log mirrors the newest steps of prosemirror-history's stacks for the open draft:
 // `base` is the doc before its oldest step, `events` its steps (the undo stack, then the undone ones) as
-// {sel: the selection JSON before the step, trs: [{steps, time}]}, `undone` how many of them are undone. `depth` / `redo`
-// are the history's counts and `sel` the selection after the last transaction, to tell what the next one did.
+// {sel: the selection JSON before the step, trs: [{steps, time, addToHistory: false on a change the history does not undo}]},
+// `undone` how many of them are undone. `depth` / `redo` are the history's counts and `sel` the selection after the last transaction, to tell what the next one did.
 
 export const newLog = (state) => restart({ depth: undoDepth(state), redo: redoDepth(state), sel: state.selection }, state);
 
@@ -23,19 +23,23 @@ export function record(log, tr, appended, state) {
     // An undo or redo moves one step between the stacks; one from before the log restarts it.
     log.undone += redo > log.redo ? 1 : -1;
     if (log.undone < 0 || log.undone > log.events.length) restart(log, state);
-  } else if (changes.some((t) => !kept || t.getMeta('addToHistory') === false)) {
-    restart(log, state); // a change the history does not undo: the logged steps no longer replay onto the doc
   } else if (changes.length) {
+    // A change the history does not undo is logged after the newest step and replays outside the history (addToHistory false).
+    const off = (t) => !kept || t.getMeta('addToHistory') === false;
+    // A new step empties the redo stack, and a change outside the history cannot replay before the undone steps: both drop them.
+    const dropped = depth !== log.depth || changes.some(off) ? log.events.splice(log.events.length - log.undone) : [];
+    log.undone -= dropped.length;
     let event = log.events.at(-1);
-    if (depth !== log.depth) {
-      // A new step empties the redo stack; past the depth the history cuts off its oldest steps.
-      log.events.length -= log.undone;
-      log.undone = 0;
-      fold(log, log.events.length + 1 - depth);
-      log.events.push((event = { sel: log.sel.toJSON(), trs: [] }));
+    if (dropped.some((ev) => ev.trs.some((t) => t.addToHistory === false))) {
+      restart(log, state); // a dropped step carried such a change, which its undo left in the doc: the log cannot replay it
+    } else {
+      if (depth !== log.depth) {
+        fold(log, log.events.length + 1 - depth); // past the depth the history cuts off its oldest steps
+        log.events.push((event = { sel: log.sel.toJSON(), trs: [] }));
+      }
+      if (event) event.trs.push(...changes.map((t) => ({ steps: t.steps, time: t.time, ...(off(t) && { addToHistory: false }) })));
+      else log.base = state.doc; // more of a step that began before the log, or a change outside the history before any step
     }
-    if (event) event.trs.push(...changes.map((t) => ({ steps: t.steps, time: t.time })));
-    else log.base = state.doc; // more of a step that began before the log
   }
   Object.assign(log, { depth, redo, sel: state.selection });
 }
@@ -73,7 +77,7 @@ export function encode(log, limit) {
   const file = {
     version: 1,
     base: pack(base.toJSON()),
-    events: events.map(({ sel, trs }) => ({ sel, trs: trs.map(({ steps, time }) => ({ steps: steps.map((s) => pack(s.toJSON())), time })) })),
+    events: events.map(({ sel, trs }) => ({ sel, trs: trs.map(({ steps, time, addToHistory }) => ({ steps: steps.map((s) => pack(s.toJSON())), time, addToHistory })) })),
     undone,
     images,
   };
@@ -92,14 +96,15 @@ function decode(file, schema) {
   base.check();
   return {
     base,
-    events: file.events.map(({ sel, trs }) => ({ sel, trs: trs.map(({ steps, time }) => ({ steps: steps.map((s) => Step.fromJSON(schema, unpack(s))), time })) })),
+    events: file.events.map(({ sel, trs }) => ({ sel, trs: trs.map(({ steps, time, addToHistory }) => ({ steps: steps.map((s) => Step.fromJSON(schema, unpack(s))), time, addToHistory })) })),
     undone: file.undone,
   };
 }
 
 /** Rebuilds the history of `file`, keeping its last `keep` undo steps, on `state` (a fresh editor state holding the saved
  * doc): the steps replay through the history plugin with their times (each step's first transaction closes the history
- * before it, the others join it), then the undone ones are undone. Returns {state, log}, or null when the file is
+ * before it, the others join it, changes the history did not undo apply with addToHistory false), then the undone ones are
+ * undone. Returns {state, log}, or null when the file is
  * unreadable or does not lead to the saved doc. */
 export function rebuild(state, file, keep) {
   try {
@@ -113,10 +118,11 @@ export function rebuild(state, file, keep) {
     for (const { sel, trs } of log.events) {
       st = st.applyInner(st.tr.setSelection(Selection.fromJSON(st.doc, sel)));
       let first = null;
-      for (const { steps, time } of trs) {
+      for (const { steps, time, addToHistory } of trs) {
         const tr = st.tr.setTime(time);
         for (const s of steps) tr.step(s);
-        if (first) tr.setMeta('appendedTransaction', first);
+        if (addToHistory === false) tr.setMeta('addToHistory', false);
+        else if (first) tr.setMeta('appendedTransaction', first);
         else closeHistory((first = tr));
         st = st.applyInner(tr);
       }

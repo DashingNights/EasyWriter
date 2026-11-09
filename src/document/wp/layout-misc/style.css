@@ -1,0 +1,13 @@
+/* layout-misc (docs/plans/word plan.md §3): automatic hyphens, drop caps and line numbers. */
+
+/* Measuring a paragraph as laid out without our automatic hyphens: the widgets go and justified text measures ragged. */
+.page[data-format="document"] .lm-hy-measure .lm-shy { display: none; }
+.page[data-format="document"] .lm-hy-measure :is(p, h1, h2, h3, h4, h5, h6) { text-align: start !important; text-align-last: auto !important; }
+
+/* Drop caps: the first letter spans --lm-dc-lines lines, Distance from text after it. In margin hangs it left of the text column by
+   its own measured width, so the paragraph's text stays where it was. */
+.page[data-format="document"] .lm-dropcap::first-letter { initial-letter: var(--lm-dc-lines, 3); margin-right: var(--lm-dc-gap, 0pt); }
+.page[data-format="document"] .lm-dropcap-margin::first-letter { margin-left: calc(-1 * var(--lm-dc-hang, 0px) - var(--lm-dc-gap, 0pt)); }
+
+/* Line numbers in the left margin, right-aligned at From text before the text column. */
+.page[data-format="document"] .lm-ln { position: absolute; text-align: right; white-space: nowrap; user-select: none; font-variant-numeric: tabular-nums; }

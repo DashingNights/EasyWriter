@@ -2,35 +2,57 @@
 import { Extension } from '@tiptap/core';
 import { Fragment, Slice } from '@tiptap/pm/model';
 import { Plugin, PluginKey, NodeSelection, Selection, TextSelection } from '@tiptap/pm/state';
-import { toBlob } from 'html-to-image';
+import { toSvg } from 'html-to-image';
 import { toast } from 'sonner';
-import { anchorPoint, fillable, kindOf, portNormal, portsOf, rotatePoint, rotBox, rotOf, turns } from './flow/shapes.mjs';
+import { adjustedAv, anchorPoint, arrowHead, FLAT_FILL, fillable, handlesOf, isLineish, kindOf, labelBox, lineEnds, linePad, outlineOf, portNormal, portsOf, rotatePoint, rotBox, rotOf, turns, upgradedShape } from './flow/shapes.mjs';
 import {
-  align as alignBoxes, arrangeItems, boundIndex, cleanConnector, cleanLayers, cloneItems, containedIn, DASHES, defaultMeasure, distribute as distributeBoxes,
+  align as alignBoxes, arrangeItems, boundIndex, cleanConnector, cleanLayers, cloneItems, containedIn, DASHES, defaultMeasure, distribute as distributeBoxes, endAt,
   groupItems, HEADS, hitTarget, JUMPS, flipItem, LABEL_SLOTS, MAX_POINTS, moveItem, normalizeGroups, repairEnds, resizeInFrame, ROUTES,
-  sameSize as sameBoxes, selectable, toggleLayer, turnItem, unbindFrom, ungroupItems, unitOf, validConnector,
+  resizeWithGroup, sameSize as sameBoxes, selectable, smoothPath, STICK_RING, TEXT_LINE, TEXT_PAD, toggleLayer, turnItem, unbindFrom, ungroupItems, unitOf,
+  validConnector,
 } from './flow/model.mjs';
 import { headPath, LABEL_PAD, nearestT, polylineHitsRect, polylinePoint, resolveConnectors } from './flow/route.mjs';
+import { pathSegments, pathShape, segmentsD } from './flow/presets.mjs';
 import { isMermaid } from './flow/mermaid.mjs';
 import { cleanPoints, dragSegment, labelSlotAt, midHandles, OPPOSITE, pickInDirection, reverseConnector, SIDES, sideToward } from './flow/edit.mjs';
+import { edgeHold, GUIDE_LEVELS, guides as guidesOf, snap as snapOf, SNAP_DISTANCES } from './flow/snap.mjs';
 import { keyAmong, keyLabel } from './app/keybinds.js';
 import { DEFAULT_PAGE_WIDTH as DEFAULT_WIDTH } from './formats.mjs';
+import { FALLBACKS } from './office.mjs';
+import { columnWidthAt, flowPos } from './document/wp/columns/model.mjs';
+import { patternCss } from './document/wp/page-background/model.mjs';
+import { heldGradient, heldPattern } from './document/docx/dml.mjs';
 import { SHAPE_KEYS } from './app/keys.mjs';
+import { armTool, LINE_KINDS } from './tooling/shape-picker.mjs';
 import { INK, inkOn, surfaceOf } from './app/commands/item-style.mjs';
+import { metafileSize, METAFILE_NAME, PICTURE_ACCEPT } from './tooling/metafile.mjs';
+import { pictureOfUrl } from './tooling/picture.mjs';
+import { getState } from './app/store.js';
 
-export const WB_BG = { post: { dark: '#303039', light: '#ffffff' }, transparent: null, white: '#ffffff', black: '#000000' };
+// `canvas` is the whiteboard draft's own (src/board): the app's canvas colour, as around a Document's pages.
+export const WB_BG = { post: { dark: '#303039', light: '#ffffff' }, transparent: null, white: '#ffffff', black: '#000000', canvas: 'var(--pg-bg)' };
 
 const FONT = 'system-ui, Helvetica, Arial, sans-serif';
+/** Whether `v` is a usable `font` field (text items and shape labels, §6): a CSS font family name of 1 to 100 characters, no quotes
+ * or CSS punctuation. Absent: the board's own font (FONT). */
+export const validFont = (v) => typeof v === 'string' && /^[^"'`;{}<>\\]{1,100}$/.test(v) && !!v.trim();
+// The CSS font-family of item field `font`: the font, the open fonts that stand in for it where it is missing (office.mjs FALLBACKS,
+// as a Document draws it: Carlito for Calibri), then the board's own font.
+const fontOf = (font) => (validFont(font) ? `${[font, ...(FALLBACKS[font] ?? [])].map((f) => `"${f}"`).join(', ')}, ${FONT}` : FONT);
 // Option lists of the board chrome (src/app/components/board).
 export const TEXT_SIZES = [2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 24, 28, 32, 40, 48, 64, 72];
 export const NOTE_COLORS = [['', 'No note'], ['#fff59d', 'Yellow note'], ['#c8e6c9', 'Green note'], ['#bbdefb', 'Blue note'], ['#f8bbd0', 'Pink note']];
+// A text item's background presets: the board palette's flat colours that stand out on the light and the dark board (no black or
+// white), then the note colours. Ten, one row of the colour panel; any other colour comes through the picker.
+export const TEXT_BACKGROUNDS = [['#8a8ca0', 'Grey'], ['#e05252', 'Red'], ['#f08c3c', 'Orange'], ['#4caf50', 'Green'], ['#4a7fe0', 'Blue'],
+  ['#9c6ade', 'Purple'], ['#fff59d', 'Light yellow'], ['#c8e6c9', 'Light green'], ['#bbdefb', 'Light blue'], ['#f8bbd0', 'Light pink']];
+// A text item's `bg`: a hex colour, alpha included (as the agent schema's COLOR); anything else is dropped on load.
+const TEXT_BG = /^#([0-9a-f]{6}|[0-9a-f]{8})$/i;
 export const BG_OPTIONS = [['post', 'Page'], ['transparent', 'Transparent'], ['white', 'White'], ['black', 'Black']];
 const MIN_ITEM = 20;
-const ARTBOARD_PAD = 32; // a canvas artboard reaches this far past content beyond its frame (§6b)
 const CORNERS = ['nw', 'ne', 'sw', 'se'];
 const EDGES = ['n', 'e', 's', 'w']; // edge handles (§6d; text: e and w only)
 const GRID = 10;
-const SNAP_PX = 6; // snap threshold in screen px
 const EDGE = 48; // auto-scroll zone in screen px from the scrolling area's edge
 const MAX_SCROLL = 24; // auto-scroll px per frame
 const FULL = { x: 0, y: 0, w: 1, h: 1 }; // uncropped
@@ -41,15 +63,18 @@ export const PEN_STYLES = [[1, 'Pen'], [0.7, 'Marker'], [0.35, 'Highlighter']]; 
 const STROKE_NUMS = ['x', 'y', 'w', 'h', 'vw', 'vh', 'width', 'opacity'];
 export const FILLS = [['none', 'No fill'], ['solid', 'Filled'], ['hatch', 'Hatched']];
 // Tool settings (sizes in post px), shared by every board and kept across sessions: the pen (also the eraser's flyout), the
-// shape tool (label size / colour once Insert flowchart set them), the defaults of a new text item (the last size, colour,
-// bold and note set on a text item; colour null: by theme) and the connector tool (§6d; colour null: by theme).
+// shape tool (label size / colour once Insert flowchart set them; a flat fill and no outline, FLAT_FILL), the defaults of a new
+// text item (the last size, colour, bold and note set on a text item; colour null: by theme), the connector tool (§6d; colour
+// null: by theme) and the Line and Arrow tools (free lines, endAt: heads none for Line, an end arrow for Arrow; colour null: by
+// theme). `flat`: saved after the flat defaults came in.
 const TOOLS_KEY = 'daf-writer.tools';
 const pen = { color: '#e05252', width: 4, opacity: 1 };
-const shapeTool = { shape: 'rect', color: '#e05252', width: 4, opacity: 1, fill: 'none', fillColor: '#e05252' };
+const shapeTool = { shape: 'rect', color: '#8a8ca0', width: 0, opacity: 1, fill: 'solid', fillColor: FLAT_FILL };
 const textTool = { size: 20, color: null, bold: false, bg: null };
 const connTool = { route: 'ortho', corner: 8, heads: { start: 'none', end: 'arrow' }, color: null, width: 2, opacity: 1, dash: 'solid', jump: 'none' };
-const toolSettings = { pen, shape: shapeTool, text: textTool, conn: connTool };
-let keepTool = false; // Keep tool on (§6c Spawning, Q): every board, this session only
+const lineTool = { heads: { start: 'none', end: 'none' }, color: null, width: 2, opacity: 1, dash: 'solid' };
+const toolSettings = { pen, shape: shapeTool, text: textTool, conn: connTool, line: lineTool, flat: true };
+let keepTool = true; // Keep tool on (§6c Spawning, Q): every board, this session only; on at each start (the user, 2026-10-29)
 {
   // Saved values are checked like parseBoard checks items, so new items always pass it.
   const size = (v) => Number.isFinite(v) && v > 0;
@@ -59,13 +84,19 @@ let keepTool = false; // Keep tool on (§6c Spawning, Q): every board, this sess
   const among = (list) => (v) => list.includes(v);
   const checks = {
     pen: { color, width: size, opacity: oneOf(PEN_STYLES) },
-    shape: { shape: (v) => !!kindOf(v), color, width: size, opacity: oneOf(PEN_STYLES), fill: oneOf(FILLS), fillColor: color, size, textColor: color },
+    // The board's line kinds are the Line and Arrow tools (free lines, LINE_KINDS), never the shape tool's: a saved one falls back.
+    shape: { shape: (v) => !!kindOf(v) && !LINE_KINDS[v], color, width: (v) => Number.isFinite(v) && v >= 0, opacity: oneOf(PEN_STYLES), fill: oneOf(FILLS),
+      fillColor: color, size, textColor: color },
     text: { size, color: none(color), bold: (v) => typeof v === 'boolean', bg: none(color) },
     conn: { route: among(ROUTES), heads: (v) => HEADS.includes(v?.start) && HEADS.includes(v?.end), color: none(color), width: size,
       opacity: oneOf(PEN_STYLES), dash: among(DASHES), jump: among(JUMPS) },
+    line: { heads: (v) => HEADS.includes(v?.start) && HEADS.includes(v?.end), color: none(color), width: size, opacity: oneOf(PEN_STYLES), dash: among(DASHES) },
   };
   try {
     const saved = JSON.parse(localStorage.getItem(TOOLS_KEY));
+    // Saved before the flat defaults: the shape tool's red outline with no fill was the old default, not a choice, so the flat look
+    // replaces it once (the kind and label style stay).
+    if (saved?.flat !== true) for (const k of ['color', 'width', 'opacity', 'fill', 'fillColor']) delete saved?.shape?.[k];
     for (const [name, fields] of Object.entries(checks)) {
       for (const [k, ok] of Object.entries(fields)) if (ok(saved?.[name]?.[k])) toolSettings[name][k] = saved[name][k];
     }
@@ -76,12 +107,12 @@ function saveTools() {
     localStorage.setItem(TOOLS_KEY, JSON.stringify(toolSettings));
   } catch { /* not persisted */ }
 }
-const ink = () => inkOn(null, pageTheme()); // text / line colour chosen by theme at creation
+export const ink = () => inkOn(null, pageTheme()); // text / line colour chosen by theme at creation
 // The fields a ribbon change sets on each selected item of a type when several are selected (setItems); LINE_TYPES share colour,
 // width and line style.
-const GROUP_FIT = {
-  text: ['color', 'size', 'bold', 'align', 'bg'],
-  shape: ['color', 'width', 'opacity', 'fill', 'fillColor', 'size', 'textColor', 'bold', 'align', 'valign', 'shape'],
+export const GROUP_FIT = {
+  text: ['color', 'size', 'bold', 'align', 'bg', 'font'],
+  shape: ['color', 'width', 'opacity', 'fill', 'fillColor', 'size', 'textColor', 'bold', 'align', 'valign', 'shape', 'font'],
   connector: ['color', 'width', 'opacity', 'dash', 'route', 'corner', 'heads', 'jump'],
   stroke: ['color', 'width', 'opacity'],
 };
@@ -94,14 +125,27 @@ const UNIT_KEYS = ['size', 'width']; // item sizes the chrome shows and sets in 
 const LABEL = { size: 16, align: 'center', valign: 'middle' };
 const FLEX = { left: 'flex-start', top: 'flex-start', center: 'center', middle: 'center', right: 'flex-end', bottom: 'flex-end' };
 // A gesture changed an item when one of these differs (compared as JSON: ends, waypoints and labels are objects).
-const CHANGE_KEYS = ['x', 'y', 'w', 'h', 'crop', 'from', 'to', 'points', 'labels', 'rot', 'mirrorX', 'mirrorY', 'flipX', 'flipY'];
+const CHANGE_KEYS = ['x', 'y', 'w', 'h', 'crop', 'from', 'to', 'points', 'labels', 'rot', 'mirrorX', 'mirrorY', 'flipX', 'flipY', 'av'];
 // Snapping rules, shared by every board and kept across sessions.
 const SNAP_KEY = 'daf-writer.snap';
-const snapRules = { on: true, items: true, board: true, grid: false };
+// distance: the snap distance in screen px; guides: how much the guides show (src/flow/snap.mjs).
+const snapRules = { on: true, items: true, board: true, spacing: true, grid: false, distance: 6, guides: 'standard' };
 try {
   const saved = JSON.parse(localStorage.getItem(SNAP_KEY));
-  for (const k of Object.keys(snapRules)) if (typeof saved?.[k] === 'boolean') snapRules[k] = saved[k];
+  const ok = { distance: (v) => SNAP_DISTANCES.includes(v), guides: (v) => GUIDE_LEVELS.includes(v) };
+  for (const k of Object.keys(snapRules)) if ((ok[k] ?? ((v) => typeof v === 'boolean'))(saved?.[k])) snapRules[k] = saved[k];
 } catch { /* no storage: defaults */ }
+
+// A board draft's tool settings (src/board/api.js PlaneBoard): the same module state every board and canvas uses, so one style
+// picked in the ribbon is the next item's everywhere. setShapeTool and setConnTool are exported below.
+export const planeTools = {
+  pen, shape: shapeTool, text: textTool, conn: connTool, line: lineTool, snap: snapRules, keep: () => keepTool,
+  setPen: (p) => { Object.assign(pen, p); saveTools(); },
+  setText: (p) => { Object.assign(textTool, p); saveTools(); },
+  setKeep: (on) => { keepTool = on; },
+  setSnap: (p) => setSnapRules(p),
+  setLine: (p) => setLineTool(p),
+};
 
 const newId = () => Math.random().toString(36).slice(2, 9);
 const fit = (v, min, max) => Math.max(min, Math.min(v, max));
@@ -130,21 +174,28 @@ export function scaleItem(item, k) {
 let itemClipboard = null; // { token, items }
 // Copied style (Ctrl+Shift+C / V, §6d), shared by all boards: the visual keys of one item; sizes in board px of `unit`.
 const STYLE_KEYS = {
-  shape: ['color', 'width', 'opacity', 'fill', 'fillColor', 'size', 'textColor', 'bold', 'align', 'valign'],
+  shape: ['color', 'width', 'opacity', 'fill', 'fillColor', 'size', 'textColor', 'bold', 'align', 'valign', 'font'],
   connector: ['route', 'corner', 'heads', 'color', 'width', 'opacity', 'dash', 'jump'],
-  text: ['size', 'color', 'bold', 'align', 'bg'],
+  text: ['size', 'color', 'bold', 'align', 'bg', 'font'],
   stroke: ['color', 'width', 'opacity'],
 };
 let styleClipboard = null; // { unit, style: {key: value}, labels: {slot: {size, textColor, bold}} }
 export const styleCopied = () => !!styleClipboard;
 export const itemCopied = () => !!itemClipboard; // the board menu's Paste
-// Boards always go at the top level: nested in a list/table/box/quote their width would differ from the export width.
-export const topLevelPos = ($p) => ($p.depth ? $p.after(1) : $p.pos);
+// Boards always go at the top level of the text flow: nested in a list/table/box/quote their width would differ from the export
+// width. A Document's newspaper columns are that level too (flowPos): a board stays in the caret's column, at its width.
+export const topLevelPos = ($p) => flowPos($p);
 
 // Insert a board and put the caret in the block after it, so typing never replaces the (otherwise node-selected) board.
 export function insertBoard(tr, at, node) {
   tr.insert(at, node);
   return caretAfter(tr, at + node.nodeSize);
+}
+
+/** The position of the board insertBoard put before the caret's block (a top-level block, or a column's block in newspaper columns). */
+export function boardBeforeCaret(state) {
+  const $b = state.doc.resolve(flowPos(state.selection.$from, true));
+  return $b.pos - $b.nodeBefore.nodeSize;
 }
 
 // The caret into the textblock at `after`, a new paragraph if none follows.
@@ -213,15 +264,24 @@ export const boxBetween = (a, b) => ({ x: Math.min(a.x, b.x), y: Math.min(a.y, b
 // Marquee hit-test: the ids of `boxes` ({id, x, y, w, h}) that box `r` touches (edges included).
 export const marqueeHits = (r, boxes) => boxes.filter((b) => b.x <= r.x + r.w && r.x <= b.x + b.w && b.y <= r.y + r.h && r.y <= b.y + b.h).map((b) => b.id);
 
+// The span across x…x + w (artboard px) widened to `min` when narrower, moved as little as it can from 0, the artboard's left edge
+// (a canvas in a document keeps its width, Board.floor) → {x, w}.
+export const keptSpan = (x, w, min) => (w >= min ? { x, w } : { x: Math.min(x, Math.max(0, x + w - min)), w: min });
+
 // Smart artboard (§6b): the frame (null: the whole current artboard, `size` {w, h}) extended on each side where the
-// content box `c` ({x, y, w, h}, null when empty) goes past it to c's edge plus `pad`, then normalised to start at 0,0.
+// content box `c` ({x, y, w, h}, null when empty) goes past it to c's edge, then normalised to start at 0,0. c's edges are
+// rounded to whole px first, so content less than half a px past an edge (a snapped picture of fractional width) adds nothing.
+// Narrower than `floor` (a canvas in a document, Board.floor), the frame widens instead, unbound, keeping the artboard's edges
+// where they were as far as it can (keptSpan).
 // → {w, h, dx, dy, frame}: its size, the shift for every item and the frame, and the shifted frame.
-export function smartArtboard(frame, size, c, pad = ARTBOARD_PAD) {
+export function smartArtboard(frame, size, c, floor = 0) {
   const f = frame ?? { x: 0, y: 0, w: size.w, h: size.h };
-  const l = c && c.x < f.x ? Math.floor(c.x - pad) : f.x;
-  const t = c && c.y < f.y ? Math.floor(c.y - pad) : f.y;
-  const r = c && c.x + c.w > f.x + f.w ? Math.ceil(c.x + c.w + pad) : f.x + f.w;
-  const b = c && c.y + c.h > f.y + f.h ? Math.ceil(c.y + c.h + pad) : f.y + f.h;
+  const l = c ? Math.min(f.x, Math.round(c.x)) : f.x;
+  const t = c ? Math.min(f.y, Math.round(c.y)) : f.y;
+  const r = c ? Math.max(f.x + f.w, Math.round(c.x + c.w)) : f.x + f.w;
+  const b = c ? Math.max(f.y + f.h, Math.round(c.y + c.h)) : f.y + f.h;
+  const span = keptSpan(l, r - l, floor);
+  if (span.w > r - l) return smartArtboard({ x: span.x, y: f.y, w: span.w, h: f.h }, size, c);
   return { w: r - l, h: b - t, dx: 0 - l, dy: 0 - t, frame: { ...f, x: f.x - l, y: f.y - t } }; // 0 - l: never -0
 }
 
@@ -248,9 +308,11 @@ function cleanFields(item) {
     const { flow, ...rest } = item;
     return cleanLayers({ ...rest, frame: parseFrame(item.frame), bg: Object.hasOwn(WB_BG, item.bg) ? item.bg : DEFAULT_ATTRS.bg, items: repairEnds(items) });
   }
-  const out = { ...item };
+  const out = { ...upgradedShape(item) }; // a draft from before every preset had a kind: the kind that draws its preset
   if (item.type === 'shape') for (const [k, ok] of Object.entries(LABEL_CHECKS)) if (k in out && !ok(out[k])) delete out[k];
   if (item.type === 'text' && 'h' in out && !Number.isFinite(out.h)) delete out.h;
+  if (item.type === 'text' && 'bg' in out && !TEXT_BG.test(out.bg)) delete out.bg; // None (null) saves as no background
+  if ('font' in out && !(validFont(out.font) && (item.type === 'text' || item.type === 'shape'))) delete out.font; // §6 font
   if (item.type === 'image' && out.crop !== undefined && !validCrop(out.crop)) delete out.crop;
   for (const k of ['mirrorX', 'mirrorY']) if (out[k] !== true || item.type === 'text') delete out[k]; // §6d flips
   if (out.fit !== true || item.type !== 'text') delete out.fit; // a text item's width fitted to its text
@@ -272,7 +334,7 @@ export function parseBoard(json) {
 }
 
 // ---------------------------------------------------------------------------------------------
-// Converted whiteboards (§6b; docs/plans/canvas-merge.md §2). Pure and deterministic (no newId, no DOM): an undo history
+// Converted whiteboards (§6b; docs/wiki/canvas-merge.md §2). Pure and deterministic (no newId, no DOM): an undo history
 // replays only when the doc and its history file convert alike. They never throw: they run before `new Editor`.
 
 const isObject = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
@@ -378,14 +440,25 @@ const CSS = `
 .wb[data-bg="black"]{background:${WB_BG.black}}
 .wb-layer{position:absolute;inset:0;overflow:clip}
 .wb.wb-grid .wb-layer{background-image:radial-gradient(circle,rgba(140,142,160,.6) 1px,transparent 1.5px);background-size:${GRID}px ${GRID}px;background-position:-${GRID / 2}px -${GRID / 2}px}
-.wb-guides{position:absolute;inset:0;z-index:3;pointer-events:none}
-.wb-guide{position:absolute;background:#ff4d9d}
-.wb-guide-x{top:0;bottom:0;width:calc(1px*var(--wb-inv,1))}
-.wb-guide-y{left:0;right:0;height:calc(1px*var(--wb-inv,1))}
+.wb-guides{position:absolute;inset:0;z-index:3;pointer-events:none;--wb-1:calc(1px*var(--wb-inv,1));--wb-tick:calc(7px*var(--wb-inv,1))}
+.wb-guides>*{position:absolute}
+.wb-guide,.wb-measure,.wb-mark::before,.wb-mark::after,.wb-measure::before,.wb-measure::after{background:#ff4d9d}
+.wb-guide-x,.wb-measure-y{width:var(--wb-1);margin-left:calc(-.5px*var(--wb-inv,1))}
+.wb-guide-y,.wb-measure-x{height:var(--wb-1);margin-top:calc(-.5px*var(--wb-inv,1))}
+.wb-mark{width:var(--wb-tick);height:var(--wb-tick);margin:calc(-3.5px*var(--wb-inv,1))}
+.wb-mark::before,.wb-mark::after,.wb-measure::before,.wb-measure::after{content:'';position:absolute}
+.wb-mark::before,.wb-mark::after{left:50%;top:-20%;width:calc(1.5px*var(--wb-inv,1));height:140%;margin-left:calc(-.75px*var(--wb-inv,1));transform:rotate(45deg)}
+.wb-mark::after{transform:rotate(-45deg)}
+.wb-measure-x::before,.wb-measure-x::after{top:calc(-3px*var(--wb-inv,1));width:var(--wb-1);height:var(--wb-tick)}
+.wb-measure-x::before{left:0}.wb-measure-x::after{right:0}
+.wb-measure-y::before,.wb-measure-y::after{left:calc(-3px*var(--wb-inv,1));width:var(--wb-tick);height:var(--wb-1)}
+.wb-measure-y::before{top:0}.wb-measure-y::after{bottom:0}
+.wb-pill{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%) scale(var(--wb-inv,1));padding:1px 4px;border-radius:3px;background:#ff4d9d;color:#fff;font:500 11px/14px ${FONT};white-space:nowrap}
+.wb-guides>.wb-size{transform:translate(-50%,calc(6px*var(--wb-inv,1))) scale(var(--wb-inv,1));transform-origin:50% 0}
 .wb-item{cursor:move}
 .sc-art *{pointer-events:none}
 .wb-item.wb-sel,.wb-item.wb-hover{outline:calc(2px*var(--wb-inv,1)) solid var(--ui-accent);outline-offset:calc(1px*var(--wb-inv,1))}
-.wb-group{position:absolute;z-index:2;pointer-events:none;outline:calc(1px*var(--wb-inv,1)) dashed var(--ui-accent);outline-offset:calc(5px*var(--wb-inv,1))}
+.wb-group{position:absolute;z-index:2;pointer-events:none;outline:calc(1px*var(--wb-inv,1)) solid var(--ui-accent)}
 .wb-marquee{position:absolute;box-sizing:border-box;pointer-events:none;border:calc(1px*var(--wb-inv,1)) solid var(--ui-accent);background:color-mix(in oklab,var(--ui-accent) 10%,transparent)}
 .wb-stroke,.wb-shape,.wb-conn{pointer-events:none}
 .wb-stroke.wb-sel,.wb-shape.wb-sel{pointer-events:auto}
@@ -405,11 +478,12 @@ const CSS = `
 .wb-h-n,.wb-h-e,.wb-h-s,.wb-h-w{width:calc(10px*var(--wb-inv,1));height:calc(10px*var(--wb-inv,1));margin:calc(-5px*var(--wb-inv,1))}
 .wb-h-n{top:0;left:50%}.wb-h-s{top:100%;left:50%}.wb-h-e{top:50%;left:100%}.wb-h-w{top:50%;left:0}
 .wb-h-n,.wb-h-s{cursor:ns-resize}.wb-h-e,.wb-h-w{cursor:ew-resize}
-.wb-group>.wb-rot{pointer-events:auto}
+.wb-group>:is(.wb-rot,.wb-handle){pointer-events:auto}
 .wb-tip{position:absolute;z-index:1;width:calc(12px*var(--wb-inv,1));height:calc(12px*var(--wb-inv,1));margin:calc(-6px*var(--wb-inv,1));box-sizing:border-box;border-radius:50%;background:#fff;border:calc(2px*var(--wb-inv,1)) solid var(--ui-accent);pointer-events:auto;cursor:move}
+.wb-adj{position:absolute;z-index:1;width:calc(10px*var(--wb-inv,1));height:calc(10px*var(--wb-inv,1));margin:calc(-5px*var(--wb-inv,1));box-sizing:border-box;border-radius:50%;background:#f5c518;border:calc(1px*var(--wb-inv,1)) solid #5c4a00;pointer-events:auto;cursor:pointer}
 .wb-rot{position:absolute;width:calc(22px*var(--wb-inv,1));height:calc(22px*var(--wb-inv,1));cursor:${ROTATE_CURSOR}}
 .wb-rot-nw,.wb-rot-ne{top:calc(-22px*var(--wb-inv,1))}.wb-rot-sw,.wb-rot-se{top:100%}.wb-rot-nw,.wb-rot-sw{left:calc(-22px*var(--wb-inv,1))}.wb-rot-ne,.wb-rot-se{left:100%}
-.wb-item.wb-target{outline:calc(2px*var(--wb-inv,1)) dashed var(--ui-accent);outline-offset:calc(2px*var(--wb-inv,1))}
+.wb-ring{position:absolute;left:0;top:0;z-index:1;overflow:visible;pointer-events:none}
 .wb-port,.wb-end,.wb-wp,.wb-mid,.wb-qc{position:absolute;z-index:1;box-sizing:border-box;border-style:solid;border-width:calc(2px*var(--wb-inv,1))}
 .wb-port{width:calc(9px*var(--wb-inv,1));height:calc(9px*var(--wb-inv,1));margin:calc(-4.5px*var(--wb-inv,1));border-radius:50%;background:#fff;border-color:var(--ui-accent);pointer-events:none}
 .wb-port.on{background:var(--ui-accent);border-color:#fff;transform:scale(1.5)}
@@ -453,13 +527,19 @@ function placeItem(el, item) {
 // Files and agents may hold connectors that were never routed: renderers route them (O(connectors)).
 const routed = (items) => (items.some((i) => i.type === 'connector' && typeof i.d !== 'string') ? resolveConnectors(items).items : items);
 
+// Whether canvas attrs `a` are one shape (Insert > Shapes, a lone Word shape, a canvas fitted to its one shape): the frame is the
+// shape. Where the format's output draws such a shape whole (a Document's canvas goes out as a Word shape, whose shadow, glow and
+// text past it show), its canvas does not clip it either (Canvas option overflow, Board host.overflow); a post's picture clips.
+export const loneShape = (a) => a.items?.length === 1 && a.items[0].type === 'shape' && a.frame?.item === a.items[0].id;
+
 // A canvas's artboard (aw × ah px, unscaled: the caller sets its transform) holding its items, put first into `box` on
-// the canvas's background. Draws the document canvas preview and a dragged tile's ghost.
-export function drawCanvas(box, { aw, ah, bg, items }) {
+// the canvas's background; it clips them unless `overflow` (a lone shape where the format's output shows it whole, loneShape).
+// Draws the document canvas preview and a dragged tile's ghost.
+export function drawCanvas(box, { aw, ah, bg, items, overflow = false }) {
   const theme = pageTheme();
   box.style.background = resolveBg(bg, theme) ?? 'none';
   const art = make('div', 'sc-art');
-  art.style.cssText = `position:absolute;left:0;top:0;width:${aw}px;height:${ah}px;transform-origin:0 0;overflow:hidden;pointer-events:none`;
+  art.style.cssText = `position:absolute;left:0;top:0;width:${aw}px;height:${ah}px;transform-origin:0 0;overflow:${overflow ? 'visible' : 'hidden'};pointer-events:none`;
   setBoardVars(art, bg, theme);
   art.append(...routed(items).map((i) => itemElement(i, theme, boardSurface(bg, theme))));
   box.prepend(art);
@@ -471,29 +551,28 @@ function placeCrop(img, c = FULL) {
     `left:${(-100 * c.x) / c.w}%;top:${(-100 * c.y) / c.h}%`;
 }
 
-// Text with no colour of its own: the theme's text colour on its note colour laid over `board` (the board's background hex),
+// Text with no colour of its own: the theme's text colour on its background colour laid over `board` (the board's background hex),
 // else on the board (--wb-ink, setBoardVars).
 function styleText(text, item, theme = pageTheme(), board = boardSurface('post', theme)) {
   Object.assign(text.style, {
     boxSizing: 'border-box',
-    minHeight: '1.3em',
-    padding: '6px 8px',
-    fontFamily: FONT,
+    minHeight: `${TEXT_LINE}em`,
+    padding: `${TEXT_PAD.t}px ${TEXT_PAD.r}px ${TEXT_PAD.b}px ${TEXT_PAD.l}px`,
+    fontFamily: fontOf(item.font),
     fontSize: `${item.size}px`,
-    lineHeight: '1.3',
+    lineHeight: String(TEXT_LINE),
     fontWeight: item.bold ? '700' : '400',
     fontVariantLigatures: 'none',
     color: item.color || (item.bg ? inkOn(surfaceOf({ type: 'text', bg: item.bg }, board), theme) : `var(--wb-ink,${inkOn(null, theme)})`),
     textAlign: item.align,
     whiteSpace: 'pre-wrap',
     overflowWrap: 'break-word',
-    background: item.bg || 'transparent',
-    borderRadius: item.bg ? '4px' : '0',
-    boxShadow: item.bg ? '0 2px 6px rgba(0,0,0,.25)' : 'none',
+    background: item.bg || 'transparent', // flat, square and shadowless like a flat shape's fill (notes saved with a shadow too)
   });
 }
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
+let ringIds = 0; // mask ids of the sticking rings (Board.ringEl), unique in the document
 function svgEl(tag, attrs) {
   const el = document.createElementNS(SVG_NS, tag);
   for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, String(v));
@@ -504,31 +583,15 @@ const inkAttrs = (s) => ({ fill: 'none', stroke: s.color, 'stroke-width': s.widt
 // The transparent hit path's width: the line's, at least 14 post px (--wb-unit: the board's unit, §6c Units).
 const hitWidth = (item) => `stroke-width:max(${item.width}px, calc(14px * var(--wb-unit, 1)))`;
 
-// Quadratic curves through the midpoints of successive points; a single point is a zero-length dot (round cap).
-function smoothPath(pts) {
-  const p = ({ x, y }) => `${Math.round(x * 10) / 10} ${Math.round(y * 10) / 10}`;
-  if (pts.length === 1) return `M${p(pts[0])}l0 0`;
-  let d = `M${p(pts[0])}`;
-  for (let i = 1; i < pts.length - 1; i++) d += `Q${p(pts[i])} ${p({ x: (pts[i].x + pts[i + 1].x) / 2, y: (pts[i].y + pts[i + 1].y) / 2 })}`;
-  return `${d}L${p(pts.at(-1))}`;
-}
+// --- Curve and Freeform: Shape (Word's Lines, docs/plans/word/briefs/curve-freeform.md): a line through placed points ---
+
+/** The board tools that place a line point by point: Word's Curve and Freeform: Shape. They draw in the shape tool's line and fill. */
+export const PATH_TOOLS = ['curve', 'freeform'];
+const NEAR = 6; // screen px: a click this near the first point closes the line, this near the last adds no point
 
 // --- Shapes: geometry is computed in item pixels (viewBox 0 0 w h) so arrowheads and bumps never distort.
 
-const isLineish = (s) => s === 'line' || s === 'arrow';
 export { fillable } from './flow/shapes.mjs';
-const arrowHead = (width) => Math.max(12, width * 3.5);
-// Line/arrow boxes are padded so the stroke and arrowhead fit; endpoints sit at opposite padded corners.
-const linePad = (item) => (item.shape === 'arrow' ? arrowHead(item.width) * 0.6 : item.width / 2) + 1;
-
-/** A line's or arrow's two ends in board px ([start, end], turned with it): where its tip handles sit. */
-const lineEnds = (it) => {
-  const p = linePad(it);
-  const [x1, x2] = it.flipX ? [it.w - p, p] : [p, it.w - p];
-  const [y1, y2] = it.flipY ? [it.h - p, p] : [p, it.h - p];
-  const c = { x: it.x + it.w / 2, y: it.y + it.h / 2 };
-  return [[x1, y1], [x2, y2]].map(([x, y]) => rotatePoint({ x: it.x + x, y: it.y + y }, c, rotOf(it)));
-};
 
 /** Whether item `i` mirrors its content on a flip (§6d): pictures, strokes and shapes but lines and arrows (whose
  * direction turns instead); text never mirrors. */
@@ -567,22 +630,6 @@ export function shapeGeometry(item) {
   const roundRect = (l, t, rgt, b, r, tail = '') => `M${pt(l + r, t)}H${r1(rgt - r)}A${r} ${r} 0 0 1 ${pt(rgt, t + r)}V${r1(b - r)}` +
     `A${r} ${r} 0 0 1 ${pt(rgt - r, b)}${tail}H${r1(l + r)}A${r} ${r} 0 0 1 ${pt(l, b - r)}V${r1(t + r)}A${r} ${r} 0 0 1 ${pt(l + r, t)}Z`;
   switch (item.shape) {
-    case 'rect': return { d: `M${pt(l, t)}H${r1(rgt)}V${r1(b)}H${r1(l)}Z` };
-    case 'round': return { d: roundRect(l, t, rgt, b, r1(Math.max(0, Math.min(w, h) * 0.18 - i))) };
-    case 'ellipse': {
-      const [rx, ry, cy] = [Math.max(0.5, w / 2 - i), Math.max(0.5, h / 2 - i), h / 2];
-      return { d: `M${pt(w / 2 - rx, cy)}A${r1(rx)} ${r1(ry)} 0 1 0 ${pt(w / 2 + rx, cy)}A${r1(rx)} ${r1(ry)} 0 1 0 ${pt(w / 2 - rx, cy)}Z` };
-    }
-    case 'triangle': return { d: `M${pt(w / 2, t)}L${pt(rgt, b)}L${pt(l, b)}Z` };
-    case 'star': {
-      const [cx, cy, rx, ry] = [w / 2, h / 2, w / 2 - i, h / 2 - i];
-      const pts = Array.from({ length: 10 }, (_, k) => {
-        const a = -Math.PI / 2 + (k * Math.PI) / 5;
-        const s = k % 2 ? 0.45 : 1;
-        return pt(cx + Math.cos(a) * rx * s, cy + Math.sin(a) * ry * s);
-      });
-      return { d: `M${pts.join('L')}Z` };
-    }
     case 'speech': {
       const bb = b - (h - 2 * i) * 0.22; // body bottom; the tail fills the rest
       const r = r1(Math.max(0, Math.min(rgt - l, bb - t) * 0.15));
@@ -608,11 +655,13 @@ export function shapeGeometry(item) {
       return { d: `${d}Z${puff(l + (rgt - l) * 0.24, t + (b - t) * 0.87, m * 0.055)}${puff(l + (rgt - l) * 0.12, b - m * 0.035, m * 0.035)}` };
     }
   }
-  return { d: kindOf(item.shape)?.path(w, h, i).d ?? '' }; // the flowchart kinds (src/flow/shapes.mjs)
+  // Every other kind by its own path (src/flow/shapes.mjs): a DrawingML preset or custom geometry draws parts, each with its own fill and stroke.
+  const g = kindOf(item.shape)?.path(w, h, i, item);
+  return { d: g?.d ?? '', parts: g?.parts };
 }
 
 // Box from a drag start/end point. Shift: square shapes, or 45° steps for lines/arrows.
-function shapeBox(p0, p1, shift, tool) {
+function shapeBox(p0, p1, shift, tool, exact = false) {
   let [dx, dy] = [p1.x - p0.x, p1.y - p0.y];
   const lineish = isLineish(tool.shape);
   const pad = lineish ? linePad(tool) : 0;
@@ -626,9 +675,10 @@ function shapeBox(p0, p1, shift, tool) {
       [dx, dy] = [Math.sign(dx || 1) * s, Math.sign(dy || 1) * s];
     }
   }
-  const x = Math.round(Math.min(p0.x, p0.x + dx) - pad);
-  const y = Math.round(Math.min(p0.y, p0.y + dy) - pad);
-  return { x, y, w: Math.max(1, Math.round(Math.abs(dx) + 2 * pad)), h: Math.max(1, Math.round(Math.abs(dy) + 2 * pad)), flipX: dx < 0, flipY: dy < 0 };
+  const round = exact ? r2 : Math.round; // exact: points already whole or snapped (pointAt) stay where they are
+  const x = round(Math.min(p0.x, p0.x + dx) - pad);
+  const y = round(Math.min(p0.y, p0.y + dy) - pad);
+  return { x, y, w: Math.max(1, round(Math.abs(dx) + 2 * pad)), h: Math.max(1, round(Math.abs(dy) + 2 * pad)), flipX: dx < 0, flipY: dy < 0 };
 }
 
 // Hatch pattern ids are unique per drawing, not per item: the same item can be drawn twice at once (a canvas's static drawing,
@@ -636,28 +686,66 @@ function shapeBox(p0, p1, shift, tool) {
 let hatches = 0;
 
 function shapeSvg(item) {
-  const { d, head } = shapeGeometry(item);
+  const { d, head, parts } = shapeGeometry(item);
   const svg = svgEl('svg', { width: '100%', height: '100%', viewBox: `0 0 ${item.w} ${item.h}`, preserveAspectRatio: 'none', overflow: 'visible' });
   svg.style.display = 'block';
   let fill = 'none';
   const fills = fillable(item.shape);
+  const defs = svgEl('defs', {});
   if (fills && item.fill === 'solid') fill = item.fillColor;
   if (fills && item.fill === 'hatch') {
     const id = `wbh-${++hatches}`;
     const pattern = svgEl('pattern', { id, width: 8, height: 8, patternUnits: 'userSpaceOnUse', patternTransform: 'rotate(45)' });
     pattern.append(svgEl('line', { x1: 0, y1: 0, x2: 0, y2: 8, stroke: item.fillColor, 'stroke-width': 1.5 }));
-    const defs = svgEl('defs', {});
     defs.append(pattern);
-    svg.append(defs);
     fill = `url(#${id})`;
   }
+  // A gradient (a Word shape's a:gradFill: angle 0 runs left to right, 90 top to bottom) while fillColor is still its middle colour.
+  const g = fills && heldGradient(item);
+  if (g) {
+    const id = `wbh-${++hatches}`;
+    const a = ((g.angle ?? 90) * Math.PI) / 180;
+    const [dx, dy] = [Math.cos(a) / 2, Math.sin(a) / 2];
+    const grad = g.kind === 'radial' ? svgEl('radialGradient', { id, cx: 0.5, cy: 0.5, r: 0.71 })
+      : svgEl('linearGradient', { id, x1: 0.5 - dx, y1: 0.5 - dy, x2: 0.5 + dx, y2: 0.5 + dy });
+    for (const st of g.stops) grad.append(svgEl('stop', { offset: st.pos, 'stop-color': st.color }));
+    defs.append(grad);
+    fill = `url(#${id})`;
+  }
+  // A Word pattern fill (a:pattFill, docx/shapes-in.mjs) while fillColor is still its foreground: Fill Effects' 8 px tile of it.
+  const pat = fills && !g && heldPattern(item);
+  if (pat) {
+    const id = `wbh-${++hatches}`;
+    const pattern = svgEl('pattern', { id, width: 8, height: 8, patternUnits: 'userSpaceOnUse' });
+    pattern.append(svgEl('image', { href: patternCss({ pattern: pat.prst, fg: pat.fg, bg: pat.bg }).image.slice(5, -2), width: 8, height: 8 }));
+    defs.append(pattern);
+    fill = `url(#${id})`;
+  }
+  if (defs.children.length) svg.append(defs);
   const ink = { stroke: item.color, 'stroke-width': item.width, 'stroke-linecap': 'round', 'stroke-linejoin': 'round', 'vector-effect': 'non-scaling-stroke' };
-  const dash = kindOf(item.shape)?.dash ? { 'stroke-dasharray': `${item.width * 4} ${item.width * 3}` } : {}; // a frame
+  // A frame's own dash, else the item's (Shape Outline > Dashes, a Word shape's line).
+  const dash = kindOf(item.shape)?.dash || item.dash === 'dashed' ? { 'stroke-dasharray': `${item.width * 4} ${item.width * 3}` }
+    : item.dash === 'dotted' ? { 'stroke-dasharray': `0.1 ${item.width * 2.5}` } : {};
+  if (parts) {
+    // A path kind's parts: Word lightens or darkens some (a cube's faces) and strokes or fills others only.
+    const SHADE = { lighten: ['#ffffff', 0.4], lightenLess: ['#ffffff', 0.2], darken: ['#000000', 0.4], darkenLess: ['#000000', 0.2] };
+    for (const p of parts) {
+      const f = p.fill === 'none' ? 'none' : fill;
+      svg.append(svgEl('path', { d: p.d, fill: f, 'fill-rule': 'evenodd', ...(p.stroke ? { ...ink, ...dash } : { stroke: 'none' }), 'pointer-events': f === 'none' ? 'stroke' : 'visiblePainted' }));
+      if (SHADE[p.fill] && f !== 'none') svg.append(svgEl('path', { d: p.d, fill: SHADE[p.fill][0], 'fill-opacity': SHADE[p.fill][1], stroke: 'none', 'pointer-events': 'none' }));
+    }
+  } else svg.append(svgEl('path', { d, fill, ...ink, ...dash, 'pointer-events': fill === 'none' ? 'stroke' : 'visiblePainted' }));
   // A filled shape is clickable inside; the wide transparent hit path makes thin outlines easy to grab.
-  svg.append(svgEl('path', { d, fill, ...ink, ...dash, 'pointer-events': fill === 'none' ? 'stroke' : 'visiblePainted' }));
   if (head) svg.append(svgEl('path', { d: head, fill: item.color, stroke: item.color, 'stroke-width': 1, 'stroke-linejoin': 'round', 'pointer-events': 'visiblePainted' }));
   svg.append(svgEl('path', { d, fill: 'none', ...ink, stroke: 'transparent', style: hitWidth(item), 'pointer-events': 'stroke' }));
   svg.style.opacity = item.opacity;
+  // A Word shape's outer shadow ({color, alpha, blur, dist (pt), angle}).
+  const sh = item.shadow;
+  if (sh && Number.isFinite(sh.dist)) {
+    const [a, k] = [((sh.angle ?? 45) * Math.PI) / 180, 96 / 72];
+    const n = parseInt(String(sh.color ?? '#000000').slice(1, 7), 16) || 0;
+    svg.style.filter = `drop-shadow(${(Math.cos(a) * sh.dist * k).toFixed(2)}px ${(Math.sin(a) * sh.dist * k).toFixed(2)}px ${((sh.blur ?? 0) * k).toFixed(2)}px rgb(${n >> 16} ${(n >> 8) & 255} ${n & 255} / ${sh.alpha ?? 0.6}))`;
+  }
   return svg;
 }
 
@@ -666,7 +754,10 @@ function shapeSvg(item) {
 function shapeLabel(item, theme, board) {
   const k = kindOf(item.shape);
   const ins = k?.labelInset ?? { x: 0.08, y: 0.08 };
-  const box = k?.band ? `left:8px;right:8px;top:0;height:${Math.min(k.band, item.h)}px`
+  // A Word shape's own internal margins (inset {t, r, b, l} in board px) replace the kind's.
+  const own = ['t', 'r', 'b', 'l'].every((s) => Number.isFinite(item.inset?.[s])) ? item.inset : null;
+  const tr = labelBox(item); // a preset's text rectangle (src/flow/shapes.mjs)
+  const box = tr ? `left:${tr.l}px;right:${tr.r}px;top:${tr.t}px;bottom:${tr.b}px` : own ? `left:${own.l}px;right:${own.r}px;top:${own.t}px;bottom:${own.b}px` : k?.band ? `left:8px;right:8px;top:0;height:${Math.min(k.band, item.h)}px`
     : `left:${ins.x * 100}%;right:${ins.x * 100}%;top:${ins.y * 100}%;bottom:${ins.y * 100}%`;
   const wrap = make('div', 'wb-label');
   wrap.style.cssText = `position:absolute;${box};display:flex;pointer-events:none`;
@@ -680,9 +771,37 @@ function shapeLabel(item, theme, board) {
 function styleLabel(text, item, theme = pageTheme(), board = boardSurface('post', theme)) {
   const k = kindOf(item.shape);
   const [align, valign] = [item.align ?? k?.align ?? LABEL.align, item.valign ?? k?.valign ?? LABEL.valign];
-  styleText(text, { size: item.size ?? LABEL.size, color: labelInk(item, theme, board), bold: !!item.bold, align, bg: null }, theme);
-  Object.assign(text.style, { padding: '2px 4px', maxWidth: '100%' });
+  styleText(text, { size: item.size ?? LABEL.size, color: labelInk(item, theme, board), bold: !!item.bold, align, bg: null, font: item.font }, theme);
+  Object.assign(text.style, { padding: item.inset ? '0' : '2px 4px', maxWidth: '100%' });
   Object.assign(text.parentElement.style, { justifyContent: FLEX[align], alignItems: FLEX[valign] });
+}
+
+// The height shape `item` needs to hold its label (Resize shape to fit text): the height that holds text `textH` px tall (the
+// label as its board draws it; with none, its label drawn off screen on a post's surface, which is close but can differ where the
+// item has no font of its own) inside a preset's text rectangle (labelBox) or the kind's label inset, and never less than its own.
+// A lane's band is fixed. ponytail: grows only; Word also shrinks a shape to its text, add that if a user misses it.
+export function labelFit(item, textH = null) {
+  const k = kindOf(item.shape);
+  if (k?.band) return item.h;
+  if (textH == null) {
+    const el = itemElement(item);
+    el.style.visibility = 'hidden';
+    document.body.append(el);
+    textH = el.querySelector(':scope > .wb-label > .wb-text')?.offsetHeight ?? 0;
+    el.remove();
+  }
+  const room = (h) => {
+    const b = labelBox({ ...item, h });
+    return b ? h - b.t - b.b : h * (1 - 2 * (k?.labelInset?.y ?? 0.08));
+  };
+  // The room need not scale with the height (Word's margins do not, some guides take the shorter side), so a few secant
+  // steps close in on the height that holds the text.
+  let need = item.h;
+  for (let n = 0; n < 3 && room(need) < textH - 0.5; n++) {
+    const slope = (room(need + 100) - room(need)) / 100;
+    need = Math.ceil(need + (textH - room(need)) / Math.max(slope, 0.05));
+  }
+  return Math.max(need, item.h);
 }
 
 // The html a label holds: '' when nothing visible was typed (an emptied contenteditable keeps a <br>).
@@ -784,24 +903,26 @@ export function make(tag, className, props = {}) {
 // ---------------------------------------------------------------------------------------------
 // Image files → board items (shared by paste, drop, the toolbar Image button and the rail's Image button).
 
+// A metafile counts by its name too: a system may give an .emf or .wmf no image type.
+const isPicture = (f) => f.type.startsWith('image/') || METAFILE_NAME.test(f.name);
 function imageFiles(data) {
-  return [...(data?.files ?? [])].filter((f) => f.type.startsWith('image/'));
+  return [...(data?.files ?? [])].filter(isPicture);
 }
 
 // A video or GIF goes into the page as a media node (extensions.js Media), kept as it is, so it is capped at one core limit
 // (the forum's attachment limit, SPEC §1, is the same).
 const MAX_MEDIA_BYTES = 100 * 1024 * 1024;
-const isMedia = (f) => f.type.startsWith('video/') || f.type === 'image/gif';
-const postFiles = (data) => [...(data?.files ?? [])].filter((f) => f.type.startsWith('image/') || f.type.startsWith('video/'));
+export const isMedia = (f) => f.type.startsWith('video/') || f.type === 'image/gif';
+export const postFiles = (data) => [...(data?.files ?? [])].filter((f) => isPicture(f) || f.type.startsWith('video/'));
 
-const dataUrlOf = (file) => new Promise((resolve, reject) => {
+export const dataUrlOf = (file) => new Promise((resolve, reject) => {
   const reader = new FileReader();
   reader.onload = () => resolve(reader.result);
   reader.onerror = () => reject(reader.error);
   reader.readAsDataURL(file);
 });
 
-async function readMedia(file) {
+export async function readMedia(file) {
   if (file.size > MAX_MEDIA_BYTES) {
     toast(`${file.name} is over 100 MB`);
     return null;
@@ -826,14 +947,14 @@ function copiedBoardItems(html, unit) {
   });
 }
 
-async function readImage(file) {
+// A picture file → {src, w, h (its natural size), metafile?} (tooling/picture.mjs pictureOfUrl): an EMF or WMF (told from its
+// header) shows the metafile reader's drawing, takes its own size (the drawing's natural size is twice that, crisp at 200%) and
+// keeps its original in `metafile`, which a Document picture and a board item hold so export writes it back.
+export async function readImage(file) {
   try {
-    const src = await dataUrlOf(file);
-    const img = new Image();
-    img.src = src;
-    await img.decode();
-    if (!img.naturalWidth || !img.naturalHeight) throw new Error('image has no size');
-    return { src, w: img.naturalWidth, h: img.naturalHeight };
+    const picture = await pictureOfUrl(await dataUrlOf(file), { name: file.name });
+    if (!picture) throw new Error('image has no size');
+    return picture;
   } catch (err) {
     console.warn(`Skipped unreadable image "${file.name}":`, err);
     return null;
@@ -844,6 +965,21 @@ export function contentWidth(view) {
   const cs = getComputedStyle(view.dom);
   return view.dom.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight) || DEFAULT_WIDTH;
 }
+
+/** The width (whole px) of the text column at `pos` (default: the selection) in `view`'s doc, worked out from the page setup and
+ * never measured (2026-10-30, the user: "the width of document minus horizontal margin"), unlike contentWidth: a Document's
+ * editor is as wide as its last section's text, whatever the section at `pos`. A Document: its section's text width, or its
+ * column's (columnWidthAt); any other format: its own width, the --page-width its page takes from the settings. What a new
+ * canvas, picture or flowchart fills. */
+export function columnWidth(view, pos = view.state.selection.to) {
+  const { doc } = view.state;
+  return Math.round(doc.attrs.sect ? columnWidthAt(doc, pos)
+    : parseFloat(getComputedStyle(view.dom).getPropertyValue('--page-width')) || DEFAULT_WIDTH);
+}
+
+/** A block object's drawn width (a canvas, a plan chart): its dw px, or with none the text column, at most the column. In a
+ * Document section of another width than the column, --pg-dr (pagination.js) is how much narrower that section's text is. */
+export const drawnWidth = (dw) => (dw ? `min(${dw}px, calc(100% - var(--pg-dr, 0px)))` : 'calc(100% - var(--pg-dr, 0px))');
 
 function scaled(img, maxW, maxH = Infinity) {
   const s = Math.min(1, maxW / img.w, maxH / img.h);
@@ -864,14 +1000,14 @@ async function addImages(view, files, insertPos = null, canvas = false) {
   const images = (await Promise.all(files.map((f) => (isMedia(f) ? readMedia(f) : readImage(f))))).filter(Boolean);
   if (!images.length || view.isDestroyed) return;
   const { state } = view;
-  const width = contentWidth(view);
+  const $p = insertPos !== null ? state.doc.resolve(Math.min(insertPos, state.doc.content.size)) : state.selection.$to;
+  const width = columnWidth(view, $p.pos);
   const nodes = images.map((img) => {
     if (img.media) return state.schema.nodes.media.create({ src: img.src, name: img.name });
     const { w, h } = scaled(img, 8000, 8000);
-    const items = [{ id: newId(), type: 'image', src: img.src, x: 0, y: 0, w, h }];
+    const items = [{ id: newId(), type: 'image', src: img.src, x: 0, y: 0, w, h, ...(img.metafile && { metafile: img.metafile }) }];
     return state.schema.nodes.canvas.create({ w, h, dw: Math.min(w, width), frame: { x: 0, y: 0, w, h, item: items[0].id }, bg: 'post', items });
   });
-  const $p = insertPos !== null ? state.doc.resolve(Math.min(insertPos, state.doc.content.size)) : state.selection.$to;
   let at = topLevelPos($p);
   const tr = state.tr;
   for (const node of nodes.slice(0, -1)) {
@@ -882,17 +1018,21 @@ async function addImages(view, files, insertPos = null, canvas = false) {
 }
 
 // A Document's pictures (only its schema has the image node): inline image nodes at `insertPos` or the selection (after a
-// node-selected block), at most the text width wide (docs/plans/document.md Pictures). Word holds no video.
+// node-selected block), at most as wide as the text column there (docs/plans/document.md Pictures). Word holds no video.
 async function addPictures(view, files, insertPos) {
   const videos = files.filter((f) => f.type.startsWith('video/'));
   if (videos.length) toast(videos.length === 1 ? `${videos[0].name} is a video. A document holds pictures only.` : 'A document holds pictures only.');
   const images = (await Promise.all(files.filter((f) => !videos.includes(f)).map(readImage))).filter(Boolean);
   if (!images.length || view.isDestroyed) return;
   const { state } = view;
-  const width = contentWidth(view);
-  const nodes = images.map((img) => state.schema.nodes.image.create({ src: img.src, ...pictureSize(img, width) }));
   const tr = state.tr;
   const at = insertPos !== null ? Math.min(insertPos, tr.doc.content.size) : tr.selection instanceof NodeSelection ? tr.selection.to : null;
+  const width = columnWidth(view, at ?? undefined);
+  // A metafile keeps its original for export and its size as orig, so Reset Picture & Size does not take the drawing's natural size.
+  const nodes = images.map((img) => {
+    const size = pictureSize(img, width);
+    return state.schema.nodes.image.create({ src: img.src, ...size, ...(img.metafile && { metafile: img.metafile, orig: { w: size.width, h: size.height } }) });
+  });
   if (at !== null) { // a caret in text: never a node selection, which the pictures would replace
     const $p = tr.doc.resolve(at);
     tr.setSelection($p.parent.inlineContent ? TextSelection.create(tr.doc, at) : Selection.findFrom($p, 1, true) ?? Selection.findFrom($p, -1, true));
@@ -963,18 +1103,6 @@ export const WhiteboardPaste = Extension.create({
 // ---------------------------------------------------------------------------------------------
 // Snapping, auto-scroll and the active board (shared by every Board).
 
-// The smallest offset that moves one of `edges` onto one of `lines` within `tol`: {d, at} or null.
-function snapAxis(edges, lines, tol) {
-  let best = null;
-  for (const e of edges) {
-    for (const at of lines) {
-      const d = at - e;
-      if (Math.abs(d) <= tol && (!best || Math.abs(d) < Math.abs(best.d))) best = { d, at };
-    }
-  }
-  return best;
-}
-
 // The nearest ancestor that scrolls (in the document: the editor area).
 export function scrollParent(el) {
   for (let p = el.parentElement; p; p = p.parentElement) {
@@ -991,7 +1119,13 @@ export const edgeSpeed = (d) => (d < EDGE ? Math.min(MAX_SCROLL / 2, Math.ceil((
 
 const boards = new Set(); // live boards
 let active = null;
+let plane = null; // a whiteboard draft's PlaneBoard (src/board/api.js)
 const activeListeners = new Set();
+/** The board the chrome serves while a whiteboard draft's PlaneBoard is mounted (src/board/BoardArea.jsx), or null. */
+export const setPlaneBoard = (b) => {
+  plane = b;
+  for (const fn of activeListeners) fn();
+};
 // Chrome outside a board's DOM (React portals: rail, flyouts, ribbon and their popups) carries `data-board-chrome`;
 // focus moving there never ends a text edit.
 const isChrome = (node) => node instanceof Element && !!node.closest('[data-board-chrome]');
@@ -999,7 +1133,7 @@ const isChrome = (node) => node instanceof Element && !!node.closest('[data-boar
 // The board the chrome serves: the one with focus, else one in a tool mode, else none (the
 // rail's text mode). Hovering never changes it (§6c): only clicks into a board or back into the text do.
 export const activeBoard = {
-  get: () => active,
+  get: () => plane ?? active,
   subscribe(fn) {
     activeListeners.add(fn);
     return () => activeListeners.delete(fn);
@@ -1038,11 +1172,23 @@ export function setConnTool(patch) {
   for (const b of boards) b.emit();
 }
 
-// The line style last set on a shape or connector in the ribbon is the next new one's (§6c Tool settings), as for text.
+function setLineTool(patch) {
+  Object.assign(lineTool, patch);
+  saveTools();
+  for (const b of boards) b.emit();
+}
+
+// The line style last set on a shape, connector or free line in the ribbon is the next new one's (§6c Tool settings), as for text.
+// Not its opacity (an item's own, as in Figma) nor a free line's heads (what Line and Arrow tell apart).
 const STYLE_MEMORY = {
-  shape: [['color', 'width', 'opacity', 'fill', 'fillColor'], setShapeTool],
-  connector: [['color', 'width', 'opacity', 'dash', 'route', 'heads'], setConnTool],
+  shape: [['color', 'width', 'fill', 'fillColor'], setShapeTool],
+  connector: [['color', 'width', 'dash', 'route', 'heads'], setConnTool],
+  line: [['color', 'width', 'dash'], setLineTool],
 };
+const memoryOf = (item) => (item.free ? 'line' : item.type);
+// A free line is always straight: these connector keys never reach it (a multi-selection's ribbon, copied style).
+const FREE_FIXED = ['route', 'corner', 'jump'];
+const styleKeys = (item, keys = []) => (item.free ? keys.filter((k) => !FREE_FIXED.includes(k)) : keys);
 function rememberStyle(type, patch) {
   const [keys, set] = STYLE_MEMORY[type] ?? [[]];
   const p = Object.fromEntries(keys.filter((k) => k in patch).map((k) => [k, structuredClone(patch[k])]));
@@ -1122,8 +1268,12 @@ export class Board {
     // {id, alone} of the text item addText placed, until its first edit ends (finishEdit removes it untouched); alone:
     // nothing committed since, so undoing the placement removes it.
     this.newText = null;
-    this.mode = null; // null | 'pen' | 'eraser' | 'shape' | 'connector' | placement: 'text' | 'image'
-    this.pending = null; // 'image' mode: the picked files a click places; 'shape' mode: an armed prefab {id, items} (§6g)
+    this.mode = null; // null | 'pen' | 'eraser' | 'shape' | 'connector' | 'line' | PATH_TOOLS ('curve', 'freeform') | placement: 'text' | 'image'
+    // 'image' mode: the picked files a click places; 'shape' mode: an armed prefab {id, items} (§6g) a click places, or an armed
+    // look {look} (item fields in post px, its kind with them) the shape tool draws with instead of the board's; a look with text
+    // (html) draws a text box, whose text is edited at once.
+    this.pending = null;
+    this.draft = null; // the line a path tool is placing: {tool, pts, ink, el, path} (pressPath)
     this.gesture = null;
     this.listeners = new Set();
     this.rev = 0; // +1 per render and commit: the layers panel rebuilds its rows on it (§6c Layers panel)
@@ -1135,8 +1285,9 @@ export class Board {
     this.layer = make('div', 'wb-layer');
     this.guides = make('div', 'wb-guides');
     this.groupEl = make('div', 'wb-group', { hidden: true }); // the group box of several selected items
-    this.groupEl.append(...CORNERS.map((c) => make('div', `wb-rot wb-rot-${c}`, { title: 'Drag to rotate the selection, with Shift in 15 degree steps' }))); // §6d group turn
-    this.fileInput = make('input', '', { type: 'file', accept: 'image/*', multiple: true }); // detached: pickImages() clicks it
+    this.groupEl.append(...CORNERS.map((c) => make('div', `wb-rot wb-rot-${c}`, { title: 'Drag to rotate the selection, with Shift in 15 degree steps' })), // §6d group turn
+      ...[...CORNERS, ...EDGES].map((c) => make('div', `wb-handle wb-h-${c}`, { title: 'Drag to resize the selection' }))); // §6c group resize
+    this.fileInput = make('input', '', { type: 'file', accept: PICTURE_ACCEPT, multiple: true }); // detached: pickImages() clicks it
     // Picked images wait for a click that places them ('image' mode); picking nothing ends that mode.
     const picked = () => {
       const files = imageFiles(this.fileInput);
@@ -1191,7 +1342,7 @@ export class Board {
   // Item `item`'s properties as the ribbon shows them: no content (src, html, d, items), sizes in post px, a shape's label style
   // and a connector's label colours as drawn (§6d defaults), a connector's label sizes.
   itemProps(item) {
-    const post = (v) => Math.max(1, Math.round(v / this.unit)); // a size in post px
+    const post = (v) => (v > 0 ? Math.max(1, Math.round(v / this.unit)) : 0); // a size in post px; a shape's no line (width 0) stays 0
     const { src, html, d, crop, items, ...rest } = item;
     let props = { ...rest, cropped: !!crop };
     if (item.type === 'shape') {
@@ -1234,8 +1385,11 @@ export class Board {
       count: this.sel.size,
       editing: !!this.editingId,
       pen: { ...pen },
-      shape: { ...shapeTool },
-      conn: { ...connTool, heads: { ...connTool.heads }, color: connTool.color ?? ink() },
+      text: { ...textTool, ...(this.mode === 'text' && this.pending && { bg: this.pending.note ?? null }) }, // the Text tool's options
+      shape: this.shapeLook(),
+      path: { ...this.pathLook().open, shape: 'path' }, // Curve's and Freeform: Shape's look (their options card)
+      conn: ((c) => ({ ...c, heads: { ...c.heads }, color: c.color ?? ink() }))(this.connLook()),
+      line: ((c) => ({ ...c, heads: { ...c.heads }, color: c.color ?? ink(), free: true }))(this.lineLook()),
       snap: { ...snapRules },
       bg: this.bg,
       canUndo: this.host.canUndo?.() ?? true,
@@ -1301,14 +1455,72 @@ export class Board {
     for (const b of boards) b.emit();
   }
 
-  // Picking a kind disarms a prefab (§6g).
+  // The Text tool's options (its background colour): the next new text's, shared and kept like a text item's last choices. A
+  // note armed from the shape panel gives way to it.
+  setTextTool(patch) {
+    if (this.mode === 'text' && this.pending) this.pending = null;
+    Object.assign(textTool, patch);
+    saveTools();
+    for (const b of boards) b.emit();
+  }
+
+  // The look a new item takes: a host's own (host.look: a Document's canvas draws its theme's default shape and line,
+  // canvas.js canvasLooks) over the shared tool settings, else those. The tool's choices (the kind, a connector's route and heads)
+  // stay shared. → item fields in post px.
+  shapeLook(kind = shapeTool.shape) {
+    const look = { ...shapeTool, ...this.host.look?.('shape', kind), shape: kind };
+    // A frame or lane holds what is drawn on it: no fill over it, and a line to see it by (the flat default has none).
+    return kindOf(kind)?.group === 'container' ? { ...look, fill: 'none', width: look.width || 2 } : look;
+  }
+
+  connLook() {
+    return { ...connTool, ...this.host.look?.('conn') };
+  }
+
+  // The Line and Arrow tools draw in the host's line look too (a Document's default line, as Word's one line default).
+  lineLook() {
+    return { ...lineTool, ...this.host.look?.('conn') };
+  }
+
+  // Curve and Freeform: Shape → {open, closed}: an open line's look and a closed one's (on other hosts the shape tool's, an open
+  // line with no fill and a line to see it by: a stroke is all it is, so the flat default's fill and no line never reach it).
+  pathLook() {
+    return this.host.look?.('path') ?? { open: { ...shapeTool, fill: 'none', width: shapeTool.width || 2 }, closed: shapeTool };
+  }
+
+  // A look change from an options card: a host that keeps its own looks takes it (host.setLook → true), the tool's choices
+  // (`shared` keys) still go to the shared tool settings through `set`.
+  setLook(tool, patch, shared, set) {
+    const own = Object.fromEntries(Object.entries(patch).filter(([k]) => !shared.includes(k)));
+    const rest = Object.fromEntries(Object.entries(patch).filter(([k]) => shared.includes(k)));
+    if (!Object.keys(own).length || !this.host.setLook?.(tool, own)) return set(patch);
+    if (Object.keys(rest).length) set(rest);
+    else this.emit();
+  }
+
+  // Picking a kind disarms a prefab (§6g); a path tool's options card changing its look drops the look it was armed with.
   setShapeTool(patch) {
-    if ('shape' in patch && this.mode === 'shape' && this.pending) this.pending = null;
-    setShapeTool(patch);
+    if (this.pending && (PATH_TOOLS.includes(this.mode) || ('shape' in patch && this.mode === 'shape'))) this.pending = null;
+    this.setLook('shape', patch, ['shape'], setShapeTool);
+  }
+
+  setPathTool(patch) {
+    if (this.pending && PATH_TOOLS.includes(this.mode)) this.pending = null;
+    this.setLook('path', patch, ['shape'], setShapeTool);
   }
 
   setConnTool(patch) {
-    setConnTool(patch);
+    this.setLook('conn', patch, ['route', 'corner', 'heads', 'jump'], setConnTool);
+  }
+
+  setLineTool(patch) {
+    this.setLook('conn', patch, ['heads'], setLineTool);
+  }
+
+  // Line (L) and Arrow (Shift+L): the line tool with no heads, or with an end arrow (Figma's Arrow).
+  armLine(arrow) {
+    setLineTool({ heads: { start: 'none', end: arrow ? 'arrow' : 'none' } });
+    return this.setMode('line');
   }
 
   setKeepTool(on) {
@@ -1370,6 +1582,8 @@ export class Board {
     this.dom.style.height = `${this.size().h}px`;
     this.dom.dataset.bg = bg;
     this.layer.replaceChildren(...this.items.map((i) => this.addEl(i)));
+    this.layer.style.overflow = this.host.overflow && loneShape({ items: this.items, frame: this.frame }) ? 'visible' : ''; // as drawCanvas draws it
+    if (this.draft) this.layer.append(this.draft.el); // a line being placed stays on top
     this.renderSelection();
     if (hadFocus && !this.dom.contains(document.activeElement)) this.dom.focus({ preventScroll: true });
   }
@@ -1382,7 +1596,7 @@ export class Board {
     const one = this.selectedId;
     for (const el of this.layer.children) {
       el.classList.toggle('wb-sel', this.sel.has(el.dataset.id));
-      for (const h of el.querySelectorAll(':scope > :is(.wb-handle, .wb-rot, .wb-tip, .wb-end, .wb-mid, .wb-wp, .wb-qc)')) h.remove();
+      for (const h of el.querySelectorAll(':scope > :is(.wb-handle, .wb-rot, .wb-tip, .wb-end, .wb-mid, .wb-wp, .wb-qc, .wb-adj)')) h.remove();
       if (el.dataset.id === one) this.decorate(el, this.selected());
     }
     this.placeGroupBox();
@@ -1418,6 +1632,13 @@ export class Board {
     if (turns(item)) el.append(...CORNERS.map((c) => make('div', `wb-rot wb-rot-${c}`, { title: turn })));
     el.append(...[...CORNERS, ...(item.type === 'text' ? ['e', 'w'] : EDGES)].map((c) => make('div', `wb-handle wb-h-${c}`, { title })));
     if (item.type === 'stroke') return;
+    // A preset's adjust handles (Word's yellow dots): each drags the adjust values it names (src/flow/presets.mjs).
+    handlesOf(item).forEach((p, k) => {
+      const adj = make('div', 'wb-adj', { title: 'Drag to adjust the shape' });
+      Object.assign(adj.style, { left: `${p.x}px`, top: `${p.y}px` });
+      adj.dataset.adj = k;
+      el.append(adj);
+    });
     for (const s of Object.keys(SIDES)) {
       const dot = make('div', `wb-qc wb-qc-${s}`, { title: 'Drag to connect, click to add a connected copy (Ctrl+Arrow)' });
       dot.dataset.side = s;
@@ -1437,6 +1658,8 @@ export class Board {
       return h;
     };
     const bound = (e) => typeof e.item === 'string';
+    // A free line: its two ends only (it never bends, its ends never stick).
+    if (c.free) return [[], geo.tipsAbs.map((t, k) => at('wb-end', t, { end: k }, 'Drag to move this end (Shift: 15 degree steps)'))];
     return [[
       ...midHandles(c.route ?? 'ortho', geo.pts, c.points ?? []).map((m) => at(`wb-mid${m.dir ? ` ${m.dir}` : ''}`, m, { k: m.k },
         c.route === 'ortho' || !c.route ? 'Drag to move this segment' : 'Drag to add a bend')),
@@ -1444,8 +1667,8 @@ export class Board {
     ], geo.tipsAbs.map((t, k) => at(`wb-end${bound([c.from, c.to][k]) ? ' bound' : ''}`, t, { end: k }, 'Drag to reconnect (Alt: do not stick, Shift: pin the tip right there)'))];
   }
 
-  // One dashed box around several selected items with its rotate handle (live during a group move; during a group turn the
-  // start box turned by the gesture's angle).
+  // One box around several selected items with its resize handles and rotate zones (live during a group move or resize; during
+  // a group turn the start box turned by the gesture's angle).
   placeGroupBox() {
     const turn = this.gesture?.kind === 'turn' && this.gesture;
     const box = turn ? turn.group : this.sel.size > 1 && groupBox(this.selectedItems().map((i) => this.itemBox(i)));
@@ -1475,7 +1698,7 @@ export class Board {
       // The last size, colour, bold and note chosen on a text item are the next new text's (shared, kept).
       for (const k of Object.keys(textTool)) if (k in patch) textTool[k] = patch[k];
       saveTools();
-    } else rememberStyle(item.type, patch);
+    } else if (!this.host.look?.('shape')) rememberStyle(memoryOf(item), patch);
     const text = item.type === 'text' ? this.itemEl(item.id)?.querySelector('.wb-text') : null;
     if (text) styleText(text, item, pageTheme(), this.surface()); // the commit measures the restyled height
     // A shape whose label is being typed: the live label takes the style, the typed text is kept (as for text items).
@@ -1496,14 +1719,14 @@ export class Board {
   // one undo step.
   setItems(patch) {
     for (const item of this.selectedItems()) {
-      const p = Object.fromEntries(Object.entries(patch).filter(([k]) => GROUP_FIT[item.type]?.includes(k)));
+      const p = Object.fromEntries(Object.entries(patch).filter(([k]) => styleKeys(item, GROUP_FIT[item.type]).includes(k)));
       if (!Object.keys(p).length) continue;
       Object.assign(item, p);
       for (const k of UNIT_KEYS) if (k in p) item[k] = r2(p[k] * this.unit);
       const text = item.type === 'text' ? this.itemEl(item.id)?.querySelector('.wb-text') : null;
       if (text) styleText(text, item, pageTheme(), this.surface()); // the commit measures the restyled height
     }
-    for (const type of new Set(this.selectedItems().map((i) => i.type))) rememberStyle(type, patch); // as setItem
+    if (!this.host.look?.('shape')) for (const type of new Set(this.selectedItems().map(memoryOf))) rememberStyle(type, patch); // as setItem
     this.commit();
   }
 
@@ -1559,6 +1782,12 @@ export class Board {
     return { w: this.width, h: this.height };
   }
 
+  // The width the artboard never narrows below by itself (§6b): in a document (host.textWidth: the text column in board px) that
+  // width, or its own while narrower; elsewhere 0. W / H, the edge drag and Fit set a width of their own (canvas.js).
+  floor() {
+    return Math.min(this.width, this.host.textWidth?.() ?? 0);
+  }
+
   // The size follows the content (`box`: an item being drawn counts too): the smart artboard (§6b); when it grows or
   // shrinks on the left / top, the items, the frame and gesture `g` shift so it starts at 0,0 again.
   autoSize(box = null, g = null) {
@@ -1569,7 +1798,9 @@ export class Board {
     if (bound) this.frame = { ...this.itemBox(bound), item: bound.id };
     else if (f?.item) this.frame = { x: f.x, y: f.y, w: f.w, h: f.h };
     const c = this.contentBox();
-    const a = smartArtboard(this.frame, this.size(), box ? boxUnion(c, box) : c);
+    // Never narrower than floor() by itself (2026-10-30, the user: "canvas shouldnt shrink inside document max"): moving or deleting
+    // what sat at an edge widens the frame instead. A frame bound to an item still follows that item (its crops and turns).
+    const a = smartArtboard(this.frame, this.size(), box ? boxUnion(c, box) : c, bound ? 0 : this.floor());
     const resized = a.w !== this.width || a.h !== this.height;
     [this.width, this.height, this.frame] = [a.w, a.h, a.frame];
     this.dom.style.width = `${a.w}px`;
@@ -1595,9 +1826,18 @@ export class Board {
         p.x += dx;
         p.y += dy;
       }
-      for (const guide of g.guides) guide.at += guide.axis === 'x' ? dx : dy;
+      for (const s of g.guides) { // snap.mjs guides: a line's `at` is on its axis, a gap's or distance's on the other
+        const [d, o] = s.axis === 'y' ? [dy, dx] : [dx, dy];
+        if (s.type === 'line') Object.assign(s, { at: s.at + d, a: s.a + o, b: s.b + o });
+        else if (s.axis) Object.assign(s, { a: s.a + d, b: s.b + d, at: s.at + o });
+        else Object.assign(s, { x: s.x + dx, y: s.y + dy });
+      }
       g.path?.setAttribute('d', smoothPath(g.points));
       if (g.preview) placeItem(g.preview, { ...g.box, type: 'shape' });
+    }
+    if (this.draft) {
+      for (const p of this.draft.pts) Object.assign(p, { x: p.x + dx, y: p.y + dy });
+      this.drawPath();
     }
     const rest = this.host.shift?.(dx, dy);
     if (g && rest) {
@@ -1646,12 +1886,6 @@ export class Board {
     return off ? { x: p.x + off.x, y: p.y + off.y } : p;
   }
 
-  // Pointer position in board px, snapped when `g` (a gesture) is given.
-  pointAt(e, g = null) {
-    const p = this.local(e);
-    return g ? this.snapPoint(g, p, e) : p;
-  }
-
   // newGroup: own undo step, even right after another commit (history merges commits within 500 ms).
   commit(newGroup = false) {
     if (this.destroyed) return;
@@ -1675,46 +1909,91 @@ export class Board {
     this.host.commit(attrs, newGroup);
   }
 
-  // --- snapping (§6c) ---
+  // --- snapping (§6c; the engine: src/flow/snap.mjs) ---
 
-  // Snap lines on one axis: other items' edges and centres, and the frame's edges and centre lines.
-  snapLines(g, axis) {
-    const lines = [];
-    if (snapRules.items) {
-      for (const b of g.boxes) lines.push(...(axis === 'x' ? [b.x, b.x + b.w / 2, b.x + b.w] : [b.y, b.y + b.h / 2, b.y + b.h]));
-    }
-    // The frame, not the artboard (its edges follow the content), and not a frame bound to a moved item: that is the item's
-    // own box a step ago, and snapping to it would hold the item back.
-    if (snapRules.board && !(this.frame.item && g.starts.some((s) => s.id === this.frame.item))) {
-      const f = this.frame;
-      lines.push(...(axis === 'x' ? [f.x, f.x + f.w / 2, f.x + f.w] : [f.y, f.y + f.h / 2, f.y + f.h]));
-    }
-    return lines;
+  // The part of the board in view, in board px: its rect clipped by the editor area's and the window.
+  viewBox() {
+    const [r, v, k] = [this.dom.getBoundingClientRect(), this.viewRect(), this.scale()];
+    const [l, t] = [Math.max(r.left, v.left, 0), Math.max(r.top, v.top, 0)];
+    const [rr, b] = [Math.min(r.right, v.right, innerWidth), Math.min(r.bottom, v.bottom, innerHeight)];
+    return { x: (l - r.left) / k, y: (t - r.top) / k, w: Math.max(0, rr - l) / k, h: Math.max(0, b - t) / k };
   }
 
-  // Offset {d, at} that snaps one of `edges` (board px on `axis`), or null. Item and board lines win over the grid,
-  // which snaps edges[0]; only they draw a guide. Ctrl turns snapping off, except while cropping (Ctrl is the crop key).
-  snapHit(g, axis, edges, e) {
-    if (!snapRules.on || (e.ctrlKey && g.kind !== 'crop')) return null;
-    const tol = SNAP_PX / this.scale();
-    const hit = snapAxis(edges, this.snapLines(g, axis), tol);
-    if (hit) {
-      g.guides.push({ axis, at: hit.at });
-      return hit;
+  // The snap of `box` (board px; a point: {x, y, w: 0, h: 0, point: true}) whose `lines` may move ({x, y}: line indexes, snap.mjs)
+  // in gesture `g` → {x, y} hits, null each with snapping off or Ctrl held (except while cropping: Ctrl is the crop key). Targets:
+  // the gesture's other items (g.boxes) and the frame, each only while some of it is in view; not a frame bound to a changed item
+  // (that is the item's own box a step ago). `slot`: where g keeps this snap's last result (stickiness); a second snap in one step
+  // keeps its own. The query and hits stay on g.snap for guideSnap.
+  snapBox(g, e, box, lines, { slot = 'prev', spacing = false } = {}) {
+    g.snap = null;
+    if (!snapRules.on || (e.ctrlKey && g.kind !== 'crop')) {
+      g[slot] = null;
+      return { x: null, y: null };
     }
-    const d = Math.round(edges[0] / GRID) * GRID - edges[0];
-    return snapRules.grid && Math.abs(d) <= tol ? { d } : null;
+    const [v, k, f] = [this.viewBox(), this.scale(), this.frame];
+    const seen = (b) => b.x <= v.x + v.w && v.x <= b.x + b.w && b.y <= v.y + v.h && v.y <= b.y + b.h;
+    const q = {
+      box, lines, tol: snapRules.distance / k, sticky: 1 / k, spacing: spacing && snapRules.spacing, grid: snapRules.grid ? GRID : 0,
+      targets: snapRules.items ? g.boxes.filter(seen) : [],
+      frame: snapRules.board && !(f.item && g.starts.some((i) => i.id === f.item)) && seen(f) ? f : null,
+      prev: g[slot] ?? null,
+    };
+    const hits = snapOf(q);
+    g[slot] = hits;
+    g.snap = { q, hits };
+    return hits;
   }
 
-  snapPoint(g, p, e) {
-    return { x: p.x + (this.snapHit(g, 'x', [p.x], e)?.d ?? 0), y: p.y + (this.snapHit(g, 'y', [p.y], e)?.d ?? 0) };
+  // g.guides: what g's last snap shows (snap.mjs guides at the level picked) for `box`, where the snapped box (point) ended up
+  // after any clamps; `kind` 'move' | 'resize' | 'point'.
+  guideSnap(g, box, kind) {
+    g.guides = g.snap ? guidesOf(box, g.snap.q, g.snap.hits, { level: snapRules.guides, kind }) : [];
   }
 
-  showGuides(guides) {
-    this.guides.replaceChildren(...guides.map(({ axis, at }) => {
-      const el = make('div', `wb-guide wb-guide-${axis}`);
-      el.style[axis === 'x' ? 'left' : 'top'] = `${at}px`;
+  // The pointer in board px; with gesture `g` snapped as a point (`slot`: snapBox's) and its guides on g: exact on a snapped
+  // axis, whole px on the other.
+  pointAt(e, g = null, slot = 'prev') {
+    const p = this.local(e);
+    if (!g) return p;
+    const hits = this.snapBox(g, e, { ...p, w: 0, h: 0, point: true }, { x: [0], y: [0] }, { slot });
+    const out = { x: hits.x ? r2(p.x + hits.x.d) : Math.round(p.x), y: hits.y ? r2(p.y + hits.y.d) : Math.round(p.y) };
+    this.guideSnap(g, { ...out, w: 0, h: 0, point: true }, 'point');
+    return out;
+  }
+
+  // A box resized from its fixed corner `a` ({x, y}) toward `s` ({x, y}: 1, -1, or 0 for an axis that keeps its place) to the
+  // sizes `n` ({x, y}), its moving edges snapped (x only when `xOnly`: an aspect-locked corner) → {x, y, hits}: the sizes, a
+  // snapped one exact (2 decimals), the others as asked.
+  snapSize(g, e, a, s, n, xOnly = false) {
+    const box = { x: s.x < 0 ? a.x - n.x : a.x, y: s.y < 0 ? a.y - n.y : a.y, w: n.x, h: n.y };
+    const edge = (axis) => (s[axis] && !(xOnly && axis === 'y') ? [s[axis] > 0 ? 2 : 0] : []);
+    const hits = this.snapBox(g, e, box, { x: edge('x'), y: edge('y') });
+    const size = (axis) => (hits[axis] ? r2(n[axis] + s[axis] * hits[axis].d) : n[axis]);
+    return { x: size('x'), y: size('y'), hits };
+  }
+
+  // Draws the snap guides (snap.mjs, board px): lines, x marks, gaps and distances with their value, the size. Values in post px,
+  // whole; pills, marks and line widths keep their screen size at any zoom (--wb-inv).
+  showGuides(list) {
+    const place = (el, x, y, w = null, h = null) => {
+      Object.assign(el.style, { left: `${x}px`, top: `${y}px` });
+      if (w != null) el.style.width = `${w}px`;
+      if (h != null) el.style.height = `${h}px`;
       return el;
+    };
+    const post = (v) => String(Math.round(v / this.unit));
+    this.guides.replaceChildren(...list.map((g) => {
+      if (g.type === 'mark') return place(make('div', 'wb-mark'), g.x, g.y);
+      if (g.type === 'size') return place(make('div', 'wb-pill wb-size', { textContent: `${post(g.w)} × ${post(g.h)}` }), g.x + g.w / 2, g.y + g.h);
+      const len = g.b - g.a;
+      if (g.type === 'line') {
+        const el = make('div', `wb-guide wb-guide-${g.axis}`);
+        return g.axis === 'x' ? place(el, g.at, g.a, null, len) : place(el, g.a, g.at, len);
+      }
+      // A gap or a distance: a measure across it with end ticks and its value.
+      const el = make('div', `wb-measure wb-measure-${g.axis}`);
+      el.append(make('div', 'wb-pill', { textContent: post(g.value) }));
+      return g.axis === 'x' ? place(el, g.a, g.at, len) : place(el, g.at, g.a, null, len);
     }));
   }
 
@@ -1733,9 +2012,16 @@ export class Board {
     this.pin(e);
   }
 
-  // The pointer of event `e` in board px, snapped like a shape start (no gesture under way; hidden items are no snap target).
+  // The pointer of event `e` in board px, snapped like a shape start (no gesture under way; hidden items and connectors are no
+  // snap target).
   snapped(e) {
-    return this.pointAt(e, { kind: 'place', boxes: this.items.filter((i) => !i.hidden).map((i) => this.itemBox(i)), starts: [], guides: [] });
+    return this.pointAt(e, { kind: 'place', boxes: this.snapTargets(this.items), starts: [], guides: [] });
+  }
+
+  // Snap targets among `items` (snap.mjs): {id, x, y, w, h} turned bounds of those not hidden and not connectors (a locked item
+  // is one, §6 Layer fields).
+  snapTargets(items) {
+    return items.filter((i) => !i.hidden && i.type !== 'connector').map((i) => ({ id: i.id, ...this.itemBox(i) }));
   }
 
   // A new text item with its top-left at `p` (board px): 200 post px wide, the text defaults (textTool), note colour `bg`.
@@ -1744,8 +2030,8 @@ export class Board {
       id: newId(),
       type: 'text',
       html: 'Text',
-      x: Math.round(p.x),
-      y: Math.round(p.y),
+      x: r2(p.x),
+      y: r2(p.y),
       w: Math.min(Math.round(200 * this.unit), this.size().w),
       size: r2(textTool.size * this.unit),
       color: textTool.color ?? this.inkOf({ type: 'text', bg }),
@@ -1782,7 +2068,8 @@ export class Board {
     const ids = images.map((img, i) => {
       const size = scaled(img, w * 0.6);
       const [ox, oy] = corner ? [0, 0] : [size.w / 2, size.h / 2];
-      const item = { id: newId(), type: 'image', src: img.src, x: Math.round(c.x - ox + i * 20), y: Math.round(c.y - oy + i * 20), ...size };
+      const at = corner ? r2 : Math.round; // a corner at the (snapped) pointer: exact there
+      const item = { id: newId(), type: 'image', src: img.src, x: at(c.x - ox + i * 20), y: at(c.y - oy + i * 20), ...size, ...(img.metafile && { metafile: img.metafile }) };
       this.items.push(item);
       return item.id;
     });
@@ -1838,17 +2125,22 @@ export class Board {
   };
 
   // Natural pixel size of an image's visible region, capped to the board width; the board grows to hold it (commit).
-  resetSize(item = this.selected()) {
-    const size = this.naturalSize(item);
-    if (!size) return;
-    Object.assign(item, scaled(size, this.size().w));
+  async resetSize(item = this.selected()) {
+    const size = await this.naturalSize(item);
+    const live = size && !this.destroyed && this.items.find((i) => i.id === item.id); // the board may have taken new attrs meanwhile
+    if (!live) return;
+    Object.assign(live, scaled(size, this.size().w));
     this.commit();
   }
 
-  // Natural pixel size of an image item's visible region, or null while its picture is not loaded.
-  naturalSize(item) {
-    const img = item?.type === 'image' && this.itemEl(item.id)?.querySelector('img');
-    const c = item?.crop ?? FULL;
+  // Natural pixel size of an image item's visible region, or null while its picture is not loaded. A metafile's is its own size
+  // from the model (src/tooling/metafile.mjs metafileSize): the drawing it shows is twice that, and a fallback PNG another size.
+  async naturalSize(item) {
+    if (item?.type !== 'image') return null;
+    const c = item.crop ?? FULL;
+    const own = item.metafile && await metafileSize(item.metafile);
+    if (own) return { w: own.w * c.w, h: own.h * c.h };
+    const img = this.itemEl(item.id)?.querySelector('img');
     return img?.naturalWidth ? { w: img.naturalWidth * c.w, h: img.naturalHeight * c.h } : null;
   }
 
@@ -2055,7 +2347,7 @@ export class Board {
   // Ctrl+Shift+C: the one selected item's visual keys (a connector: also each label's size, colour and bold).
   copyStyle() {
     const item = this.selected();
-    const keys = STYLE_KEYS[item?.type];
+    const keys = item && STYLE_KEYS[item.type] && styleKeys(item, STYLE_KEYS[item.type]);
     if (!keys) return;
     const style = structuredClone(Object.fromEntries(keys.filter((k) => item[k] !== undefined).map((k) => [k, item[k]])));
     const labels = Object.fromEntries(Object.entries(item.labels ?? {}).map(([s, l]) => [s, { size: l.size, textColor: l.textColor, bold: l.bold }]));
@@ -2071,7 +2363,7 @@ export class Board {
     const k = this.unit / clip.unit;
     const items = this.selectedItems().filter((i) => STYLE_KEYS[i.type]);
     for (const i of items) {
-      for (const key of STYLE_KEYS[i.type]) {
+      for (const key of styleKeys(i, STYLE_KEYS[i.type])) {
         if (key in clip.style) i[key] = UNIT_KEYS.includes(key) ? r2(clip.style[key] * k) : structuredClone(clip.style[key]);
       }
       if (i.type !== 'connector') continue;
@@ -2089,7 +2381,7 @@ export class Board {
     this.finishEdit();
     const copies = cloneItems(sources, newId, this.items); // connectors between copies follow them; ends outside become free
     const box = at && groupBox(copies.map((i) => this.itemBox(i)));
-    this.moveBy(copies, box ? Math.round(at.x - box.x) : 20, box ? Math.round(at.y - box.y) : 20);
+    this.moveBy(copies, box ? r2(at.x - box.x) : 20, box ? r2(at.y - box.y) : 20);
     this.items.push(...copies);
     this.sel = new Set(copies.map((i) => i.id));
     this.commit(!!at);
@@ -2127,7 +2419,7 @@ export class Board {
     let items;
     if (what.items) items = cloneItems(what.items, newId);
     else if (what.kind) {
-      const tool = { ...this.tool(shapeTool), shape: what.kind };
+      const tool = this.tool(this.shapeLook(what.kind));
       items = [{ id: newId(), type: 'shape', ...tool, ...this.clickBox(tool, { x: 0, y: 0 }) }];
     } else if (what.conn) {
       const half = 80 * this.unit;
@@ -2229,10 +2521,20 @@ export class Board {
 
   // A connector from end `from` to end `to` in the connector tool's style (at this board's unit; colour by theme if unset).
   newConnector(from, to) {
-    const t = this.tool(connTool);
+    const t = this.tool(this.connLook());
     return {
       id: newId(), type: 'connector', from, to, route: t.route, corner: t.corner, points: [], heads: { ...t.heads }, color: t.color ?? ink(),
       width: t.width, opacity: t.opacity, dash: t.dash, jump: t.jump, labels: {},
+    };
+  }
+
+  // A free line (the Line and Arrow tools, endAt) between points `from` and `to`, in the line tool's style: a connector item marked
+  // `free`, so one renderer draws both and every end gesture knows it never sticks. Straight, no bends.
+  newLine(from, to) {
+    const t = this.tool(this.lineLook());
+    return {
+      id: newId(), type: 'connector', free: true, from, to, route: 'straight', points: [], heads: { ...t.heads }, color: t.color ?? ink(),
+      width: t.width, opacity: t.opacity, dash: t.dash, jump: 'none', labels: {},
     };
   }
 
@@ -2348,20 +2650,22 @@ export class Board {
     if (id) this.selectUnit(id); // a group as one (§6c Groups)
   }
 
-  // Shows sticking target `hit` ({item, anchor} | null): the item outlined and its ports as dots (children of its element,
-  // so they turn with it), the port in use filled.
+  // Shows sticking target `hit` ({item, anchor} | null): the ring where an end sticks to it (model.mjs STICK_RING, from 6 screen
+  // px inside its outline to 16 outside) and its ports as dots (children of its element, so they turn with it), the port in use
+  // filled.
   showTarget(hit) {
     const key = hit ? `${hit.item}|${hit.anchor}` : '';
     if (key === this.targetKey) return;
     this.targetKey = key;
     for (const el of this.layer.querySelectorAll(':scope > .wb-target')) el.classList.remove('wb-target');
-    for (const el of this.layer.querySelectorAll(':scope > * > .wb-port')) el.remove();
+    for (const el of this.layer.querySelectorAll(':scope > * > :is(.wb-port, .wb-ring)')) el.remove();
     const item = hit && this.items.find((i) => i.id === hit.item);
     const el = item && this.itemEl(item.id);
     if (!el) return;
     el.classList.add('wb-target');
     const b = this.measure(item);
-    const flat = { ...item, rot: 0 }; // the element turns the dots
+    const flat = { ...item, rot: 0 }; // the element turns the dots and the ring
+    el.append(this.ringEl(flat, b));
     for (const a of portsOf(item)) {
       const q = anchorPoint(flat, a, b);
       const dot = make('div', 'wb-port');
@@ -2371,42 +2675,56 @@ export class Board {
     }
   }
 
-  // The ids connector ends never stick to: strokes (a freehand box is no node), hidden and locked items (§6 Layer fields) and
-  // `skip`.
-  noTargets(skip = null) {
-    return new Set(this.items.filter((i) => i.type === 'stroke' || !selectable(i) || i.id === skip).map((i) => i.id));
+  // The ring of unturned item `flat` (box `b`) in its element's px: the band within STICK_RING of its outline, drawn as the
+  // outline's stroke 2 x outside wide (round joins: the points within that distance) masked to 2 x inside wide over its inside.
+  ringEl(flat, b) {
+    const s = 1 / this.scale();
+    const [inner, outer] = [STICK_RING.inside * s, STICK_RING.outside * s];
+    const points = outlineOf(flat, b).map((q) => `${q.x - b.x},${q.y - b.y}`).join(' ');
+    const id = `wb-ring-${(ringIds += 1)}`;
+    const area = { x: -2 * outer, y: -2 * outer, width: b.w + 4 * outer, height: b.h + 4 * outer };
+    const mask = svgEl('mask', { id, maskUnits: 'userSpaceOnUse', ...area });
+    mask.append(svgEl('rect', { ...area, fill: '#fff' }), svgEl('polygon', { points, fill: '#000', stroke: '#fff', 'stroke-width': 2 * inner, 'stroke-linejoin': 'round' }));
+    const svg = svgEl('svg', { class: 'wb-ring', width: 1, height: 1 });
+    svg.append(mask, svgEl('polygon', { points, fill: 'none', style: 'stroke:var(--ui-accent)', 'stroke-opacity': 0.3, 'stroke-width': 2 * outer, 'stroke-linejoin': 'round', mask: `url(#${id})` }));
+    return svg;
   }
 
-  // Where a dragged connector end goes (§6d Sticking): onto the topmost item under the pointer, at a port within 12 screen
-  // px (fixed anchor) or anywhere inside its outline (floating); Alt: never. Else a free point, snapped (not with Ctrl).
-  // The target shows its ports meanwhile.
-  stickEnd(g, e) {
+  // Where an end at the pointer goes (model.mjs endAt; ports within 12 screen px, the ring at this zoom): a connector's null,
+  // fixed, floating or pinned; a free line's (`free`) the pointer, Shift in steps about `from`.
+  stickAt(e, skip = null, free = false, from = null) {
+    const scale = this.scale();
+    return endAt(this.items, this.local(e), { free, from, skip, tol: 12 / scale, scale, measure: this.measure, alt: e.altKey, shift: e.shiftKey });
+  }
+
+  // Shows what a connector end at the pointer would stick to: its outline and ports (a pinned end fills no port).
+  showStick(hit) {
+    this.showTarget(hit && { item: hit.item, anchor: hit.pin ? null : hit.anchor });
+  }
+
+  // Where a dragged end goes (model.mjs endAt): a free line's (g.free) at the pointer, Shift in 15 degree steps about the other
+  // end `from`; a connector's sticks (§6d Sticking, the target shown meanwhile), else a free point, snapped (not with Ctrl).
+  stickEnd(g, e, from = null) {
+    const hit = this.stickAt(e, g.skip, g.free, from);
+    if (g.free) return hit;
     if (e.altKey) this.altUsed = true; // releasing Alt must not open the window menu
-    const hit = e.altKey ? null : hitTarget(this.items, this.local(e), { exclude: g.exclude, tol: 12 / this.scale(), measure: this.measure });
-    this.showTarget(hit);
-    if (hit && e.shiftKey) { // Shift: pinned, the tip at this very point of the item (it follows the item, §6d)
-      const it = this.items.find((i) => i.id === hit.item);
-      const b = { x: it.x, y: it.y, w: it.w, h: this.itemHeight(it) };
-      const p = rotatePoint(this.local(e), { x: b.x + b.w / 2, y: b.y + b.h / 2 }, -rotOf(it));
-      const frac = (v) => Math.round(fit(v, 0, 1) * 10000) / 10000;
-      return { item: it.id, anchor: [frac((p.x - b.x) / b.w), frac((p.y - b.y) / b.h)], pin: true };
-    }
-    if (hit) return hit;
-    const p = this.pointAt(e, g);
-    return { x: Math.round(p.x), y: Math.round(p.y) };
+    this.showStick(hit);
+    return hit ?? this.pointAt(e, g);
   }
 
-  // The connector tool's drag (also a quick-connect dot's): from `from` (default: where it starts, sticking) to the
-  // pointer; a preview routed against the items follows it. `skip`: an item the ends never stick to (the dot's item).
+  // The connector tool's drag (also a quick-connect dot's), and the Line and Arrow tools' (a free line): from `from` (default:
+  // where it starts) to the pointer; a preview routed against the items follows it. `skip`: an item the ends never stick to (the
+  // dot's item).
   startConnector(e, from = null, skip = null) {
     const g = this.gesture;
-    g.exclude = this.noTargets(skip);
-    g.conn = { ...this.newConnector(from ?? this.stickEnd(g, e), null), id: 'preview' };
+    Object.assign(g, { skip, free: this.mode === 'line' });
+    const start = from ?? this.stickEnd(g, e);
+    g.conn = { ...(g.free ? this.newLine(start, null) : this.newConnector(start, null)), id: 'preview' };
     this.extendConnector(g, e);
   }
 
   extendConnector(g, e) {
-    g.conn.to = this.stickEnd(g, e);
+    g.conn.to = this.stickEnd(g, e, g.conn.from);
     const { items, geo } = resolveConnectors([...this.items, g.conn], this.measure, new Set(['preview']));
     const c = items.find((i) => i.id === 'preview');
     g.geo = geo.get('preview');
@@ -2446,19 +2764,23 @@ export class Board {
   followConnector(g, e) {
     const c = g.moving[0];
     if (c?.type !== 'connector') return;
-    if (g.kind === 'end') c[g.endK ? 'to' : 'from'] = this.stickEnd(g, e);
+    if (g.kind === 'end') c[g.endK ? 'to' : 'from'] = this.stickEnd(g, e, g.other);
     else if (g.kind === 'wp') {
       const p = this.pointAt(e, g);
-      c.points = c.points.map((q, k) => (k === g.k ? { x: Math.round(p.x), y: Math.round(p.y) } : q));
+      c.points = c.points.map((q, k) => (k === g.k ? p : q));
     } else if (g.kind === 'seg' && g.pts0) {
-      const p = this.local(e);
       const axis = g.dir === 'h' ? 'y' : 'x';
-      let v = Math.round(p[axis] - g.p0[axis]);
-      v += this.snapHit(g, axis, [g.pts0[g.k][axis] + v], e)?.d ?? 0;
+      const raw = this.local(e)[axis] - g.p0[axis];
+      // The segment as a point that spans it (any target line catches it), snapped across only.
+      const [a, b] = [g.pts0[g.k], g.pts0[g.k + 1]];
+      const seg = { x: Math.min(a.x, b.x), y: Math.min(a.y, b.y), w: Math.abs(b.x - a.x), h: Math.abs(b.y - a.y), point: true };
+      const hit = this.snapBox(g, e, { ...seg, [axis]: seg[axis] + raw }, { x: [], y: [], [axis]: [0] })[axis];
+      const v = hit ? r2(raw + hit.d) : Math.round(raw);
+      this.guideSnap(g, { ...seg, [axis]: seg[axis] + v }, 'point');
       c.points = dragSegment(g.points0, g.pts0, g.k, axis === 'x' ? { x: v, y: 0 } : { x: 0, y: v });
     } else if (g.kind === 'seg') {
       const p = this.pointAt(e, g);
-      c.points = [...g.points0.slice(0, g.k), { x: Math.round(p.x), y: Math.round(p.y) }, ...g.points0.slice(g.k)].slice(0, MAX_POINTS);
+      c.points = [...g.points0.slice(0, g.k), p, ...g.points0.slice(g.k)].slice(0, MAX_POINTS);
     } else if (g.kind === 'label') {
       const l = c.labels?.[g.slot];
       const pts = this.geo.get(c.id)?.pts;
@@ -2484,6 +2806,7 @@ export class Board {
 
   // `pending`: the files an 'image' mode places, the prefab a 'shape' mode places (§6g); any mode change drops them.
   setMode(mode, pending = null) {
+    if (this.draft) this.endPath(); // another tool (or this one again) ends the line being placed, as Word does
     this.mode = mode;
     this.pending = pending;
     this.finishEdit();
@@ -2539,14 +2862,15 @@ export class Board {
 
   startShape(e) {
     const g = this.gesture;
-    g.tool = this.tool(shapeTool);
-    g.start = this.pointAt(e, g);
+    g.tool = this.tool(structuredClone(this.pending?.look ?? this.shapeLook()));
+    g.start = this.pointAt(e, g, 'prevStart');
     this.extendShape(g, e);
   }
 
   extendShape(g, e) {
     g.end = this.pointAt(e, g);
-    g.box = shapeBox(g.start, g.end, e.shiftKey, g.tool);
+    g.box = shapeBox(g.start, g.end, e.shiftKey, g.tool, true);
+    if (g.snap && snapRules.guides === 'detailed') g.guides.push({ type: 'size', x: g.box.x, y: g.box.y, w: g.box.w, h: g.box.h });
     const el = itemElement({ ...g.tool, ...g.box, id: 'preview', type: 'shape' });
     if (g.preview) g.preview.replaceWith(el);
     else this.layer.append(el);
@@ -2561,6 +2885,95 @@ export class Board {
     this.items.push(item);
     this.spawned([item.id]);
     this.commit(true);
+    if (typeof item.html === 'string') this.startEdit(item.id); // a text box (an armed look with text): typed into at once
+  }
+
+  // Curve and Freeform: Shape (PATH_TOOLS) place a line over several presses: each click adds a point, Freeform: Shape draws
+  // freehand while dragged, and a double-click or Escape ends the line open, a click on its first point closed. It becomes a 'path'
+  // shape item (pathShape) that the board draws, selects, moves and resizes as any shape and the .docx export writes as custGeom.
+
+  // A press of gesture `g` in a path tool: the line starts here if none is being placed; the release decides (releasePath). Its
+  // look is the one the tool was armed with ({open, closed} in board px), else the board's (pathLook: a Document's default line and
+  // shape, or the shape tool's).
+  pressPath(g, e) {
+    if (!this.draft) {
+      const look = this.pathLook();
+      const ink = this.pending?.open ?? this.tool(look.open);
+      const el = svgEl('svg', { width: '100%', height: '100%', overflow: 'visible' });
+      el.style.cssText = 'position:absolute;left:0;top:0;pointer-events:none';
+      const shut = this.pending?.closed ?? (this.pending ? ink : this.tool(look.closed));
+      this.draft = { tool: this.mode, pts: [], ink, shut, el, path: el.appendChild(svgEl('path', inkAttrs(ink))) };
+      this.layer.append(el);
+    }
+    g.start = this.local(e);
+  }
+
+  // Point p onto the line being placed, unless it is on the last one (the second press of a double-click).
+  addPoint(p) {
+    const last = this.draft.pts.at(-1);
+    if (!last || Math.hypot(p.x - last.x, p.y - last.y) * this.scale() > NEAR) this.draft.pts.push({ x: p.x, y: p.y });
+  }
+
+  // The pointer moving with the button down: Freeform: Shape draws freehand once it has moved 3 screen px, from the press, a point
+  // every 1.5 board px as the pen samples; otherwise the line shows to the pointer.
+  extendPath(g, e) {
+    const d = this.draft;
+    if (!d) return;
+    if (d.tool !== 'freeform' || (!g.free && Math.hypot(e.clientX - g.x, e.clientY - g.y) < 3)) return this.drawPath(this.local(e));
+    if (!g.free) this.addPoint(g.start);
+    g.free = true;
+    const pad = d.ink.width / 2;
+    for (const ev of e.getCoalescedEvents?.() ?? [e]) {
+      const p = this.local(ev);
+      const last = d.pts.at(-1);
+      if (Math.hypot(p.x - last.x, p.y - last.y) < 1.5) continue;
+      d.pts.push(p);
+      g.box = boxUnion(g.box, { x: p.x - pad, y: p.y - pad, w: 2 * pad, h: 2 * pad }); // the canvas grows live, as for the pen
+    }
+    this.drawPath();
+  }
+
+  // The release: a click (or a Curve press dragged and let go) on the first point of three or more closes the line, as does a
+  // freehand drag ending there; after any other freehand drag the line goes on, and any other release adds its point.
+  releasePath(g, e) {
+    const d = this.draft;
+    if (!d) return;
+    const at = this.local(e);
+    const first = d.pts[0];
+    if (d.pts.length > 2 && Math.hypot(at.x - first.x, at.y - first.y) * this.scale() <= NEAR) return this.endPath(true);
+    if (g.free) return;
+    this.addPoint(at);
+    this.drawPath();
+  }
+
+  // The line being placed, drawn through its points and on to the pointer `hover` (board px), if any.
+  drawPath(hover = null) {
+    const d = this.draft;
+    if (!d) return;
+    const pts = hover ? [...d.pts, hover] : d.pts;
+    d.path.setAttribute('d', pts.length > 1 ? segmentsD(pathSegments(pts, d.tool === 'curve'), false) : pts.length ? smoothPath(pts) : '');
+  }
+
+  // Ends the line being placed: open, or `close`d (in its closed look's fill); it becomes the selection. Fewer than two points leave nothing.
+  endPath(close = false) {
+    const item = this.pathItem(close);
+    if (!item) return;
+    this.items.push(item);
+    this.spawned([item.id]);
+    this.commit(true);
+  }
+
+  // The line being placed as a 'path' shape item in its open look, or its closed look (its fill) when closed (null: under two
+  // points); it is placed no more.
+  pathItem(close) {
+    const d = this.draft;
+    if (!d) return null;
+    this.draft = null;
+    d.el.remove();
+    const shut = close && d.pts.length > 2;
+    const look = shut ? d.shut : d.ink;
+    const geo = pathShape(d.pts, { smooth: d.tool === 'curve', close: shut, pad: look.width / 2 });
+    return geo && { id: newId(), type: 'shape', ...look, shape: 'path', ...geo, fill: shut ? look.fill : 'none' };
   }
 
   // Hit-test along the pointer's path (not just at the sampled points) so fast drags miss nothing.
@@ -2609,12 +3022,33 @@ export class Board {
     };
   }
 
-  // A shape label grows its shape while typed: the height that holds it inside the kind's label inset (a lane's band is
-  // fixed). Its bound connectors follow live.
+  // Resize shape to fit text for shape `item`: its own autoFit, else its host's (host.autoFit), else a board's (it grows).
+  fitsText(item) {
+    return item.autoFit ?? this.host.autoFit ?? true;
+  }
+
+  // Resize shape to fit text turned on or off for the selected shapes (the label options, tool search, Format Shape's twin): turned
+  // on, each grows at once to hold its label as drawn, as in Word. One undo step.
+  fitText(on) {
+    // First, as editLabel: a label being typed is kept, so its drawn height is the one measured, and its commit re-renders,
+    // replacing the item objects the selection is read from.
+    this.finishEdit();
+    const shapes = this.selectedItems().filter((i) => i.type === 'shape');
+    if (!shapes.length) return false;
+    for (const item of shapes) {
+      item.autoFit = on;
+      if (on) item.h = labelFit(item, this.itemEl(item.id)?.querySelector(':scope > .wb-label > .wb-text')?.offsetHeight ?? null);
+    }
+    this.commit();
+    return true;
+  }
+
+  // A shape label grows its shape while typed (labelFit), unless the shape says Do not Autofit (autoFit false, a Word shape's
+  // a:noAutofit): then it keeps its size and the text runs past it, as in Word. A shape with no autoFit takes its host's
+  // (host.autoFit: a Document's own canvas keeps Word's Do not Autofit), else a board's: it grows. Its bound connectors follow live.
   growLabel(item, text) {
-    const k = kindOf(item.shape);
-    if (k?.band) return;
-    const need = Math.ceil(text.offsetHeight / (1 - 2 * (k?.labelInset?.y ?? 0.08)));
+    if (!this.fitsText(item)) return;
+    const need = labelFit(item, text.offsetHeight);
     if (need <= item.h) return;
     item.h = need;
     placeItem(this.itemEl(item.id), item);
@@ -2699,19 +3133,24 @@ export class Board {
       this.finishEdit();
       e.preventDefault();
       this.dom.focus({ preventScroll: true });
-      if (['text', 'image'].includes(this.mode) || (this.mode === 'shape' && this.pending)) return this.place(e);
-      this.startGesture(e, this.mode, []);
+      if (['text', 'image'].includes(this.mode) || (this.mode === 'shape' && this.pending?.items)) return this.place(e);
+      this.startGesture(e, this.mode === 'line' ? 'connector' : this.mode, []); // a free line is a connector item (newLine)
       if (this.mode === 'pen') this.startStroke(e);
+      else if (PATH_TOOLS.includes(this.mode)) this.pressPath(this.gesture, e);
       else if (this.mode === 'shape') this.startShape(e);
-      else if (this.mode === 'connector') this.startConnector(e);
+      else if (this.mode === 'connector' || this.mode === 'line') this.startConnector(e);
       else this.eraseTo(Object.assign(this.gesture, { erased: new Set() }), e.clientX, e.clientY);
       this.showGuides(this.gesture.guides);
       return;
     }
-    if (e.target.parentElement === this.groupEl) { // the group's rotate handle (§6d group turn)
+    if (e.target.parentElement === this.groupEl) { // the group's resize handles (§6c group resize) and rotate zones (§6d group turn)
       this.finishEdit();
       this.dom.focus({ preventScroll: true });
-      this.startGesture(e, 'turn', this.selectedItems());
+      const corner = [...CORNERS, ...EDGES].find((c) => e.target.classList.contains(`wb-h-${c}`));
+      this.startGesture(e, corner ? 'groupResize' : 'turn', this.selectedItems());
+      const g = this.gesture;
+      // Heights at the press (text reflows as it narrows); a corner keeps the aspect when an item that keeps its own is in it.
+      if (corner) Object.assign(g, { corner, heights: g.starts.map((s) => this.itemHeight(s)), aspect: g.moving.some((i) => !['shape', 'text', 'connector'].includes(i.type)) });
       return;
     }
     const itemEl = e.target.closest('.wb-item');
@@ -2722,7 +3161,7 @@ export class Board {
     }
     // A resize handle (corner or edge) or a rotate zone ('rot').
     const corner = [...CORNERS, ...EDGES].find((c) => e.target.classList.contains(`wb-h-${c}`))
-      ?? (e.target.classList.contains('wb-rot') ? 'rot' : e.target.classList.contains('wb-tip') ? 'tip' : undefined);
+      ?? (e.target.classList.contains('wb-rot') ? 'rot' : e.target.classList.contains('wb-tip') ? 'tip' : e.target.classList.contains('wb-adj') ? 'adjust' : undefined);
     const id = itemEl.dataset.id;
     this.finishEdit();
     if (!this.items.some((i) => i.id === id)) return; // a new text left untouched went (finishEdit)
@@ -2745,8 +3184,8 @@ export class Board {
     // A label of the one selected connector drags along / beside its path (§6d; the pointer keeps its grip on it); in a
     // multi-selection it moves the group.
     const slot = !corner && this.selectedId === id && e.target.closest('.wb-conn > .wb-text[data-slot]')?.dataset.slot;
-    this.startGesture(e, slot ? 'label' : crop ? 'crop' : corner === 'rot' ? 'rotate' : corner === 'tip' ? 'tip' : corner ? 'resize' : 'move');
-    Object.assign(this.gesture, { corner, copy: !corner && !slot && e.altKey, click, slot, tip: Number(e.target.dataset.tip) });
+    this.startGesture(e, slot ? 'label' : crop ? 'crop' : corner === 'rot' ? 'rotate' : corner === 'tip' ? 'tip' : corner === 'adjust' ? 'adjust' : corner ? 'resize' : 'move');
+    Object.assign(this.gesture, { corner, copy: !corner && !slot && e.altKey, click, slot, tip: Number(e.target.dataset.tip), adj: Number(e.target.dataset.adj) });
     const c = slot && this.selected();
     if (c?.lps?.[slot]) this.gesture.grab = { x: c.x + c.lps[slot].x - this.gesture.p0.x, y: c.y + c.lps[slot].y - this.gesture.p0.y };
   };
@@ -2768,7 +3207,8 @@ export class Board {
     const kind = part.classList.contains('wb-end') ? 'end' : part.classList.contains('wb-wp') ? 'wp' : 'seg';
     this.startGesture(e, kind, [item]);
     const g = this.gesture;
-    Object.assign(g, { endK: Number(part.dataset.end), k: Number(part.dataset.k), exclude: this.noTargets() });
+    Object.assign(g, { endK: Number(part.dataset.end), k: Number(part.dataset.k) });
+    if (kind === 'end') Object.assign(g, { free: !!item.free, other: this.geo.get(id)?.tipsAbs[1 - g.endK] }); // Shift's steps turn about the other end
     if (kind === 'seg') {
       g.points0 = (item.points ?? []).map((p) => ({ ...p }));
       if ((item.route ?? 'ortho') === 'ortho') {
@@ -2817,7 +3257,7 @@ export class Board {
       moving, // the items the gesture changes
       starts: moving.map((i) => ({ ...i })), // the same at the start
       group: groupBox(moving.map((i) => this.itemBox(i))), // their box at the start
-      boxes: others.filter((i) => !i.hidden).map((i) => this.itemBox(i)), // snap targets (a locked item is one, §6 Layer fields)
+      boxes: this.snapTargets(others), // snap targets (only those in view count, snapBox)
       guides: [],
       last: null, // pointer state of the last move, replayed while auto-scrolling
       off: { x: 0, y: 0 }, // see local()
@@ -2864,11 +3304,23 @@ export class Board {
     }
   }
 
+  // Draws item's element again in place (a shape's SVG is drawn for its own size and flips, so placeItem alone would stretch it);
+  // the selection class and, for the one selected item, its handles come with it.
+  redrawEl(item) {
+    const old = this.itemEl(item.id);
+    if (!old) return;
+    const el = this.addEl(item);
+    el.classList.toggle('wb-sel', this.sel.has(item.id));
+    if (item.id === this.selectedId) this.decorate(el, item);
+    old.replaceWith(el);
+  }
+
   onPointerMove = (e) => {
     const g = this.gesture;
     if (!g) {
       // The connector tool shows where a drag would start sticking.
-      if (this.mode === 'connector') this.showTarget(e.altKey ? null : hitTarget(this.items, this.local(e), { exclude: this.noTargets(), tol: 12 / this.scale(), measure: this.measure }));
+      if (this.mode === 'connector') this.showStick(this.stickAt(e));
+      if (this.draft) this.drawPath(this.local(e)); // a line being placed runs on to the pointer
       return this.refreshScale(); // the zoom may have changed since the handles were drawn
     }
     if (e.pointerId !== g.pointerId) return;
@@ -2880,8 +3332,9 @@ export class Board {
   // One gesture step for pointer event `e` (or the last pointer state, while auto-scrolling).
   follow(g, e) {
     if (g.kind === 'marquee') return this.followMarquee(g, e);
-    g.guides = [];
+    [g.guides, g.snap] = [[], null];
     if (g.kind === 'pen') this.extendStroke(g, e);
+    else if (PATH_TOOLS.includes(g.kind)) this.extendPath(g, e);
     else if (g.kind === 'shape') this.extendShape(g, e);
     else if (g.kind === 'connector') this.extendConnector(g, e);
     else if (g.kind === 'eraser') this.eraseTo(g, e.clientX, e.clientY);
@@ -2893,6 +3346,7 @@ export class Board {
       this.refreshConnectors(g);
     }
     this.autoSize(g.box, g); // live; the commit on pointerup stores it
+    this.refreshScale(); // the zoom may change mid-gesture: guides and handles keep their screen size
     this.showGuides(g.guides);
     this.placeGroupBox();
   }
@@ -2950,7 +3404,6 @@ export class Board {
   // Move: every selected item, by the move of their group box, which snaps. Resize / crop: the one selected item.
   followItem(g, e, dx, dy) {
     if (!g.moving.length) return;
-    let box; // the changed box: its edges keep the guides
     if (g.kind === 'move') {
       if (g.copy && !g.copied) {
         // Alt + drag: copies move, the originals stay.
@@ -2964,34 +3417,44 @@ export class Board {
       }
       const lock = e.shiftKey ? (Math.abs(dx) >= Math.abs(dy) ? 'y' : 'x') : null; // Shift: that axis stays put
       const b = g.group;
-      let x = b.x + (lock === 'x' ? 0 : dx);
-      let y = b.y + (lock === 'y' ? 0 : dy);
-      if (lock !== 'x') x += this.snapHit(g, 'x', [x, x + b.w / 2, x + b.w], e)?.d ?? 0;
-      if (lock !== 'y') y += this.snapHit(g, 'y', [y, y + b.h / 2, y + b.h], e)?.d ?? 0;
-      const d = { dx: Math.round(x) - b.x, dy: Math.round(y) - b.y };
+      const raw = { ...b, x: b.x + (lock === 'x' ? 0 : dx), y: b.y + (lock === 'y' ? 0 : dy) };
+      const all = [0, 1, 2];
+      const hits = this.snapBox(g, e, raw, { x: lock === 'x' ? [] : all, y: lock === 'y' ? [] : all }, { spacing: true });
+      // Then the edge hold (§6c, edgeHold): not with Ctrl, on a locked axis or with the frame bound to a moved item. A held axis
+      // lands exactly on the frame's edge and that edge becomes its snap (its guide shows); on the ramp it has none.
+      const [f, k] = [this.frame, this.scale()];
+      const hold = !e.ctrlKey && !(f.item && g.starts.some((i) => i.id === f.item));
+      const to = (axis) => {
+        const at = hits[axis] ? raw[axis] + hits[axis].d : Math.round(raw[axis]); // a snapped axis lands exactly
+        const n = axis === 'x' ? 'w' : 'h';
+        const v = hold && lock !== axis ? edgeHold(at, b[axis], b[n], f[axis], f[axis] + f[n], k) : at;
+        const side = v === f[axis] ? 0 : v === f[axis] + f[n] - b[n] ? 2 : -1;
+        if (v !== at) hits[axis] = side < 0 ? null : { d: v - raw[axis], at: f[axis] + (side && f[n]), cls: 'edge', line: side, target: 'frame', tline: side };
+        return r2(v);
+      };
+      const d = { dx: r2(to('x') - b.x), dy: r2(to('y') - b.y) };
       g.moving.forEach((i, k) => {
-        Object.assign(i, moveItem(g.starts[k], d.dx, d.dy));
+        const m = moveItem(g.starts[k], d.dx, d.dy);
+        Object.assign(i, m, { x: r2(m.x), y: r2(m.y) });
         const el = this.itemEl(i.id);
         if (el) placeItem(el, i);
       });
-      box = { ...b, x: b.x + d.dx, y: b.y + d.dy };
-    } else if (g.kind === 'turn') {
-      this.turnGroup(g, e);
-      box = groupBox(g.moving.map((i) => this.itemBox(i)));
-    } else {
+      this.guideSnap(g, { ...b, x: b.x + d.dx, y: b.y + d.dy }, 'move');
+    } else if (g.kind === 'turn') this.turnGroup(g, e);
+    else if (g.kind === 'groupResize') this.resizeGroup(g, dx, dy, e);
+    else {
       const item = g.moving[0];
       if (g.kind === 'crop') this.cropItem(item, g, dx, dy, e);
       else if (g.kind === 'rotate') this.rotateItem(item, g, e);
       else if (g.kind === 'tip') this.tipItem(item, g, e);
+      else if (g.kind === 'adjust') this.adjustItem(item, g, e);
       else this.resizeItem(item, g, dx, dy, e);
       const el = this.itemEl(item.id);
-      placeItem(el, item);
+      if (item.type === 'shape' && ['resize', 'tip', 'adjust'].includes(g.kind)) this.redrawEl(item); // its drawing, handles and ends follow
+      else placeItem(el, item);
       if (g.kind === 'crop') placeCrop(el.querySelector('img'), item.crop);
-      box = this.itemBox(item);
+      if (g.kind === 'resize' || g.kind === 'crop') this.guideSnap(g, this.itemBox(item), 'resize'); // after the clamps
     }
-    // A guide stays only while its snap survived (a minimum size, the picture's edges).
-    const edges = { x: [box.x, box.x + box.w / 2, box.x + box.w], y: [box.y, box.y + box.h / 2, box.y + box.h] };
-    g.guides = g.guides.filter(({ axis, at }) => edges[axis].some((v) => Math.abs(v - at) < 0.6));
     this.emit(); // the ribbon follows
   }
 
@@ -3016,18 +3479,18 @@ export class Board {
       return;
     }
     const [sx, sy] = [g.corner.includes('w') ? -1 : g.corner.includes('e') ? 1 : 0, g.corner.includes('n') ? -1 : g.corner.includes('s') ? 1 : 0];
-    const ax = sx > 0 ? start.x : start.x + start.w; // the fixed corner
-    const size = (n, min) => Math.max(min, Math.round(n));
-    // The size whose moving edge (fixed edge a, direction s) lands on a snap line.
-    const snapSize = (axis, a, s, n) => n + s * (this.snapHit(g, axis, [a + s * n], e)?.d ?? 0);
+    const fixed = { x: sx < 0 ? start.x + start.w : start.x, y: sy < 0 ? start.y + start.h : start.y }; // the fixed corner (edge)
+    const [ax, ay] = [fixed.x, fixed.y];
+    // A size at least `min`: exact when its edge snapped (n: snapSize's), else whole px.
+    const size = (n, axis, min) => Math.max(min, n.hits[axis] ? n[axis] : Math.round(n[axis]));
     if (item.type === 'text') {
       // Width only.
-      item.w = size(snapSize('x', ax, sx, start.w + sx * dx), Math.min(MIN_ITEM, start.w));
-      item.x = sx > 0 ? ax : ax - item.w;
+      const n = this.snapSize(g, e, fixed, { x: sx, y: 0 }, { x: start.w + sx * dx, y: this.itemHeight(start) });
+      item.w = size(n, 'x', Math.min(MIN_ITEM, start.w));
+      item.x = sx > 0 ? ax : r2(ax - item.w);
       placeItem(this.itemEl(item.id), item);
       return;
     }
-    const ay = sy > 0 ? start.y : start.y + start.h;
     const [w, h] = [start.w + sx * dx, start.h + sy * dy]; // the box the pointer asks for (negative: past the fixed side)
     const flip = mirrors(item); // past the fixed side the box goes on there, mirrored (§6d flips)
     let [ex, ey] = [sx, sy]; // the side the box grows to from the fixed corner (edge)
@@ -3037,20 +3500,57 @@ export class Board {
       // side only, so thin strokes and dots keep their shape.
       let p = (start.w * (w * start.w + h * start.h)) / (start.w ** 2 + start.h ** 2); // the pointer on the diagonal, as a width
       if (flip && p < 0) [p, ex, ey] = [-p, -sx, -sy];
-      const k = snapSize('x', ax, ex, p) / start.w;
+      const n = this.snapSize(g, e, fixed, { x: ex, y: ey }, { x: p, y: (p * start.h) / start.w }, true);
+      const k = n.x / start.w;
       const s = Math.max(Math.min(1, MIN_ITEM / Math.max(start.w, start.h)), k);
-      item.w = Math.max(1, Math.round(start.w * s));
-      item.h = Math.max(1, Math.round(start.h * s));
+      const exact = n.hits.x && s === k; // snapped and not held at the minimum
+      item.w = exact ? n.x : Math.max(1, Math.round(start.w * s));
+      item.h = Math.max(1, exact ? r2(start.h * s) : Math.round(start.h * s));
     } else {
       // An edge handle (sx or sy 0) leaves the other side as it was.
       if (flip && w < 0) ex = -sx;
       if (flip && h < 0) ey = -sy;
-      item.w = sx ? size(snapSize('x', ax, ex, flip ? Math.abs(w) : w), Math.min(MIN_ITEM, start.w)) : start.w;
-      item.h = sy ? size(snapSize('y', ay, ey, flip ? Math.abs(h) : h), Math.min(MIN_ITEM, start.h)) : start.h;
+      const n = this.snapSize(g, e, fixed, { x: ex, y: ey }, { x: sx ? (flip ? Math.abs(w) : w) : start.w, y: sy ? (flip ? Math.abs(h) : h) : start.h });
+      item.w = sx ? size(n, 'x', Math.min(MIN_ITEM, start.w)) : start.w;
+      item.h = sy ? size(n, 'y', Math.min(MIN_ITEM, start.h)) : start.h;
     }
-    item.x = ex > 0 ? ax : ex < 0 ? ax - item.w : start.x;
-    item.y = ey > 0 ? ay : ey < 0 ? ay - item.h : start.y;
+    item.x = ex > 0 ? ax : ex < 0 ? r2(ax - item.w) : start.x;
+    item.y = ey > 0 ? ay : ey < 0 ? r2(ay - item.h) : start.y;
     if (flip) setMirror(item, start, ex !== sx, ey !== sy);
+  }
+
+  // A group resize handle (§6c): the start group box resized with the opposite corner (edge) fixed, every selected item mapped
+  // into it (resizeWithGroup). A corner keeps the box's aspect when the selection holds an image, stroke or canvas, Shift inverts
+  // (resizeItem's rule); an edge changes one axis. Stops at the minimum (an edge: MIN_ITEM per side, or the start size if smaller;
+  // a corner keeping the aspect: MIN_ITEM on the larger side only, as resizeItem) and never goes past the fixed side. The moving
+  // edges snap as resizeItem's do; their guides show for the box after the minimum.
+  resizeGroup(g, dx, dy, e) {
+    const b = g.group;
+    const [sx, sy] = [g.corner.includes('w') ? -1 : g.corner.includes('e') ? 1 : 0, g.corner.includes('n') ? -1 : g.corner.includes('s') ? 1 : 0];
+    const fixed = { x: sx < 0 ? b.x + b.w : b.x, y: sy < 0 ? b.y + b.h : b.y }; // the fixed corner (edge)
+    const [mw, mh] = [Math.min(MIN_ITEM, b.w), Math.min(MIN_ITEM, b.h)];
+    let [w, h] = [b.w, b.h];
+    if (sx && sy && g.aspect !== e.shiftKey) { // one scale: the pointer on the diagonal as a width, snapped on x
+      const p = (b.w * ((b.w + sx * dx) * b.w + (b.h + sy * dy) * b.h)) / (b.w ** 2 + b.h ** 2);
+      const n = this.snapSize(g, e, fixed, { x: sx, y: sy }, { x: p, y: (p * b.h) / b.w }, true);
+      const k = n.x / b.w;
+      const s = Math.max(Math.min(1, MIN_ITEM / Math.max(b.w, b.h)), k);
+      [w, h] = n.hits.x && s === k ? [n.x, r2(b.h * s)] : [b.w * s, b.h * s];
+    } else {
+      const n = this.snapSize(g, e, fixed, { x: sx, y: sy }, { x: b.w + sx * dx, y: b.h + sy * dy });
+      if (sx) w = Math.max(mw, n.x);
+      if (sy) h = Math.max(mh, n.y);
+    }
+    const box = { x: sx < 0 ? r2(fixed.x - w) : b.x, y: sy < 0 ? r2(fixed.y - h) : b.y, w, h };
+    g.moving.forEach((i, k) => {
+      delete i.fit; // text: a width set by hand (resizeWithGroup drops it)
+      Object.assign(i, resizeWithGroup(g.starts[k], b, box, g.heights[k]));
+      const el = this.itemEl(i.id);
+      if (!el) return;
+      if (i.type === 'shape') this.redrawEl(i); // drawn again: its outline and a line's ends, not its box, follow the resize
+      else placeItem(el, i);
+    });
+    this.guideSnap(g, box, 'resize');
   }
 
   // A line's or arrow's tip handle (§6d tips): that end goes to the pointer (snapped; Shift: 45° steps about the other end),
@@ -3058,9 +3558,18 @@ export class Board {
   tipItem(item, g, e) {
     const s = g.starts[0];
     const ends = lineEnds(s);
-    const box = shapeBox(ends[g.tip ? 0 : 1], this.pointAt(e, g), e.shiftKey, s);
+    const box = shapeBox(ends[g.tip ? 0 : 1], this.pointAt(e, g), e.shiftKey, s, true);
     if (!g.tip) [box.flipX, box.flipY] = [!box.flipX, !box.flipY]; // drawn from the fixed end: the start moved
     Object.assign(item, box, { rot: 0 });
+    this.guideSnap(g, { ...lineEnds(item)[g.tip ? 1 : 0], w: 0, h: 0, point: true }, 'point'); // where the tip went (Shift: 45° steps)
+  }
+
+  // An adjust handle (a preset's yellow dot): the pointer in the item's own unturned box sets the adjust values the handle drags.
+  adjustItem(item, g, e) {
+    const c = { x: item.x + item.w / 2, y: item.y + item.h / 2 };
+    const p = rotatePoint(this.local(e), c, -rotOf(item));
+    const av = adjustedAv(g.starts[0], g.adj, { x: p.x - item.x, y: p.y - item.y });
+    if (av) item.av = av;
   }
 
   // The rotate handle (§6d): the item turns by the angle the pointer has turned about its centre since the press, in whole
@@ -3085,13 +3594,20 @@ export class Board {
     const [fw, fh] = [s.w / c.w, s.h / c.h]; // the whole picture on the board
     const [x0, y0] = rot ? [0, 0] : [s.x, s.y]; // a turned image: its own frame, from its top-left
     const [ox, oy] = [x0 - c.x * fw, y0 - c.y * fh];
-    const edge = (axis, v, min, max) => fit(Math.round(v + ((!rot && this.snapHit(g, axis, [v], e)?.d) || 0)), min, max);
     let [l, t, r, b] = [x0, y0, x0 + s.w, y0 + s.h];
     const [mw, mh] = [Math.min(MIN_ITEM, s.w), Math.min(MIN_ITEM, s.h)];
-    if (g.corner.includes('w')) l = edge('x', l + dx, ox, r - mw);
-    else if (g.corner.includes('e')) r = edge('x', r + dx, l + mw, ox + fw);
-    if (g.corner.includes('n')) t = edge('y', t + dy, oy, b - mh);
-    else if (g.corner.includes('s')) b = edge('y', b + dy, t + mh, oy + fh);
+    // The moving edges (line indexes, snap.mjs) at the pointer, snapped together (not while turned), then held to the picture.
+    const [mx, my] = [g.corner.includes('w') ? 0 : g.corner.includes('e') ? 2 : -1, g.corner.includes('n') ? 0 : g.corner.includes('s') ? 2 : -1];
+    if (mx === 0) l += dx;
+    else if (mx === 2) r += dx;
+    if (my === 0) t += dy;
+    else if (my === 2) b += dy;
+    const hits = rot ? {} : this.snapBox(g, e, { x: l, y: t, w: r - l, h: b - t }, { x: mx < 0 ? [] : [mx], y: my < 0 ? [] : [my] });
+    const edge = (axis, v, min, max) => fit(hits[axis] ? r2(v + hits[axis].d) : Math.round(v), min, max);
+    if (mx === 0) l = edge('x', l, ox, r - mw);
+    else if (mx === 2) r = edge('x', r, l + mw, ox + fw);
+    if (my === 0) t = edge('y', t, oy, b - mh);
+    else if (my === 2) b = edge('y', b, t + mh, oy + fh);
     const crop = { x: (l - ox) / fw, y: (t - oy) / fh, w: (r - l) / fw, h: (b - t) / fh };
     if ([crop.x, crop.y, 1 - crop.w, 1 - crop.h].every((v) => Math.abs(v) < 1e-6)) delete item.crop;
     else item.crop = crop;
@@ -3123,6 +3639,7 @@ export class Board {
 
   endGesture(g, e) {
     if (g.kind === 'pen') return this.finishStroke(g);
+    if (PATH_TOOLS.includes(g.kind)) return this.releasePath(g, e);
     if (g.kind === 'shape') return this.finishShape(g);
     if (g.kind === 'marquee') return this.finishMarquee(g, e.shiftKey);
     if (g.kind === 'eraser') {
@@ -3147,6 +3664,7 @@ export class Board {
   };
 
   onDblClick = (e) => {
+    if (this.draft) return this.endPath(); // a path tool's double-click ends its line, open
     if (this.mode) return;
     // Pointer capture retargets the dblclick to the board, so hit-test instead of using e.target.
     const hit = document.elementFromPoint(e.clientX, e.clientY);
@@ -3218,10 +3736,12 @@ export class Board {
       return;
     }
     const arrow = { ArrowLeft: 'w', ArrowRight: 'e', ArrowUp: 'n', ArrowDown: 's' }[e.key];
-    // Escape: end a text edit (above) → leave the tool → step out of a group (§6c Groups) → deselect.
+    // Escape: end a text edit (above) → end the line a path tool is placing, open → leave the tool → step out of a group (§6c
+    // Groups) → deselect.
     if (e.key === 'Escape' && (this.mode || this.sel.size)) {
       e.preventDefault();
-      if (this.mode) this.setMode(null);
+      if (this.draft) this.endPath();
+      else if (this.mode) this.setMode(null);
       else if (this.scope) this.stepOut();
       else this.select(null);
       this.dom.focus({ preventScroll: true });
@@ -3330,11 +3850,9 @@ export class Board {
       'board.shape': () => this.setMode('shape'),
       'board.connector': () => this.setMode('connector'),
       'board.keepTool': () => this.setKeepTool(!keepTool),
-      // B, O, L, Shift+L: the shape tool with that kind (S keeps the last kind used)
-      ...Object.fromEntries(Object.entries(SHAPE_KEYS).map(([shape, id]) => [id, () => {
-        this.setShapeTool({ shape });
-        this.setMode('shape');
-      }])),
+      // B, O: the shape tool with that kind (S keeps the last kind used); L, Shift+L: the Line and Arrow tools (free lines)
+      ...Object.fromEntries(Object.entries(SHAPE_KEYS).map(([shape, id]) => [id,
+        () => (LINE_KINDS[shape] ? this.armLine(shape === 'arrow') : armTool(this, { kind: shape }))])),
     };
     const id = keyAmong(Object.keys(tools), e);
     if (!id) return false;
@@ -3352,6 +3870,11 @@ export class Board {
 
   destroy() {
     // Listeners live on this.dom (pointer capture keeps drags on it); the shared ones serve whichever boards are live.
+    const line = this.pathItem(false); // a line being placed is kept, open (a press outside the canvas being edited)
+    if (line) {
+      this.items.push(line);
+      this.commit(true);
+    }
     this.destroyed = true;
     this.gesture = null;
     this.editingId = this.editingSlot = null;
@@ -3364,7 +3887,41 @@ export class Board {
 // ---------------------------------------------------------------------------------------------
 // Rasterizer
 
-export async function rasterizeWhiteboard(attrs, { width, theme, scale = 2 }) {
+// One frame, or a timer when the window draws none: a hidden or minimised window (even one minimised part way through)
+// never runs the frame callback, and an agent's render hung on it (2026-10-24).
+export const nextFrame = () => new Promise((resolve) => { requestAnimationFrame(resolve); setTimeout(resolve, 100); });
+
+// `el` (laid out off screen) → PNG blob, shared by the board and plan chart exports. html-to-image's toBlob waits a bare
+// animation frame inside, so only its SVG step is used and the picture is drawn here; nothing global is patched, so
+// overlapping exports cannot affect each other. The canvas keeps html-to-image's 16384 px side limit.
+export async function rasterize(el, { width, height, pixelRatio, backgroundColor, ...opts }) {
+  const img = new Image();
+  img.src = await toSvg(el, { width, height, backgroundColor, skipFonts: true, ...opts }); // boards and charts use system fonts only
+  await img.decode();
+  await nextFrame();
+  const ratio = Math.min(pixelRatio, 16384 / Math.max(width, height));
+  const canvas = document.createElement('canvas');
+  canvas.width = width * ratio;
+  canvas.height = height * ratio;
+  const g = canvas.getContext('2d');
+  if (backgroundColor) {
+    g.fillStyle = backgroundColor;
+    g.fillRect(0, 0, canvas.width, canvas.height);
+  }
+  g.drawImage(img, 0, 0, canvas.width, canvas.height);
+  return new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
+}
+
+/** Pixels per CSS px of a rendered export, a picture that leaves the app, by `use`. 'file' (a file or an upload: the forum push and
+ * its preview, a canvas or plan chart written into a .docx, board.render): 2, so a file is the same whichever screen made it, and
+ * sharp on a denser screen or at 200% zoom. 'clipboard' (Copy as picture, Copy as PNG): this screen's scale, 2 at least, as the
+ * paste lands on this screen. Chromium folds the window zoom (settings.uiScale, a zoom level: 1.2 ** level) into
+ * devicePixelRatio, so it is divided out: the app's UI scale never changes a copy. In a browser without uiScale its own zoom stays. */
+export const exportDensity = (use = 'file') => (use === 'clipboard'
+  ? Math.max(2, (globalThis.devicePixelRatio || 1) / 1.2 ** (getState().settings?.uiScale || 0)) : 2);
+
+// A board's picture: its items drawn from their own sources (a vector picture's SVG redraws at `scale`), `scale` pixels per px.
+export async function rasterizeWhiteboard(attrs, { width, theme, scale = exportDensity() }) {
   injectStyle();
   const height = attrs.height;
   const host = document.createElement('div');
@@ -3375,24 +3932,18 @@ export async function rasterizeWhiteboard(attrs, { width, theme, scale = 2 }) {
   board.append(...routed(attrs.items).filter((i) => !i.hidden).map((i) => itemElement(i, theme, boardSurface(attrs.bg, theme)))); // routed first: a hidden item still binds ends
   host.append(board);
   document.body.append(host);
-  // html-to-image waits an animation frame for its picture, and a hidden or minimized window draws none (an agent's render
-  // hung there, 2026-10-24): a timer stands in while it is hidden.
-  const raf = window.requestAnimationFrame;
-  if (document.hidden) window.requestAnimationFrame = (f) => setTimeout(() => f(performance.now()), 0);
   try {
     await Promise.all([...board.querySelectorAll('img')].map((img) => img.decode().catch(() => {})));
-    const blob = await toBlob(board, {
+    const blob = await rasterize(board, {
       pixelRatio: scale,
       width,
       height,
       backgroundColor: resolveBg(attrs.bg, theme) ?? undefined,
-      skipFonts: true, // items only use system fonts
       imagePlaceholder: 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', // unfetchable <img> in old drafts
     });
     if (!blob) throw new Error('Board rasterization produced no image');
     return { blob, width, height };
   } finally {
-    window.requestAnimationFrame = raf;
     host.remove();
   }
 }

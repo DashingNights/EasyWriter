@@ -1,0 +1,4 @@
+/* Table Design (docs/plans/word/plan.md §3 table-design). The previews draw with inline styles (menus are portalled). */
+
+/* Border Sampler is armed: the pointer picks up a border. */
+.page[data-format="document"] .ProseMirror[data-border-sampler] :is(td, th) { cursor: crosshair; }

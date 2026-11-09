@@ -1,10 +1,12 @@
-// The shape list's layout (SPEC §6g, flowchart plan §3.10): Favourites, the registry groups and Prefabs, in the user's order.
-// settings.shapeFavourites = [ref] (the Favourites section in order); settings.shapeOrder = {basic?, flow?, container?,
-// prefabs?: [ref]} (written only once that section is reordered). ref = 'kind:<kind>' | 'prefab:<uuid>'. Pure; inputs are
+// The shape list's layout (SPEC §6g, flowchart plan §3.10): Favourites, the shape library's groups (src/flow/shapes.mjs
+// SHAPE_SECTIONS: the lines, Word's gallery groups, the containers) and Prefabs, in the user's order. A kind sits in its
+// `section` (else its `group`). settings.shapeFavourites = [ref] (the Favourites section in order); settings.shapeOrder =
+// {<section>?: [ref]} (written only once that section is reordered). ref = 'kind:<kind>' | 'prefab:<uuid>'. Pure; inputs are
 // never mutated.
+import { SHAPE_SECTIONS } from '../flow/shapes.mjs';
 import { moveBeside, sortDrafts } from './draft-order.mjs';
 
-export const SECTIONS = ['basic', 'flow', 'container', 'prefabs'];
+export const SECTIONS = [...SHAPE_SECTIONS.map((s) => s.id), 'prefabs'];
 export const kindRef = (kind) => `kind:${kind}`;
 export const prefabRef = (id) => `prefab:${id}`;
 
@@ -13,7 +15,7 @@ const unique = (refs) => [...new Set(refs)];
 // Each section's refs in their default order: registry order; prefabs newest first.
 function groups(kinds, prefabs) {
   const out = Object.fromEntries(SECTIONS.map((s) => [s, []]));
-  for (const k of kinds) out[k.group]?.push(kindRef(k.kind));
+  for (const k of kinds) out[k.section ?? k.group]?.push(kindRef(k.kind));
   out.prefabs = byCreated(prefabs).map((p) => prefabRef(p.id));
   return out;
 }
@@ -22,8 +24,8 @@ const sorted = (refs, order) => sortDrafts(refs.map((id) => ({ id })), order).ma
 /** Every ref that names a registry kind or a listed prefab. */
 export const liveRefs = (kinds, prefabs) => new Set(Object.values(groups(kinds, prefabs)).flat());
 
-/** → [{id, refs, all}]: 'favourites' (refs = the live favourites in order), then each section of SECTIONS without its
- * starred entries. `all` is a section's whole order, starred entries included (a move or an unstar keeps their place);
+/** → [{id, refs, all}]: 'favourites' (refs = the live favourites in order), then each section of SECTIONS that holds a kind (and
+ * Prefabs) without its starred entries. `all` is a section's whole order, starred entries included (a move or an unstar keeps their place);
  * refs missing from a section's saved order come first (a new prefab shows at the top); unknown refs are skipped. */
 export function shapeSections(kinds, prefabs, favs = [], order = {}) {
   const g = groups(kinds, prefabs);
@@ -31,6 +33,7 @@ export function shapeSections(kinds, prefabs, favs = [], order = {}) {
   const starred = unique(favs.filter((r) => live.has(r)));
   const out = [{ id: 'favourites', refs: starred, all: starred }];
   for (const id of SECTIONS) {
+    if (!g[id].length && id !== 'prefabs') continue;
     const all = sorted(g[id], order[id]);
     out.push({ id, refs: all.filter((r) => !starred.includes(r)), all });
   }

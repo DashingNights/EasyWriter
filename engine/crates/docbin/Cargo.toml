@@ -1,0 +1,25 @@
+[package]
+name = "ew-docbin"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "EasyWriter reader for the Word 97-2003 binary file format (.doc, [MS-DOC])"
+
+[lints]
+workspace = true
+
+[dependencies]
+ew-doc = { workspace = true }
+ew-geom = { workspace = true, features = ["image"] }
+cfb = { workspace = true }
+image = { workspace = true }
+miniz_oxide = { workspace = true }
+sha1 = { workspace = true }
+thiserror = { workspace = true }
+log = { workspace = true }
+chrono = { workspace = true }
+
+[dev-dependencies]
+ew-doc = { workspace = true, features = ["test-support"] }
+proptest = { workspace = true }
+serde_json = { workspace = true }

@@ -132,7 +132,41 @@ test('an undone doc attribute step goes back to the base value after a reopen', 
   assert.equal(r.state.doc.attrs.sect, null);
 });
 
-// ---------- suggestions (docs/plans/suggestions.md step 1) ----------
+test('a change outside the history keeps the saved undo steps: it replays outside the history', () => {
+  const s = session(50);
+  s.type('one');
+  s.type(' two');
+  s.dispatch(s.state.tr.insertText('X', 1).setMeta('addToHistory', false)); // like a citation retag: not undoable
+  s.type(' three');
+  let { r, rebuilt } = reopen(s, 50);
+  assert.ok(rebuilt);
+  assert.ok(r.state.doc.eq(s.state.doc));
+  assert.equal(undoDepth(r.state), 3);
+  assert.deepEqual(undoTexts(r), ['Xone two', 'Xone', 'X']);
+  assert.deepEqual(undoTexts(r), undoTexts(s));
+  // After an undo it cannot replay before the undone step: the undo steps stay, the redo step goes.
+  s.cmd(undo);
+  s.dispatch(s.state.tr.setDocAttribute('sect', { w: 612 }).setMeta('addToHistory', false));
+  ({ r, rebuilt } = reopen(s, 50));
+  assert.ok(rebuilt);
+  assert.ok(r.state.doc.eq(s.state.doc));
+  assert.deepEqual([undoDepth(r.state), redoDepth(r.state)], [2, 0]);
+  assert.deepEqual(undoTexts(r), undoTexts(s));
+  // The limit folds it into the base with its step.
+  ({ r, rebuilt } = reopen(s, 1));
+  assert.ok(rebuilt);
+  assert.deepEqual(undoTexts(r), ['Xone']);
+  // A new step after undoing the step it rode on: its undo left it in the doc, so the log starts again there.
+  s.cmd(undo);
+  s.type(' four');
+  s.type(' five');
+  ({ r, rebuilt } = reopen(s, 50));
+  assert.ok(rebuilt);
+  assert.ok(r.state.doc.eq(s.state.doc));
+  assert.deepEqual(undoTexts(r), ['Xone four']);
+});
+
+// ---------- suggestions (docs/wiki/suggestions.md step 1) ----------
 const sgSchema = new Schema({
   nodes: {
     doc: { content: 'block+', attrs: { sect: { default: null }, suggest: { default: null } } },

@@ -8,7 +8,7 @@ import { documentExtensions } from '../src/document/schema.js';
 import * as core from '../src/suggest/core.mjs';
 import { Suggestions, suggestKey, withCall } from '../src/suggest/extension.js';
 
-// Agent edits as suggestions (docs/plans/suggestions.md step 1): records, the converter, normalize, accept and reject.
+// Agent edits as suggestions (docs/wiki/suggestions.md step 1): records, the converter, normalize, accept and reject.
 const DOC_KIT = () => [...documentExtensions(50), Suggestions];
 const FORUM_KIT = () => [StarterKit.configure({ heading: { levels: [1, 2, 3, 4, 5, 6] } }), Canvas, Suggestions]; // codeBlock (marks ''), an atom
 
@@ -520,6 +520,51 @@ test('places: a run of two rewritten paragraphs; deciding every place one by one
   assert.equal(core.places(core.entries(ed2.state.doc)[0], ed2.schema).length, 0);
 });
 
+// The text runs of `ed`'s doc as [text, revision mark name or null, its author].
+const revRuns = (ed) => {
+  const out = [];
+  ed.state.doc.descendants((n) => {
+    const m = n.isText && n.marks.find((x) => x.type.name === 'insertion' || x.type.name === 'deletion');
+    if (n.isText) out.push([n.text, m ? m.type.name : null, m ? m.attrs.author : null]);
+  });
+  return out;
+};
+
+test('with Track Changes on, accepting a suggestion or one place writes the changed words as revisions by Assistant; off, accept is unchanged', () => {
+  const tracked = (...content) => ({ type: 'doc', attrs: { settings: { trackRevisions: true }, people: [] }, content });
+  const ed = editor(DOC_KIT, tracked(p('The quick brown fox'), p('Second line')));
+  agent(ed, call(), (x) => run(x, x.state.tr.insertText('red', 11, 16)));
+  const before = json(ed);
+  accept(ed, core.entries(ed.state.doc).map((e) => e.id));
+  assert.deepEqual(revRuns(ed), [['The quick ', null, null], ['brown', 'deletion', 'Assistant'], ['red', 'insertion', 'Assistant'], [' fox', null, null],
+    ['Second line', null, null]]);
+  assert.equal(hasRecords(ed), false);
+  assert.ok(ed.state.doc.attrs.people.some((x) => x.name === 'Assistant'));
+  ed.commands.undo();
+  assert.equal(json(ed), before);
+  // A whole new paragraph is one insertion.
+  const ed1 = editor(DOC_KIT, tracked(p('One')));
+  agent(ed1, call(), (x) => run(x, x.state.tr.insert(x.state.doc.content.size, x.schema.nodeFromJSON(p('Two')))));
+  accept(ed1, core.entries(ed1.state.doc).map((e) => e.id));
+  assert.deepEqual(revRuns(ed1), [['One', null, null], ['Two', 'insertion', 'Assistant']]);
+  // One place of two: its words become revisions, the other place still waits, then accepts the same way.
+  const ed2 = editor(DOC_KIT, tracked(p('The quick fox jumps over the lazy dog')));
+  agent(ed2, call(), (x) => run(x, x.state.tr.insertText('sleepy', 30, 34).insertText('slow', 5, 10)));
+  const [first] = core.places(core.entries(ed2.state.doc)[0], ed2.schema);
+  run(ed2, core.acceptPlaces(ed2.state, [first.id]));
+  assert.equal(core.edited(ed2.state.doc, core.entries(ed2.state.doc)[0].id), false);
+  assert.match(core.describe(core.entries(ed2.state.doc)[0], ed2.schema), /lazy/);
+  accept(ed2, core.entries(ed2.state.doc).map((e) => e.id));
+  assert.deepEqual(revRuns(ed2), [['The ', null, null], ['quick', 'deletion', 'Assistant'], ['slow', 'insertion', 'Assistant'], [' fox jumps over the ', null, null],
+    ['lazy', 'deletion', 'Assistant'], ['sleepy', 'insertion', 'Assistant'], [' dog', null, null]]);
+  assert.equal(hasRecords(ed2), false);
+  // Track Changes off: no revision marks.
+  const ed3 = editor(DOC_KIT, doc(p('The quick brown fox')));
+  agent(ed3, call(), (x) => run(x, x.state.tr.insertText('red', 11, 16)));
+  accept(ed3, core.entries(ed3.state.doc).map((e) => e.id));
+  assert.deepEqual(revRuns(ed3), [['The quick red fox', null, null]]);
+});
+
 test("places: the user's own typing in a change makes it one decision again, never an agent's place", () => {
   const ed = editor(DOC_KIT, doc(p('The quick brown fox jumps over the lazy dog')));
   agent(ed, call(), (x) => run(x, x.state.tr.insertText('sleepy', 36, 40).insertText('slow', 5, 10)));
@@ -530,4 +575,125 @@ test("places: the user's own typing in a change makes it one decision again, nev
   assert.equal(core.places(now, ed.schema).length, 0);
   assert.equal(core.edited(ed.state.doc, now.id), true);
   assert.deepEqual(core.items(ed.state.doc, ed.schema).map((it) => it.id), [now.id]);
+});
+
+// ---------- Word parity: wrapper units and per-key doc attributes (docs/plans/word/plan.md §1.8, §2.4) ----------
+const WORD_KIT = () => [...documentExtensions(50), Suggestions];
+const cols = (...content) => ({ type: 'columns', attrs: { count: 2 }, content });
+const inner = (ed) => ed.state.doc.child(1);
+
+test('an agent edit inside a columns node records one paragraph; reject and accept as for a top-level block', () => {
+  const base = doc(p('before'), cols(p('one'), p('two'), p('three')), p('after'));
+  const { ed } = roundTrip(WORD_KIT, base, (x) => run(x, x.state.tr.insertText('TWO', at(x, 'two'), at(x, 'two') + 3)), 'a word in a column');
+  const es = core.entries(ed.state.doc);
+  assert.equal(es.length, 1);
+  assert.deepEqual(es[0].nodes.map((n) => n.textContent), ['TWO']);
+  assert.equal(es[0].kind, 'replace');
+  assert.equal(inner(ed).attrs.suggest, null, 'the wrapper carries no record');
+  assert.equal(core.describe(es[0], ed.schema), 'Replace “two” with “TWO”');
+  // Deleting a paragraph inside: a del record on its neighbour inside the wrapper.
+  roundTrip(WORD_KIT, base, (x) => {
+    const from = at(x, 'two') - 1;
+    run(x, x.state.tr.delete(from, from + 5));
+  }, 'a paragraph deleted in a column');
+  // A paragraph added at the end of the columns.
+  roundTrip(WORD_KIT, base, (x) => run(x, x.state.tr.insert(at(x, 'three') + 6, x.schema.nodeFromJSON(p('four')))), 'a paragraph added in a column');
+  // The wrapper's own attributes changed: the whole columns node is the change.
+  const whole = roundTrip(WORD_KIT, base, (x) => run(x, x.state.tr.setNodeMarkup(at(x, 'one') - 2, null, { ...inner(x).attrs, count: 3 })), 'column count');
+  assert.deepEqual(core.entries(whole.ed.state.doc).map((e) => e.nodes[0].type.name), ['columns']);
+  assert.equal(core.describe(core.entries(whole.ed.state.doc)[0], whole.ed.schema), 'Change paragraph formatting');
+  // One round over the paragraph before the columns and a paragraph inside them: each is its own one-block change.
+  const both = roundTrip(WORD_KIT, base, (x) => run(x, x.state.tr.insertText('TWO', at(x, 'two'), at(x, 'two') + 3).insertText('BEFORE', 1, 7)), 'two places');
+  assert.deepEqual(core.entries(both.ed.state.doc).map((e) => e.nodes.map((n) => n.textContent)), [['BEFORE'], ['TWO']]);
+  // A new columns node is one object.
+  const added = roundTrip(WORD_KIT, doc(p('x')), (x) => run(x, x.state.tr.insert(x.state.doc.content.size, x.schema.nodeFromJSON(cols(p('a'), p('b'))))), 'columns added');
+  assert.deepEqual(core.entries(added.ed.state.doc).map((e) => core.describe(e, added.ed.schema)), ['Add columns']);
+});
+
+test('the user types in another paragraph of the columns: the change keeps its one paragraph and rejects alone', () => {
+  const ed = editor(WORD_KIT, doc(p('before'), cols(p('one'), p('two'), p('three')), p('after')));
+  const c = call();
+  agent(ed, c, (x) => run(x, x.state.tr.insertText('TWO', at(x, 'two'), at(x, 'two') + 3)));
+  run(ed, ed.state.tr.insertText('!', at(ed, 'three') + 5)); // the user's own edit next to it
+  assert.deepEqual(core.entries(ed.state.doc).map((e) => e.nodes.length), [1]);
+  reject(ed, c.ids);
+  assert.deepEqual(texts(ed).map((x) => x), ['before', 'onetwothree!', 'after']);
+  assert.equal(hasRecords(ed), false);
+});
+
+test('doc attributes: agent margins, then a user footer edit, then reject keeps the footer', () => {
+  const sect = { w: 595.3, h: 841.9, margin: { top: 72, right: 72, bottom: 72, left: 72, header: 35.4, footer: 35.4, gutter: 0 }, hdr: null, ftr: null };
+  const ed = editor(WORD_KIT, { ...doc(p('one')), attrs: { sect } });
+  const c = call();
+  agent(ed, c, (x) => run(x, x.state.tr.setDocAttribute('sect', { ...x.state.doc.attrs.sect, margin: { ...sect.margin, top: 36, bottom: 36 } })));
+  assert.deepEqual(core.entries(ed.state.doc).map((e) => [e.kind, e.key]), [['attr', 'sect']]);
+  assert.equal(core.describe(core.entries(ed.state.doc)[0], ed.schema), 'Change page setup');
+  const ftr = { default: [p('Page footer')], first: null, even: null };
+  run(ed, ed.state.tr.setDocAttribute('sect', { ...ed.state.doc.attrs.sect, ftr })); // the user's footer, not converted
+  assert.equal(core.edited(ed.state.doc, c.ids[0]), false, 'the margins are as proposed');
+  reject(ed, c.ids);
+  assert.deepEqual(ed.state.doc.attrs.sect.margin, sect.margin);
+  assert.deepEqual(ed.state.doc.attrs.sect.ftr, ftr);
+  assert.equal(ed.state.doc.attrs.suggest, null);
+});
+
+test('doc attributes: one record per call and attribute; reject restores its keys together; skipped attributes are never recorded', () => {
+  const styles = { defaults: {}, list: { Normal: { type: 'paragraph', name: 'Normal' }, Heading1: { type: 'paragraph', name: 'heading 1', run: { size: 20 } } } };
+  const ed = editor(WORD_KIT, { ...doc(p('one')), attrs: { styles } });
+  const c = call();
+  agent(ed, c, (x) => run(x, x.state.tr
+    .setDocAttribute('styles', { ...styles, list: { ...styles.list, Heading1: { ...styles.list.Heading1, run: { size: 18 } }, Quote2: { type: 'paragraph', name: 'Quote 2' } } })));
+  assert.deepEqual(core.entries(ed.state.doc).map((e) => [e.key, core.describe(e, ed.schema)]), [['styles', 'Change styles']]);
+  run(ed, ed.state.tr.setDocAttribute('styles', { ...ed.state.doc.attrs.styles, list: { ...ed.state.doc.attrs.styles.list, Title: { type: 'paragraph', name: 'Title' } } }));
+  reject(ed, c.ids);
+  assert.deepEqual(ed.state.doc.attrs.styles.list.Heading1, styles.list.Heading1);
+  assert.ok(!('Quote2' in ed.state.doc.attrs.styles.list), 'a style the agent added goes');
+  assert.ok(ed.state.doc.attrs.styles.list.Title, "the user's own style stays");
+  const d = call();
+  agent(ed, d, (x) => run(x, x.state.tr.setDocAttribute('props', { core: { title: 'T' } })));
+  assert.equal(d.ids.length, 0);
+  assert.equal(core.pendingCount(ed.state.doc), 0);
+});
+
+test('doc attributes: a landscape change is one record; reject restores width, height and orientation together', () => {
+  const sect = { w: 595, h: 842, orient: 'portrait', margin: { top: 72 } };
+  const ed = editor(WORD_KIT, { ...doc(p('one')), attrs: { sect } });
+  const c = call();
+  agent(ed, c, (x) => run(x, x.state.tr.setDocAttribute('sect', { ...sect, w: 842, h: 595, orient: 'landscape' })));
+  assert.deepEqual(core.entries(ed.state.doc).map((e) => core.describe(e, ed.schema)), ['Change page setup']);
+  // A second call of the group adds the margin to the same record.
+  agent(ed, { ...c, ids: c.ids }, (x) => run(x, x.state.tr.setDocAttribute('sect', { ...x.state.doc.attrs.sect, margin: { top: 36 } })));
+  assert.equal(core.pendingCount(ed.state.doc), 1);
+  assert.equal(core.edited(ed.state.doc, c.ids[0]), false);
+  reject(ed, c.ids);
+  assert.deepEqual(ed.state.doc.attrs.sect, sect);
+  assert.equal(ed.state.doc.attrs.suggest, null);
+});
+
+test('a block deleted next to a columns node goes back outside it', () => {
+  const del = (x, i) => run(x, x.state.tr.delete(posOf(x, i), posOf(x, i + 1)));
+  const sb = { type: 'sectionBreak' };
+  const sdt = (...content) => ({ type: 'sdtBlock', content });
+  // A paragraph and a section break directly before and directly after a columns node; reject must give the old doc.
+  const { ed } = roundTrip(WORD_KIT, doc(p('A'), p('B'), cols(p('C1'), p('C2')), p('Z')), (x) => del(x, 1), 'a paragraph before the columns');
+  assert.equal(core.entries(ed.state.doc)[0].from, posOf(ed, 1), 'the deleted-block widget sits before the columns');
+  roundTrip(WORD_KIT, doc(p('A'), cols(p('C1'), p('C2')), p('B'), p('Z')), (x) => del(x, 2), 'a paragraph after the columns');
+  roundTrip(WORD_KIT, doc(p('A'), sb, cols(p('C1'), p('C2')), p('Z')), (x) => del(x, 1), 'a section break before the columns');
+  roundTrip(WORD_KIT, doc(p('A'), cols(p('C1'), p('C2')), sb, p('Z')), (x) => del(x, 2), 'a section break after the columns');
+  roundTrip(WORD_KIT, doc(cols(p('C1'), p('C2')), sb, cols(p('D1'), p('D2')), p('Z')), (x) => del(x, 1), 'a section break between two columns nodes');
+  // The last block of a content control, after a columns node inside it: the record sits on the columns' last paragraph.
+  const inSdt = roundTrip(WORD_KIT, doc(p('A'), sdt(p('X'), cols(p('C1'), p('C2')), p('Y')), p('Z')), (x) => {
+    const y = at(x, 'Y') - 1;
+    run(x, x.state.tr.delete(y, y + 3));
+  }, 'the paragraph after columns at the end of a content control');
+  assert.equal(core.entries(inSdt.ed.state.doc)[0].side, 'after');
+  // The user deletes the carrier: the record moves and still goes back outside the columns.
+  const ed2 = editor(WORD_KIT, doc(p('A'), p('B'), cols(p('C1'), p('C2')), p('Z')));
+  const c = call();
+  agent(ed2, c, (x) => del(x, 1));
+  const c1 = posOf(ed2, 1) + 1;
+  run(ed2, ed2.state.tr.delete(c1, c1 + ed2.state.doc.nodeAt(c1).nodeSize)); // the user's own delete of C1, the carrier
+  reject(ed2, c.ids);
+  assert.deepEqual(texts(ed2), ['A', 'B', 'C2', 'Z']);
+  assert.equal(ed2.state.doc.child(2).type.name, 'columns');
 });

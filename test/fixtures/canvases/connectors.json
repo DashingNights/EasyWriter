@@ -1,0 +1,42 @@
+{
+  "w": 400,
+  "h": 300,
+  "aw": 400,
+  "ah": 300,
+  "frame": { "x": 0, "y": 0, "w": 400, "h": 300 },
+  "bg": "post",
+  "items": [
+    {
+      "id": "elbow",
+      "type": "connector",
+      "from": { "x": 10, "y": 20 },
+      "to": { "x": 110, "y": 80 },
+      "route": "ortho",
+      "corner": 8,
+      "heads": { "start": "none", "end": "arrow" },
+      "color": "#000000",
+      "width": 2,
+      "opacity": 1,
+      "dash": "solid",
+      "jump": "none",
+      "labels": {
+        "mid": { "html": "<p>Label</p>", "t": 0.5, "dx": 0, "dy": 0, "size": 14, "textColor": "#000000", "bold": false }
+      }
+    },
+    {
+      "id": "curve",
+      "type": "connector",
+      "from": { "x": 150, "y": 20 },
+      "to": { "x": 250, "y": 90 },
+      "route": "curve",
+      "corner": 0,
+      "points": [{ "x": 190, "y": 40 }],
+      "heads": { "start": "none", "end": "circle" },
+      "color": "#ff0000",
+      "width": 3,
+      "opacity": 0.8,
+      "dash": "dashed",
+      "jump": "arc"
+    }
+  ]
+}

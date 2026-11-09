@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { FileText, MessageSquareText, Presentation, Sheet } from 'lucide-react';
+import { FileText, MessageSquareText, Presentation, Shapes, Sheet } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -7,6 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Separator } from '@/components/ui/separator';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { TITLE_LIMIT } from '../../doc-utils.mjs';
+import { boardsOn } from '../../formats.mjs';
 import { enabled } from '../../integrations/index.mjs';
 import { useStore } from '../store.js';
 import { FormDialog } from './FormDialog.jsx';
@@ -26,13 +27,15 @@ function Choice({ id, label, Icon, disabled, pick, children }) {
   );
 }
 
-/** New draft (actions.startNewDraft, docs/plans/sidebar-menu.md decision 3): a title (focused first; empty: 'Untitled'), a
+/** New draft (actions.startNewDraft, docs/wiki/sidebar-menu.md decision 3): a title (focused first; empty: 'Untitled'), a
  * folder (`folders`, the Drafts list's for the selected project; `folderId` preselected, null: None) and a card per format,
  * `value` (formats.mjs defaultFormat) picked → {format, title, folderId}. The pick follows the focus, so the arrow keys pick
  * (they skip the disabled cards); Enter or a double-click on a card creates, and so does Enter in the title. Forum post only
  * while the forum is on; forum posts made earlier open in either state. */
 export function NewDraftDialog({ value: initial, folders = [], folderId: initialFolder = null, onClose }) {
   const forum = useStore((s) => enabled(s.settings, 'forum'));
+  // Whiteboards are off until the board is usable (formats.mjs boardsOn): a new draft cannot take the format then.
+  const boards = useStore((s) => boardsOn(s.settings));
   const [value, setValue] = useState(initial);
   const [title, setTitle] = useState('');
   const [folder, setFolder] = useState(initialFolder ?? NONE);
@@ -61,6 +64,7 @@ export function NewDraftDialog({ value: initial, folders = [], folderId: initial
       <ToggleGroup type="single" variant="outline" spacing={2} aria-label="Format" value={value} onValueChange={(v) => v && setValue(v)}
         onKeyDown={(e) => e.key === 'Enter' && create(e)} onDoubleClick={(e) => e.target.closest('[data-slot="toggle-group-item"]') && create(e)}>
         <Choice id="document" label="Document" Icon={FileText} pick={setValue} />
+        {boards && <Choice id="board" label="Whiteboard" Icon={Shapes} pick={setValue} />}
         {COMING.map((f) => (
           <Choice key={f.id} {...f} disabled pick={setValue}><Badge variant="outline" className="px-1.5 py-0">Coming soon</Badge></Choice>
         ))}

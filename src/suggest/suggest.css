@@ -1,4 +1,4 @@
-/* Agent edits waiting as suggestions on the page (docs/plans/suggestions.md Display), both formats: yellow, as Google Docs'
+/* Agent edits waiting as suggestions on the page (docs/wiki/suggestions.md Display), both formats: yellow, as Google Docs'
    suggesting mode. The underline and the left rail set them apart from find matches (page.css) and the highlight marks.
    Unlayered, as page.css. The page's own tokens follow the page theme (a Document is always light). */
 :root,

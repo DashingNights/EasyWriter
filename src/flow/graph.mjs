@@ -130,9 +130,11 @@ export function fromGraph(graph, { unit = 1, preset = flowPreset('dark'), taken 
   for (const x of [...groups, ...nodes]) ids.set(x.id, claim(x.id));
   const px = (b) => ({ x: Math.round(b.x * unit), y: Math.round(b.y * unit), w: Math.max(1, Math.round(b.w * unit)), h: Math.max(1, Math.round(b.h * unit)) });
   const ink = preset.color;
+  // A shape with no fill (a group's frame or lane, a node styled so) keeps a line to see it by when the preset is flat (width 0).
+  const unfilled = (s) => (s.fill ?? preset.fill) === 'none';
   const shape = (x, kind, s = {}) => ({
-    id: ids.get(x.id), type: 'shape', shape: kind, ...px(box.get(x.id)), color: s.stroke ?? ink, width: r2(preset.width * unit), opacity: 1,
-    fill: (s.fill ?? preset.fill) === 'none' ? 'none' : 'solid', fillColor: s.fill && s.fill !== 'none' ? s.fill : preset.fillColor,
+    id: ids.get(x.id), type: 'shape', shape: kind, ...px(box.get(x.id)), color: s.stroke ?? ink, width: r2((unfilled(s) ? preset.width || 2 : preset.width) * unit),
+    opacity: 1, fill: unfilled(s) ? 'none' : 'solid', fillColor: s.fill && s.fill !== 'none' ? s.fill : preset.fillColor,
     ...(x.label && { html: textToHtml(x.label), size: r2(preset.size * unit), textColor: s.text ?? preset.textColor }),
     ...(Number.isFinite(x.rot) && x.rot && { rot: x.rot }),
   });

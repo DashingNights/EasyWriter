@@ -1,0 +1,37 @@
+{
+  "type": "doc",
+  "content": [
+    {
+      "type": "paragraph",
+      "content": [{ "type": "text", "text": "Before the box" }]
+    },
+    {
+      "type": "box",
+      "content": [
+        {
+          "type": "boxTitle",
+          "content": [{ "type": "text", "text": "Spoiler" }]
+        },
+        {
+          "type": "boxContent",
+          "content": [
+            { "type": "paragraph", "content": [{ "type": "text", "text": "The answer is 42." }] },
+            {
+              "type": "bulletList",
+              "content": [
+                {
+                  "type": "listItem",
+                  "content": [{ "type": "paragraph", "content": [{ "type": "text", "text": "with a list inside" }] }]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "content": [{ "type": "text", "text": "After the box" }]
+    }
+  ]
+}

@@ -1,4 +1,4 @@
-// The renderer's integration registry (docs/plans/integrations.md Registry): each integration's contributions (its ui.jsx),
+// The renderer's integration registry (docs/wiki/integrations.md Registry): each integration's contributions (its ui.jsx),
 // and the hooks core calls them through. Only enabled integrations take part, read from the store's settings at call time.
 import { createElement as h, Fragment } from 'react';
 import { getState, useStore } from '../app/store.js';

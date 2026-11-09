@@ -1,0 +1,24 @@
+{
+  "type": "doc",
+  "content": [
+    { "type": "heading", "attrs": { "level": 1 }, "content": [{ "type": "text", "text": "One" }] },
+    { "type": "heading", "attrs": { "level": 2 }, "content": [{ "type": "text", "text": "Two" }] },
+    { "type": "heading", "attrs": { "level": 3 }, "content": [{ "type": "text", "text": "Three" }] },
+    { "type": "heading", "attrs": { "level": 4 }, "content": [{ "type": "text", "text": "Four" }] },
+    { "type": "heading", "attrs": { "level": 5 }, "content": [{ "type": "text", "text": "Five" }] },
+    { "type": "heading", "attrs": { "level": 6 }, "content": [{ "type": "text", "text": "Six" }] },
+    { "type": "heading", "attrs": { "level": 2, "textAlign": "center" }, "content": [{ "type": "text", "text": "Centred" }] },
+    {
+      "type": "heading",
+      "attrs": { "level": 3 },
+      "content": [
+        { "type": "text", "text": "Bold " },
+        { "type": "text", "text": "heading", "marks": [{ "type": "bold" }] },
+        { "type": "text", "text": " and a " },
+        { "type": "text", "text": "link", "marks": [{ "type": "link", "attrs": { "href": "https://daf.staffs.ac.uk/topic/89849" } }] },
+        { "type": "text", "text": " in " },
+        { "type": "text", "text": "small", "marks": [{ "type": "fontSize", "attrs": { "size": "80" } }] }
+      ]
+    }
+  ]
+}

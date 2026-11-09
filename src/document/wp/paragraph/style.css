@@ -1,0 +1,41 @@
+/* The paragraph work package's drawing (docs/plans/word/briefs/paragraph.md). extension.js sets the widths and sizes inline. */
+
+/* The base line height (extension.js baseOf) of body paragraphs that carry no decoration. :is(#_) only lifts the rule over the
+   style sheet's per-style rules (stylesheet.js); a paragraph's decoration is inline style and still wins. */
+[data-doc-text]:is([data-para-lh], #_) > :is(p, h1, h2, h3, h4, h5, h6),
+[data-doc-text]:is([data-para-lh], #_) > [data-columns] > :is(p, h1, h2, h3, h4, h5, h6) {
+  line-height: var(--para-lh);
+}
+
+/* Exactly and the document grid (extension.js data-line-fixed): every line is the paragraph's line height whatever runs it holds, as
+   Word draws them, so a run's own box takes no room. Before Two Lines in One, which keeps its rows' own line height. */
+[data-doc-text] [data-line-fixed] :where(span) { line-height: 0; }
+
+/* Fit Text: the run takes exactly its width, its letters spread or squeezed by the letter spacing extension.js measures. */
+[data-doc-text] [data-fit] {
+  display: inline-block;
+  white-space: nowrap;
+  text-indent: 0;
+}
+
+/* Two Lines in One and Combine Characters: the run breaks into two rows inside one line's height.
+   ponytail: the rows split by width (ch units), not by Word's half of the characters. */
+[data-doc-text] [data-two-lines] {
+  display: inline-block;
+  line-height: 1.05;
+  white-space: normal;
+  word-break: break-all;
+  vertical-align: middle;
+  text-align: center;
+  text-indent: 0;
+}
+
+/* Two Lines in One's brackets, drawn around the two rows at the text's own size. */
+[data-doc-text] [data-eal*='"combineBrackets":"round"']::before { content: '('; }
+[data-doc-text] [data-eal*='"combineBrackets":"round"']::after { content: ')'; }
+[data-doc-text] [data-eal*='"combineBrackets":"square"']::before { content: '['; }
+[data-doc-text] [data-eal*='"combineBrackets":"square"']::after { content: ']'; }
+[data-doc-text] [data-eal*='"combineBrackets":"angle"']::before { content: '<'; }
+[data-doc-text] [data-eal*='"combineBrackets":"angle"']::after { content: '>'; }
+[data-doc-text] [data-eal*='"combineBrackets":"curly"']::before { content: '{'; }
+[data-doc-text] [data-eal*='"combineBrackets":"curly"']::after { content: '}'; }

@@ -7,7 +7,7 @@ import { encode, newLog, rebuild, record } from '../src/app/history.js';
 import { flipItem, moveItem, turnItem } from '../src/flow/model.mjs';
 import { migrateBoards, scaleItem, whiteboardToCanvas } from '../src/whiteboard.js';
 
-// Converted whiteboards (§6b; docs/plans/canvas-merge.md §2 and step 1).
+// Converted whiteboards (§6b; docs/wiki/canvas-merge.md §2 and step 1).
 const W = 1454;
 const img = (id, x, y, w, h, extra = {}) => ({ id, type: 'image', src: 'x', x, y, w, h, ...extra });
 const text = (id, x, y, extra = {}) => ({ id, type: 'text', html: 'A', x, y, w: 100, size: 20, color: '#fff', bold: false, align: 'left', bg: null, ...extra });

@@ -298,12 +298,12 @@ async function capture(win) {
   await S('canvas', 1000);
   await inv('canvas.close', {});
 
-  await inv('tool.run', { id: 'plan-open' }); // on its Board tab
-  for (let i = 0; i < 50 && !(await J(`window.__agent.invoke({ id: 'tool.list', source: 'ui' }).then((r) => JSON.stringify(r).includes('"plan-gantt"'))`)); i++) await wait(100);
+  await inv('tool.run', { id: 'plan.open' }); // on its Board tab
+  for (let i = 0; i < 50 && !(await J(`window.__agent.invoke({ id: 'tool.list', source: 'ui' }).then((r) => JSON.stringify(r).includes('"plan.gantt"'))`)); i++) await wait(100);
   await S('plan-board', 1500);
-  await inv('tool.run', { id: 'plan-gantt' });
+  await inv('tool.run', { id: 'plan.gantt' });
   await S('plan-gantt', 1500);
-  await inv('tool.run', { id: 'plan-close' });
+  await inv('tool.run', { id: 'plan.close' });
 
   // An assistant's turn, made with its own source (agent:assistant), so its changes wait as suggestions: the document with mistakes
   // and fewer notes (ai-0), its grammar fixes (ai-1), its notes on the map (ai-2), and the checklist it makes in the sidebar (ai-3).

@@ -1,0 +1,24 @@
+{
+  "w": 400,
+  "h": 300,
+  "aw": 400,
+  "ah": 300,
+  "frame": { "x": 0, "y": 0, "w": 400, "h": 300 },
+  "bg": "white",
+  "items": [
+    {
+      "id": "note",
+      "type": "text",
+      "x": 20,
+      "y": 30,
+      "w": 200,
+      "html": "<p>Hello <b>there</b></p><p>Second line</p>",
+      "size": 20,
+      "color": "#333333",
+      "bold": true,
+      "align": "center",
+      "bg": "#fff59d",
+      "font": "Carlito"
+    }
+  ]
+}

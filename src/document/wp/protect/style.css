@@ -1,0 +1,5 @@
+/* protect: the regions the user may edit in a protected document, shaded light yellow while Highlight the regions I can edit is on. */
+[data-doc-text] .protect-region {
+  background-color: #fff6c4;
+  box-shadow: 0 0 0 1px #e8d77a;
+}

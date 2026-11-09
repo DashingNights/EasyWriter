@@ -4,22 +4,25 @@ import { Copy, Pencil, SquarePlus, Trash2, Workflow } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { flowRefs } from '../../../doc-utils.mjs';
 import { rasterizeWhiteboard, resolveBg } from '../../../whiteboard.js';
-import { duplicateFlow, flowList, insertFlowchartDialog, loadFlow, openFlows, removeFlow, updateFlow, useFlows } from '../../flows.js';
+import { flowList, loadFlow, openFlows, useFlows } from '../../flows.js';
 import { useEditor, useStore } from '../../store.js';
 import { InlineInput } from '../InlineInput.jsx';
 import { IconButton } from '../Tip.jsx';
 import { keepFocus } from '../Toolbar.jsx';
+import { run } from '../../../tooling/registry.js';
 
 const root = () => document.getElementById('workspace-root');
 let lastSel = null; // the selected flowchart, kept while one is open in the editor
+/** The list's selected flowchart's id, or null (the library commands act on it, pool-board.js). */
+export const selectedFlow = () => lastSel;
 
 function Actions({ id, onRename, className }) {
   return (
     <div className={cn('invisible flex shrink-0 items-center group-focus-within:visible group-hover:visible', className)}>
-      <IconButton label="Insert into draft..." onMouseDown={keepFocus} onClick={() => insertFlowchartDialog(id)}><SquarePlus /></IconButton>
+      <IconButton label="Insert into draft..." onMouseDown={keepFocus} onClick={() => run('flow.insert', id)}><SquarePlus /></IconButton>
       <IconButton label="Rename" onMouseDown={keepFocus} onClick={onRename}><Pencil /></IconButton>
-      <IconButton label="Duplicate" onMouseDown={keepFocus} onClick={() => duplicateFlow(id)}><Copy /></IconButton>
-      <IconButton label="Delete..." variant="destructive-ghost" onMouseDown={keepFocus} onClick={() => removeFlow(id)}><Trash2 /></IconButton>
+      <IconButton label="Duplicate" onMouseDown={keepFocus} onClick={() => run('flow.library.duplicate', id)}><Copy /></IconButton>
+      <IconButton label="Delete..." variant="destructive-ghost" onMouseDown={keepFocus} onClick={() => run('flow.library.delete', id)}><Trash2 /></IconButton>
     </div>
   );
 }
@@ -118,7 +121,7 @@ export function FlowLibrary({ inScope, filter, view }) {
   }
   const rename = (id, title) => {
     setRenaming(null);
-    if (title != null) updateFlow(id, { title });
+    if (title != null) run('flow.library.rename', { id, title });
     root()?.focus();
   };
   const current = rows.some((s) => s.id === sel) ? sel : rows[0].id; // the one Tab reaches

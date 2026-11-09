@@ -109,7 +109,7 @@ export const PLAYBOOKS = [
     when: { kinds: ['text'], views: ['editor'] },
     text: [
       '1. Call doc_get {"format":"outline"} for the block paths. Block [0] is often the title. Count paragraphs by their type in the outline, not by path.',
-      '2. Change blocks by path. doc_replace {"path":[1],"content":{"markdown":"New text."}} rewrites one block. doc_insert {"at":[3],"position":"before","content":{"markdown":"## Heading"}} adds blocks.',
+      '2. Change blocks by path. doc_edit {"path":[1],"from":4,"to":9,"text":"slow"} replaces a few words and keeps their formatting (doc_find gives path, from and to). doc_replace {"path":[1],"content":{"markdown":"New text."}} rewrites one block. doc_insert {"at":[3],"position":"before","content":{"markdown":"## Heading"}} adds blocks.',
       '3. Use the paths of your last read. After a stale error, read the outline again.',
       'For several changes, read once, then run one batch.',
       'Check: the paths in the result are the blocks the request named. If not, say what differs. A result with suggested is done: it waits for the user.',
@@ -145,7 +145,7 @@ export const PLAYBOOKS = [
     ].join('\n'),
   },
   {
-    // Wave 1c: Gemma made up tool names for "What is the title of the flowchart that is open?", which the note answers.
+    // "What is the title of the flowchart that is open?" needs no tool: the note answers it.
     id: 'situation-question',
     title: 'Answer a question about what is open or selected',
     triggers: SITUATION_WORDS,

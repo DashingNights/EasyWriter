@@ -12,7 +12,7 @@ import { checkSchema, validate } from '../src/app/schema.mjs';
 
 const FLOW = CATALOGUE.filter((d) => d.id.startsWith('flow.'));
 const caps = CATALOGUE.map((d) => ({ id: d.id, title: d.title, args: d.args, needs: d.needs.map((n) => ({ gate: n.gate ?? n, fix: GATES[n.gate ?? n].fix })) }));
-const model = (ids, family) => toolsFor(caps, { ids, $defs: MODEL_DEFS, form: 'model', family });
+const model = (ids) => toolsFor(caps, { ids, $defs: MODEL_DEFS, form: 'model' });
 
 test('flow.*: valid schemas, examples that validate, the risks and undo of the coverage plan', () => {
   assert.equal(FLOW.length, 16);
@@ -29,19 +29,19 @@ test('flow.*: valid schemas, examples that validate, the risks and undo of the c
   assert.equal(byId('flow.open').headless, false);
 });
 
-test('FLOW_VIEW_SET: described for the model, keyboard characters, within 9 700 characters with CORE in either family', () => {
+test('FLOW_VIEW_SET: described for the model, keyboard characters, within 9 700 characters with CORE', () => {
   for (const id of FLOW_VIEW_SET) assert.ok(byId(id), id);
-  for (const family of ['qwen', 'gemma']) {
-    for (const t of model(FLOW.map((d) => d.id), family)) assert.ok(JSON.stringify(t).length <= MAX_TOOL, `${family} ${t.function.name}`);
-    const tools = model(FLOW_VIEW_SET, family);
+  {
+    for (const t of model(FLOW.map((d) => d.id))) assert.ok(JSON.stringify(t).length <= MAX_TOOL, t.function.name);
+    const tools = model(FLOW_VIEW_SET);
     for (const t of tools) {
       const def = byId(t.function.name.replaceAll('_', '.'));
       assert.ok(def.brief || def.notFor, `${def.id}: no brief`);
       for (const [k, p] of Object.entries(t.function.parameters.properties)) assert.ok(p.description, `${def.id}.${k}: no description`);
       assert.ok(!/[–—…‘’“”]/.test(JSON.stringify(t)), `${def.id}: not keyboard characters`);
     }
-    const size = JSON.stringify(model([...CORE, ...FLOW_VIEW_SET], family)).length;
-    assert.ok(size < 9700, `${family} core + flows: ${size} characters`); // 9 500 before flow.insert's draftId, 9 000 before flow.items.straighten (8 993 then)
+    const size = JSON.stringify(model([...CORE, ...FLOW_VIEW_SET])).length;
+    assert.ok(size < 9700, `core + flows: ${size} characters`); // 9 500 before flow.insert's draftId, 9 000 before flow.items.straighten (8 993 then)
   }
 });
 

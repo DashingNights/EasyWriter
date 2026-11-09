@@ -37,17 +37,26 @@ function place(el, { x, y }) {
   } else el.style.top = `${Math.max(TOP, innerHeight - PAD - h)}px`;
 }
 
+/** Why the entry `x` cannot run now in `c`, or null: an entry's `notice` given as a function is that reason (a Word command that is
+ * not built yet or is disabled, docs/plans/word/plan.md §1.14); a string `notice` is the text shown after it runs. */
+const reasonOf = (x, c) => (typeof x.notice === 'function' ? x.notice(c) ?? null : null);
+/** The text shown after the entry `x` ran. */
+const doneText = (x) => (typeof x.notice === 'string' ? x.notice : x.label);
+
 /** Enter / click, or Tab (`tab`): the palette closes and the focus goes back, the entry runs, then the notice shows;
- * Tab, and an entry that only has options, open its options panel instead. Tab on an entry without options does nothing. */
+ * Tab, an entry that only has options, and an `optionsFirst` entry whose options draw (a Word menu), open its options panel
+ * instead. An `optionsFirst` entry never runs on Tab: its command without an argument could write a bad value. Tab on an entry
+ * without options does nothing. */
 function commit(entry, tab) {
   if (tab && !entry.options) return;
   const ctx = getState().toolSearch;
   closeToolSearch();
   if (entry.command) return runCommand(entry, ctx);
-  entry.run?.(toolContext(ctx.board));
-  if (tab || !entry.run) return setState({ toolOptions: { entry, ctx } });
   const c = toolContext(ctx.board);
-  const text = entry.toggle ? `${entry.label} ${entry.active(c) ? 'on' : 'off'}` : entry.notice ?? entry.label;
+  if (entry.optionsFirst && (tab || entry.options(c))) return setState({ toolOptions: { entry, ctx } });
+  entry.run?.(c);
+  if (tab || !entry.run) return setState({ toolOptions: { entry, ctx } });
+  const text = entry.toggle ? `${entry.label} ${entry.active(c) ? 'on' : 'off'}` : doneText(entry);
   notify({ icon: entry.icon, text });
 }
 
@@ -56,7 +65,7 @@ function commit(entry, tab) {
 async function runCommand(entry, ctx) {
   const res = await invoke({ id: entry.command, args: entry.args?.(toolContext(ctx.board)) ?? {}, source: 'palette' });
   returnFocus(ctx);
-  notify({ icon: entry.icon, text: res.ok ? entry.notice ?? entry.label : res.error.message });
+  notify({ icon: entry.icon, text: res.ok ? doneText(entry) : res.error.message });
 }
 
 const PLACES = { editor: 'the draft editor', plan: 'the Plans page', flows: 'the Flowcharts page', browser: 'the browser' };
@@ -83,11 +92,13 @@ function closeOptions() {
 function Palette({ board, at }) {
   // Sections (tool-rank.mjs): a node-selected block's first (its actions, then the suggested entries), or flowchart mode's;
   // `tie`: each entry's section for the tie-break.
-  const [{ entries, sections, tie }] = useState(() => {
+  // `reasons`: the entries that show as disabled rows with their reason, decided when the palette opens.
+  const [{ entries, sections, tie, reasons }] = useState(() => {
     const c = toolContext(board);
     const entries = listTools(c);
     const sections = paletteSections(entries, { flow: c.flow, block: c.block?.kind });
-    return { entries, sections, tie: new Map(sections.flatMap(([, list, t]) => (t ? list.map((x) => [x.id, t]) : []))) };
+    const reasons = new Map(entries.map((x) => [x.id, reasonOf(x, c)]).filter(([, r]) => r));
+    return { entries, sections, tie: new Map(sections.flatMap(([, list, t]) => (t ? list.map((x) => [x.id, t]) : []))), reasons };
   });
   const filter = (id, search, [label, ...keywords]) => rankTool(search, label, keywords, tie.get(id));
   const [value, setValue] = useState(''); // the highlighted entry's id: the best match while typing
@@ -109,7 +120,7 @@ function Palette({ board, at }) {
     if (e.key !== 'Tab') return;
     e.preventDefault();
     const entry = entries.find((x) => x.id === value);
-    if (entry) commit(entry, true);
+    if (entry && !reasons.has(entry.id)) commit(entry, true);
   };
   return (
     <Dialog open modal={false} onOpenChange={(open) => !open && closeToolSearch()}>
@@ -129,20 +140,36 @@ function Palette({ board, at }) {
                 </div>
               </CommandEmpty>
             ) : <CommandEmpty>No tool found.</CommandEmpty>}
-            {groups.map(([group, list]) => list.length > 0 && (
-              <CommandGroup key={group} heading={group}>
-                {list.map((x) => (
-                  <CommandItem key={x.id} value={x.id} keywords={[x.label, ...x.keywords]} onSelect={() => commit(x, false)}>
-                    {x.icon}
-                    <span className="truncate">{x.label}</span>
-                    <span className="ml-auto flex shrink-0 items-center gap-2">
-                      {x.options && <span className="text-xs text-muted-foreground">Tab for options</span>}
-                      {shortcutOf(x) && <CommandShortcut className="ml-0">{shortcutOf(x)}</CommandShortcut>}
-                    </span>
-                  </CommandItem>
-                ))}
-              </CommandGroup>
-            ))}
+            {/* A group's disabled rows (a reason to show) go in a second group after it: cmdk sorts only the enabled rows, by
+                appending them to their group, so in one group the disabled rows would stay above every match. The second group
+                shows its heading only when the first has no match. */}
+            {groups.flatMap(([group, list]) => [false, true].map((off) => {
+              const rows = list.filter((x) => reasons.has(x.id) === off);
+              return rows.length > 0 && (
+                <CommandGroup key={`${group}${off ? '-off' : ''}`} heading={group}
+                  className={off ? '[[cmdk-group]:not([hidden])+&]:pt-0 [[cmdk-group]:not([hidden])+&]:[&_[cmdk-group-heading]]:hidden' : undefined}>
+                  {rows.map((x) => {
+                    const reason = reasons.get(x.id);
+                    return (
+                      <CommandItem key={x.id} value={x.id} keywords={[x.label, ...x.keywords]} onSelect={() => commit(x, false)} disabled={!!reason}
+                        data-reason={reason ? '' : undefined}>
+                        {x.icon}
+                        {reason ? (
+                          <span className="flex min-w-0 flex-col">
+                            <span className="truncate">{x.label}</span>
+                            <span className="truncate text-xs text-muted-foreground">{reason}</span>
+                          </span>
+                        ) : <span className="truncate">{x.label}</span>}
+                        <span className="ml-auto flex shrink-0 items-center gap-2">
+                          {x.options && !reason && <span className="text-xs text-muted-foreground">Tab for options</span>}
+                          {shortcutOf(x) && <CommandShortcut className="ml-0">{shortcutOf(x)}</CommandShortcut>}
+                        </span>
+                      </CommandItem>
+                    );
+                  })}
+                </CommandGroup>
+              );
+            }))}
           </CommandList>
         </Command>
       </DialogContent>

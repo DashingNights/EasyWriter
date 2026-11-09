@@ -5,13 +5,13 @@ import { cn } from 'cn';
 // zoom of #page-wrap; React never touches either (it re-renders only the area's own attributes: behind a workspace, §7g,
 // the area is hidden and inert but keeps its layout, so widths, zoom and export still measure it). The unzoomed pan
 // surface around the page is one view minus PAGE_KEEP on every side, so the page can be moved anywhere but never further
-// out than that.
+// out than that. A Document scrolls as Word's pages do instead: app.css keeps 24 px around them, centred while narrower than the view.
 // The horizontal scrollbar is hidden (panning replaces it); the vertical one stays for long posts.
 export function EditorPage({ inert }) {
   return (
     <div id="editor-area" data-viewport inert={inert}
       className={cn('min-h-0 flex-1 overflow-auto bg-(--pg-bg) [container-type:size] [scrollbar-gutter:stable]', inert ? 'invisible pointer-events-none' : 'animate-page-in')}>
-      <div className="w-max p-[calc(100cqh-var(--page-keep))_calc(100cqw-var(--page-keep))] [--page-keep:120px]">
+      <div className="w-max p-[var(--pan-y)_calc(100cqw-var(--page-keep))] [--page-keep:120px] [--pan-y:calc(100cqh-var(--page-keep))]">
         <div id="page-wrap">
           <div className="page">
             <div id="editor" />

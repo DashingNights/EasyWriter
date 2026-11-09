@@ -1,0 +1,35 @@
+[package]
+name = "ew-pdf"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "EasyWriter PDF export (craft-pdf / Krilla): embedded font subsets with selectable text, links, outline, tagging"
+
+[lints]
+workspace = true
+
+[dependencies]
+ew-doc = { workspace = true }
+ew-geom = { workspace = true, features = ["image"] }
+ew-fonts = { workspace = true }
+ew-doc-layout = { workspace = true }
+# The display list and the media lookup it draws pictures through (P6).
+ew-scene = { workspace = true }
+ew-metafile = { workspace = true }
+craft-pdf = { workspace = true }
+kurbo = { workspace = true }
+# The OS/2 table's fsType, which decides whether a face may be embedded (licence.rs).
+skrifa = { workspace = true }
+image = { workspace = true }
+thiserror = { workspace = true }
+log = { workspace = true }
+chrono = { workspace = true }
+
+[target.'cfg(all(target_arch = "wasm32", target_os = "unknown"))'.dependencies]
+# The browser clock (`SystemTime::now()` panics on wasm32-unknown-unknown).
+js-sys = "0.3"
+
+[dev-dependencies]
+hayro-syntax = "0.7.2"
+hayro-interpret = { version = "0.7.0", default-features = false, features = ["embed-fonts"] }
+hayro-cmap = "0.1"

@@ -1,0 +1,26 @@
+/* style-panes (docs/plans/word briefs/style-panes.md): the style area of Draft and Outline views (a column at the left naming
+   each paragraph's style, its width in --style-area). */
+
+#editor-area[data-word-view]:is([data-word-view="draft"], [data-word-view="outline"]) [data-style-area] {
+  position: relative;
+  padding-left: calc(var(--style-area) + 6pt) !important;
+  background: linear-gradient(to right, transparent calc(var(--style-area) - 1px), #c8c8c8 calc(var(--style-area) - 1px), #c8c8c8 var(--style-area), transparent var(--style-area)) no-repeat;
+}
+
+/* No top: each label keeps its paragraph's line (the static position) while left pins it to the column. */
+#editor-area[data-word-view]:is([data-word-view="draft"], [data-word-view="outline"]) [data-style-area] [data-style-name]::before {
+  content: attr(data-style-name);
+  position: absolute;
+  left: 0;
+  width: calc(var(--style-area) - 4pt);
+  padding-left: 2pt;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font: normal 400 8pt/1.6 system-ui, sans-serif;
+  color: #555;
+  text-decoration: none;
+  text-transform: none;
+  letter-spacing: normal;
+  text-indent: 0;
+}

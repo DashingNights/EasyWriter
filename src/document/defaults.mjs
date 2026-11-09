@@ -2,11 +2,12 @@
 // styles, the theme and the list definitions, transcribed from a blank document saved by Word 16.0.20527 (its styles.xml,
 // theme1.xml and sectPr). Each new Document gets its own copy in doc.attrs, as Word copies styles.xml into every file, so a later
 // change here never changes how an existing document looks. Pure: formats.mjs and Node tests read it.
-import { PAPER_SIZES } from '../office.mjs';
+import { deepPatch, PAPER_SIZES } from '../office.mjs';
 
-/** docDefaults: the theme's body font at 12 pt, 8 pt after, line 278/240 (Word's "1.15"). */
+/** docDefaults: the theme's body font at 12 pt, 8 pt after, line 278/240 (Word's "1.15"), with Word's standard and contextual
+ * ligatures (w14:ligatures). newDocumentJson adds the proofing language (w:lang). */
 export const DOC_DEFAULTS = {
-  run: { font: '+minor', size: 12 },
+  run: { font: '+minor', size: 12, typography: { ligatures: 'standardContextual' } },
   para: { spacing: { after: 8, line: { rule: 'auto', value: 1.1583 } } },
 };
 
@@ -110,15 +111,36 @@ export function defaultSect(paper) {
   return { w, h, orient: 'portrait', margin: { top: 72, right: 72, bottom: 72, left: 72, header: hf, footer: hf, gutter: 0 }, pageNumber: null };
 }
 
-/** The TipTap JSON of a new, empty Document for `settings` (its paper). */
+/** w:settings of a new Document (docs/plans/word/plan.md §1.8 Doc attrs), each key read by the package that owns it. */
+export const DOC_SETTINGS = {
+  defaultTabStop: 36, trackRevisions: false, lockTracking: null, evenAndOddHeaders: false, mirrorMargins: false, gutterAtTop: false,
+  printTwoOnOne: false, bookFold: null, autoHyphenation: false, hyphenationZone: 18, consecutiveHyphenLimit: 0, doNotHyphenateCaps: false,
+  footnotePr: null, endnotePr: null, protection: null, writeProtection: null, updateFields: false, displayBackground: false, formShading: true,
+  grid: null, mathPr: null, bordersDoNotSurroundHeader: false, bordersDoNotSurroundFooter: false, alignBordersAndEdges: false,
+  linkStyles: false, stylePaneFormatFilter: null, stylePaneSortMethod: null, compat: { htmlAutoSpacing: true }, ignored: [],
+};
+
+/** The TipTap JSON of a new, empty Document for `settings`: its paper, and settings.word.newDocument when set (Set As Default in
+ * the style, design and Page Setup dialogs, plan.md §1.12): styles merged over the built-ins (a saved style replaces the built-in
+ * of its id), a theme replacing THEME, and a page setup patching the section and the mirror margin and gutter settings. The run
+ * defaults take the first proofing language. */
 export function newDocumentJson(settings) {
+  const nd = settings?.word?.newDocument ?? {};
+  const page = nd.pageSetup ?? {};
+  const { margin, mirrorMargins, gutterAtTop, ...size } = page;
+  const sect = { ...defaultSect(settings?.paper), ...size };
+  if (margin) sect.margin = { ...sect.margin, ...margin };
+  const lang = { val: settings?.word?.proofing?.languages?.[0] ?? 'en-US', eastAsia: 'zh-CN', bidi: 'ar-SA' };
+  const defaults = deepPatch(deepPatch(DOC_DEFAULTS, { run: { lang } }), nd.styles?.defaults);
   return {
     type: 'doc',
     attrs: {
-      sect: defaultSect(settings?.paper),
-      styles: { defaults: structuredClone(DOC_DEFAULTS), list: structuredClone(BUILTIN_STYLES) },
+      sect,
+      styles: structuredClone({ defaults, list: { ...BUILTIN_STYLES, ...nd.styles?.list } }),
       numbering: structuredClone(DEFAULT_NUMBERING),
-      theme: structuredClone(THEME),
+      theme: structuredClone(nd.theme ?? THEME),
+      settings: { ...structuredClone(DOC_SETTINGS), ...(mirrorMargins != null && { mirrorMargins }), ...(gutterAtTop != null && { gutterAtTop }) },
+      props: null, vars: null, comments: null, people: null, background: null, merge: null,
     },
     content: [{ type: 'paragraph' }],
   };

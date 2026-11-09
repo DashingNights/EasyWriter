@@ -1,0 +1,48 @@
+/* Tab boxes (docs/plans/word/plan.md §1.9 Tabs): the tabs pass sizes each tab character's span[data-tab] and each ptab's
+   span[data-ptab] inline (width and a tab advance as wide). text-indent and the paragraph's tab-size must not reach inside. */
+.page[data-format="document"] :is(span[data-tab], span[data-ptab]) {
+  display: inline-block;
+  text-indent: 0;
+  white-space: pre;
+  background-repeat: repeat-x;
+}
+
+/* Leaders fill the box. Their origin is the column edge (--w-tab-x), so dots on consecutive lines line up at the same x. Word draws
+   them on a fixed grid whatever the font (probe .smoke-data/word/fixture/walk/tabs_docx.py, Calibri 11, and the fixture, Aptos 10,
+   measure the same): a dot or middle dot every 3.481 pt, its ink 1.5 pt wide 2 pt into its cell; a hyphen every 4.081 pt, 2.9 pt
+   long 2 pt into its cell; underscore and heavy as one continuous line. */
+.page[data-format="document"] :is(span[data-tab], span[data-ptab]):is([data-leader="dot"], [data-leader="middleDot"]) {
+  background-image: radial-gradient(circle at 2.8pt 50%, currentColor 0.55pt, transparent 0.8pt);
+  background-size: 3.481pt 1.6pt;
+  background-position: var(--w-tab-x, 0) calc(100% - 0.2em);
+}
+.page[data-format="document"] :is(span[data-tab], span[data-ptab])[data-leader="middleDot"] { background-position-y: calc(100% - 0.57em); }
+.page[data-format="document"] :is(span[data-tab], span[data-ptab])[data-leader="hyphen"] {
+  background-image: linear-gradient(to right, currentColor 2.9pt, transparent 2.9pt);
+  background-size: 4.081pt 0.7pt;
+  background-position: calc(var(--w-tab-x, 0px) + 2pt) calc(100% - 0.57em);
+}
+.page[data-format="document"] :is(span[data-tab], span[data-ptab]):is([data-leader="underscore"], [data-leader="heavy"]) {
+  background-image: linear-gradient(currentColor, currentColor);
+  background-size: 100% 0.7pt;
+  background-position: 0 calc(100% - 0.12em);
+}
+
+/* Bar tabs: a vertical line through every line of the paragraph at the stop (a widget placed from the paragraph's padding box). */
+.page[data-format="document"] [data-tab-has-bars] { position: relative; }
+.page[data-format="document"] [data-tab-bars] { position: absolute; inset: 0; pointer-events: none; }
+.page[data-format="document"] [data-tab-bar] { position: absolute; top: 0; bottom: 0; border-left: 0.75pt solid currentColor; }
+
+/* A custom stop past the right indent: the paragraph runs into the margin by as much (Word honours the stop on that line). */
+.page[data-format="document"] .ProseMirror [data-tab-ext] { margin-right: calc(var(--w-tab-mr, 0px) - var(--w-tab-ext, 0px)) !important; }
+
+/* The tab after a list number (G3): the label box reaches the stop the tabs pass found. Overrides document.css's rule of the same
+   selector (lists' label), which uses the hanging indent alone. */
+.page[data-format="document"] .ProseMirror [data-label]::before { min-width: var(--w-num-tab, var(--list-hanging)); }
+
+/* A tab that wrapped to the next line: the measure hides a drawn break it no longer needs until the decorations catch up. */
+.page[data-format="document"] br[data-tab-break][data-off] { display: none; }
+
+/* A paragraph in a table cell with a decimal stop and no tab: its number moves to put the point on the stop (measure.js cellShift).
+   A relative shift, so the cell's layout and the measure's reads stay as they were. */
+.page[data-format="document"] .ProseMirror [data-tab-dec] { position: relative; left: var(--w-dec-x, 0px); }

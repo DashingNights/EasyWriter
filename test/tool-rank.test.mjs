@@ -65,6 +65,12 @@ test('a selected block: its actions first (the main one first), then Suggested, 
   assert.equal(paletteSections(entries, { block: 'planChart' })[0][0], 'Plan chart');
 });
 
+test('a group outside GROUPS (a Document Layout group) gets its own section after them', () => {
+  const entries = [{ id: 'doc-margins', group: 'Layout', label: 'Margins', keywords: [] }, { id: 'undo', group: 'Edit', label: 'Undo', keywords: [] }];
+  const shown = paletteSections(entries, {}).filter(([, list]) => list.length).map(([heading, list]) => [heading, list.map((x) => x.id)]);
+  assert.deepEqual(shown, [['Edit', ['undo']], ['Layout', ['doc-margins']]]);
+});
+
 test('blockKind: what the palette calls a node-selected block', () => {
   assert.equal(blockKind('canvas', { flow: { id: 'f1', rev: 1 }, items: [] }), 'flowchart');
   assert.equal(blockKind('canvas', { items: [{ type: 'shape', shape: 'rect' }, { type: 'connector' }] }), 'flowchart');

@@ -1,0 +1,12 @@
+/* symbols: the Symbol dialog's grid (the Symbol menu's cells style themselves inline: the menu draws outside every Document scope). */
+
+/* A symbol font's codes without a Unicode equivalent: an empty, greyed cell. */
+[data-word-dialog] [data-symbol-grid] .sym-cell[aria-disabled] {
+  background: #f4f4f4;
+}
+
+/* The picked cell: the system's selection blue on the white grid, as Word draws it, in either theme. */
+[data-word-dialog] [data-symbol-grid] .sym-cell[aria-selected='true'] {
+  background: #0078d4;
+  color: #fff;
+}

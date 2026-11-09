@@ -1,7 +1,7 @@
 {
   "name": "easywriter",
   "productName": "EasyWriter",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "private": true,
   "description": "Desktop editor for drafts in projects, with canvases, flowcharts and plans, and an optional forum integration",
   "author": "DashingNights",
@@ -12,7 +12,7 @@
   },
   "scripts": {
     "agent": "node bin/easywriter-agent.js",
-    "build": "esbuild src/main.jsx --bundle --outfile=dist/renderer.js --format=iife --jsx=automatic --minify --sourcemap --define:process.env.NODE_ENV=\\\"production\\\" && tailwindcss -i src/app.css -o dist/app.css --minify",
+    "build": "node scripts/build-engine-wasm.mjs && esbuild src/main.jsx --bundle --outfile=dist/renderer.js --format=iife --jsx=automatic --minify --sourcemap --define:process.env.NODE_ENV=\\\"production\\\" && esbuild src/document/docx/worker.js --bundle --outfile=dist/docx-worker.js --format=iife --minify --sourcemap && esbuild src/document/layout/worker.js --bundle --outfile=dist/layout-worker.js --format=iife --minify --sourcemap && tailwindcss -i src/app.css -o dist/app.css --minify",
     "start": "npm run build && electron .",
     "smoke": "npm run build && electron . --smoke",
     "smoke:agent": "npm run build && electron . --smoke --data-dir=.smoke-data --script=test/smoke/agent-basic.json",
@@ -32,9 +32,13 @@
     "directories": {
       "output": "release"
     },
+    "electronFuses": {
+      "enableCookieEncryption": true
+    },
     "files": [
       "main.js",
       "preload.js",
+      "electron/**",
       "index.html",
       "package.json",
       "build/icon.ico",

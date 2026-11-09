@@ -15,8 +15,9 @@ jobs:
   # One draft release for the tag. With EP_DRAFT electron-builder uploads into the existing draft for the same tag
   # (electron-publish gitHubPublisher getOrCreateRelease), so the Windows and Mac jobs fill the same release; publish shows it.
   # A re-run on a tag whose release is already published stops here: electron-builder would skip every upload without failing.
+  # Only the public repo releases: a tag pushed to the private repo skips this job and with it every job after it.
   draft:
-    if: github.event_name == 'push'
+    if: github.event_name == 'push' && github.repository == 'DashingNights/EasyWriter'
     runs-on: ubuntu-latest
     steps:
       - name: Draft release
@@ -30,11 +31,87 @@ jobs:
             gh release create "$GITHUB_REF_NAME" --draft --verify-tag --notes ""
           fi
 
-  win:
+  # The document engine's .wasm, which git does not carry: built once here from engine/ and handed to the Windows and
+  # Mac jobs as an artifact, where npm run build finds its STAMP matching the sources and skips the engine build
+  # (docs/plans/engine/viewport-design.md section 11). The build is one command, so running it locally is running this job.
+  # It runs wherever the Windows or Mac job will: after the draft on a tag, and on its own when the Mac job is run by hand.
+  engine:
     needs: draft
+    if: ${{ !cancelled() && (needs.draft.result == 'success' || (github.event_name == 'workflow_dispatch' && vars.MAC_RELEASE == 'true')) }}
+    runs-on: ubuntu-latest
+    env:
+      # The wasm-bindgen engine/crates/wasm/Cargo.toml pins with "="; the build stops when the two differ.
+      WASM_BINDGEN: 0.2.129
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      # wasm-bindgen-cli takes minutes to compile, and the cargo target holds the engine's dependencies.
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/wasm-bindgen
+          key: wasm-bindgen-${{ runner.os }}-${{ env.WASM_BINDGEN }}
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ${{ runner.temp }}/easywriter-engine/target
+          key: engine-target-${{ runner.os }}-${{ hashFiles('engine/rust-toolchain.toml', 'engine/Cargo.lock') }}
+          restore-keys: engine-target-${{ runner.os }}-
+      # With no argument rustup installs what engine/rust-toolchain.toml names: the compiler, the wasm32 target and its components.
+      - name: Rust toolchain and wasm-bindgen
+        working-directory: engine
+        run: |
+          rustup toolchain install
+          command -v wasm-bindgen > /dev/null || cargo install wasm-bindgen-cli --version "$WASM_BINDGEN" --locked
+      # wasm-opt, which the build runs over the module with -Oz (scripts/build-engine-wasm.mjs --ci). A binaryen release rather
+      # than apt's, which is too old for features the module uses (bulk-memory-opt, call-indirect-overlong). When this step
+      # fails, or wasm-opt writes a module that WebAssembly.validate refuses, the build ships the module unoptimised with a
+      # warning, so the release goes on.
+      - name: Binaryen
+        continue-on-error: true
+        env:
+          BINARYEN: version_133
+          BINARYEN_SHA256: 2dc9c7813f5375db93d96ead4b78222fcc3e2677bbb832297af4797782a37489
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/binaryen.tar.gz" "https://github.com/WebAssembly/binaryen/releases/download/$BINARYEN/binaryen-$BINARYEN-x86_64-linux.tar.gz"
+          echo "$BINARYEN_SHA256  $RUNNER_TEMP/binaryen.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/binaryen.tar.gz" -C "$RUNNER_TEMP"
+          "$RUNNER_TEMP/binaryen-$BINARYEN/bin/wasm-opt" --version
+          echo "$RUNNER_TEMP/binaryen-$BINARYEN/bin" >> "$GITHUB_PATH"
+      - name: Build the engine
+        env:
+          # The script's build cache and cargo target go in the OS temp folder: here the one the cache step restores.
+          TMPDIR: ${{ runner.temp }}
+        run: node scripts/build-engine-wasm.mjs --ci
+      - uses: actions/upload-artifact@v4
+        with:
+          name: engine-wasm
+          path: |
+            src/engine/wasm/ew.js
+            src/engine/wasm/ew_bg.wasm
+            src/engine/wasm/STAMP
+          if-no-files-found: error
+          retention-days: 1
+      # The same module with its name section, for reading a released build's crash stacks. Its own artifact, so the Windows
+      # and Mac jobs never download it into src/engine/wasm.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: engine-wasm-symbols
+          path: ${{ runner.temp }}/easywriter-engine/*/ew_bg.full.wasm
+          if-no-files-found: error
+          retention-days: 90
+
+  win:
+    needs: [draft, engine]
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: engine-wasm
+          path: src/engine/wasm
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -45,6 +122,15 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           EP_DRAFT: "true"
+      # The portable updater (main.js downloadPortable) installs nothing without this file: the zip's sha512 in base64, which
+      # latest.yml does not carry because it lists only the installer.
+      - name: Portable zip checksum
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          node -e "const f='release/EasyWriter-Portable.zip';require('fs').writeFileSync(f+'.sha512',require('crypto').createHash('sha512').update(require('fs').readFileSync(f)).digest('base64'))"
+          gh release upload "$GITHUB_REF_NAME" release/EasyWriter-Portable.zip.sha512 --clobber
       # Portable copies from before EasyWriter-Portable.zip look for EasyWriter-<version>-win.zip in the latest release. Remove
       # this step once none of them is left.
       - name: Portable zip under its old name
@@ -60,12 +146,16 @@ jobs:
   # needs the secrets CSC_LINK and CSC_KEY_PASSWORD (the Developer ID Application certificate as base64 .p12 and its password),
   # APPLE_API_KEY_P8 (the App Store Connect API key's .p8 text), APPLE_API_KEY_ID and APPLE_API_ISSUER.
   mac:
-    needs: draft
-    # After the draft on a tag; run by hand, on its own (the draft job is skipped then).
-    if: ${{ !cancelled() && vars.MAC_RELEASE == 'true' && (needs.draft.result == 'success' || github.event_name == 'workflow_dispatch') }}
+    needs: [draft, engine]
+    # After the draft on a tag; run by hand, on its own (the draft job is skipped then). The engine job runs in both cases.
+    if: ${{ !cancelled() && vars.MAC_RELEASE == 'true' && needs.engine.result == 'success' }}
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: engine-wasm
+          path: src/engine/wasm
       # Run by hand, the job adds to a published release and never makes one.
       - name: Published release for this version
         if: github.event_name == 'workflow_dispatch'

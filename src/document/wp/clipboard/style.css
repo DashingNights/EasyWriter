@@ -1,0 +1,10 @@
+/* Work package clipboard (docs/plans/word plan.md §3): the Format Painter's paintbrush cursor (our own drawing, hotspot at the tip
+   of the brush) while the painter is armed, and the Paste Options button over the text. */
+[data-doc-text][data-painter] {
+  cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 20 20'%3E%3Cpath d='M2 18c3 0 4-1 4.5-3l2-1.5-2.5-2.5-1.5 2C2.5 13.5 2 15 2 18z' fill='%23222' stroke='%23fff' stroke-width='1'/%3E%3Cpath d='M8.5 13.5 17.5 4a1.6 1.6 0 0 0-2.2-2.2L6 10.8z' fill='%23d97706' stroke='%23fff' stroke-width='1'/%3E%3C/svg%3E") 2 18, text;
+}
+
+#editor-area[data-word-view] [data-paste-options] {
+  z-index: 5;
+  font-size: 0.8125rem;
+}

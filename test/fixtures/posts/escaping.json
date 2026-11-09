@@ -1,0 +1,26 @@
+{
+  "type": "doc",
+  "content": [
+    {
+      "type": "paragraph",
+      "content": [
+        { "type": "text", "text": "A link", "marks": [{ "type": "link", "attrs": { "href": "https://daf.staffs.ac.uk/search?q=a<b>c" } }] }
+      ]
+    },
+    {
+      "type": "canvas",
+      "attrs": {
+        "w": 200,
+        "h": 80,
+        "dw": 200,
+        "frame": null,
+        "bg": "post",
+        "items": [
+          { "type": "shape", "id": "a", "shape": "rect", "label": "a < b > c" }
+        ],
+        "flow": null,
+        "source": null
+      }
+    }
+  ]
+}

@@ -2,7 +2,7 @@ import { findPlaybooks } from '../assistant/playbooks.mjs';
 import { define, fail } from './define.mjs';
 import { assistantMode, CATEGORIES, categoryOf, CORE, DESCRIBE_NAMES, refusal, toolName, VIEW_SETS } from './tool-sets.mjs';
 
-// commands.* (SPEC §8 Catalogue; automation plan §7, §13.2 Tool calls): tool discovery for a model that is offered only a few
+// commands.* (SPEC §8 Catalogue; automation plan §7, §13.2): tool discovery for a model that is offered only a few
 // tools. commands.index lists categories or tool summaries (a word search also the assistant's playbooks whose title matches,
 // playbooks.mjs), commands.describe returns full tool schemas in the model form
 // (the assistant's loop then offers them). Both read the catalogue through ctx.lib (commands.js).

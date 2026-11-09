@@ -122,6 +122,31 @@ test('Invision 4: CKEditor colours, sizes and fonts map to the kit; spoilers bec
   assert.deepEqual(loose, p(t('Loose div text')));
 });
 
+test('a post copied from the DOM editor keeps its canvas, media and plan chart', () => {
+  // What the DOM post kit's renderHTML writes for each (canvas.js, plan-chart.js, extensions.js Media): a paste from a DOM post
+  // or another window brings the objects back, not their fallback text or pictures.
+  const canvas = { w: 400, h: 140, dw: 400, frame: null, bg: 'post', items: [{ id: 'a', type: 'image', src: 'data:image/png;base64,AAAA', x: 0, y: 0, w: 400, h: 140 }] };
+  const chart = { id: 'abc1234', planId: null, view: 'kanban', options: {}, frozen: null, dw: 600 };
+  const html = `<div data-canvas="" data-json='${JSON.stringify(canvas)}'></div>`
+    + `<div data-media="" data-name="g.gif" data-dw="360"><img src="data:image/gif;base64,R0lGOD" alt="g.gif" style="width: 360px"></div>`
+    + `<div data-plan-chart="" data-json='${JSON.stringify(chart)}'></div>`;
+  const doc = postToDoc(html, [], { objects: true });
+  assert.deepEqual(doc.content.map((n) => n.type), ['canvas', 'media', 'planChart']);
+  assert.deepEqual(doc.content[0].attrs, canvas);
+  assert.deepEqual(doc.content[1].attrs, { src: 'data:image/gif;base64,R0lGOD', name: 'g.gif', dw: 360 });
+  assert.deepEqual(doc.content[2].attrs, chart);
+});
+
+test('the forum import never reads objects out of a post\'s HTML', () => {
+  // Another user's post may carry these divs: the import (no `objects`) leaves them as the plain blocks they are.
+  const html = '<div data-media="" data-src="https://evil.example/x.png"></div>'
+    + `<div data-canvas="" data-json='{"items":[{"type":"image","src":"data:image/png;base64,AAAA"}]}'></div>`
+    + `<div data-plan-chart="" data-json='{"planId":null,"view":"kanban"}'></div><p>Their text</p>`;
+  const doc = postToDoc(html, []);
+  assert.ok(!doc.content.some((n) => ['media', 'canvas', 'planChart'].includes(n.type)), JSON.stringify(doc.content));
+  assert.deepEqual(doc.content.at(-1), p(t('Their text')));
+});
+
 test('unknown markup and a media index without an https file: plain paragraphs, nothing invented', () => {
   const doc = postToDoc('<custom-thing>Hello <b>there</b></custom-thing><section><p>Inner</p></section><img data-ew-media="4"><script>x()</script>', []);
   assert.deepEqual(doc.content, [p(t('Hello '), t('there', [{ type: 'bold' }])), p(t('Inner'))]);

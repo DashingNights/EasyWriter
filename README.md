@@ -95,3 +95,5 @@ npm start
 ## Licence
 
 The source is published so that you can read and review it. It is not open source, and you may not copy, change or redistribute it without written permission. You may download the official release builds and run them for your own use. See [LICENSE](LICENSE).
+
+The app includes open fonts that stand in for Word's when a computer lacks them: Carlito, Caladea, Liberation and Selawik. Each keeps its own licence (SIL Open Font License 1.1 or Apache License 2.0), listed with its source in [src/vendor/fonts](src/vendor/fonts/README.md) and in the app under File > Options > Advanced > Font Substitution.

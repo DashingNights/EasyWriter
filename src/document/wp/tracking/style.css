@@ -1,0 +1,9 @@
+/* Display for Review (tracking): what each mode hides. The colours, marks and bars come from the scoped sheet colors.mjs writes. */
+/* Simple Markup and No Markup: the final text. */
+.page[data-format="document"] .ProseMirror:is([data-markup="simple"], [data-markup="none"]) del[data-rev] { display: none; }
+.page[data-format="document"] .ProseMirror:is([data-markup="simple"], [data-markup="none"]) ins[data-rev] { color: inherit; text-decoration: none; }
+.page[data-format="document"] .ProseMirror:is([data-markup="simple"], [data-markup="none"]) tr[data-rev*='"del"'] { display: none; }
+/* Original: deletions plain, insertions hidden (formatting stays new). */
+.page[data-format="document"] .ProseMirror[data-markup="original"] ins[data-rev] { display: none; }
+.page[data-format="document"] .ProseMirror[data-markup="original"] del[data-rev] { color: inherit; text-decoration: none; }
+.page[data-format="document"] .ProseMirror[data-markup="original"] tr[data-rev*='"ins"'] { display: none; }

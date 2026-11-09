@@ -1,0 +1,24 @@
+/* Paragraph borders and shading (src/document/wp/borders/group.js sets data-bdr and the --bdr-* variables): the box is drawn
+   on ::after, outside the text by each edge's distance, behind the text. A list paragraph's box takes in its number, as Word
+   draws the left border left of it. */
+.page[data-format="document"] .ProseMirror [data-bdr] { position: relative; }
+.page[data-format="document"] .ProseMirror [data-bdr][data-label] { --bdr-hang: var(--list-hanging, 0px); }
+.page[data-format="document"] .ProseMirror [data-bdr]::after {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  pointer-events: none;
+  top: 0;
+  bottom: 0;
+  left: calc(-1 * (var(--bdr-il, 0pt) + var(--bdr-hang, 0pt)));
+  right: calc(-1 * var(--bdr-ir, 0pt));
+  border-top: var(--bdr-t, none);
+  border-right: var(--bdr-r, none);
+  border-bottom: var(--bdr-b, none);
+  border-left: var(--bdr-l, none);
+  background: var(--bdr-bg, transparent);
+  box-shadow: var(--bdr-sh, none);
+}
+/* The box sits at z-index -1, so a cell's background (its shading) would paint over it: a cell holding a box (positioned in
+   page.css) stacks its own. */
+.page[data-format="document"] .ProseMirror :is(td, th):has([data-bdr]) { z-index: 0; }

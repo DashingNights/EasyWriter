@@ -56,17 +56,10 @@ export const showIn = (pt, unit) => String(Math.round((pt / unit.pt) * 100) / 10
 /** The gap between two pages on screen, in px (docs/plans/document.md Page view). */
 export const GAP = 16;
 
-/** Pages a run of content `height` px tall takes when it starts at the top of a page's text area: each page holds `body` px of
- * text, then `breaker` px (bottom margin, gap, top margin) the text skips. A height that ends inside a breaker is on the next
- * page; half a pixel of rounding is let through. */
-export function pagesFor(height, body, breaker) {
-  if (height <= body + 0.5) return 1;
-  return 1 + Math.ceil((height - body - 0.5) / (body + breaker));
-}
-
 /** The page (0-based, over the whole document) at layout y `y`: `segments` are the runs between manual page breaks in order,
- * each {top: the y its first page's text starts at, pages}; `step` is a page's body plus breaker. */
-export function pageAt(y, segments, step) {
+ * each {top: the y its first page's text starts at, pages}; `step` is a page's body plus breaker. With `body` (a page's text
+ * height), a y inside a breaker is the next page's: only a block box's top can sit there, its first line goes below the breaker. */
+export function pageAt(y, segments, step, body = Infinity) {
   let first = 0;
   for (let i = 0; i < segments.length; i++) {
     const s = segments[i];
@@ -74,32 +67,12 @@ export function pageAt(y, segments, step) {
       first += s.pages;
       continue;
     }
-    return first + Math.min(s.pages - 1, Math.max(0, Math.floor((y - s.top) / step)));
+    const local = Math.max(0, y - s.top);
+    let k = Math.floor(local / step);
+    if (local - k * step > body - 0.5) k++;
+    return first + Math.min(s.pages - 1, k);
   }
   return 0;
-}
-
-/** The loop guard of the page count (research-tech.md Pagination): page counts that flip back and forth for one doc version
- * (more pages push a block below the next breaker, fewer let it back) settle on the largest count seen; counts that keep
- * changing (a block taller than a page, pushed below every new breaker) stop after `limit` changes. Returns settle(version,
- * counts) giving the counts to draw. */
-export function pageGuard(limit = 12) {
-  let version;
-  let seen = [];
-  let drawn = null;
-  return (v, counts) => {
-    if (v !== version) {
-      version = v;
-      seen = [];
-    }
-    const key = counts.join();
-    if (key === seen.at(-1) || seen.length > limit) return drawn; // a repeat (a caret move) is no change
-    const flip = seen.length > 1 && seen.includes(key) && seen.at(-1) !== key;
-    seen.push(key);
-    drawn = flip ? counts.map((n, i) => Math.max(n, ...seen.map((k) => Number(k.split(',')[i]) || 0))) : counts;
-    if (flip) seen.length = limit + 1; // settled for this version
-    return drawn;
-  };
 }
 
 /** The @page rule printing `sect` (Phase 2's PDF view): paper size and margins in points, and the page number in a margin box

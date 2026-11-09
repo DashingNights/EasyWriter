@@ -16,6 +16,11 @@ import { BLOCK_SECTIONS } from '../tool-rank.mjs';
 import { entryKey, listTools, toolContext } from '../tools.js';
 import { PointerMenu } from './board/BoardMenu.jsx';
 import { documentTools, editAltText, insertTable } from '../../document/tools.js';
+import { headerAreaAt, hitOf, wordAt } from '../../document/wp/context-menu/hit.js';
+import { mini, MiniToolbar } from '../../document/wp/context-menu/MiniToolbar.jsx';
+import { entriesFor, WordMenu } from '../../document/wp/context-menu/WordMenu.jsx';
+import { ctxOf } from '../../tooling/registry.js';
+import { activeSurface } from '../../tooling/surface.js';
 import { textTools, useBox } from './Toolbar.jsx';
 
 /** A right-click outside the selection moves it to the pointer first, as in a word processor: a block preview (canvas, plan
@@ -38,14 +43,56 @@ function selectAt(ed, { at, target }) {
   view.dispatch(state.tr.setSelection(sel));
 }
 
+/** Whether the DOM selection covers the client point `at` (Chromium selects a misspelled word on a right-click before the
+ * editor sees it). */
+function domSelectionAt(at) {
+  const s = getSelection();
+  if (!s?.rangeCount || s.isCollapsed) return false;
+  return [...s.getRangeAt(0).getClientRects()].some((r) => at.x >= r.left && at.x <= r.right && at.y >= r.top && at.y <= r.bottom);
+}
+
+/** The misspelling at the caret of `ed` for a menu opened from the keyboard (no right-click, so main sends no spelling): {word,
+ * suggestions} or null. */
+function caretSpelling(ed) {
+  const w = wordAt(ed.state);
+  const spell = globalThis.__wordTest?.spell ?? window.api.word?.spell; // plan.md §1.16: the harness stubs the checker
+  try {
+    return w && spell?.misspelled(w.text) ? { word: w.text, suggestions: spell.suggest(w.text) ?? [] } : null;
+  } catch {
+    return null;
+  }
+}
+
+// The atoms a right-click selects, so ctxOf flags them and Word's menu for them opens.
+const SELECTED_ON_CLICK = new Set(['image', 'field', 'equation']);
+
+/** A right-click on a picture, field or equation selects it, as Word does (selectAt would put the caret beside it). → true when
+ * it did. */
+function selectAtom(ed, at) {
+  const { view, state } = ed;
+  const hit = view.posAtCoords({ left: at.x, top: at.y });
+  if (!hit || hit.inside < 0 || !SELECTED_ON_CLICK.has(state.doc.nodeAt(hit.inside)?.type.name)) return false;
+  if (state.selection.from !== hit.inside || !SELECTED_ON_CLICK.has(state.selection.node?.type.name)) {
+    view.focus();
+    view.dispatch(state.tr.setSelection(NodeSelection.create(state.doc, hit.inside)));
+  }
+  return true;
+}
+
+const inDocument = () => activeSurface()?.format === 'document';
+const isMenuKey = (e) => e.key === 'ContextMenu' || (e.key === 'F10' && e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey);
+
 /** The draft menu: a right-click in the editor area opens it at the pointer in place of Electron's native menu, with the
  * entries for what is under it: a block's actions, a link's, a text selection's formatting, or at a caret Insert. A board keeps
  * its own menu (§6c Board menu) and the text being edited on it the native one. Main sends every right-click's spelling, link
  * and edit state (window.api.editMenu); a right-click anywhere else gets the native menu back. A right-click while a popup is
  * open only closes it (§6c Dismiss-only clicks). A picked entry runs once the menu has closed and the editor has the focus back,
- * so a paste lands in the document. Mounted once (App.jsx). */
+ * so a paste lands in the document. In a Document, Word's menu (WordMenu.jsx) opens on the right-click itself, so a synthetic one
+ * opens it too, and the spelling main sends after it joins it; Shift+F10 and the Menu key open it at the caret; a node-selected
+ * canvas or plan chart keeps the block menu. It also hosts the mini toolbar. Mounted once (App.jsx). */
 export function DraftMenu() {
   const [menu, setMenu] = useState(null); // {at, misspelledWord, suggestions, linkURL, editFlags, n} while open
+  const [word, setWord] = useState(null); // Word's menu in a Document: {at, hit, n} while open
   const picked = useRef(null);
   const ed = useEditor();
   const box = useBox();
@@ -54,21 +101,75 @@ export function DraftMenu() {
     let last = null; // the last right-click: {at, target, draft}
     let dismissed = false;
     let n = 0;
+    let armed = false; // a left press in Document text, so its release may end a mouse selection
     const onDown = (e) => {
       if (e.button === 2) dismissed = dismissOnly(e);
+      armed = e.button === 0 && inDocument() && !!e.target?.closest?.('[data-doc-text]');
+    };
+    // A text selection made with the mouse shows the mini toolbar, faded, once the editor has taken the selection, when Options
+    // turns that on (off by default); a clicked picture or shape never does.
+    const onUp = (e) => {
+      if (!armed) return;
+      armed = false;
+      const at = { x: e.clientX, y: e.clientY };
+      setTimeout(() => {
+        const t = ctxOf().target;
+        if (t && !t.state.selection.empty && !t.state.selection.node && !getState().quickTools) mini.show(at);
+      });
+    };
+    /** Opens Word's menu at `at` for what is there now: the header band of a page, else the target's selection. */
+    const openWord = (at, opts = {}) => {
+      const hit = hitOf(ctxOf(), opts);
+      const { id, entries } = entriesFor(hit);
+      window.__word = Object.assign(window.__word ?? {}, { contextMenuLast: { id, hit, count: entries.length } }); // for harness cases
+      if (!entries.length) return; // nothing registered for this place yet (Edit Header before headers-footers)
+      setMenu(null);
+      setWord({ at, hit, n: ++n });
     };
     const onMenu = (e) => {
       last = null;
       if (dismissed) e.preventDefault(); // no menu at all
       dismissed = false;
       const t = e.target instanceof Element ? e.target : null;
-      if (!e.defaultPrevented) last = { at: { x: e.clientX, y: e.clientY }, target: t, draft: !!t?.closest('#editor-area') && !t.closest('.wb') };
+      if (!e.defaultPrevented) last = { at: { x: e.clientX, y: e.clientY }, target: t, draft: !!t?.closest('#editor-area, [data-canvas-pages]') && !t.closest('.wb') };
+      if (!last?.draft || !inDocument()) return;
+      // A canvas draft has no DOM editor to read: Word's menu comes from the engine's document.context (hit.js canvasHit).
+      const canvas = !!activeSurface()?.session;
+      const main = canvas ? null : getState().editor;
+      const ed = canvas ? null : t.closest('.ProseMirror')?.editor ?? null; // the main editor or a story editor
+      const headerArea = !canvas && (!ed || ed === main) ? headerAreaAt(main, last.at) : null;
+      if (!headerArea && ed && !selectAtom(ed, last.at) && !domSelectionAt(last.at)) selectAt(ed, last);
+      const sel = main?.state.selection;
+      if (!headerArea && ed && ed === main && ['canvas', 'planChart'].includes(sel?.node?.type.name)) return; // a canvas or plan chart: the block menu (onOpen)
+      last.word = true;
+      openWord({ x: last.at.x + 12, y: last.at.y }, { headerArea }); // 12 px right of the pointer: clear of the caret
+    };
+    const onKey = (e) => {
+      if (!isMenuKey(e)) return;
+      const root = e.target?.closest?.('[data-doc-text]');
+      if (!root || !inDocument()) return;
+      // Chromium opens its own menu on the key's release on Windows, so both halves are taken.
+      e.preventDefault();
+      e.stopPropagation();
+      if (e.type !== 'keydown' || e.repeat) return;
+      const ed = root.editor ?? ctxOf().target;
+      const c = ed.view.coordsAtPos(ed.state.selection.head);
+      openWord({ x: c.left, y: c.bottom }, { spelling: caretSpelling(ed) });
     };
     window.addEventListener('pointerdown', onDown, true);
+    window.addEventListener('mouseup', onUp, true);
+    window.addEventListener('keydown', onKey, true);
+    window.addEventListener('keyup', onKey, true);
     document.addEventListener('contextmenu', onMenu);
     const off = api.onOpen((p) => {
       const editor = getState().editor;
-      if (last?.draft && editor) {
+      if (last?.word) {
+        // Main's spelling for the right-click that opened Word's menu.
+        if (p.misspelledWord) {
+          const spelling = { word: p.misspelledWord, suggestions: p.suggestions ?? [] };
+          setWord((m) => m && { ...m, hit: { ...m.hit, spelling } });
+        }
+      } else if (last?.draft && editor) {
         if (!p.misspelledWord) selectAt(editor, last);
         setMenu({ ...p, at: { x: last.at.x + 12, y: last.at.y }, n: ++n }); // 12 px right of the pointer: clear of the caret
       } else api.act('native');
@@ -76,11 +177,20 @@ export function DraftMenu() {
     });
     return () => {
       window.removeEventListener('pointerdown', onDown, true);
+      window.removeEventListener('mouseup', onUp, true);
+      window.removeEventListener('keydown', onKey, true);
+      window.removeEventListener('keyup', onKey, true);
       document.removeEventListener('contextmenu', onMenu);
       off();
     };
   }, []);
-  if (!menu || !ed) return null;
+  const doc = (
+    <>
+      {word && <WordMenu key={word.n} menu={word} onClose={() => setWord(null)} />}
+      <MiniToolbar />
+    </>
+  );
+  if (!menu || !ed) return doc;
   const isDocument = getState().draft?.format === 'document';
   const T = isDocument ? documentTools(ed) : textTools(ed); // the open format's own commands (docs/plans/document.md Risks)
   const c = toolContext(null);
@@ -192,24 +302,27 @@ export function DraftMenu() {
     );
   }
   return (
-    <PointerMenu key={menu.n} at={menu.at} onClose={() => setMenu(null)} onCloseAutoFocus={runPicked}>
-      {menu.misspelledWord && (
-        <>
-          {menu.suggestions.map((w) => <DropdownMenuItem key={w} inset className="font-medium" onSelect={() => (picked.current = replace(w))}>{w}</DropdownMenuItem>)}
-          {item('Add to dictionary', <BookPlus />, '', act('learn'))}
-          <DropdownMenuSeparator />
-        </>
-      )}
-      {link && (
-        <>
-          {/^https?:/i.test(link) && item('Open link', <ExternalLink />, '', () => openPane(null, link))}
-          {item('Copy link address', <Copy />, '', act('copyLink'))}
-          {item('Edit link...', <Link />, keyLabel('text.link'), openLinkDialog)}
-          {item('Remove link', <Link2Off />, '', () => run((x) => x.extendMarkRange('link').unsetLink()))}
-          <DropdownMenuSeparator />
-        </>
-      )}
-      {body}
-    </PointerMenu>
+    <>
+      {doc}
+      <PointerMenu key={menu.n} at={menu.at} onClose={() => setMenu(null)} onCloseAutoFocus={runPicked}>
+        {menu.misspelledWord && (
+          <>
+            {menu.suggestions.map((w) => <DropdownMenuItem key={w} inset className="font-medium" onSelect={() => (picked.current = replace(w))}>{w}</DropdownMenuItem>)}
+            {item('Add to dictionary', <BookPlus />, '', act('learn'))}
+            <DropdownMenuSeparator />
+          </>
+        )}
+        {link && (
+          <>
+            {/^https?:/i.test(link) && item('Open link', <ExternalLink />, '', () => openPane(null, link))}
+            {item('Copy link address', <Copy />, '', act('copyLink'))}
+            {item('Edit link...', <Link />, keyLabel('text.link'), openLinkDialog)}
+            {item('Remove link', <Link2Off />, '', () => run((x) => x.extendMarkRange('link').unsetLink()))}
+            <DropdownMenuSeparator />
+          </>
+        )}
+        {body}
+      </PointerMenu>
+    </>
   );
 }

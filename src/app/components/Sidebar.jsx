@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { createPortal } from 'react-dom';
 import { cn } from 'cn';
 import {
   ChevronRight, CircleAlert, ClipboardPaste, Cloud, CloudAlert, CloudCheck, CloudOff, CloudUpload, Copy, CopyPlus, File, FilePlus, FileText, Folder,
-  FolderInput, FolderOpen, FolderPlus, MessageSquareText, Globe, PanelLeftClose, PanelLeftOpen, Pencil, Plus, Scissors, Settings, SquareKanban, Tag,
+  FolderInput, FolderOpen, FolderPlus, MessageSquareText, Globe, PanelLeftClose, PanelLeftOpen, Pencil, Plus, Scissors, Settings, Shapes, SquareKanban, Tag,
   Trash2, Workflow, X,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
@@ -20,8 +21,9 @@ import { Spinner } from '@/components/ui/spinner';
 import {
   addThreadUrl, canPaste, copyDraft, cutDraft, deleteDraft, deleteFolder, draftGroups, duplicateDraft, moveDraft, moveFolder, newFolder, openDraft,
   openSettings, pasteDraft, placeDraft, refocusEditor, removeThread, renameDraft, renameFolder, saveSettings, selectThread, setDraftTag,
-  setDraftThreadFor, startNewDraft, threadLabel, toast, toggleFolder, toggleSidebar,
+  NARROW, setDraftThreadFor, shownThread, startNewDraft, threadLabel, toast, toggleBoardTree, toggleFolder, toggleSidebar, unlinkedDrafts,
 } from '../actions.js';
+import { motion } from '../motion.js';
 import { cleanTitle, TITLE_LIMIT } from '../../doc-utils.mjs';
 import { first, Slot } from '../../integrations/ui.js';
 import { draftTag, tagList } from '../drafts-meta.js';
@@ -30,17 +32,19 @@ import { openCount, openPlan, planFor, usePlans } from '../plans.js';
 import { getState, useStore, WORKER } from '../store.js';
 import { showPage } from '../views.js';
 import { InlineInput } from './InlineInput.jsx';
+import { CHIP_CLASS } from './dragChip.js';
 import { IconButton, Tip } from './Tip.jsx';
 import { keepFocus } from './Toolbar.jsx';
 import { PointerMenu } from './board/BoardMenu.jsx';
-import { dismissOnly } from '../../whiteboard.js';
+import { activeBoard, dismissOnly } from '../../whiteboard.js';
+import { boardOpens } from '../../tooling/surface.js';
 
 // Sidebar sections are flat (SPEC 7b): Card's layout without its box; the sidebar separates them with thin lines.
 const FLAT = 'rounded-none border-0 bg-transparent py-2.5 shadow-none';
 const SectionTitle = ({ children }) => <CardTitle className="text-sm">{children}</CardTitle>;
 
 // A draft row's format icon (docs/plans/document.md newDraftModal): a draft without format is a forum post.
-const FORMAT_ICONS = { document: FileText, 'forum-post': MessageSquareText, page: File };
+const FORMAT_ICONS = { document: FileText, 'forum-post': MessageSquareText, page: File, board: Shapes };
 function FormatIcon({ format }) {
   const Icon = FORMAT_ICONS[format ?? 'forum-post'] ?? File;
   return <Icon className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />;
@@ -59,9 +63,10 @@ function Row({ active, onClick, title, className, children, ...props }) {
 
 /** Hover actions laid over the row's right end instead of taking space, so a title can use the whole row; they show on
  * hover, while the row holds the focus and while one of their menus is open, over the row's own tint. */
-function HoverActions({ children }) {
+function HoverActions({ children, offset }) {
   return (
-    <div className="invisible absolute top-1/2 right-1 flex -translate-y-1/2 items-center rounded-md bg-background bg-linear-to-b from-accent/60 to-accent/60 pl-1 group-focus-within:visible group-hover:visible group-data-on:from-accent group-data-on:to-accent has-[[data-state=open]]:visible">
+    <div className={cn('invisible absolute top-1/2 flex -translate-y-1/2 items-center rounded-md bg-background bg-linear-to-b from-accent/60 to-accent/60 pl-1 group-focus-within:visible group-hover:visible group-data-on:from-accent group-data-on:to-accent has-[[data-state=open]]:visible',
+      offset ? 'right-7' : 'right-1')}>
       {children}
     </div>
   );
@@ -71,7 +76,8 @@ function Threads() {
   const settings = useStore((s) => s.settings);
   usePlans(); // the plan counts
   if (!settings) return null;
-  const { threads, selectedThread } = settings;
+  const { threads } = settings;
+  const shown = shownThread();
 
   // Projects an integration groups (the forum: the year and subject of the thread) go under their two headings, indented: an
   // outer group's inner groups along a guide line, an inner group's projects under it. The rest come first, with no headings.
@@ -90,9 +96,6 @@ function Threads() {
     <Card className={`${FLAT} gap-1.5`}>
       <CardHeader className="px-2.5"><SectionTitle>Projects</SectionTitle></CardHeader>
       <CardContent className="px-1">
-        <Row active={!selectedThread} onClick={() => selectThread(null)}>
-          <span className="min-w-0 flex-1 truncate">All drafts</span>
-        </Row>
         {!threads.length && <p className="px-1.5 py-1 text-xs text-muted-foreground">No projects yet.</p>}
         {yearOrder.map((year) => (
           <div key={year}>
@@ -102,7 +105,7 @@ function Threads() {
               <div key={subject}>
                 {subject && <div className="mt-1 truncate px-1.5 text-xs font-medium text-muted-foreground" title={subject}>{subject}</div>}
                 {years.get(year).get(subject).map((t) => (
-                  <Row key={t.url} active={t.url === selectedThread} title={first('projectHint', t) ?? t.title}
+                  <Row key={t.url} active={t.url === shown} title={first('projectHint', t) ?? t.title}
                     className={cn(subject && 'pl-4')} onClick={() => selectThread(t.url)}>
                     <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground group-hover:text-foreground">{t.title || t.url}</span>
                     {planFor(t.url) && (
@@ -137,28 +140,61 @@ function dragRow(e, id, folder, setDrag) {
   let moved = false;
   let to;
   let after;
+  // A draft row carries a chip beside the pointer, its icon and title, so the drag shows what it holds; over an open board the
+  // chip takes the accent, since a drop there places the draft.
+  const row = folder ? null : e.currentTarget;
+  let chip = null;
+  const carry = (ev) => {
+    if (!row) return;
+    if (!chip) {
+      chip = document.createElement('div');
+      chip.dataset.dragChip = '';
+      chip.className = `fixed ${CHIP_CLASS}`;
+      const icon = [...row.querySelectorAll('svg')].find((s) => !s.closest('button'));
+      if (icon) chip.append(icon.cloneNode(true));
+      chip.append(Object.assign(document.createElement('span'), { className: 'truncate', textContent: row.title || 'Untitled draft' }));
+      document.body.append(chip);
+    }
+    chip.style.left = `${ev.clientX + 14}px`;
+    chip.style.top = `${ev.clientY + 10}px`;
+    const board = !!document.elementFromPoint(ev.clientX, ev.clientY)?.closest('[data-board]') && boardOpens(getState());
+    chip.style.borderColor = board ? 'var(--primary)' : '';
+  };
   const move = (ev) => {
     moved ||= Math.hypot(ev.clientX - x0, ev.clientY - y0) > 4;
     if (!moved) return;
+    carry(ev);
     const el = document.elementFromPoint(ev.clientX, ev.clientY)?.closest(folder ? '[data-drop]' : '[data-draft], [data-drop]');
     to = el?.dataset.draft ?? el?.dataset.drop;
     after = undefined;
-    if (to === id || (folder && !to)) to = undefined; // its own row; a folder goes only between folders
+    // its own row; a folder goes only between folders; nothing goes into Unlinked drafts
+    if (to === id || (folder && !to) || el?.closest('[data-unlinked]')) to = undefined;
     else if (el?.dataset.draft || folder) {
       const r = el.getBoundingClientRect();
       after = ev.clientY > r.top + r.height / 2;
     }
     setDrag({ id, folder, to, after });
   };
-  const up = () => {
+  const up = (ev) => {
     window.removeEventListener('pointermove', move);
     window.removeEventListener('pointerup', up);
+    chip?.remove();
     if (!moved) return;
     setDrag(null);
     const swallow = (c) => c.stopPropagation();
     window.addEventListener('click', swallow, true);
     setTimeout(() => window.removeEventListener('click', swallow, true));
+    // A row dropped on an open board places its draft there (bd-instance); the row keeps its folder and its order.
+    const api = !folder && boardOpens(getState()) ? activeBoard.get() : null;
+    if (api?.vp && ev && document.elementFromPoint(ev.clientX, ev.clientY)?.closest('[data-board]')) {
+      api.placeDraft({ draftId: id, at: api.vp.fromClient(ev.clientX, ev.clientY).world })
+        .catch((err) => console.warn('The draft was not placed', err));
+      return;
+    }
     if (to === undefined) return;
+    // A draft dragged out of Unlinked drafts joins the shown project.
+    const sel = !folder && shownThread();
+    if (sel && getState().drafts.find((d) => d.id === id)?.threadUrl !== sel) setDraftThreadFor(id, sel);
     if (folder) moveFolder(id, to, after);
     else if (after !== undefined) placeDraft(id, to, after);
     else moveDraft(id, to || null);
@@ -227,14 +263,19 @@ function MoveItems({ d, folderId, folders, threads, background }) {
   );
 }
 
-/** A draft row: a click opens the draft; a double-click on the title renames it in place (docs/plans/sidebar-menu.md decision
+/** A draft row: a click opens the draft; a double-click on the title renames it in place (docs/wiki/sidebar-menu.md decision
  * 1; its first click opens the draft): Enter or blur saves, Escape, an empty box or the same title saves nothing. */
 function DraftRow({ d, folderId, folders, threads, tag, tags, active, dragging, cut, menu, after, renaming, setRenaming, onDrag }) {
   const [tagging, setTagging] = useState(false); // the tag menu is open
   const working = useStore((s) => s.bgWrites.includes(d.id)); // the assistant wrote to it in the background this turn (§7i)
   const background = useStore((s) => s.worker?.draftId === d.id); // the background window of computer use has it (§7i)
-  // Agent edits waiting in it as suggestions: the open draft's live count, else the drafts summary's (docs/plans/suggestions.md)
+  // Agent edits waiting in it as suggestions: the open draft's live count, else the drafts summary's (docs/wiki/suggestions.md)
   const waiting = useStore((s) => (s.draft?.id === d.id && s.editor ? s.suggestions.count : d.suggestions ?? 0));
+  // The drafts this whiteboard holds, under its row (docs/plans/board/briefs/board-tree.md): only a board's summary carries
+  // `placed`, and a draft that no longer exists is left out. `settings.boardTreeOpen[boardId]` keeps the list shown or hidden.
+  const treeOpen = useStore((s) => !!s.settings?.boardTreeOpen?.[d.id]);
+  const kids = d.format === 'board' && d.placed?.length
+    ? d.placed.map((id) => getState().drafts.find((x) => x.id === id)).filter(Boolean) : [];
   return (
     <DropdownMenu>
       <Row active={active} title={d.title || 'Untitled draft'} data-draft={d.id}
@@ -265,14 +306,36 @@ function DraftRow({ d, folderId, folders, threads, tag, tags, active, dragging, 
           </span>
         )}
         <Slot name="DraftRowBadge" d={d} />
+        {!renaming && kids.length > 0 && (
+          // Its own place beside the hover actions, so it stays shown while the list is open and a click only toggles it.
+          <div className={cn('absolute top-1/2 right-1 z-10 flex -translate-y-1/2 items-center rounded-md bg-background bg-linear-to-b from-accent/60 to-accent/60 pl-1 group-data-on:from-accent group-data-on:to-accent',
+            !treeOpen && 'invisible group-focus-within:visible group-hover:visible')}>
+            <IconButton label={treeOpen ? 'Hide placed drafts' : 'Show placed drafts'} data-board-chevron={d.id}
+              onClick={(e) => { e.stopPropagation(); toggleBoardTree(d.id); }}>
+              <ChevronRight className={cn('size-3.5 transition-transform', treeOpen && 'rotate-90')} />
+            </IconButton>
+          </div>
+        )}
         {!renaming && ( // they would show over the rename box, which has the focus
-          <HoverActions>
+          <HoverActions offset={kids.length > 0}>
             <Slot name="DraftRowActions" d={d} />
             <IconButton label="Move to..." slot={DropdownMenuTrigger}><FolderInput /></IconButton>
             <IconButton label="Delete draft" variant="destructive-ghost" data-agent-risk="destructive" onClick={() => deleteDraft(d)}><Trash2 /></IconButton>
           </HoverActions>
         )}
       </Row>
+      {treeOpen && kids.length > 0 && (
+        <div className="ml-5 border-l pl-1" data-board-tree={d.id}>
+          {kids.map((k) => (
+            <Row key={k.id} data-board-child={k.id} title={k.title || 'Untitled draft'}
+              className="relative select-none before:absolute before:top-1/2 before:-left-1.5 before:h-px before:w-1.5 before:bg-border"
+              onClick={() => { if (getState().draft?.id === k.id) showPage('editor'); else openDraft(k.id); }}>
+              <FormatIcon format={k.format} />
+              <span className="min-w-0 flex-1 truncate">{k.title || 'Untitled draft'}</span>
+            </Row>
+          ))}
+        </div>
+      )}
       {/* Outside the Row: React events bubble out of the portal, and a menu click must not open the draft. */}
       <DropdownMenuContent align="end" className="max-w-72" onCloseAutoFocus={refocusEditor}>
         <MoveItems d={d} folderId={folderId} folders={folders} threads={threads} background={background} />
@@ -301,7 +364,7 @@ function FolderRow({ group: { folder, drafts }, over, menu, renaming, setRenamin
   );
 }
 
-/** The Drafts right-click menu (docs/plans/sidebar-menu.md decision 4) at `menu.at` for a draft row, a folder row or the empty
+/** The Drafts right-click menu (docs/wiki/sidebar-menu.md decision 4) at `menu.at` for a draft row, a folder row or the empty
  * space (`menu.kind`, `menu.id`; `menu.folderId`: the folder the right-click was in, null: the top level). A picked item runs
  * once the menu has closed and the focus is back (DraftMenu's pattern), so the rename box and the dialogs get the focus. */
 function DraftsMenu({ menu, settings, setRenaming, onClose }) {
@@ -322,14 +385,14 @@ function DraftsMenu({ menu, settings, setRenaming, onClose }) {
     body = (
       <>
         <DropdownMenuItem inset onSelect={() => pick(() => (getState().draft?.id === d.id ? showPage('editor') : openDraft(d.id)))}>Open</DropdownMenuItem>
-        {item('New draft here', FilePlus, () => startNewDraft({ folderId: menu.folderId }))}
+        {!menu.unlinked && item('New draft here', FilePlus, () => startNewDraft({ folderId: menu.folderId }))}
         <DropdownMenuSeparator />
         {item('Rename', Pencil, () => setRenaming(d.id), { disabled: background === d.id })}
         {item('Duplicate', CopyPlus, () => duplicateDraft(d.id).catch((e) => toast(e.message, true)))}
         <DropdownMenuSeparator />
         {item('Cut', Scissors, () => cutDraft(d.id))}
         {item('Copy', Copy, () => copyDraft(d.id))}
-        {paste}
+        {!menu.unlinked && paste}
         <DropdownMenuSeparator />
         <DropdownMenuSub>
           <DropdownMenuSubTrigger><FolderInput />Move to</DropdownMenuSubTrigger>
@@ -411,14 +474,18 @@ function Drafts() {
     e.preventDefault();
     if (only || !e.currentTarget.contains(e.target)) return;
     const draft = e.target.closest('[data-draft]');
+    const unlinked = !!e.target.closest('[data-unlinked]'); // only its rows have a menu, without New draft here and Paste
+    if (unlinked && !draft) return;
     const folderId = e.target.closest('[data-drop]')?.dataset.drop || null;
     setMenu({ at: { x: e.clientX, y: e.clientY }, kind: draft ? 'draft' : folderId ? 'folder' : 'space', id: draft?.dataset.draft ?? folderId,
-      folderId, n: ++menus });
+      folderId, unlinked, n: ++menus });
   };
+  const onPointerDownCapture = (e) => { if (e.button === 2) dismissed.current = dismissOnly(e); };
+  const unlinked = unlinkedDrafts();
 
   return (
-    <Card className={`${FLAT} flex-1 gap-1.5`} data-drop="" onContextMenu={onContextMenu}
-      onPointerDownCapture={(e) => { if (e.button === 2) dismissed.current = dismissOnly(e); }}>
+    <>
+    <Card className={`${FLAT} flex-1 gap-1.5`} data-drop="" onContextMenu={onContextMenu} onPointerDownCapture={onPointerDownCapture}>
       <CardHeader className="px-2.5">
         <SectionTitle>Drafts</SectionTitle>
         <CardAction className="flex">
@@ -443,6 +510,15 @@ function Drafts() {
       </CardContent>
       {menu && <DraftsMenu menu={menu} settings={settings} setRenaming={setRenaming} onClose={() => setMenu(null)} />}
     </Card>
+    {/* Drafts in no listed project (the user, 2026-10-28, in place of All drafts): at the list's foot, a few rows high with its
+        own scroll, shown only when it holds some. Nothing is added here: no New draft, no Paste, no drop. */}
+    {unlinked.length > 0 && (
+      <Card className={`${FLAT} shrink-0 gap-1.5`} data-unlinked="" onContextMenu={onContextMenu} onPointerDownCapture={onPointerDownCapture}>
+        <CardHeader className="px-2.5"><SectionTitle>Unlinked drafts</SectionTitle></CardHeader>
+        <CardContent className="max-h-40 overflow-y-auto px-0">{unlinked.map((d) => row(d, null))}</CardContent>
+      </Card>
+    )}
+    </>
   );
 }
 
@@ -509,68 +585,235 @@ function BackupStatus() {
   );
 }
 
-/** The fixed footer under the sections (§7g): the workspace tabs, Plans above Flowcharts, then Settings with the GitHub
- * backup's state at the right. The tabs navigate: the tab of the page shown is highlighted and clicking it does nothing. */
-function SidebarNav() {
+// Icons that never move (the user, 2026-10-28): the title row's sidebar button, the workspace and Settings icons and the pod's
+// all centre 20 px from the window's edge. The workspace and Settings buttons are the same elements open and minimized: each
+// keeps its icon at the same left padding and only narrows to an icon-wide chip that clips its label, so nothing is redrawn
+// elsewhere when the sidebar opens or minimizes.
+const CHIP = 'w-[33.5px]'; // 10.25 px, the 13 px icon, 10.25 px: centred on the 20 px line from the nav's 3.25 px padding
+
+/** The workspace tabs at the sidebar's top, above the projects and drafts: Plans, Flowcharts and Browser. `mini`: icon chips
+ * with their names in tooltips. */
+function Workspaces({ mini }) {
   const view = useStore((s) => s.view.type);
-  const tab = (type, icon, label, hint) => (
-    <Button variant="ghost" size="sm" aria-current={view === type ? 'page' : undefined} onMouseDown={keepFocus} onClick={() => showPage(type)}
-      className={cn('h-8 w-full justify-start px-2 font-normal', view === type && 'bg-accent hover:bg-accent')}>
-      {icon}
-      {label}
-      {hint && <span className="ml-auto text-xs text-muted-foreground">{hint}</span>}
-    </Button>
+  const tab = (type, icon, label, key) => (
+    <Tip title={key ? withKey(label, key) : label} side="right" wrap={mini ? undefined : 'w-full'} className={mini ? undefined : 'hidden'}>
+      <Button variant="ghost" size="sm" aria-label={label} aria-current={view === type ? 'page' : undefined} onMouseDown={keepFocus} onClick={() => showPage(type)}
+        className={cn('h-8 shrink-0 justify-start overflow-hidden has-[>svg]:pr-2 has-[>svg]:pl-[10.25px] font-normal', mini ? CHIP : 'w-full', view === type && 'bg-accent hover:bg-accent')}>
+        {icon}
+        <span className={cn(mini && 'invisible')}>{label}</span>
+        {key && <span className={cn('ml-auto text-xs text-muted-foreground', mini && 'invisible')}>{keyLabel(key)}</span>}
+      </Button>
+    </Tip>
   );
   return (
-    <div className="flex flex-col gap-0.5 border-t p-1">
-      <nav aria-label="Workspaces" className="flex flex-col gap-0.5">
-        {tab('plan', <SquareKanban />, 'Plans', keyLabel('app.plans'))}
-        {tab('flows', <Workflow />, 'Flowcharts')}
-        {tab('browser', <Globe />, 'Browser', keyLabel('app.browser'))}
-      </nav>
-      <div className="flex items-center gap-0.5">
-        <Button variant="ghost" size="sm" aria-label="Settings" onMouseDown={keepFocus} onClick={() => openSettings()} className="h-8 flex-1 justify-start px-2 font-normal">
-          <Settings />Settings
+    <nav aria-label="Workspaces" className="flex flex-col gap-0.5 border-b p-1">
+      {tab('plan', <SquareKanban />, 'Plans', 'app.plans')}
+      {tab('flows', <Workflow />, 'Flowcharts')}
+      {tab('browser', <Globe />, 'Browser', 'app.browser')}
+    </nav>
+  );
+}
+
+/** Settings and the backup status at the sidebar's foot: in one row, or minimized the backup status above Settings, which keeps
+ * the bottom row. */
+function SidebarFoot({ mini }) {
+  return (
+    <div className={cn('flex gap-0.5 border-t p-1', mini ? 'flex-col-reverse items-start' : 'items-center')}>
+      <Tip title="Settings" side="right" wrap={mini ? undefined : 'flex-1'} className={mini ? undefined : 'hidden'}>
+        <Button variant="ghost" size="sm" aria-label="Settings" onMouseDown={keepFocus} onClick={() => openSettings()}
+          className={cn('h-8 shrink-0 justify-start overflow-hidden has-[>svg]:pr-2 has-[>svg]:pl-[10.25px] font-normal', mini ? CHIP : 'w-full')}>
+          <Settings /><span className={cn(mini && 'invisible')}>Settings</span>
         </Button>
-        <BackupStatus />
-      </div>
+      </Tip>
+      <div className={cn('flex items-center gap-0.5', mini && cn(CHIP, 'flex-col'))}><BackupStatus /></div>
     </div>
   );
 }
 
-export function Sidebar() {
+/** The projects and drafts: the sidebar's middle, and the rail's menu. */
+const ProjectsAndDrafts = () => (
+  <aside className="flex flex-1 flex-col divide-y text-sm">
+    <Threads />
+    <Drafts />
+  </aside>
+);
+
+/** The whole sidebar; `strip` false leaves out the empty strip under the title row (shown over the column, it starts below it).
+ * `mini`: minimized to the 40 px rail, the projects and drafts a pod (RailPod); `shut`: sliding shut, its middle inert. */
+export function Sidebar({ strip = true, mini = false, shut = false }) {
   return (
-    <div data-agent-area="sidebar" className="flex min-h-0 flex-col border-r">
+    <div data-agent-area="sidebar" data-sidebar-rail={mini ? '' : undefined} className="flex min-h-0 min-w-0 flex-col border-r">
+      {/* Under the title row, which reaches over this strip to the window's left edge (app.css .titlebar) */}
+      {strip && <div aria-hidden className="h-[34px] shrink-0 [-webkit-app-region:drag]" />}
+      <Workspaces mini={mini} />
       {/* The viewport's content box is a full-height column (the ! beats Radix's inline display: table), so the Drafts card
           reaches the bottom: a right-click or a drop under the list lands on its empty space (sidebar-menu.md decision 4). */}
-      <ScrollArea className="min-h-0 flex-1 [&_[data-slot=scroll-area-viewport]>div]:flex! [&_[data-slot=scroll-area-viewport]>div]:min-h-full [&_[data-slot=scroll-area-viewport]>div]:flex-col">
-        <aside className="flex flex-1 flex-col divide-y text-sm">
-          <Threads />
-          <Drafts />
-        </aside>
-      </ScrollArea>
-      <SidebarNav />
+      {mini ? <RailPod /> : (
+        <ScrollArea inert={shut || undefined} className="min-h-0 flex-1 [&_[data-slot=scroll-area-viewport]>div]:flex! [&_[data-slot=scroll-area-viewport]>div]:min-h-full [&_[data-slot=scroll-area-viewport]>div]:flex-col">
+          <ProjectsAndDrafts />
+        </ScrollArea>
+      )}
+      <SidebarFoot mini={mini} />
     </div>
   );
 }
 
-/** Hides or shows the sidebar (also Ctrl+\): in the editor's corner (SidebarToggle, `size` 'regular') and, compact, in the
- * workspace headers. */
-export function SidebarButton({ side, size }) {
-  const collapsed = useStore((s) => !!s.settings?.sidebarCollapsed);
+// ---------------------------------------------------------------------------------------------
+// The minimized sidebar's middle (the user, 2026-10-28): the shown project as a pod: its folder icon, each of its folders a pod
+// inside it, the drafts' icons, and + for a new draft. A draft opens and + starts a new one; the project's or a folder's icon,
+// or a right-click, opens the menu of projects and drafts (RailMenu).
+
+/** The pods' grounds (the user, 2026-10-28): the palette's Fills colour is the lowest level, the open draft's; each level up
+ * steps a third of the way back to the Panels colour: a folder's pod, then the project's. */
+const LEVEL = ['bg-[color-mix(in_oklab,var(--muted)_33%,var(--background))]', 'bg-[color-mix(in_oklab,var(--muted)_67%,var(--background))]', 'bg-muted'];
+const EASE = 'cubic-bezier(0.2, 0, 0, 1)';
+
+/** One pod button: an icon with its name in a tooltip at the right. */
+function RailButton({ label, active, on = 'bg-accent hover:bg-accent', className, children, ...props }) {
   return (
-    <IconButton label={`${collapsed ? 'Show' : 'Hide'} sidebar`} keybind="app.sidebar" size={size} tip={{ side }} onMouseDown={keepFocus} onClick={toggleSidebar}>
-      {collapsed ? <PanelLeftOpen /> : <PanelLeftClose />}
+    <IconButton size="regular" label={label} tip={{ side: 'right' }} aria-current={active ? 'page' : undefined} onMouseDown={keepFocus}
+      className={cn('size-7 shrink-0 text-muted-foreground hover:text-foreground', active && cn('text-foreground', on), className)} {...props}>
+      {children}
     </IconButton>
   );
 }
 
-/** Floating at the bottom-left of the editor area, the width of the board rail above it. In the editor, the only sidebar
- * control while the sidebar is hidden. */
-export function SidebarToggle() {
+/** A draft's icon: opens it; it pops in as it is added (a new draft from +). The open one is on the lowest level's ground. */
+function RailDraft({ d, active }) {
+  const Icon = FORMAT_ICONS[d.format ?? 'forum-post'] ?? File;
   return (
-    <div className="absolute bottom-3 left-2 z-30 rounded-island border bg-island p-1 shadow-xl">
-      <SidebarButton side="right" size="regular" />
+    <RailButton label={d.title || 'Untitled'} active={active} on={`${LEVEL[2]} hover:bg-muted`} data-rail-draft={d.id} onClick={() => openDraft(d.id)}
+      className="animate-in fade-in zoom-in-75 duration-(--motion-controls)">
+      <Icon />
+    </RailButton>
+  );
+}
+
+/** Moves the open draft's highlight and icon from `from` to `to` (each a box on the lowest level's ground with the icon as its
+ * own svg child) as a copy over both, which keep their ground and icon hidden until it lands. */
+function glide(from, to, ms) {
+  const fi = from.querySelector(':scope > svg');
+  const ti = to.querySelector(':scope > svg');
+  if (!fi || !ti || !ms) return;
+  const [a, b, ai, bi] = [from, to, fi, ti].map((el) => el.getBoundingClientRect());
+  const box = document.createElement('div');
+  box.className = 'pointer-events-none fixed z-[52] rounded-md bg-muted';
+  const icon = fi.cloneNode(true);
+  icon.setAttribute('class', 'pointer-events-none fixed z-[53]');
+  Object.assign(icon.style, { left: `${ai.left}px`, top: `${ai.top}px`, width: `${ai.width}px`, height: `${ai.height}px`, transformOrigin: '0 0' });
+  document.body.append(box, icon);
+  const kept = [from, to, fi, ti].map((el) => [el, el.style.cssText]);
+  for (const el of [from, to]) el.style.setProperty('background-color', 'transparent', 'important');
+  for (const el of [fi, ti]) el.style.visibility = 'hidden';
+  const rect = (r) => ({ left: `${r.left}px`, top: `${r.top}px`, width: `${r.width}px`, height: `${r.height}px` });
+  const timing = { duration: ms, easing: EASE, fill: 'both' };
+  box.animate([rect(a), rect(b)], timing);
+  icon.animate([{ transform: 'none', color: getComputedStyle(fi).color },
+    { transform: `translate(${bi.left - ai.left}px, ${bi.top - ai.top}px) scale(${bi.width / ai.width})`, color: getComputedStyle(ti).color }], timing)
+    .finished.finally(() => {
+      box.remove();
+      icon.remove();
+      for (const [el, css] of kept) el.style.cssText = css;
+    });
+}
+
+/** The menu of projects and drafts (the user, 2026-10-28): the project pod's ground grows down and to the right into a pane over
+ * the column while a copy of the pod fades under it and the list fades in, and the open draft's highlight glides from the pod to
+ * its row; closing (`open` false) runs it all back into the pod, then onGone. A press outside closes it, as does a draft or page
+ * opening (RailPod). In a portal: the sidebar's layer (App.jsx) would hold a fixed pane inside its 40 px. */
+function RailMenu({ pod, open, onClose, onGone }) {
+  const pane = useRef(null);
+  const [at] = useState(() => {
+    const r = pod.getBoundingClientRect();
+    return { left: r.left, top: r.top, maxHeight: innerHeight - r.top - 8 };
+  });
+  useLayoutEffect(() => {
+    const el = pane.current;
+    const p = pod.getBoundingClientRect();
+    const r = el.getBoundingClientRect();
+    const shut = `inset(0px ${r.width - p.width}px ${r.height - p.height}px 0px round 8px)`;
+    const full = 'inset(0px 0px 0px 0px round 8px)';
+    const ms = motion('sidebar');
+    const timing = { duration: ms, easing: EASE, fill: 'both' };
+    const grow = el.animate({ clipPath: open ? [shut, full] : [full, shut] }, timing);
+    el.firstChild.animate({ opacity: open ? [0, 1] : [1, 0] }, timing);
+    const chip = pod.querySelector('[data-rail-draft][aria-current]');
+    const row = chip && el.querySelector(`[data-draft="${chip.dataset.railDraft}"][data-on]`);
+    const rr = row?.getBoundingClientRect();
+    if (row && rr.top >= r.top && rr.bottom <= r.bottom) glide(open ? chip : row, open ? row : chip, ms);
+    if (ms) { // after glide, so the copy's open draft is hidden as the pod's is
+      const copy = pod.cloneNode(true);
+      Object.assign(copy.style, { position: 'fixed', left: `${p.left}px`, top: `${p.top}px`, margin: '0', zIndex: '51', pointerEvents: 'none' });
+      document.body.append(copy);
+      copy.animate({ opacity: open ? [1, 0] : [0, 1] }, timing).finished.finally(() => copy.remove());
+    }
+    if (!open) grow.finished.then(onGone, onGone);
+  }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
+  return createPortal(
+    <>
+      {open && <div aria-hidden className="fixed inset-0 z-[49]" onPointerDown={onClose} />}
+      <div className="pointer-events-none fixed inset-0 z-50 drop-shadow-lg">
+        {/* The open draft's row on the lowest level's ground, as in the pod */}
+        <div ref={pane} data-rail-menu={open ? '' : 'closing'} inert={!open || undefined} style={at}
+          className={cn('pointer-events-auto absolute flex w-[280px] max-w-[calc(100vw-16px)] overflow-y-auto rounded-lg', LEVEL[0], '[&_[data-draft][data-on]]:bg-muted!')}>
+          <div className="flex min-w-0 flex-1 flex-col"><ProjectsAndDrafts /></div>
+        </div>
+      </div>
+    </>,
+    document.body,
+  );
+}
+
+/** The minimized sidebar's pod of the shown project (pl-px: centred on the 20 px line inside the rail's right border). */
+function RailPod() {
+  const settings = useStore((s) => s.settings);
+  useStore((s) => s.drafts);
+  const currentId = useStore((s) => (s.view.type === 'editor' ? s.draft?.id : null));
+  const pod = useRef(null);
+  const [menu, setMenu] = useState(null); // null, or {open} while RailMenu shows (open false: shrinking back)
+  const opened = useStore((s) => `${s.draft?.id}|${s.view.type}`);
+  useEffect(() => setMenu((m) => m && { open: false }), [opened]);
+  if (!settings) return null;
+  const { groups, loose } = draftGroups();
+  const project = settings.threads?.find((t) => t.url === shownThread());
+  const showMenu = () => setMenu((m) => (m?.open ? m : { open: true }));
+  return (
+    <div className="flex min-h-0 w-full flex-1 flex-col items-center overflow-y-auto py-2 pl-px [scrollbar-width:none]"
+      onContextMenu={(e) => { e.preventDefault(); showMenu(); }}>
+      <div ref={pod} data-rail-pod="" className={cn('flex w-[34px] flex-col items-center gap-0.5 rounded-lg p-[2px]', LEVEL[0])}>
+        <RailButton label={`${project ? threadLabel(project) : 'Drafts'}: projects and drafts`} data-rail-project="" onClick={showMenu}
+          className="text-foreground"><FolderOpen /></RailButton>
+        {groups.map((g) => (
+          <div key={g.folder.id} data-rail-folder={g.folder.id} className={cn('flex w-[30px] flex-col items-center gap-0.5 rounded-md py-[2px]', LEVEL[1])}>
+            <RailButton label={`${g.folder.name}: projects and drafts`} onClick={showMenu}><Folder /></RailButton>
+            {g.folder.open && g.drafts.map((d) => <RailDraft key={d.id} d={d} active={currentId === d.id} />)}
+          </div>
+        ))}
+        {loose.map((d) => <RailDraft key={d.id} d={d} active={currentId === d.id} />)}
+        <RailButton label={withKey('New draft', 'app.newDraft')} data-rail-new="" onClick={() => startNewDraft()}><Plus /></RailButton>
+      </div>
+      {menu && <RailMenu pod={pod.current} open={menu.open} onClose={() => setMenu({ open: false })} onGone={() => setMenu(null)} />}
     </div>
+  );
+}
+
+const onNarrow = (f) => {
+  const m = matchMedia(NARROW);
+  m.addEventListener('change', f);
+  return () => m.removeEventListener('change', f);
+};
+/** Whether the window is too narrow for the sidebar beside the main column (actions.js NARROW). */
+export const useNarrow = () => useSyncExternalStore(onNarrow, () => matchMedia(NARROW).matches);
+
+/** Hides or shows the sidebar (also Ctrl+\): at the left end of the title row in every mode (App.jsx TitleBar, or a Document's
+ * ribbon tab row). */
+export function SidebarButton({ side, size }) {
+  const narrow = useNarrow();
+  const collapsed = useStore((s) => (narrow ? !s.sidebarPeek : !!s.settings?.sidebarCollapsed));
+  return (
+    <IconButton label={`${collapsed ? 'Show' : 'Hide'} sidebar`} keybind="app.sidebar" size={size} tip={{ side }} onMouseDown={keepFocus} onClick={toggleSidebar}>
+      {/* 16 px: its glyph (13 px) stands as tall as the 13 px tab names beside it in the title row */}
+      {collapsed ? <PanelLeftOpen className="size-4" /> : <PanelLeftClose className="size-4" />}
+    </IconButton>
   );
 }

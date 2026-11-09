@@ -16,14 +16,15 @@ import {
 import { saveAssistant } from '../app/assistant/assistant.js';
 import { IconButton } from '../app/components/Tip.jsx';
 import { can } from '../app/gates.mjs';
-import { useStore } from '../app/store.js';
+import { getState, useStore } from '../app/store.js';
 import { describe, places } from './core.mjs';
 import { groupNotes } from './extension.js';
 
-// The review UI of agent edits waiting as suggestions (docs/plans/suggestions.md Display, Keys): one card per decision right of
+// The review UI of agent edits waiting as suggestions (docs/wiki/suggestions.md Display, Keys): one card per decision right of
 // the page, each pinned beside the yellow text it describes, and the status bar's slot. A decision is a change, or one place of
 // a change decided place by place (core.places: a rewritten paragraph's word changes, each with its own card, the user,
-// 2026-10-26). App chrome outside #page-wrap, so the page zoom never scales it. Agents cannot press any of it (data-agent-deny):
+// 2026-10-26). App chrome outside #page-wrap, so the page zoom never scales it; in a Document the same cards sit in the margin
+// column (suggestionCards, tooling/cards.jsx MarginCards) beside comments and revision balloons, which the zoom scales. Agents cannot press any of it (data-agent-deny):
 // the suggestions.* commands are theirs. Clicks never take the focus from the editor; Escape gives it back.
 
 const keepFocus = (e) => e.preventDefault();
@@ -93,7 +94,7 @@ const hotCss = (h) => (!/^[\w-]+$/.test(h?.id ?? '') ? ''
 /** One decision's card (`it`: a change, or a place of one): who and when, Accept and Reject for it, then what it does (a click
  * shows it on the page). `g` is set on the first card of its group in document order: that card also holds the request (the
  * note), the group's metadata rows and, for a request of more than one decision (`n`), Accept all and Reject all. */
-const ChangeCard = memo(({ it, g, n, notes, on, schema, setHot, className, ...props }) => {
+export const ChangeCard = memo(({ it, g, n, notes, on, schema, setHot, className, ...props }) => {
   const { e, place } = it;
   const name = nameOf(e.by);
   const text = place ? place.text : describe(e, schema);
@@ -136,6 +137,21 @@ const ChangeCard = memo(({ it, g, n, notes, on, schema, setHot, className, ...pr
 // Unchanged blocks keep their node objects through a transaction, so a keystroke elsewhere renders no card again (describe
 // diffs a replace's words).
 
+/** Every decision of `groups` (a change, or each place of a change decided place by place) in document order, each group's first one
+ * holding its request (`g`) and `n`, the number of the group's decisions → [{it, g, n}]. */
+function decisionsOf(groups, schema) {
+  if (!schema) return [];
+  const seen = new Set();
+  const counts = new Map();
+  const all = groups.flatMap((group) => group.changes.flatMap((e) => {
+    const ps = places(e, schema);
+    return ps.length ? ps.map((place) => ({ id: place.id, e, place, group })) : [{ id: e.id, e, group }];
+  }));
+  for (const it of all) counts.set(it.group.g, (counts.get(it.group.g) ?? 0) + 1);
+  return all.sort((a, b) => order(a) - order(b))
+    .map(({ group, ...it }) => ({ it, g: seen.has(group.g) ? null : (seen.add(group.g), group), n: counts.get(group.g) }));
+}
+
 /** The card layer (App.jsx, in the editor column: over the page, under its islands, panels, menus and dialogs) while the open
  * draft has suggestions and the editor page shows: one card per decision right of the sheet, its top at the decision's words.
  * The cards live in the document's space, as Google Docs' do: they follow the sheet through scrolling, panning and zoom
@@ -144,9 +160,11 @@ const ChangeCard = memo(({ it, g, n, notes, on, schema, setHot, className, ...pr
  * card that would overlap the one above sits 8 px below it. Positions are written straight to the DOM by a
  * requestAnimationFrame loop that stops once they hold for two frames; scrolling, zoom, resizes and transactions start it again. */
 export function SuggestionCards() {
-  const { groups, active } = useStore((s) => s.suggestions);
+  const { groups, active, cards } = useStore((s) => s.suggestions);
   const ed = useStore((s) => s.editor);
   const shown = useStore((s) => can('view.editor', { view: s.view }));
+  // A Document's cards sit in the margin column with comments and revision balloons (suggestionCards below, markup registers it).
+  const inDocument = useStore((s) => s.draft?.format === 'document');
   const zoom = useStore((s) => s.zoomPct);
   useStore((s) => s.drafts); // a rename, tag or move rewrites the list: re-read the cards' metadata rows (groupNotes)
   const layer = useRef(null);
@@ -158,22 +176,11 @@ export function SuggestionCards() {
     hot.current = h;
     if (style.current) style.current.textContent = hotCss(h);
   }, []);
-  const on = shown && groups.length > 0 && !!ed && !ed.isDestroyed;
+  const on = shown && !inDocument && groups.length > 0 && !!ed && !ed.isDestroyed;
   // Every decision (a change, or each place of a change decided place by place) in document order (the DOM order, so Tab walks the
   // cards down the page), each group's first one holding its request and `n`, the number of the group's decisions.
   const schema = ed?.schema;
-  const list = useMemo(() => {
-    if (!schema) return [];
-    const seen = new Set();
-    const counts = new Map();
-    const all = groups.flatMap((group) => group.changes.flatMap((e) => {
-      const ps = places(e, schema);
-      return ps.length ? ps.map((place) => ({ id: place.id, e, place, group })) : [{ id: e.id, e, group }];
-    }));
-    for (const it of all) counts.set(it.group.g, (counts.get(it.group.g) ?? 0) + 1);
-    return all.sort((a, b) => order(a) - order(b))
-      .map(({ group, ...it }) => ({ it, g: seen.has(group.g) ? null : (seen.add(group.g), group), n: counts.get(group.g) }));
-  }, [groups, schema]);
+  const list = useMemo(() => decisionsOf(groups, schema), [groups, schema]);
   // A card removed while hovered or focused (its Accept or Reject) never fires mouseleave or blur: its fill goes with it.
   useLayoutEffect(() => {
     if (hot.current && !list.some(({ it }) => it.id === hot.current.id)) setHot(null);
@@ -231,7 +238,7 @@ export function SuggestionCards() {
       const had = Number(surf.dataset.sgTail ?? 0);
       const tail = cards.length ? Math.max(0, Math.ceil(floor - GAP + 24 - (u.bottom - had))) : 0;
       if (Math.abs(tail - had) > 1) {
-        surf.style.paddingBottom = tail ? `calc(100cqh - var(--page-keep) + ${tail}px)` : '';
+        surf.style.paddingBottom = tail ? `calc(var(--pan-y) + ${tail}px)` : '';
         surf.dataset.sgTail = String(tail);
       }
       el.dataset.sgCost = (performance.now() - t0).toFixed(2); // the last frame's cost in ms, read by .smoke-data/suggest/ui.js
@@ -266,8 +273,12 @@ export function SuggestionCards() {
   }, [on, ed, list, active, zoom]);
   useLayoutEffect(() => kick.current());
 
-  if (!on) return null;
   const said = list.find(({ it }) => it.id === active)?.it;
+  // A canvas draft's cards (canvas.js) carry their row text.
+  const text = said ? (said.place ? said.place.text : describe(said.e, schema)) : cards?.find((c) => c.id === active)?.text ?? '';
+  const announce = <div aria-live="polite" className="sr-only">{text}</div>;
+  // A Document draws its cards in the margin column, but Previous and Next are still announced from here.
+  if (!on) return shown && inDocument ? announce : null;
   const escape = (e) => {
     if (e.key !== 'Escape') return;
     e.preventDefault();
@@ -291,7 +302,7 @@ export function SuggestionCards() {
   return (
     <div ref={layer} data-agent-deny data-sg-layer="" className="pointer-events-none absolute inset-0 z-[5] overflow-clip" onKeyDown={escape} onFocus={reveal}>
       <style ref={style}>{hotCss(hot.current)}</style>
-      <div aria-live="polite" className="sr-only">{said ? (said.place ? said.place.text : describe(said.e, schema)) : ''}</div>
+      {announce}
       {list.map(({ it, g, n }) => (
         <ChangeCard key={it.id} it={it} g={g} n={n} notes={g ? groupNotes(g.g) : null} on={it.id === active} schema={schema} setHot={setHot}
           data-board-chrome className="pointer-events-auto absolute top-0 left-0" />
@@ -299,6 +310,56 @@ export function SuggestionCards() {
     </div>
   );
 }
+
+// ---------------------------------------------------------------------------------------------
+// Margin cards: a Document's suggestion cards (docs/plans/word plan.md §1.7, §3 markup)
+
+let marginHot = null; // the <style> that raises the hovered margin card's fill, as the layer's own <style> does
+let marginHotId = null;
+const setMarginHot = (h) => {
+  if (!marginHot) {
+    marginHot = document.createElement('style');
+    marginHot.dataset.sgHot = '';
+    document.head.appendChild(marginHot);
+  }
+  marginHotId = h?.id ?? null;
+  marginHot.textContent = hotCss(h);
+};
+// Escape on a card gives the focus back to the editor, as on the layer.
+const marginEscape = (e) => {
+  if (e.key !== 'Escape') return;
+  e.preventDefault();
+  refocusEditor();
+};
+let decided = { groups: null, schema: null, list: [] }; // the last decisionsOf, kept while the groups hold
+
+/** One decision's card in the margin column (a MarginCards card Component). */
+function MarginSuggestion({ card }) {
+  const { it, g, n } = card.d;
+  return <ChangeCard it={it} g={g} n={n} notes={g ? groupNotes(g.g) : null} on={card.active} schema={card.schema} setHot={setMarginHot}
+    onKeyDown={marginEscape} data-board-chrome data-agent-deny className="w-full" />;
+}
+
+/** The agent suggestions of a Document as a margin card source (plan.md §1.7 CardSource): one card per decision, anchored where
+ * SuggestionCards anchors it, its top in .ProseMirror layout px (the page's CSS zoom divided out). markup registers it. */
+export const suggestionCards = {
+  cards(state, view) {
+    const { groups, active } = getState().suggestions;
+    if (!view?.dom?.isConnected) return [];
+    if (decided.groups !== groups || decided.schema !== state.schema) {
+      decided = { groups, schema: state.schema, list: decisionsOf(groups, state.schema) };
+      // A card removed while hovered or focused (its Accept or Reject) never fires mouseleave or blur: its fill goes with it.
+      if (marginHotId && !decided.list.some((d) => d.it.id === marginHotId)) setMarginHot(null);
+    }
+    if (!decided.list.length) return [];
+    const box = view.dom.getBoundingClientRect();
+    const k = box.height / (view.dom.offsetHeight || box.height || 1) || 1;
+    const sheet = view.dom.closest('.page')?.getBoundingClientRect() ?? box;
+    const ed = { view, state };
+    return decided.list.map((d) => ({ id: d.it.id, top: ((topOf(ed, d.it, sheet) ?? sheet.top) - box.top) / k, active: d.it.id === active, d,
+      schema: state.schema, Component: MarginSuggestion }));
+  },
+};
 
 /** The status bar's slot (beside Agents) while the open draft has suggestions: the count with a yellow dot; its popover holds
  * Previous, Next, Accept all, Reject all and the auto-approve switch. */

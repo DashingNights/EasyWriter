@@ -12,7 +12,7 @@ function blockTexts(node, out = []) {
 const TITLE_MAX = 60;
 
 /** First non-empty block's text, at most 60 chars (ellipsis included), or 'Untitled'. A title taken from content
- * (createDraft without a title); saving never rewrites a title (docs/plans/sidebar-menu.md decision 1). */
+ * (createDraft without a title); saving never rewrites a title (docs/wiki/sidebar-menu.md decision 1). */
 export function draftTitle(doc) {
   const text = blockTexts(doc).map((t) => t.trim()).find(Boolean);
   if (!text) return 'Untitled';

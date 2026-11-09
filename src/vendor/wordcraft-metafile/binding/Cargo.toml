@@ -1,0 +1,28 @@
+# EasyWriter's binding to the metafile crate: parse, place and write SVG, built for wasm32 with wasm-bindgen
+# (scripts/build-metafile-wasm.mjs). From the WordCraft evaluation's wcmeta, without its native resvg comparison binary.
+[package]
+name = "wcmeta"
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+ew-metafile = { path = "../../../../engine/crates/metafile" }
+kurbo = "0.13"
+png = "0.18"
+base64 = "0.23"
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen = "=0.2.129"
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+debug = 0
+
+[workspace]

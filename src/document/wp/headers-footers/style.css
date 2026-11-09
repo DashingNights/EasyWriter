@@ -1,0 +1,35 @@
+/* Headers and footers (docs/plans/word/plan.md §3 headers-footers). The layer draws each page's parts; Word greys them while the
+   body is edited and greys the body while a part is edited (data-hf-editing on the main editor: dim, or hide with Show Document
+   Text off). Engine 1's own v1 page number (pagination.js .pg-number) is overridden here: this layer draws sect.pageNumber as a
+   footer or header part, so a page never shows two numbers. */
+.page[data-format="document"] .pg-number { display: none; }
+.page[data-format="document"] .hf-part { color: #000000; pointer-events: none; user-select: none; opacity: 0.55; }
+.page[data-format="document"] .ProseMirror[data-hf-editing] .hf-part { opacity: 1; }
+.page[data-format="document"] .ProseMirror[data-hf-editing="dim"] > :not(.pg-pages) { opacity: 0.45; }
+.page[data-format="document"] .ProseMirror[data-hf-editing="hide"] > :not(.pg-pages) { visibility: hidden; }
+.page[data-format="document"] .hf-zone { cursor: text; }
+
+/* The part being edited: its story editor over the page, the dashed line at the margin (or below a taller part) and the tab label. */
+.page[data-format="document"] .hf-frame { color: #000000; }
+.page[data-format="document"] .hf-frame[data-hf-frame="header"] { border-bottom: 1px dashed #2b579a; }
+/* A footer's text sits on the frame's bottom edge, as the layer draws it, however far above it the frame reaches to the margin. */
+.page[data-format="document"] .hf-frame[data-hf-frame="footer"] {
+  border-top: 1px dashed #2b579a; display: flex; flex-direction: column; justify-content: flex-end;
+}
+.page[data-format="document"] .hf-host > .ProseMirror { min-height: 0; outline: none; }
+/* A part has no page break: the body's end block (document.css), whose -10000px margin cannot collapse out of this flow root,
+   would leave the editor no height, so a taller part never pushed the frame and its dashed line down. */
+.page[data-format="document"] .hf-host > .ProseMirror::after { display: none; }
+/* Its pictures, text boxes and canvases Behind Text, In Front of Text and Top and Bottom leave the flow and sit where float-layout
+   places them, as the layer draws them (placePartFloats); Square, Tight and Through follow float-layout's rules, the text wrapping
+   round them. A float inside a text box and a framed paragraph keep the body's rules. */
+.page[data-format="document"] .hf-host > .ProseMirror :is([data-fl="behind"], [data-fl="front"], [data-fl="topBottom"]):not([data-fl-kind="frame"], [data-textbox] *) {
+  position: absolute !important; left: var(--fl-x, 0); top: var(--fl-y, 0); margin: 0 !important; float: none !important;
+}
+.page[data-format="document"] .hf-label { position: absolute; left: 0; right: 0; display: flex; justify-content: space-between; pointer-events: none;
+  font: 11px/1.4 system-ui, sans-serif; }
+.page[data-format="document"] .hf-frame[data-hf-frame="header"] > .hf-label { top: 100%; }
+.page[data-format="document"] .hf-frame[data-hf-frame="footer"] > .hf-label { bottom: 100%; }
+.page[data-format="document"] .hf-label > span:not(:empty) { padding: 0 6px; background: #dfe7f3; color: #1f3a63; }
+.page[data-format="document"] .hf-frame[data-hf-frame="header"] .hf-label > span { border-radius: 0 0 3px 3px; }
+.page[data-format="document"] .hf-frame[data-hf-frame="footer"] .hf-label > span { border-radius: 3px 3px 0 0; }

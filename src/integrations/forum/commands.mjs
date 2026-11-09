@@ -42,11 +42,14 @@ export const defs = [
     undo: 'none',
     slow: true,
     needs: ['doc.open', FORMAT_POST, 'draft.settled'],
+    canvas: true, // a post on the engine builds from its session (postModel), not the hidden DOM editor (commands.js failedGates)
     args: { type: 'object', additionalProperties: false, properties: { images: { type: 'boolean', default: false } } },
     result: { type: 'object', required: ['html', 'images'] },
     examples: [{ args: {} }, { args: { images: true } }],
     run: async (ctx, a) => {
-      const { html, images } = await ctx.integrations.forum.buildPayload(ctx.editor, ctx.state.settings, ctx.state.draft);
+      // A post on the canvas engine: its session's own save is the post the push sends.
+      const source = ctx.engine ? await ctx.integrations.forum.postModel(ctx.engine) : ctx.editor;
+      const { html, images } = await ctx.integrations.forum.buildPayload(source, ctx.state.settings, ctx.state.draft);
       return { html, images: images.map(({ base64, ...m }) => ({ ...m, bytes: bytesOf(base64), ...(a.images && { base64 }) })) };
     },
   }),
@@ -78,7 +81,10 @@ export const defs = [
         switched = true;
       }
       const before = ctx.state.draft.pushedAt ?? null;
-      const attachments = pictures(ctx.editor.state.doc);
+      // A post on the canvas engine counts its objects through box.list; a DOM post its own canvases, plan charts and media.
+      const attachments = ctx.engine
+        ? (await ctx.engine.query('box.list', {}))?.value?.boxes?.length ?? 0
+        : pictures(ctx.editor.state.doc);
       const r = await ctx.integrations.forum.push({ requireThread: true });
       if (r?.code === 'no_thread') {
         const { message, fix } = GATES['draft.hasThread'];

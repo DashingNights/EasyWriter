@@ -1,0 +1,40 @@
+{
+  "w": 400,
+  "h": 300,
+  "aw": 400,
+  "ah": 300,
+  "frame": { "x": 0, "y": 0, "w": 400, "h": 300 },
+  "bg": "transparent",
+  "items": [
+    {
+      "id": "png",
+      "type": "image",
+      "src": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==",
+      "x": 10,
+      "y": 10,
+      "w": 40,
+      "h": 40,
+      "crop": { "x": 0.1, "y": 0, "w": 0.8, "h": 1 }
+    },
+    {
+      "id": "svg",
+      "type": "image",
+      "src": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyMCIgaGVpZ2h0PSIxMCI+PHJlY3Qgd2lkdGg9IjIwIiBoZWlnaHQ9IjEwIiBmaWxsPSIjNGNhZjUwIi8+PC9zdmc+",
+      "x": 60,
+      "y": 10,
+      "w": 40,
+      "h": 20
+    },
+    {
+      "id": "emf",
+      "type": "image",
+      "src": "data:image/x-emf;base64,AQAAAGwAAAAAAAAAAAAAAA==",
+      "x": 110,
+      "y": 10,
+      "w": 40,
+      "h": 30,
+      "metafile": "metafiles/1.emf",
+      "orig": { "w": 40, "h": 30 }
+    }
+  ]
+}

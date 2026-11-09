@@ -89,8 +89,8 @@ export async function drawMarks(blob, marks, { crop = null, width, height } = {}
   return dataUrl(await c.convertToBlob({ type: 'image/png' }));
 }
 
-/** Board {w, h, bg, items} as the export rasterizes it (src/export.js; a transparent background as the post colour, since
- * llama.cpp drops the alpha channel), at a scale of at most 2 and at most 1 280 px on the long side, with a badge per item of
+/** Board {w, h, bg, items} as the export rasterizes it (src/export.js; a transparent background as the post colour: a
+ * picture sent to the model has no alpha channel), at a scale of at most 2 and at most 1 280 px on the long side, with a badge per item of
  * `order` (default: its items; [] for none), numbered in that order → {url (PNG data URL), width, height, size (sizeText; `what`
  * names the board: 'image' for an image block)}. */
 export async function boardPicture({ w, h, bg, items }, { theme, order = items, what = 'board' }) {

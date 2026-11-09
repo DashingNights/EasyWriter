@@ -1,4 +1,3 @@
-import { toast } from 'sonner';
 import { refocusEditor, saveSettings } from '../actions.js';
 import { getState, setState, useStore } from '../store.js';
 import { modelContent, partsText } from './attach.mjs';
@@ -7,36 +6,34 @@ import { runCliTurn, runTurn } from './loop.js';
 import { newId } from '../../suggest/core.mjs';
 import QWEN_MODELS from '../../assistant/qwen-models.json';
 
-// The local assistant's chat (SPEC §7i; automation plan §13.4): the panel's state and the client of api.assistant (main runs
-// llama-server, §13.2). `state.assistant` holds the panel and the conversation for the session only (§13.6: never stored):
+// The assistant's chat (SPEC §7i; automation plan §13.4): the panel's state and the client of api.assistant (main streams the
+// cloud provider's replies or runs the coding CLI). `state.assistant` holds the panel and the conversation for the session only (§13.6: never stored):
 // {open, status, messages, turn, pending, usage}; a message is {id, role: 'user' | 'assistant' | 'step' | 'divider', text,
 // reasoning, streaming, error, step?: {title, ok, code?, undoSteps, summary, undo?, undone?, call?: {id, name, args}, line?}}, a user
 // message also {parts (its text and attachment pills, attach.mjs), content (what the model gets)}, a divider (a compaction) also
 // {summary?, pending?}; `turn` is {ctrl} (its AbortController) while a turn runs (loop.js); `pending` is message parts for the text
 // box (tool search asked while a turn ran); `usage` is {used, ctx, next?}: the last request's prompt + completion tokens and the
-// server's context (the ring), and `used` without the reasoning (end), which main uses to fit the thinking budget. `state.assistantInstall` is the open install dialog ({id, resolve}).
+// model's context window (the ring), and `used` without the reasoning (end).
 
 const api = window.api;
-export const CTX = 16384; // llama-server -c until a request reports the server's n_ctx
+export const CTX = 16384; // the ring's context window until a request reports the model's
 const IDLE = { open: false, status: null, messages: [], turn: null, pending: null, usage: null };
 export const ASSISTANT_DEFAULTS = {
-  installed: false, model: 'qwen9b', mtp: false, backend: 'auto', serverPath: '', modelPath: '', mmprojPath: '', serverUrl: '', apiKey: '',
+  serverUrl: '', apiKey: '', // an OpenAI-compatible server while the provider names none (the eval's stub)
   // None by default (the user, 2026-10-26): the assistant is off until a provider is picked in Settings > Assistant.
   provider: 'none', googleKey: '', googleModel: 'gemini-3.8-flash',
   qwenKey: '', qwenModel: 'qwen3.7-plus', qwenModels: ['qwen3.7-plus', 'qwen3.7-flash', 'qwen3.8-flash', 'qwen3.8-max'], // Qwen Cloud (2026-10-08)
   deepseekKey: '', deepseekModel: 'deepseek-flash', // provider 'deepseek' (2026-10-08)
   claudePath: '', claudeModel: '', claudeEffort: '', codexPath: '', codexModel: '', codexEffort: '', // providers 'claude', 'codex' ('': found, the CLI's default)
-  warmAtStart: true, sleepMinutes: 10, idleUnloadMinutes: 30, step: 0, panel: null, thinking: 'auto', permission: 'standard', uiControl: true,
+  panel: null, thinking: 'auto', permission: 'standard', uiControl: true,
   pictureAfterWrite: true, humanWriting: true,
-  autoApproveEdits: false, // off: agent edits wait in the draft as suggestions (docs/plans/suggestions.md)
+  providerSearch: false, // the provider's own web search (assistant/search.js): plan usage or billed per search, never watched
+  autoApproveEdits: false, // off: agent edits wait in the draft as suggestions (docs/wiki/suggestions.md)
 };
-// export const BACKENDS = [['auto', 'Auto'], ['cuda', 'NVIDIA CUDA'], ['vulkan', 'Vulkan'], ['cpu', 'CPU']]; // LOCAL LLM (commented out 2026-10-07)
 const THINK_RE = /\b(solve|derive|prove|verify|calculate|compute|integral|equation|simplif(y|ies))\b/i; // §13.16 routing
-// settings.assistant.thinking (user decision 2026-10-06): the chat panel's Thinking menu [id, label, line]; main sends each one's
-// budget (runtime.js thinkingLimits).
-// The user's list of 2026-10-07 ("the standard low medium high xhigh max efforts in the switcher, and auto"; Off went, Auto covers
-// it on this computer): [id, label, line on this computer, line with Google AI, line with DeepSeek,
-// line with Qwen Cloud (its thinking_budget)]. Gemini 3.8 Flash has low, medium and high only.
+// settings.assistant.thinking: the chat panel's Thinking menu, the user's list of 2026-10-07 ("the standard low medium high xhigh
+// max efforts in the switcher, and auto"): [id, label, line for any other server, line with Google AI, line with DeepSeek, line
+// with Qwen Cloud (its thinking_budget)]. Gemini 3.8 Flash has low, medium and high only.
 export const EFFORTS = [
   ['auto', 'Auto', 'Thinks for solve, derive or prove requests', 'Low, or medium for solve, derive or prove requests', 'Off, or medium for solve, derive or prove requests', 'Off, or up to 4,096 tokens for solve, derive or prove requests'],
   ['low', 'Low', 'Up to 1,024 tokens of thinking', 'Gemini thinking level low', 'DeepSeek thinking effort low', 'Up to 1,024 tokens of thinking'],
@@ -51,16 +48,15 @@ const set = (patch) => setState({ assistant: { ...get(), ...patch } });
 export const useAssistant = () => useStore((s) => s.assistant ?? IDLE);
 export const assistantSettings = () => ({ ...ASSISTANT_DEFAULTS, ...getState().settings?.assistant });
 const message = (e) => String(e?.message || e).replace(/^Error invoking remote method '[^']+': (Error: )?/, '');
-export const size = (bytes) => (bytes >= 1e9 ? `${(bytes / 1e9).toFixed(1)} GB` : `${Math.max(1, Math.round(bytes / 1e6))} MB`);
 
-/** Saves `patch` over the stored settings.assistant read fresh (main may have moved `step` meanwhile). */
+/** Saves `patch` over the stored settings.assistant read fresh. */
 export async function saveAssistant(patch) {
   const fresh = (await api.settings.get()).assistant;
   return saveSettings({ assistant: { ...ASSISTANT_DEFAULTS, ...fresh, ...patch } });
 }
 
-/** Whether the chat can run: installed (or a server URL, or a Claude Code or Codex that is ready) and nothing missing. */
-export const usable = (status) => !!status?.ready && (!!status.url || !!status.cli || assistantSettings().installed);
+/** Whether the chat can run: a provider that is ready (a cloud provider with its key, a server URL, a Claude Code or Codex found). */
+export const usable = (status) => !!status?.ready && (!!status.url || !!status.cli);
 /** The writing guide's text for the turn's system prompt (prompts.mjs GUIDE_RULE), read at every turn; '' while Settings turns it
  * off or the file cannot be read. */
 export const writingGuide = () => (assistantSettings().humanWriting ? api.assistant.writingGuide().catch(() => '') : Promise.resolve(''));
@@ -74,15 +70,12 @@ export function refreshStatus() {
   }, () => null);
 }
 
-/** Refreshes the status and, when usable, starts or wakes the server (§13.2 re-warm: opening the panel, holding its mic). */
-export const wake = () => refreshStatus().then((s) => usable(s) && api.assistant.warm().then(refreshStatus, () => {}));
-
-/** Opens or closes the panel. Opening wakes the server. Provider 'none' turns the assistant off: it never opens. */
+/** Opens or closes the panel. Opening refreshes the status. Provider 'none' turns the assistant off: it never opens. */
 export function toggleChat(open = !get().open) {
   if (!open) return closeChat();
   if (assistantSettings().provider === 'none') return undefined;
   set({ open: true });
-  wake();
+  refreshStatus();
 }
 
 export function closeChat() {
@@ -135,11 +128,11 @@ export function addMessage(m) {
   return id;
 }
 
-/** The conversation as OpenAI messages (context.mjs buildHistory): texts (no reasoning, §13.2) and tool-call summaries. */
+/** The conversation as OpenAI messages (context.mjs buildHistory): texts (no reasoning) and tool-call summaries. */
 export const history = () => buildHistory(get().messages);
 
 /** Streams one completion of `req` ({messages, tools?, think}) into a new assistant message (`quiet`: into no message). Resolves
- * with {id, text, reasoning, toolCalls: [{id, name, arguments}], finish, error} when it ends, fails or `signal` aborts it (finish
+ * with {id, text, reasoning, toolCalls: [{id, name, arguments}], finish, error, usage ({prompt, completion} when the server sent it)} when it ends, fails or `signal` aborts it (finish
  * 'cancelled'). A shown completion's usage moves the ring. */
 export function complete(req, signal, quiet = false) {
   const rid = quiet ? crypto.randomUUID() : addMessage({ role: 'assistant', streaming: true });
@@ -156,7 +149,7 @@ export function complete(req, signal, quiet = false) {
   });
 }
 
-function end(rid, { finish = null, error = '', usage, n_ctx: ctx }) {
+function end(rid, { finish = null, error = '', usage, n_ctx: ctx, searches = 0 }) {
   const t = turns.get(rid);
   if (!t) return;
   turns.delete(rid);
@@ -169,7 +162,7 @@ function end(rid, { finish = null, error = '', usage, n_ctx: ctx }) {
     set({ usage: { used: usage.prompt + usage.completion, ctx: ctx || get().usage?.ctx || CTX, next } });
   }
   patchMessage(rid, () => ({ streaming: false, error }));
-  t.resolve({ id: rid, text: t.text, reasoning: t.reasoning, toolCalls: t.calls, finish, error });
+  t.resolve({ id: rid, text: t.text, reasoning: t.reasoning, toolCalls: t.calls, finish, error, usage, searches });
 }
 
 const runs = new Map(); // CLI run rid → its event handler (cliRun)
@@ -194,8 +187,6 @@ export function cliRun(req, signal, onEvent) {
   });
 }
 
-let saidNoVision = false; // the server has no image projector: said once a session
-
 api.assistant.onEvent((e) => {
   if (e.type === 'status') {
     if (get().status) set({ status: { ...get().status, server: e.server } });
@@ -216,11 +207,8 @@ api.assistant.onEvent((e) => {
         end(e.rid, { finish: 'repeat' });
       }
     }
-  } else if (e.type === 'novision') {
-    if (!saidNoVision) toast('This server has no image projector, so the pictures were not sent.');
-    saidNoVision = true;
   } else if (e.type === 'tool_call') t.calls.push({ id: e.id, name: e.name, arguments: e.arguments, ...(e.extra && { extra: e.extra }) });
-  else if (e.type === 'done') end(e.rid, { finish: e.finish_reason, usage: e.usage, n_ctx: e.n_ctx });
+  else if (e.type === 'done') end(e.rid, { finish: e.finish_reason, usage: e.usage, n_ctx: e.n_ctx, searches: e.searches });
   else if (e.type === 'error') end(e.rid, { error: e.message });
 });
 
@@ -234,7 +222,7 @@ export function send(parts, note = '') {
   const kept = parts.map((p) => (typeof p === 'string' || !p.picture ? p : withoutPicture(p))); // the message keeps no renderer
   const id = addMessage({ role: 'user', text, parts: kept, content: modelContent(parts, note) });
   const ctrl = new AbortController();
-  // The turn groups its suggestions (docs/plans/suggestions.md Grouping): id is the group, request its note. lastTurnAt: when the
+  // The turn groups its suggestions (docs/wiki/suggestions.md Grouping): id is the group, request its note. lastTurnAt: when the
   // previous turn began, so the situation note can tell what the user decided since.
   const at = Date.now();
   set({ turn: { ctrl, id: newId('g'), request: text, at }, lastTurnAt: lastAt });
@@ -315,48 +303,3 @@ export const clearPending = () => set({ pending: null });
 export function stop() {
   get().turn?.ctrl.abort();
 }
-
-// LOCAL LLM, commented out 2026-10-07 (the user: "i plan to abandon local llm usage, just stick to google api now. comment out all the code for local llm stuff"). Uncomment to restore.
-// // ---------------------------------------------------------------------------------------------
-// // Install dialog (§13.2: downloads only when the user starts it)
-//
-// /** Opens the install dialog; resolves true once installed, false when it closes without. */
-// export function openInstall() {
-//   getState().assistantInstall?.resolve(false);
-//   return new Promise((resolve) => setState({ assistantInstall: { id: Date.now(), resolve } }));
-// }
-//
-// export function closeInstall(installed = false) {
-//   const open = getState().assistantInstall;
-//   setState({ assistantInstall: null });
-//   open?.resolve(installed);
-// }
-// export const cancelInstall = () => api.assistant.cancel();
-//
-// /** Downloads what is missing, turns the assistant on (settings.assistant.installed) and warms it. Throws the error message. */
-// export async function install() {
-//   try {
-//     await api.assistant.install();
-//     await saveAssistant({ installed: true });
-//   } catch (e) {
-//     throw new Error(message(e));
-//   }
-//   closeInstall(true);
-//   toast('Assistant ready');
-//   await refreshStatus();
-//   api.assistant.warm().then(refreshStatus, () => {});
-// }
-//
-// /** Settings > Assistant > Delete: stops the server, deletes userData/assistant/ and turns the assistant off. Throws the message. */
-// export async function deleteAssistant() {
-//   try {
-//     await api.assistant.delete();
-//     await saveAssistant({ installed: false });
-//   } catch (e) {
-//     throw new Error(message(e));
-//   }
-//   refreshStatus();
-// }
-//
-// /** Settings > Assistant > an unused model file's Delete (status().leftovers): removes that file only. Throws the message. */
-// export const deleteLeftover = (file) => api.assistant.deleteLeftover(file).catch((e) => { throw new Error(message(e)); });

@@ -9,13 +9,15 @@ import {
 import { Input } from '@/components/ui/input';
 import { canDrop, cards as cardsOf, columnsOf, doneColumnOf, OPTION_DEFAULTS, PLAN_GATES, wipState } from '../../../plan/plan-model.mjs';
 import { refocusEditor } from '../../actions.js';
-import { deleteColumn, deleteTickets, dispatch, editColumns, editTicket, moveCards } from '../../plans.js';
+import { dispatch, editTicket, moveCards } from '../../plans.js';
+import { live } from '../../pool-plan.js';
 import { keyIs } from '../../keybinds.js';
 import { getState, setState, useStore } from '../../store.js';
 import { backgroundClick } from '../../viewport.js';
 import { InlineInput } from '../InlineInput.jsx';
 import { IconButton, Tip } from '../Tip.jsx';
 import { keepFocus } from '../Toolbar.jsx';
+import { run } from '../../../tooling/registry.js';
 import { Card, convertDraft } from './Card.jsx';
 import { startDrag } from './drag.js';
 
@@ -57,7 +59,7 @@ function QuickAdd({ add, onClose }) {
 function ColumnMenu({ plan, col, index, onRename }) {
   const planId = plan.id;
   const cols = plan.columns;
-  const move = (args) => dispatch('plan.columns.move', { planId, columnId: col.id, ...args });
+  const move = (args) => run('plan.columns.move', { columnId: col.id, ...args });
   const rename = useRef(false); // Rename starts once the menu has closed (its focus return would end the edit)
   return (
     <DropdownMenu modal={false}>
@@ -71,11 +73,11 @@ function ColumnMenu({ plan, col, index, onRename }) {
         <DropdownMenuItem onSelect={() => { rename.current = true; }}>Rename</DropdownMenuItem>
         <DropdownMenuItem disabled={!index} onSelect={() => move({ beforeId: cols[index - 1].id })}>Move left</DropdownMenuItem>
         <DropdownMenuItem disabled={index === cols.length - 1} onSelect={() => move({ afterId: cols[index + 1].id })}>Move right</DropdownMenuItem>
-        <DropdownMenuItem disabled={col.done} onSelect={() => dispatch('plan.update', { planId, patch: { doneColumn: col.id } })}>Set as done column</DropdownMenuItem>
+        <DropdownMenuItem disabled={col.done} onSelect={() => run('plan.columns.done', { columnId: col.id })}>Set as done column</DropdownMenuItem>
         <DropdownMenuSeparator />
-        <DropdownMenuItem onSelect={() => editColumns(planId)}>Edit columns...</DropdownMenuItem>
+        <DropdownMenuItem onSelect={() => run('plan.columns.edit')}>Edit columns...</DropdownMenuItem>
         {PLAN_GATES['plan.otherColumn'].test(plan) && (
-          <DropdownMenuItem variant="destructive" onSelect={() => deleteColumn(planId, col.id)}>Delete column...</DropdownMenuItem>
+          <DropdownMenuItem variant="destructive" onSelect={() => run('plan.columns.remove', { columnId: col.id })}>Delete column...</DropdownMenuItem>
         )}
       </DropdownMenuContent>
     </DropdownMenu>
@@ -150,6 +152,20 @@ export function Kanban({ ctx, options }) {
     if (r.ok) setRenaming(r.result.columnId);
   };
 
+  // The Board's own actions for plan.done, plan.convert and plan.columns.add (pool-plan.js), from this render's selection.
+  const focusedCard = cardOf(focusId) ?? null;
+  const selected = selection.length ? ordered.filter((c) => selection.includes(c.id)).map((c) => c.id) : focusedCard ? [focusedCard.id] : [];
+  const room = PLAN_GATES['plan.columnRoom'].test(plan);
+  live.kanban = {
+    done: selected.length ? () => {
+      const prev = plan.columns[plan.columns.findIndex((c) => c.id === done) - 1]?.id ?? null;
+      return moveTo(selected, selected.every((id) => cardOf(id)?.status === done) ? prev : done);
+    } : null,
+    convert: focusedCard?.kind === 'draft' ? () => convertDraft(planId, focusedCard) : null,
+    addColumn: room ? addColumn : null,
+  };
+  useEffect(() => () => { live.kanban = null; }, []);
+
   // Board keys (§6.7) on #workspace-root; typing in an input, a menu or a dialog is not here.
   const keys = useRef(null);
   keys.current = (e) => {
@@ -167,13 +183,11 @@ export function Kanban({ ctx, options }) {
     else if (ctrl && key === 'a') go(() => ui({ selection: ordered.map((c) => c.id) }));
     else if (ctrl) return;
     else if (keyIs('plan.newTicket', e)) go(() => setAdding(focused ? focused.status : plan.columns[0].id)); // §7k
-    else if ((key === 'Delete' || key === 'Backspace') && sel.length) go(() => deleteTickets(planId, sel));
-    else if (key === 'Enter' && focused) go(() => (focused.kind === 'ticket' ? editTicket(planId, focused.id) : convertDraft(planId, focused)));
-    else if (keyIs('plan.convert', e) && focused?.kind === 'draft') go(() => convertDraft(planId, focused));
-    else if (keyIs('plan.done', e) && sel.length) {
-      const prev = plan.columns[plan.columns.findIndex((c) => c.id === done) - 1]?.id ?? null;
-      go(() => moveTo(sel, sel.every((id) => cardOf(id)?.status === done) ? prev : done));
-    } else if (key.startsWith('Arrow')) {
+    else if ((key === 'Delete' || key === 'Backspace') && sel.length) go(() => run('plan.tickets.delete', { ids: sel }));
+    else if (key === 'Enter' && focused) go(() => (focused.kind === 'ticket' ? run('plan.tickets.open', { value: focused.id }) : run('plan.convert')));
+    else if (keyIs('plan.convert', e) && focused?.kind === 'draft') go(() => run('plan.convert'));
+    else if (keyIs('plan.done', e) && sel.length) go(() => run('plan.done'));
+    else if (key.startsWith('Arrow')) {
       e.preventDefault();
       if (!focused) return void (ordered[0] && ui({ focusId: ordered[0].id, selection: [] }));
       const list = byCol.get(focused.status);
@@ -202,7 +216,6 @@ export function Kanban({ ctx, options }) {
     return () => el.removeEventListener('keydown', onKey);
   }, []);
 
-  const room = PLAN_GATES['plan.columnRoom'].test(plan);
   return (
     <div ref={strip} className="flex min-h-0 flex-1 items-stretch gap-3 overflow-x-auto p-3"
       onPointerDown={(e) => backgroundClick(e, (t) => t === strip.current || t.matches('section[data-column], section[data-column] > div')) && ui({ selection: [] })}>
@@ -251,7 +264,7 @@ export function Kanban({ ctx, options }) {
         );
       })}
       <Tip title={room ? 'Add a column' : PLAN_GATES['plan.columnRoom'].message}>
-        <Button variant="ghost" size="xs" className="shrink-0 text-muted-foreground" disabled={!room} onMouseDown={keepFocus} onClick={addColumn}><Plus />Column</Button>
+        <Button variant="ghost" size="xs" className="shrink-0 text-muted-foreground" disabled={!room} onMouseDown={keepFocus} onClick={() => run('plan.columns.add')}><Plus />Column</Button>
       </Tip>
     </div>
   );

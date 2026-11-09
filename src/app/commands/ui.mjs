@@ -118,7 +118,6 @@ export const defs = [
     needs: ['view.editor'],
     args: {
       type: 'object', required: ['value'], additionalProperties: false,
-      // The percent first: the gemma model form keeps a union's first branch (tools-schema.mjs rewrite).
       properties: { value: { anyOf: [{ type: 'number', minimum: 10, maximum: 400 }, { const: 'fit' }] } },
     },
     result: { type: 'object', required: ['zoom', 'previous'] },

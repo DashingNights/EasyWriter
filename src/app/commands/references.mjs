@@ -3,7 +3,7 @@ import { define, fail } from './define.mjs';
 import { defs as docDefs } from './doc.mjs';
 import { ref } from './schema-defs.mjs';
 
-// references.* (docs/plans/references.md): the open draft's sources and style, through ctx.references (app/references.js). A link
+// references.* (docs/wiki/references.md): the open draft's sources and style, through ctx.references (app/references.js). A link
 // is read as the References dialog reads it (the page, then doi.org for a DOI). The list goes in as paragraphs through
 // doc.insert's plan: one undo step, and a suggestion like any agent edit. A citation goes in with doc.replace, from
 // references.list's cite (Harvard) or references.cite (numbered, which fixes the source's number first).
@@ -29,7 +29,7 @@ const STYLE = { enum: STYLES.map(([id]) => id), description: 'harvard (author an
 
 /** `sources` as references.list shows them in `style`: each with its list entry and its two citations; a numbered draft's source
  * not cited yet has none (references.cite gives it its number). */
-function shown(sources, style) {
+export function shown(sources, style) {
   const lab = labels(sources, style);
   return sources.map((s) => {
     const label = lab.get(s.id) ?? '';

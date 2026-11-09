@@ -132,7 +132,7 @@ export const chatEditor = ({ element, content, submit, onChange, onImages, attri
 const PICTURE_MAX = 1568; // px on the long side of an attached image as the model gets it
 const THUMB = 96; // px on the long side of its thumbnail in the tray and the sent message
 
-/** `bmp` drawn at most `max` px on its long side on a white ground (no alpha: llama.cpp drops it) → {url (JPEG data URL), w, h}. */
+/** `bmp` drawn at most `max` px on its long side on a white ground (no alpha) → {url (JPEG data URL), w, h}. */
 async function encode(bmp, max, quality) {
   const f = Math.min(1, max / Math.max(bmp.width, bmp.height));
   const [w, h] = [Math.max(1, Math.round(bmp.width * f)), Math.max(1, Math.round(bmp.height * f))];
@@ -203,6 +203,7 @@ export function autoPill(ed, capture, tray) {
   const adopted = tray.get().find((x) => x.auto);
   if (adopted) [id, key] = [adopted.id, keyOf(adopted)];
   const sync = (a) => {
+    if (typeof a?.then === 'function') return void a.then(sync, () => {}); // a canvas draft's selection, read from the engine
     const k = keyOf(a);
     if (k !== dismissed) dismissed = null;
     if (k === key || ed.isDestroyed) return;

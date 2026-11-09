@@ -1,0 +1,6 @@
+# WebAssembly SIMD for the engine's .wasm (docs/plans/engine/viewport-design.md section 11, step 5; measure.md section 3): tile
+# paint about half the time, parse and layout within 3 %. Chromium has run wasm SIMD since version 91, Node since 16.4.
+# v0 symbol mangling: the module came out 58,041 bytes smaller with it (engine-size-3, scripts/build-engine-wasm.mjs's size,
+# 21,052,002 to 20,993,961; engine-size-2 measured about 63 KB for the same flag). Its behaviour does not change.
+[target.wasm32-unknown-unknown]
+rustflags = ["-C", "target-feature=+simd128", "-C", "symbol-mangling-version=v0"]

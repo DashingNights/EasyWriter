@@ -1,4 +1,4 @@
-// Which commands the assistant is offered as tools (SPEC §7i Tool loop, §8 Tool schemas; automation plan §13.2 Tool calls): a
+// Which commands the assistant is offered as tools (SPEC §7i Tool loop, §8 Tool schemas; automation plan §13.2): a
 // small core always, the set of the current view, and the tools the model adds with commands.describe, less those its
 // permission mode refuses (below). Categories group the
 // catalogue for commands.index: a command's category comes from its `group`. Pure and import-free (commands.mjs imports it;
@@ -11,8 +11,8 @@ export const CATEGORY_OF_GROUP = {
   app: 'app', ui: 'app', audit: 'app', settings: 'app', tool: 'app', batch: 'app', commands: 'app',
   drafts: 'drafts', tags: 'drafts', folders: 'drafts', threads: 'drafts',
   canvas: 'board',
-  suggestions: 'doc', // suggestions.* (docs/plans/suggestions.md): reviewing agent edits of the draft
-  references: 'doc', // references.* (docs/plans/references.md): the draft's sources, its citations and reference list
+  suggestions: 'doc', // suggestions.* (docs/wiki/suggestions.md): reviewing agent edits of the draft
+  references: 'doc', // references.* (docs/wiki/references.md): the draft's sources, its citations and reference list
   export: 'export', push: 'export', forum: 'export',
 };
 
@@ -25,6 +25,7 @@ export const CATEGORIES = {
   export: 'Forum preview, push and login', // the forum integration's: commands.index leaves it out while no command is listed
   history: 'Undo and redo in the open draft',
   flow: 'The flowchart library: its flowcharts, their items, layout and insertion into a draft',
+  browser: 'Web search, and reading pages in the in-app browser',
 };
 
 export const categoryOf = (def) => CATEGORY_OF_GROUP[def.group] ?? def.group;
@@ -34,7 +35,7 @@ export const CORE = ['ui.state', 'drafts.list', 'drafts.open', 'batch', 'command
 // Not history.undo / history.redo: the model must not undo the user's own typing (each step line has its own Undo).
 // Not board.render: its PNG would reach the model as base64 text. view.render's picture goes as the next user message (loop.js).
 export const VIEW_SETS = {
-  editor: ['doc.get', 'doc.find', 'doc.selection', 'doc.insert', 'doc.replace', 'doc.delete', 'doc.format', 'doc.pageSetup', 'board.list', 'canvas.edit', 'view.render'],
+  editor: ['doc.get', 'doc.find', 'doc.selection', 'doc.insert', 'doc.replace', 'doc.edit', 'doc.delete', 'doc.format', 'doc.pageSetup', 'board.list', 'canvas.edit', 'view.render'],
   board: ['board.list', 'board.get', 'board.find', 'board.items.add', 'board.items.update', 'board.items.place', 'board.items.straighten', 'board.items.remove', 'ui.select',
     'board.fit', 'canvas.edit', 'canvas.close', 'view.render'],
   none: ['drafts.create', 'drafts.get', 'drafts.rename', 'drafts.setTag', 'drafts.delete', 'threads.list', 'tags.list', 'folders.list'],
@@ -65,9 +66,12 @@ export const PERMISSIONS = {
   all: { write: true, destructive: true, approval: true },
 };
 // Computer use (§7i): screenshots and mouse and keyboard input, offered to the cloud models only (loop.js toolList), never in a
-// view set, so the small models' sets keep their budgets.
+// view set, so the view sets keep their budgets.
 export const COMPUTER = ['computer.act', 'background.open', 'background.close'];
 export const UI_CONTROL = ['ui.snapshot', 'ui.invoke', ...COMPUTER]; // off with settings.assistant.uiControl false
+// The web (assistant-web, commands/web.mjs): every family gets these beside its set in every view (loop.js toolList), so the view
+// sets keep their budgets.
+export const WEB = ['web.search', 'browser.read'];
 export const READ_ONLY = 'Read only mode. Change it in Settings.';
 export const UI_OFF = 'On-screen controls are off. Change it in Settings.';
 
@@ -78,7 +82,7 @@ export const assistantMode = (a) => ({ permission: Object.hasOwn(PERMISSIONS, a?
  * controls are off, any command that is not a read in Read only. Such commands are not offered or listed either. */
 export const refusal = (def, m) => (!m.uiControl && UI_CONTROL.includes(def.id) ? UI_OFF : PERMISSIONS[m.permission][def.risk] === 'deny' ? READ_ONLY : null);
 
-export const MAX_SET = 14000; // characters of core + one view set as model-form tools, either family (test/tools-schema.test.mjs; about 4,000 tokens); 13 700 before the board writes' coords (Qwen Cloud, 2026-10-08), 13 500 before board.fit, 11 500 before draftId (Tier B background drafts), 11 000 before board.items.straighten, 10 000 before wave 2's view.render and board.items.place, 9 000 before wave 1c's tool text
+export const MAX_SET = 15000; // characters of core + one view set as model-form tools, either family (test/tools-schema.test.mjs; about 4,300 tokens); 14 000 before doc.edit, 13 700 before the board writes' coords (Qwen Cloud, 2026-10-08), 13 500 before board.fit, 11 500 before draftId (Tier B background drafts), 11 000 before board.items.straighten, 10 000 before wave 2's view.render and board.items.place, 9 000 before wave 1c's tool text
 export const MAX_TOOL = 3000; // characters of one model-form tool (2 800 before coords, 2 600 before draftId: board.items.add)
 export const DESCRIBE_NAMES = 6; // names per commands.describe
 export const DESCRIBED_CHARS = 8000; // characters of described tools a session keeps (oldest dropped first)

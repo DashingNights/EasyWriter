@@ -1,0 +1,6 @@
+/* Arrange (docs/plans/word briefs/arrange.md): the drawing grid layer, dotted grey lines on the paper like Word's, never printed. */
+.page[data-format="document"] .arrange-grid { display: block; }
+.page[data-format="document"] .arrange-grid line { stroke: #9aa7b6; stroke-width: 0.75; stroke-dasharray: 1 2; }
+@media print {
+  .page[data-format="document"] [data-layer="arrange.grid"] { display: none; }
+}

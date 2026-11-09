@@ -6,23 +6,43 @@ import { toast } from 'sonner';
 import { getState } from './app/store.js';
 import { flowSource } from './canvas.js';
 import { validFlow } from './flow/library.mjs';
-import { drawTheme } from './formats.mjs';
+import { drawTheme, pageOf } from './formats.mjs';
 import { rasterizePlanChart } from './plan-chart.js';
-import { rasterizeWhiteboard } from './whiteboard.js';
+import { pictureCanvas, pictureOfUrl } from './tooling/picture.mjs';
+import { exportDensity, rasterizeWhiteboard } from './whiteboard.js';
 
 export { draftTitle, wordCount } from './doc-utils.mjs';
 
 /** The picture of `board` (a canvas's or plan chart's attrs plus `kind`) drawn `width` post px wide → {blob, height}. `n`: a
- * plan chart's number in the post. */
-export async function boardPicture(board, width, theme, n) {
+ * plan chart's number in the post. `use`: whiteboard.js exportDensity's ('file' or 'clipboard'). */
+export async function boardPicture(board, width, theme, n, use = 'file') {
+  const density = exportDensity(use);
   if (board.kind === 'canvas') {
-    // The artboard is rendered at its own size, at the pixel ratio that gives 2× its drawn size in the document.
-    const scale = Math.min(4, Math.max(0.25, (2 * width) / board.w));
+    // The artboard is rendered at its own size, at the pixel ratio that gives its drawn size times the export density, however
+    // much the artboard is magnified: the pictures in it redraw from their vector sources at that ratio, never from a smaller copy.
+    const scale = Math.max(0.25, (density * width) / board.w);
     const { blob } = await rasterizeWhiteboard({ height: board.h, bg: board.bg, items: board.items }, { width: board.w, theme, scale });
     return { blob, height: Math.round((width * board.h) / board.w) };
   }
   // A plan chart: laid out at the width the readability rules need, shown at the drawn width (SPEC §6e).
-  return rasterizePlanChart(board, { width, theme, n });
+  return rasterizePlanChart(board, { width, theme, n, density });
+}
+
+/** A vector picture's data URL: an SVG, an EMF or a WMF (with or without the x- prefix a server may give it). */
+export const VECTOR_PICTURE = /^data:image\/(svg\+xml|(x-)?emf|(x-)?wmf)[;,]/i;
+
+/** The width a media block's `el` (its img or video) is drawn at, or 0 when the page cannot draw the picture (an EMF or WMF). */
+export const shownWidth = (el) => (!el || (el.tagName === 'IMG' && !el.naturalWidth) ? 0 : el.offsetWidth);
+
+/** Media block `media` (its attrs) holding a vector picture (VECTOR_PICTURE) as a rendered export draws it → {blob, width,
+ * height}: a canvas of it rendered from the vector source, `shown` post px wide (shownWidth), or where the page cannot draw it at
+ * the block's own width (dw, else the picture's), at most `page`. `use`: as boardPicture's. */
+export async function vectorMediaPicture(media, shown, page, theme, use) {
+  const picture = await pictureOfUrl(media.src);
+  if (!picture) throw new Error(`Could not draw ${media.name}`);
+  const width = shown || Math.round(Math.min(media.dw ?? picture.w, page)); // whole px, as a drawn width is
+  const { blob, height } = await boardPicture({ ...pictureCanvas(picture, width).attrs, kind: 'canvas' }, width, theme, 0, use);
+  return { blob, width, height };
 }
 
 // Copying (or cutting) a node-selected canvas, plan chart, picture or video also puts its picture on the clipboard (a video:
@@ -30,8 +50,13 @@ export async function boardPicture(board, width, theme, n) {
 const PICTURED = ['canvas', 'planChart', 'media'];
 
 async function nodePicture(node, dom) {
+  const { draft, settings } = getState();
   if (node.type.name === 'media') {
     const el = dom.querySelector('video, img');
+    if (VECTOR_PICTURE.test(node.attrs.src)) { // the page may not draw it (an EMF): rendered from its source, as the push does
+      const page = pageOf(draft, settings).width;
+      return (await vectorMediaPicture(node.attrs, shownWidth(el), page, drawTheme(draft, settings), 'clipboard')).blob;
+    }
     const c = new OffscreenCanvas(el.videoWidth || el.naturalWidth, el.videoHeight || el.naturalHeight);
     c.getContext('2d').drawImage(el, 0, 0);
     return c.convertToBlob({ type: 'image/png' });
@@ -39,7 +64,7 @@ async function nodePicture(node, dom) {
   let board = { ...node.attrs, kind: node.type.name };
   const live = board.kind === 'canvas' && validFlow(board.flow) ? await flowSource.load(board.flow.id) : null; // as push draws it
   if (live) board = { ...board, ...live.board };
-  return (await boardPicture(board, dom.offsetWidth, drawTheme(getState().draft, getState().settings), 1)).blob; // as drawn
+  return (await boardPicture(board, dom.offsetWidth, drawTheme(draft, settings), 1, 'clipboard')).blob; // as drawn
 }
 
 export const CopyPicture = Extension.create({

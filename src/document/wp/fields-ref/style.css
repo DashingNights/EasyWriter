@@ -1,0 +1,28 @@
+/* fields-ref (docs/plans/word/briefs/fields-ref.md). Bookmark markers take no width; Show bookmarks (settings.word.bookmarks, set on
+   the editor root by plugin.js) draws Word's grey square brackets around a range and a grey I-beam for a point. Hidden bookmarks
+   (_Ref, _Toc) stay undrawn, as in Word. */
+[data-doc-text] span[data-bookmark] {
+  display: inline;
+  width: 0;
+}
+
+[data-doc-text][data-show-bookmarks] span[data-bookmark]:not([data-name^='_'])::before {
+  content: '[';
+  color: #8a8a8a;
+  font-weight: normal;
+  pointer-events: none;
+}
+
+[data-doc-text][data-show-bookmarks] span[data-bookmark][data-end]:not([data-name^='_'])::before {
+  content: ']';
+}
+
+/* A point bookmark: its start marker draws the I-beam and the end marker nothing. */
+[data-doc-text][data-show-bookmarks] span[data-bookmark][data-point]:not([data-name^='_'])::before {
+  content: 'I';
+  font-family: serif;
+}
+
+[data-doc-text][data-show-bookmarks] span[data-bookmark][data-point]:not([data-name^='_']) + span[data-bookmark][data-end]::before {
+  content: none;
+}

@@ -7,7 +7,7 @@ import {
 
 const at = '2026-10-24';
 const src = (o) => cleanSource({ accessed: at, ...o });
-// The user's sample (docs/plans/references.md), notes left out of the list (the user, 2026-10-26).
+// The user's sample (docs/wiki/references.md), notes left out of the list (the user, 2026-10-26).
 const SAMPLE = [
   src({ id: 'vosk', authors: ['Alpha Cephei'], title: 'VOSK offline speech recognition API', url: 'https://alphacephei.com/vosk/' }),
   src({ id: 'sid', type: 'preprint', authors: ['Altera.AL', 'Ahn, Andrew', 'Becker, Nic', 'Carroll, Stephanie', 'Christie, Nico', 'Cortes, Manuel', 'Demirci, Arda'],
@@ -240,4 +240,13 @@ test('numbered (IEEE): numbers kept, the rest next in stored order; an entry per
   assert.deepEqual(sortSources(list, 'ieee').map((s) => s.id), ['c', 'a', 'w', 'p', 'b']);
   assert.equal(cleanSource({ num: 3 }).num, 3);
   assert.equal(cleanSource({ num: 0 }).num, undefined);
+});
+
+test("a Document takes Word's styles; a forum post keeps the two, and the builder's functions take Word's rows", () => {
+  assert.equal(styleOf({ referenceStyle: 'apa' }, {}, true), 'apa');
+  assert.equal(styleOf({ referenceStyle: 'apa' }, {}), 'harvard');
+  const s = src({ id: 'b', type: 'book', authors: ['Smith, John'], title: 'A title', year: '2026', publisher: 'Pub', place: 'London', accessed: '' });
+  assert.equal(citation(s, '', false, 'mla'), '(Smith)');
+  assert.equal(formatReference(s, '', 'apa'), 'Smith, J. (2026). A title. London: Pub.');
+  assert.deepEqual(labels([s], 'gb7714').get('b'), '1');
 });

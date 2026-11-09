@@ -5,9 +5,10 @@ import { layout } from '../../flow/layout.mjs';
 import { FLOW_SIZE } from '../../flow/library.mjs';
 import { cleanConnector, defaultMeasure, moveItem, normalizeGroups, repairEnds, unbindFrom, validConnector } from '../../flow/model.mjs';
 import { resolveConnectors } from '../../flow/route.mjs';
-import { KINDS, rotBox, rotOf } from '../../flow/shapes.mjs';
+import { kindOf, rotBox, rotOf } from '../../flow/shapes.mjs';
+import { lineOf, shapeName } from '../../tooling/shape-picker.mjs';
 import {
-  boardSurface, contentWidth, groupBox, injectStyle, itemElement, make, parseBoard, smartArtboard, topLevelPos, WB_BG,
+  boardSurface, columnWidth, groupBox, injectStyle, itemElement, make, parseBoard, smartArtboard, topLevelPos, WB_BG,
 } from '../../whiteboard.js';
 import { validate } from '../schema.mjs';
 import { endSide } from '../assistant/attach.mjs';
@@ -73,12 +74,12 @@ function briefItem(i, byId) {
 }
 
 const FIND_WORDS = { connector: 'arrow line', image: 'picture', stroke: 'pen drawing' };
-const KIND_NAMES = new Map(KINDS.map((k) => [k.kind, k.label]));
 const STOP = new Set(['a', 'an', 'the', 'of', 'on', 'in', 'to', 'and']);
 
 function findText(i, byId) {
   const ends = i.type === 'connector' ? `from ${plain(byId.get(i.from?.item))} to ${plain(byId.get(i.to?.item))}` : '';
-  return `${plain(i)} ${i.type} ${FIND_WORDS[i.type] ?? ''} ${i.shape ?? ''} ${KIND_NAMES.get(i.shape) ?? ''} ${ends}`.toLowerCase();
+  const name = i.type === 'connector' ? lineOf(i) : kindOf(i.shape) && shapeName(i.shape); // Word's name, beside the board's label
+  return `${plain(i)} ${i.type} ${FIND_WORDS[i.type] ?? ''} ${i.shape ?? ''} ${kindOf(i.shape)?.label ?? ''} ${name || ''} ${ends}`.toLowerCase();
 }
 
 function freshIds(items, used) {
@@ -506,9 +507,10 @@ export const defs = [
         if (pos === null) fail('not_found', `No block at [${a.at}]`, { path: a.at });
         pos += doc.nodeAt(pos).nodeSize;
       }
+      const dw = columnWidth(view, pos); // across the text column there, the flowchart scaled to fit (flows.js insertFlowchart)
       pos = topLevelPos(doc.resolve(pos));
       const board = structuredClone(r.board);
-      const node = state.schema.nodes.canvas.create({ ...board, dw: Math.min(board.w, contentWidth(view)), flow: { id: r.id, rev: r.rev }, source: r.source ?? null });
+      const node = state.schema.nodes.canvas.create({ ...board, dw, flow: { id: r.id, rev: r.rev }, source: r.source ?? null });
       const tr = state.tr.insert(pos, node);
       return { tr, result: { path: pathOfPos(tr.doc, pos) } };
     },

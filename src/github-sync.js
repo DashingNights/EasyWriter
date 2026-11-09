@@ -671,4 +671,4 @@ function register(handle, h) {
   handle('github.start', () => { sync().catch(() => {}); }); // the renderer has started: pull what changed while the app was closed
 }
 
-module.exports = { register, configure, touch, closeCheck, beforeClose, plan, push, blobSha, DEFAULTS, SETTINGS_KEYS };
+module.exports = { register, configure, touch, closeCheck, beforeClose, plan, push, blobSha, gh, DEFAULTS, SETTINGS_KEYS };

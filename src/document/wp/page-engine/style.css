@@ -1,0 +1,34 @@
+/* Content taller than its page runs below the paper (pagination.js sheetOf): this cover, over the text, hides it down to the next
+   paper, as Word clips it at the page's edge. */
+.page[data-format="document"] .pg-over { position: absolute; background: var(--pg-bg); }
+/* A paragraph whose indents leave it no width (Word's run to 1,584 pt) has line boxes of no width, which the browser sets beside a
+   page end's breaker instead of below it, so the page end could not part its lines: 1 px of width sends them below. */
+.page[data-format="document"] .ProseMirror :is(p, h1, h2, h3, h4, h5, h6) { min-width: 1px; }
+/* Section text widths (document/pagination.js blockDecorations): the text is one column as wide as the last section's text, and
+   each top-level block of a section of another width carries data-pg-dr with --pg-dr, how much narrower its text is (negative:
+   wider). The block's own width loses it and keeps its indents (calc-size takes the width auto would give, after the margins).
+   Blocks drawn at 100% (columns, a table that moves whole: document.css) and canvases and plan charts (whiteboard.js drawnWidth)
+   take it off that in their own rules, which beat this one (its specificity is the Document scope's and one attribute).
+   --pg-dr does not inherit, so nothing inside a block sees it. ponytail: calc-size() is Chromium only; a browser without it
+   (the later web app) draws every section at the last one's width, so the web port needs a fallback (a feature query with
+   margin-right: var(--pg-dr) plus the block's own right indent). */
+@property --pg-dr { syntax: '<length>'; inherits: false; initial-value: 0px; }
+.page[data-format="document"] :where(.ProseMirror) > [data-pg-dr] { width: calc-size(auto, size - var(--pg-dr)); }
+/* Rows a page end splits (document/pagination.js): each cell holds that page end's floats, a zero-width spacer from its text's top
+   down to the cut and a breaker across the cell from the cut to the next page's text, so each cell's lines below the cut move to
+   the next page as the text's own page ends move lines; the breaker's borders close the two pieces. While split a row's cells sit
+   at their tops (centred or bottom text would follow the row's height across the page end). The next page's repeated header rows
+   draw in its sheet (.pg-head). */
+.page[data-format="document"] .ProseMirror .pg-cell { height: 0; }
+.page[data-format="document"] .ProseMirror .pg-cell > .pg-cut, .page[data-format="document"] .ProseMirror .pg-cell > .pg-breaker { float: left; clear: both; }
+.page[data-format="document"] .ProseMirror .pg-cell > .pg-cut { width: 0; }
+.page[data-format="document"] .ProseMirror .pg-cell > .pg-breaker { width: 100%; box-sizing: border-box; }
+.page[data-format="document"] .ProseMirror table:not([data-whole]) > tbody > tr[data-pg-split] > td[style*="vertical-align"],
+.page[data-format="document"] .ProseMirror table:not([data-whole]) > tbody > tr[data-pg-split] > th[style*="vertical-align"] { align-content: start; }
+.page[data-format="document"] .ProseMirror .pg-page > .pg-head { position: absolute; left: 0; top: 0; }
+/* Culled blocks (document/pagination.js, layout-cache.mjs): as a Document opens, a top-level paragraph far from its first pages
+   and wholly inside one page skips its style, layout and paint at the height its layout cache (or Word's hints) gives it
+   (contain-intrinsic-height on the block), until the page engine draws it. Only the editable text: page copies (geometry.js
+   pageClone drops contenteditable) and print draw every block. */
+.page[data-format="document"] :where(.ProseMirror[contenteditable]) > [data-pg-cull] { content-visibility: auto; }
+@media print { .page[data-format="document"] .ProseMirror > [data-pg-cull] { content-visibility: visible; } }

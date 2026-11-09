@@ -1,7 +1,7 @@
 import { NodeSelection, TextSelection } from '@tiptap/pm/state';
 import { canvasEditor } from '../canvas.js';
 import { activeBoard, withoutScroll } from '../whiteboard.js';
-import { applyPageTheme, closeSummoned, commitBoardEdit, saveNow, saveSettings } from './actions.js';
+import { applyPageTheme, closeSummoned, commitBoardEdit, focusArea, saveNow, saveSettings } from './actions.js';
 import { openBrowser } from './browser.js';
 import { openFlows } from './flows.js';
 import { openPlan } from './plans.js';
@@ -37,12 +37,12 @@ export async function openWorkspace(view, { startup = false, remember = true } =
   return true;
 }
 
-/** Back to the editor, the focus in it (its selection restored, no scroll). */
+/** Back to the editor, the focus in it (its selection restored, no scroll), or in the canvas page area that shows the draft. */
 export async function closeWorkspace({ remember = true } = {}) {
   commitBoardEdit(); // flushes the plan and flowchart writes
   setState({ view: { type: 'editor' } });
   applyPageTheme();
-  requestAnimationFrame(() => state.editor?.view.focus()); // once the editor page is no longer inert
+  requestAnimationFrame(() => focusArea() || state.editor?.view.focus()); // once the editor page is no longer inert
   if (remember) await saveSettings({ lastView: { type: 'editor' } });
 }
 

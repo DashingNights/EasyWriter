@@ -1,0 +1,85 @@
+/* Table tools (docs/plans/word/briefs/table-tools.md). */
+
+/* The handles and zones pointer.js places in the page overlay (layout px). */
+.page[data-format="document"] #page-overlay .tt-part { position: absolute; pointer-events: auto; box-sizing: border-box; }
+.page[data-format="document"] #page-overlay .tt-part[hidden] { display: none; }
+.page[data-format="document"] #page-overlay .tt-part[data-tt="move"],
+.page[data-format="document"] #page-overlay .tt-part[data-tt="plus"] {
+  display: flex; align-items: center; justify-content: center; border: 1px solid var(--border); border-radius: 2px;
+  background: var(--background); color: var(--foreground); z-index: 2;
+}
+.page[data-format="document"] #page-overlay .tt-part[data-tt="move"] { cursor: move; }
+.page[data-format="document"] #page-overlay .tt-part[data-tt="plus"] { border-radius: 50%; cursor: pointer; color: var(--primary); }
+.page[data-format="document"] #page-overlay .tt-part[data-tt="resize"] { border: 1px solid var(--muted-foreground); background: var(--background); cursor: nwse-resize; }
+/* Left of the rows Word shows a white arrow pointing up and right; above a column a black arrow pointing down. */
+.page[data-format="document"] #page-overlay .tt-part[data-tt="rows"] {
+  cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16'%3E%3Cpath d='M3 13 13 3M6 3h7v7' fill='none' stroke='%23000' stroke-width='3'/%3E%3Cpath d='M3 13 13 3M6 3h7v7' fill='none' stroke='%23fff' stroke-width='1.5'/%3E%3C/svg%3E") 13 3, pointer;
+}
+.page[data-format="document"] #page-overlay .tt-part[data-tt="cols"] {
+  cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='16'%3E%3Cpath d='M6 1v11M2 8l4 6 4-6z' fill='%23000' stroke='%23000' stroke-width='2'/%3E%3C/svg%3E") 6 15, s-resize;
+}
+
+/* Draw Table's guide while dragging: the rectangle or line, and Eraser's swept box. */
+.page[data-format="document"] #page-overlay .tt-guide { position: absolute; border: 1px dashed var(--foreground); pointer-events: none; }
+.page[data-format="document"] #page-overlay .tt-guide[data-tool="erase"] { border-color: var(--destructive); }
+
+/* The pointer tools' cursors over the text, and Word's black arrow inside a cell's left edge. */
+.page[data-format="document"] .ProseMirror[data-table-tool="draw"],
+.page[data-format="document"] .ProseMirror[data-table-tool="draw"] * {
+  cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='18' height='18'%3E%3Cpath d='M2 16l1.5-5L13 1.5l3.5 3.5L7 14.5z' fill='%23fff' stroke='%23000' stroke-width='1.2'/%3E%3C/svg%3E") 2 16, crosshair;
+}
+.page[data-format="document"] .ProseMirror[data-table-tool="paint"],
+.page[data-format="document"] .ProseMirror[data-table-tool="paint"] * {
+  cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='18' height='18'%3E%3Cpath d='M9 1l8 8-5 5-8-8z' fill='%23fff' stroke='%23000' stroke-width='1.2'/%3E%3Cpath d='M4 6 1 17l11-3' fill='none' stroke='%23000' stroke-width='1.2'/%3E%3C/svg%3E") 1 17, crosshair;
+}
+.page[data-format="document"] .ProseMirror[data-table-tool="erase"],
+.page[data-format="document"] .ProseMirror[data-table-tool="erase"] * {
+  cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='18' height='18'%3E%3Cpath d='M6 16 1.5 11.5 11 2l5.5 5.5L8 16z' fill='%23fff' stroke='%23000' stroke-width='1.2'/%3E%3Cpath d='M6 7l5 5' stroke='%23000' stroke-width='1.2'/%3E%3C/svg%3E") 2 14, crosshair;
+}
+.page[data-format="document"] .ProseMirror[data-tt-cell] :is(td, th) {
+  cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16'%3E%3Cpath d='M13 3 3 13M3 6v7h7' fill='none' stroke='%23000' stroke-width='2'/%3E%3C/svg%3E") 3 13, pointer;
+}
+
+/* Diagonal cell borders (tl2br, tr2bl), which CSS borders cannot draw: a line from corner to corner. ponytail: drawn in the text
+   colour one pixel wide whatever the pen; read the edge's colour and width into a variable if they matter. */
+.page[data-format="document"] .ProseMirror :is(td, th)[data-borders*='"tl2br"'] {
+  background-image: linear-gradient(to top right, transparent calc(50% - 0.6px), currentColor calc(50% - 0.6px), currentColor calc(50% + 0.6px), transparent calc(50% + 0.6px));
+}
+.page[data-format="document"] .ProseMirror :is(td, th)[data-borders*='"tr2bl"'] {
+  background-image: linear-gradient(to bottom right, transparent calc(50% - 0.6px), currentColor calc(50% - 0.6px), currentColor calc(50% + 0.6px), transparent calc(50% + 0.6px));
+}
+.page[data-format="document"] .ProseMirror :is(td, th)[data-borders*='"tl2br"'][data-borders*='"tr2bl"'] {
+  background-image: linear-gradient(to top right, transparent calc(50% - 0.6px), currentColor calc(50% - 0.6px), currentColor calc(50% + 0.6px), transparent calc(50% + 0.6px)),
+    linear-gradient(to bottom right, transparent calc(50% - 0.6px), currentColor calc(50% - 0.6px), currentColor calc(50% + 0.6px), transparent calc(50% + 0.6px));
+}
+
+/* Nested tables draw as ordinary tables inside their cell: the page-level row grid (document.css) is for tables on the page. */
+.page[data-format="document"] .ProseMirror :is(td, th) .tableWrapper.tableWrapper > table { display: table; width: 100%; margin: 0; }
+.page[data-format="document"] .ProseMirror :is(td, th) .tableWrapper.tableWrapper > table > colgroup { display: table-column-group; }
+.page[data-format="document"] .ProseMirror :is(td, th) .tableWrapper.tableWrapper > table > tbody { display: table-row-group; }
+.page[data-format="document"] .ProseMirror :is(td, th) .tableWrapper.tableWrapper > table > tbody > tr { display: table-row; margin: 0; width: auto; min-width: 0; }
+.page[data-format="document"] .ProseMirror :is(td, th) .tableWrapper.tableWrapper > table > tbody > tr > :is(td, th) { display: table-cell; }
+
+/* AutoFit tables (any layout but fixed) break no word: Word widens the column to its longest word instead (table-view.js
+   readFloors measures the overflow and widens it), and a word Word sized its column to fits whatever the zoom's rounding (the
+   fixture's "Apple" needs 29.98 of its 30 pt). Fixed tables break a long word as ProseMirror's break-word does. */
+.page[data-format="document"] .ProseMirror table:not([data-layout="fixed"]) > tbody > tr > :is(td, th) { overflow-wrap: normal; }
+.page[data-format="document"] .ProseMirror table[data-layout="fixed"] > tbody > tr > :is(td, th) { overflow-wrap: break-word; }
+
+/* The empty paragraph that ends a cell right after a nested table takes no height in Word (autofit.mjs hiddenCellEnd). */
+.page[data-format="document"] .ProseMirror :is(td, th) > .tableWrapper + p:last-child:has(> br.ProseMirror-trailingBreak:only-child) {
+  height: 0; margin: 0; padding: 0; overflow: hidden;
+}
+
+/* Printed cells paint in the text's order: positioned (page.css, for the column resizer) they painted after every paragraph, so
+   a PDF's text listed each page's tables after its paragraphs. Position changes no box here. */
+@media print {
+  .page[data-format="document"] .ProseMirror :is(td, th) { position: static; }
+}
+
+/* A nested table's rows at Word's pitch, its text and one border of the style's width: its borders draw at a device pixel at
+   least (--cell-bx), which in the collapsed table model adds the difference to every row, so each cell gives it back (a block
+   whose negative margin collapses with its last paragraph's spacing). The fixture's 2-row inner table: 30.8 pt in Word. */
+.page[data-format="document"] .ProseMirror :is(td, th) .tableWrapper > table > tbody > tr > :is(td, th)::after {
+  content: ""; display: block; margin-top: min(0px, calc(var(--cell-border, 0px) - var(--cell-bx, 0px)));
+}

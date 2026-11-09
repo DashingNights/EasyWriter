@@ -1,20 +1,20 @@
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { toast } from 'sonner';
 import { cn } from 'cn';
-import { ArrowLeft, ArrowRight, Check, ExternalLink, GripHorizontal, Minus, Plus, RotateCw, Scaling, X } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Bot, Check, ExternalLink, Globe, GripHorizontal, Minus, Plus, RotateCw, Scaling, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { anchorPanel, dragPanel, placePanel } from '../assistant/panel.mjs';
 import { MAC } from '../../platform.mjs';
 import { withKey } from '../keybinds.js';
 import {
-  activateTab, browserKey, closePane, closeTab, DEFAULT_ZOOM, defaultPlace, HOME, newTab, openPane, openPanes, placePane, raisePane, toUrl, updateTab, views,
-  zoomOf, zoomTab,
+  activateTab, AGENT_PARTITION, browserKey, closePane, closeTab, DEFAULT_ZOOM, defaultPlace, HOME, MAX_TABS, newTab, openPane, openPanes, placePane, raisePane, toUrl,
+  updateTab, views, zoomOf, zoomTab,
 } from '../browser.js';
+import { can } from '../gates.mjs';
+import { motion } from '../motion.js';
 import { getState, useStore } from '../store.js';
-import { useViewportBox } from '../viewport.js';
-import { closeWorkspace } from '../views.js';
-import { SidebarButton } from './Sidebar.jsx';
+import { useViewportBox, viewportRect } from '../viewport.js';
 import { IconButton, Tip } from './Tip.jsx';
 import { keepFocus } from './Toolbar.jsx';
 
@@ -41,9 +41,9 @@ const HANDLES = [['nw', 'top-0 left-0', 'cursor-nwse-resize'], ['n', 'top-0 left
   ['e', 'top-1/2 left-full', 'cursor-ew-resize'], ['se', 'top-full left-full', 'cursor-nwse-resize'], ['s', 'top-full left-1/2', 'cursor-ns-resize'],
   ['sw', 'top-full left-0', 'cursor-nesw-resize'], ['w', 'top-1/2 left-0', 'cursor-ew-resize']];
 
-/** One tab's page: a <webview> in the persistent browser session. `src` is set once at mount (a re-render setting it again
- * would reload the page); an inactive tab is hidden, not unmounted, so it keeps running. Its zoom follows `tab.zoom` once the
- * page is ready (a webview takes no zoom before its first dom-ready). */
+/** One tab's page: a <webview> in the persistent browser session (an agent's tab: in AGENT_PARTITION, muted). `src` is set once at
+ * mount (a re-render setting it again would reload the page); an inactive tab is hidden, not unmounted, so it keeps running. Its
+ * zoom follows `tab.zoom` once the page is ready (a webview takes no zoom before its first dom-ready). */
 function WebTab({ tab, shown }) {
   const ref = useRef(null);
   const [src] = useState(tab.url);
@@ -54,7 +54,10 @@ function WebTab({ tab, shown }) {
     views.set(tab.id, el);
     const url = (e) => updateTab(tab.id, { url: e.url });
     const title = (e) => updateTab(tab.id, { title: e.title });
-    const onReady = () => setReady(true);
+    const onReady = () => {
+      if (tab.agent) el.setAudioMuted(true); // a page the user is not looking at must not start playing sound
+      setReady(true);
+    };
     el.addEventListener('did-navigate', url);
     el.addEventListener('did-navigate-in-page', url);
     el.addEventListener('page-title-updated', title);
@@ -70,7 +73,7 @@ function WebTab({ tab, shown }) {
   useEffect(() => {
     if (ready) ref.current.setZoomFactor(zoom);
   }, [ready, zoom]);
-  return <webview ref={ref} src={src} partition="persist:browser" allowpopups="" className={cn('absolute inset-0', !shown && 'invisible')} />;
+  return <webview ref={ref} src={src} partition={tab.agent ? AGENT_PARTITION : 'persist:browser'} allowpopups="" className={cn('absolute inset-0', !shown && 'invisible')} />;
 }
 
 /** The address bar: the tab's URL, or the text being typed; Enter loads it (a search when it is no URL), Escape restores the
@@ -150,35 +153,182 @@ function NavBar({ tab }) {
   );
 }
 
-/** The browser's tabs (SPEC §7j). `shown`: the browser page's header row, the active tab highlighted. Otherwise the strip
- * over another page's viewport (App.jsx): a tab shows its floating pane, or minimizes it while shown (then highlighted), + opens
- * a new tab there. */
-export function TabStrip({ shown = false }) {
+/** The browser's tabs (SPEC §7j). `shown`: the browser page's, in the title row (App.jsx TitleBar) in one line that scrolls
+ * sideways, the active tab highlighted; its + is at the address row's end. Otherwise the strip over another page's viewport
+ * (App.jsx): a tab shows its floating pane, or minimizes it while shown (then highlighted), + opens a new tab there. */
+export function TabStrip() {
   const { tabs, active } = useStore((s) => s.browser);
-  useStore((s) => s.settings?.browserPanes);
-  const inPane = new Set(openPanes().map((p) => p.tab));
   return (
-    <div role="tablist" aria-label="Browser tabs" className="flex min-w-0 flex-1 flex-wrap items-center gap-0.5">
-      {tabs.map((t) => {
-        const on = shown ? t.id === active : inPane.has(t.id);
-        return (
-          <div key={t.id} role="tab" aria-selected={on} onMouseDown={keepFocus}
-            onClick={() => (shown ? activateTab(t.id) : on ? closePane(t.id) : openPane(t.id))}
-            onAuxClick={(e) => e.button === 1 && closeTab(t.id)}
-            className={cn('flex h-6 w-44 shrink-0 cursor-default items-center gap-1 rounded-md pl-2 pr-0.5', on ? 'bg-accent' : 'hover:bg-accent/60')}>
-            {/* The URL tip on the label only: nested in the X's tip, both would open at once. */}
-            <Tip title={t.url} wrap="min-w-0 flex-1"><span className="min-w-0 flex-1 truncate">{label(t)}</span></Tip>
-            <IconButton label="Close tab" onMouseDown={keepFocus} onClick={() => closeTab(t.id)}><X /></IconButton>
-          </div>
-        );
-      })}
-      <IconButton label="New tab" keybind="browser.newTab" onMouseDown={keepFocus} onClick={() => (shown ? newTab() : openPane(null, HOME))}><Plus /></IconButton>
+    <div role="tablist" aria-label="Browser tabs" className="flex min-w-0 flex-1 items-center gap-0.5 self-stretch overflow-x-auto [scrollbar-width:none]">
+      {tabs.map((t) => <TabRow key={t.id} tab={t} on={t.id === active} onClick={() => activateTab(t.id)} className="w-44" />)}
     </div>
   );
 }
 
-/** The browser page (SPEC §7j): the tab strip, the address row, then the slot the web layer covers with the active tab's page.
- * Always mounted like the editor page, hidden and inert behind the other pages. */
+/** One tab: its title (the URL in a tip) and a close X; middle-click also closes it. An agent's tab starts with a bot. */
+function TabRow({ tab, on, onClick, className, style }) {
+  return (
+    <div role="tab" aria-selected={on} onMouseDown={keepFocus} onClick={onClick} onAuxClick={(e) => e.button === 1 && closeTab(tab.id)} style={style}
+      data-agent-tab={tab.agent ? '' : undefined}
+      className={cn('flex h-6 shrink-0 cursor-default items-center gap-1 rounded-md pl-2 pr-0.5', on ? 'bg-accent' : 'hover:bg-accent/60', className)}>
+      {tab.agent && <Tip title="Opened by the assistant"><Bot aria-label="Opened by the assistant" className="size-3.5 shrink-0 text-muted-foreground" /></Tip>}
+      {/* The URL tip on the label only: nested in the X's tip, both would open at once. */}
+      <Tip title={tab.url} wrap="min-w-0 flex-1"><span className="min-w-0 flex-1 truncate">{label(tab)}</span></Tip>
+      <IconButton label="Close tab" onMouseDown={keepFocus} onClick={(e) => { e.stopPropagation(); closeTab(tab.id); }}><X /></IconButton>
+    </div>
+  );
+}
+
+const HOVER_MS = 300; // the user, 2026-10-28: a 0.3 s hover opens it, in place by 0.4 s (motion 'tabs')
+const GAP = 8; // px between the tab manager and the islands
+const ROWS = 6; // tabs per column of the manager (MAX_TABS fills two)
+
+/** The tab manager's place in the main column's area {left, bottom, maxHeight}, for its `width`: GAP right of island `island`
+ * (and of the left rail) and GAP above it, or above the bottom toolbar or the right island where they reach under it, the same
+ * in every page (the user, 2026-10-29: as a forum post draft shows it); it grows upwards from there. */
+function managerPlace(island, width) {
+  const vp = viewportRect();
+  const a = document.querySelector('main > div').getBoundingClientRect();
+  const i = island.getBoundingClientRect();
+  let left = i.right;
+  for (const e of document.querySelectorAll('[role=toolbar][aria-orientation=vertical]')) {
+    const o = e.getBoundingClientRect();
+    if (o.width && o.left < vp.left + 2 * rem()) left = Math.max(left, o.right); // the rail at the viewport's left edge
+  }
+  left += GAP;
+  let bottom = i.top - GAP;
+  for (const e of document.querySelectorAll('[data-agent-area="toolbar"]:not([data-ribbon]), [data-right-island]')) {
+    const o = e.getBoundingClientRect();
+    if (o.width && o.left < left + width && o.right > left) bottom = Math.min(bottom, o.top - GAP);
+  }
+  return { left: left - a.left, bottom: a.bottom - bottom, maxHeight: bottom - vp.top - 0.5 * rem() };
+}
+
+/** Whether point (x, y) is inside the convex hull of `pts` ([x, y] pairs): the island and the manager's corners make the aiming
+ * room between them (a menu's safe triangle), where the pointer may cross from one to the other. */
+function inHull(pts, x, y) {
+  const cross = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+  const s = [...pts].sort((p, q) => p[0] - q[0] || p[1] - q[1]);
+  const half = (list) => list.reduce((h, p) => {
+    while (h.length >= 2 && cross(h.at(-2), h.at(-1), p) <= 0) h.pop();
+    h.push(p);
+    return h;
+  }, []);
+  const hull = [...half(s).slice(0, -1), ...half([...s].reverse()).slice(0, -1)]; // counter-clockwise (y down: clockwise on screen)
+  return hull.every((p, k) => cross(p, hull[(k + 1) % hull.length], [x, y]) >= 0);
+}
+const corners = (r) => [[r.left, r.top], [r.right, r.top], [r.left, r.bottom], [r.right, r.bottom]];
+
+/** The browser's island at the bottom-left of the editor page's working viewport (the user, 2026-10-28, in place of the tab strip
+ * at its top right). A hover of HOVER_MS opens the tab manager, which closes again once the pointer leaves the island, the
+ * manager and the room between them; a click opens it to stay (until its X or another click). A dot on it shows while an agent
+ * works in its tabs (assistant/web.js), which the manager lists, so the user can open one and watch. */
+export function BrowserIsland({ ui }) {
+  const on = useStore((s) => s.view.type === 'editor') && !can('view.browser', ui);
+  const browsing = useStore((s) => s.agentBrowsing > 0);
+  const box = useViewportBox(on);
+  const [open, setOpen] = useState(null); // null, 'hover' or 'click'
+  const [shown, setShown] = useState(false); // the manager stays mounted while it plays its close
+  if (open && !shown) setShown(true);
+  const ref = useRef(null);
+  const timer = useRef(0);
+  useEffect(() => { if (!on) setOpen(null); }, [on]);
+  useEffect(() => () => clearTimeout(timer.current), []);
+  useEffect(() => {
+    if (open !== 'hover') return undefined;
+    const move = (e) => {
+      const m = document.querySelector('[data-tab-manager]');
+      if (!ref.current || !m) return;
+      if (!inHull([...corners(ref.current.getBoundingClientRect()), ...corners(m.getBoundingClientRect())], e.clientX, e.clientY)) setOpen(null);
+    };
+    addEventListener('pointermove', move);
+    return () => removeEventListener('pointermove', move);
+  }, [open]);
+  if (!on || !box) return null;
+  return (
+    <>
+      <div ref={ref} data-browser-tabs data-browser-island style={{ left: `calc(${box.left}px + 0.5rem)`, bottom: `calc(${box.bottom}px + 0.75rem)` }}
+        className="absolute z-30 flex rounded-island border bg-island p-1 shadow-xl"
+        onPointerEnter={() => { clearTimeout(timer.current); timer.current = setTimeout(() => setOpen((o) => o ?? 'hover'), HOVER_MS); }}
+        onPointerLeave={() => clearTimeout(timer.current)}>
+        {/* The tooltip opens to the button's right, in the room before the bottom toolbar (the user, 2026-10-28). */}
+        <IconButton label="Browser tabs" size="regular" tip={{ side: 'right' }} aria-expanded={!!open} onMouseDown={keepFocus}
+          onClick={() => { clearTimeout(timer.current); setOpen((o) => (o === 'click' ? null : 'click')); }}>
+          <Globe />
+        </IconButton>
+        {browsing && <span data-agent-browsing aria-label="The assistant is using the browser" className="pointer-events-none absolute top-1 right-1 size-2 animate-pulse rounded-full bg-(--ui-accent)" />}
+      </div>
+      {shown && ref.current && <TabManager island={ref.current} closing={!open} onClose={() => setOpen(null)} onClosed={() => setShown(false)} />}
+    </>
+  );
+}
+
+/** The tab manager: a close X at its top right over the tabs, which fill columns of ROWS from the bottom up, left to right (the
+ * user, 2026-10-28), with a dashed New tab in the next place while there are fewer than MAX_TABS; it is as big as they need. A
+ * tab toggles its pane: a click shows it (openPane), or minimizes it while shown (closePane); the tabs in panes are highlighted.
+ * It grows out of its bottom-left corner by the island (motion 'tabs') and shrinks back into it on closing. */
+function TabManager({ island, closing, onClose, onClosed }) {
+  const tabs = useStore((s) => s.browser.tabs);
+  useStore((s) => s.settings?.browserPanes);
+  const view = useStore((s) => s.view);
+  const inPane = new Set(openPanes().map((p) => p.tab));
+  const ref = useRef(null);
+  const [place, setPlace] = useState(() => managerPlace(island, 13 * rem()));
+  useLayoutEffect(() => {
+    const measure = () => ref.current && setPlace(managerPlace(island, ref.current.offsetWidth));
+    measure();
+    const ro = new ResizeObserver(measure);
+    for (const el of [document.querySelector('main > div'), viewportRect().el, island, ref.current]) ro.observe(el);
+    addEventListener('viewportinset', measure);
+    return () => {
+      ro.disconnect();
+      removeEventListener('viewportinset', measure);
+    };
+  }, [island, view]);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    const ms = motion('tabs');
+    if (!ms) {
+      if (closing) onClosed();
+      return undefined;
+    }
+    const pill = `${2.5 * rem()}px`;
+    const anim = el.animate([
+      { clipPath: `inset(calc(100% - ${pill}) calc(100% - ${pill}) 0 0 round ${1.25 * rem()}px)`, opacity: 0 },
+      { clipPath: `inset(0 0 0 0 round ${getComputedStyle(el).borderRadius})`, opacity: 1 },
+    ], { duration: ms, easing: 'ease-out', fill: 'both', direction: closing ? 'reverse' : 'normal' });
+    // Open: the finished animation is dropped, so no clip cuts off the shadow; closed: it holds until unmounted.
+    anim.finished.then(() => (closing ? onClosed() : anim.cancel()), () => {});
+    return () => anim.cancel();
+  }, [closing]);
+  const slots = Math.min(MAX_TABS, tabs.length + 1); // the tabs and New tab
+  const rows = Math.min(ROWS, slots);
+  const at = (k) => ({ gridColumn: Math.floor(k / ROWS) + 1, gridRow: rows - (k % ROWS) });
+  return (
+    <div ref={ref} data-browser-tabs data-tab-manager role="dialog" aria-label="Browser tabs" style={place} inert={closing}
+      className="absolute z-30 flex flex-col overflow-y-auto rounded-island border bg-island text-xs text-card-foreground shadow-xl [scrollbar-width:thin]">
+      <div className="flex h-8 shrink-0 items-center justify-end px-1">
+        <IconButton label="Close" onMouseDown={keepFocus} onClick={onClose}><X /></IconButton>
+      </div>
+      <div role="tablist" aria-label="Browser tabs" className="grid gap-1 p-1 pt-0"
+        style={{ gridTemplateRows: `repeat(${rows}, auto)`, gridTemplateColumns: `repeat(${Math.ceil(slots / ROWS)}, 12rem)` }}>
+        {tabs.map((t, k) => {
+          const shownIn = inPane.has(t.id);
+          return <TabRow key={t.id} tab={t} on={shownIn} onClick={() => (shownIn ? closePane(t.id) : openPane(t.id))} className="h-7" style={at(k)} />;
+        })}
+        {tabs.length < MAX_TABS && (
+          <button type="button" data-new-tab onMouseDown={keepFocus} onClick={() => openPane(null, HOME)} style={at(tabs.length)}
+            className="flex h-7 items-center gap-1.5 rounded-md border border-dashed px-2 text-muted-foreground hover:bg-accent/60 hover:text-accent-foreground">
+            <Plus className="size-3.5" />New tab
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** The browser page (SPEC §7j): the address row (its tabs are in the title row, App.jsx TitleBar), then the slot the web layer
+ * covers with the active tab's page. Always mounted like the editor page, hidden and inert behind the other pages. */
 export function BrowserPage({ shown }) {
   const { tabs, active } = useStore((s) => s.browser);
   const tab = tabs.find((t) => t.id === active);
@@ -189,17 +339,9 @@ export function BrowserPage({ shown }) {
     <div id={shown ? 'workspace-root' : undefined} data-browser-page data-viewport={shown ? '' : undefined} tabIndex={-1} inert={!shown}
       className={cn('absolute inset-0 z-10 flex flex-col bg-background outline-none', !shown && 'invisible pointer-events-none')}
       onKeyDown={(e) => browserKey(e) && e.preventDefault()}>
-      <header className="shrink-0 border-b text-xs">
-        <div className="flex min-h-9 items-start gap-1 px-1 py-1.5">
-          <SidebarButton />
-          <TabStrip shown />
-          <Tip title="Back to the open draft">
-            <Button variant="outline" size="xs" onMouseDown={keepFocus} onClick={() => closeWorkspace()}>Back to editor</Button>
-          </Tip>
-        </div>
-        <div className="flex h-9 items-center gap-1 px-1">
-          <NavBar tab={tab} />
-        </div>
+      <header className="flex h-9 shrink-0 items-center gap-1 border-b px-1 text-xs">
+        <NavBar tab={tab} />
+        <IconButton label="New tab" keybind="browser.newTab" onMouseDown={keepFocus} onClick={() => newTab()}><Plus /></IconButton>
       </header>
       <div data-web-slot className="relative min-h-0 flex-1">
         {!tabs.length && (

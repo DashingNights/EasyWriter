@@ -1,0 +1,73 @@
+/* Outline view (plan.md §3 outline): each top-level block indented by its outline level (--ol-indent steps of half an inch)
+   with its outline symbol in a gutter at its left, collapsed blocks hidden, body text cut to its first line, and plain text
+   when Show Text Formatting is off. The plugin puts data-outline-view on the main editor's root only in Outline view. */
+[data-doc-text][data-outline-view] > [data-outline-symbol] {
+  position: relative;
+  margin-left: calc(var(--ol-indent, 0) * 0.5in) !important;
+  padding-left: 26px !important;
+  background-repeat: no-repeat;
+  background-position: 4px 0.3em;
+  background-size: 13px 13px;
+}
+/* A list label hangs left of the text (lists.js): the padding grows by its width so the label stays clear of the symbol. */
+[data-doc-text][data-outline-view] > [data-outline-symbol][data-label] { padding-left: calc(26px + var(--list-hanging, 0pt)) !important; }
+[data-doc-text][data-outline-view] > [data-outline-hidden] { display: none !important; }
+
+/* The symbol sits in the block's own left padding as a background, so it never takes a pseudo-element another package
+   draws with (list labels, formatting marks): a plus in a ring for a heading with subordinate text, a minus for one without,
+   a small dot for body text. Grey on the page, which stays white in both themes. */
+[data-doc-text][data-outline-view] > [data-outline-symbol="plus"] {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 13 13'%3E%3Ccircle cx='6.5' cy='6.5' r='6' fill='none' stroke='%23808080'/%3E%3Cpath d='M3.5 6.5h6M6.5 3.5v6' stroke='%23808080' stroke-width='1.3'/%3E%3C/svg%3E");
+}
+[data-doc-text][data-outline-view] > [data-outline-symbol="minus"] {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 13 13'%3E%3Ccircle cx='6.5' cy='6.5' r='6' fill='none' stroke='%23808080'/%3E%3Cpath d='M3.5 6.5h6' stroke='%23808080' stroke-width='1.3'/%3E%3C/svg%3E");
+}
+[data-doc-text][data-outline-view] > [data-outline-symbol="circle"] {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 13 13'%3E%3Ccircle cx='6.5' cy='6.5' r='2.5' fill='%23808080'/%3E%3C/svg%3E");
+}
+/* Word marks a heading whose subordinate text is collapsed with a grey line under it. */
+[data-doc-text][data-outline-view] > [data-outline-collapsed] {
+  text-decoration: underline dotted var(--muted-foreground);
+  text-underline-offset: 3px;
+}
+
+/* Show First Line Only: one line box with an ellipsis when more follows, a hard line break (Shift+Enter) included. */
+[data-doc-text][data-outline-view] > [data-outline-first] {
+  display: -webkit-box !important;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 1;
+  overflow: hidden;
+}
+
+/* Show Text Formatting off: one plain font and size for every paragraph (the draft font when one is set). Character
+   formatting goes, but agent suggestions (data-sg), comments and tracked changes keep their colours and lines. */
+[data-doc-text][data-outline-plain] > * {
+  font-family: var(--ol-font, inherit) !important;
+  font-size: var(--ol-size, 12pt) !important;
+}
+[data-doc-text][data-outline-plain] > * * ,
+[data-doc-text][data-outline-plain] > * {
+  font-weight: normal !important;
+  font-style: normal !important;
+}
+[data-doc-text][data-outline-plain] > * * {
+  font-family: inherit !important;
+  font-size: inherit !important;
+}
+[data-doc-text][data-outline-plain] > *,
+[data-doc-text][data-outline-plain] > * :not([data-sg], [data-comment], ins, del, [data-fmt-change]) {
+  color: inherit !important;
+}
+[data-doc-text][data-outline-plain] > * :not([data-sg], [data-comment], ins, del, [data-fmt-change]) {
+  text-decoration: none !important;
+  background: none !important;
+}
+
+/* The guide line a symbol drag draws at the gap the subtree moves to. */
+#editor-area[data-word-view] [data-outline-guide] {
+  position: fixed;
+  height: 2px;
+  background: var(--primary);
+  pointer-events: none;
+  z-index: 40;
+}

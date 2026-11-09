@@ -1,5 +1,6 @@
 import { BOARD_TYPES, find, nodeAt, outline, pathOfPos, posOfPath } from '../../doc-path.mjs';
-import { brief } from '../../suggest/core.mjs';
+import { flowPos } from '../../document/wp/columns/model.mjs';
+import { brief, jsonText } from '../../suggest/core.mjs';
 import { FONT_SIZES, FONTS, HIGHLIGHTS, presetChain, TEXT_COLORS } from '../../format.mjs';
 import { resolveColor } from '../../office.mjs';
 import { can } from '../gates.mjs';
@@ -13,6 +14,7 @@ import { CONTENT, DRAFT_ID, ref } from './schema-defs.mjs';
 // Paths: doc-path.mjs. Content conversion and Markdown live in ctx.lib (they need the editor's schema and a DOM).
 
 const isBoard = (node) => BOARD_TYPES.includes(node.type.name);
+const ALLOW_LOSS = { type: 'boolean', description: 'Drop fields or notes' }; // short, for MAX_SET: the content_lost error's hint says more
 
 /** A board block (TipTap JSON) as doc.get shows it unless `images` (SPEC §7i Compact draft reads): its kind (tool-rank.mjs
  * blockKind), size, item count and source in place of its items and pictures (board.get reads those). */
@@ -31,6 +33,91 @@ function boardStub(ctx, n) {
   if (a.flow?.id) out.source = `library flowchart "${ctx.flows?.getFlow?.(a.flow.id)?.title ?? a.flow.id}"`;
   return out;
 }
+// ---------- what a rewrite would lose (docs/plans/word/plan.md §1.8 Agents) ----------
+// doc.get's Markdown shows a field as its result and a note as [^n], and leaves bookmarks, comment anchors, tracked changes and
+// content controls out, so a block read as Markdown and written back would lose them. A Document's run properties (the textStyle
+// mark: font, size, colour, highlight...) and paragraph properties (style, spacing, indents...) have no Markdown either.
+const REVISION_MARKS = new Set(['insertion', 'deletion', 'formatChange']);
+// Paragraph and heading attributes that Markdown keeps (level, a list) or that are not properties (UI state, revisions, suggestions).
+const PARA_SKIP = new Set(['level', 'numbering', 'textAlign', 'collapsed', 'markRev', 'pChange', 'suggest']);
+
+/** What ProseMirror nodes `nodes` hold that a Markdown round trip loses: Map key → {kind, ...}. */
+function holdings(nodes) {
+  const out = new Map();
+  const fields = new Map(); // code → count, so two equal fields are two items
+  const visit = (n) => {
+    const a = n.attrs ?? {};
+    const name = n.type.name;
+    if (name === 'field' || name === 'fieldBlock') {
+      const k = fields.get(a.code) ?? 0;
+      fields.set(a.code, k + 1);
+      out.set(`field:${a.code}#${k}`, { kind: 'field', code: a.code });
+    }
+    if (name === 'noteRef') out.set(`note:${a.id}`, { kind: 'note', note: a.kind, id: a.id, text: (a.content ?? []).map(jsonText).join(' ').trim() });
+    if (name === 'bookmark' && !a.end) out.set(`bookmark:${a.name}`, { kind: 'bookmark', name: a.name });
+    if (name === 'sdtInline' || name === 'sdtBlock') out.set(`contentControl:${a.sdt?.id}`, { kind: 'contentControl', id: a.sdt?.id ?? null, title: a.sdt?.title ?? null });
+    for (const r of [a.markRev, a.rev]) for (const v of Object.values(r ?? {})) if (v?.id) out.set(`revision:${v.id}`, { kind: 'revision', id: v.id });
+    if (a.pChange?.id) out.set(`revision:${a.pChange.id}`, { kind: 'revision', id: a.pChange.id });
+    if (name === 'paragraph' || name === 'heading') {
+      for (const [k, v] of Object.entries(a)) {
+        if (v != null && !PARA_SKIP.has(k)) out.set(`paragraph:${k}=${JSON.stringify(v)}`, { kind: 'paragraph', property: k, value: v });
+      }
+    }
+    for (const m of n.marks) {
+      if (m.type.name === 'comment') out.set(`comment:${m.attrs.id}`, { kind: 'comment', id: m.attrs.id });
+      if (REVISION_MARKS.has(m.type.name)) out.set(`revision:${m.attrs.id}`, { kind: 'revision', id: m.attrs.id });
+      if (m.type.name === 'textStyle') {
+        for (const [k, v] of Object.entries(m.attrs)) if (v != null) out.set(`run:${k}=${JSON.stringify(v)}`, { kind: 'run', property: k, value: v });
+      }
+    }
+  };
+  for (const n of nodes) {
+    visit(n);
+    n.descendants(visit);
+  }
+  return out;
+}
+
+/** What the old nodes `olds` hold that the new nodes `news` lack: [{kind: 'field'|'note'|'bookmark'|'comment'|'revision'|'contentControl'|'run'|'paragraph', ...}]. */
+function lossOf(olds, news) {
+  const keep = holdings(news);
+  return [...holdings(olds)].filter(([k]) => !keep.has(k)).map(([, v]) => v);
+}
+
+/** Refuses a change that loses `lost` unless the caller allowed it. */
+function guardLoss(lost, a, hint = 'For a few words use doc_edit, which keeps them. Or read the block with doc_get format json and write it back as content.json, or pass allowLoss: true to drop them') {
+  if (!lost.length || a.allowLoss) return;
+  const kinds = [...new Set(lost.map((l) => l.kind))].join(', ');
+  fail('refused', `The new content would lose what the block holds (${kinds})`, { code: 'content_lost', lost, hint });
+}
+
+/** The text block at `a.path` of `doc` and the block-local range `a.from`..`a.to` (doc.find's offsets; default the whole block)
+ * → {pos, node, from, to}. Refuses a block that is not text and a range outside it. */
+function textRange(doc, a) {
+  const { pos, node } = nodeAtPath(doc, a.path);
+  if (!node.isTextblock) fail('refused', `The block at [${a.path}] is a ${node.type.name}, not text`, { code: 'not_text' });
+  const size = node.content.size;
+  const from = a.from ?? 0;
+  const to = a.to ?? size;
+  if (to > size || from > to) {
+    fail('invalid_args', `from / to must keep 0 <= from <= to <= ${size} (the block's length)`,
+      { path: to > size ? '/to' : '/from', message: 'is outside the block', expected: { type: 'integer', minimum: 0, maximum: size } });
+  }
+  return { pos, node, from, to };
+}
+
+/** doc.get's note markers ([^1]) in Markdown `md`, outside code fences and code spans (a regex such as [^0-9] there is code). */
+export const noteMarkers = (md) => [...new Set(String(md ?? '').replace(/^(`{3,}|~{3,})[^\n]*\n[\s\S]*?(^\1[^\n]*$|(?![\s\S]))/gm, '')
+  .replace(/(`+)[\s\S]*?\1/g, '').match(/\[\^\d+\]/g) ?? [])];
+
+/** TipTap JSON `node` without what a tracked deletion removed (text and inline objects marked deleted, blocks and rows with rev.del),
+ * for doc.get's Markdown. */
+function withoutDeleted(node) {
+  if (!Array.isArray(node?.content)) return node;
+  const content = node.content.filter((c) => !c.marks?.some((m) => m.type === 'deletion') && !c.attrs?.rev?.del).map(withoutDeleted);
+  return { ...node, content };
+}
+
 const stubText = (p) => [p.kind, p.size, p.items !== undefined && `${p.items} items`, p.plan && `plan "${p.plan}"`, p.source].filter(Boolean).join(', ');
 const attr = (s) => s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
 
@@ -60,11 +147,18 @@ function afterCursor(state) {
   return $from.depth ? $from.after($from.depth) : $from.pos;
 }
 
-// Boards always go at the top level (whiteboard.js topLevelPos): after the top-level block holding `pos`.
-const topLevel = (doc, pos) => {
-  const $p = doc.resolve(pos);
-  return $p.depth ? $p.after(1) : pos;
-};
+/** Where doc.insert's `a` ({at, position}) inserts in `state`. */
+function insertPos(state, a) {
+  if (a.at === 'start') return 0;
+  if (a.at === 'end') return state.doc.content.size;
+  if (a.at === 'cursor') return afterCursor(state);
+  const t = nodeAtPath(state.doc, a.at);
+  return a.position === 'before' ? t.pos : t.pos + t.node.nodeSize;
+}
+
+// Boards always go at the top level of the text flow (whiteboard.js topLevelPos): after the flow's block holding `pos`, which in
+// newspaper columns is the column's block.
+const topLevel = (doc, pos) => flowPos(doc.resolve(pos));
 
 const blockLabel = (doc, path) => {
   const pos = posOfPath(doc, path);
@@ -201,7 +295,7 @@ export const defs = [
         content = a.images ? node : ctx.lib.stripImages(a.path ? stub(node) : { ...node, content: (node.content ?? []).map(stub) });
       }
       else if (a.format === 'outline') content = outline({ content: node.content ?? [] }).map((e) => ({ ...e, path: [...(a.path ?? []), ...e.path] }));
-      else if (a.format === 'markdown') content = ctx.lib.toMarkdown(node, a.path);
+      else if (a.format === 'markdown') content = ctx.lib.toMarkdown(withoutDeleted(node), a.path);
       else if (a.format === 'html') {
         // A board's data-json attribute (its items and pictures) in document order → a one-line summary.
         let i = 0;
@@ -259,7 +353,7 @@ export const defs = [
   define({
     id: 'doc.insert',
     title: 'Insert blocks into the open draft',
-    brief: 'Use it to add new text or blocks. draftId: another draft to work on without opening it (drafts_list gives it); leave it out for the open draft.',
+    brief: 'Use it to add new text or blocks. draftId: another draft (drafts_list gives it).',
     guide: {
       before: 'Read the paths with doc_get format outline',
       args: 'at is a path such as [3], not "[3]". content is {"markdown":"..."}',
@@ -275,6 +369,7 @@ export const defs = [
         at: { oneOf: [ref('PATH'), { enum: ['start', 'end', 'cursor'] }], description: 'A block path such as [3], or one of start, end, cursor' },
         position: { enum: ['before', 'after'], default: 'after', description: 'Before or after the block at at' },
         content: { ...CONTENT, description: 'The new blocks, as markdown, html or json' },
+        allowLoss: ALLOW_LOSS,
         draftId: DRAFT_ID,
       },
     },
@@ -285,30 +380,27 @@ export const defs = [
       { args: { at: 'cursor', content: { html: '<p><strong>Note:</strong> check this.</p>' } }, dryRun: true },
     ],
     plan: async (ctx, a) => {
-      const { nodes, dropped } = await ctx.lib.toNodes(a.content);
+      // Pictures fit the text width of the section they go into: the insert position before the await sizes them.
+      const { nodes, dropped } = await ctx.lib.toNodes(a.content, undefined, undefined, insertPos(ctx.editor.state, a));
+      // Markdown's note markers (doc.get writes a note as [^n]) become plain text: the note is not copied.
+      const lost = noteMarkers(a.content.markdown).map((marker) => ({ kind: 'note', marker }));
+      guardLoss(lost, a, 'Write the notes as content.json, or pass allowLoss: true to keep the markers as plain text');
       const { state } = ctx.editor; // after the await: the newest state
       const { doc } = state;
-      let pos;
-      if (a.at === 'start') pos = 0;
-      else if (a.at === 'end') pos = doc.content.size;
-      else if (a.at === 'cursor') pos = afterCursor(state);
-      else {
-        const t = nodeAtPath(doc, a.at);
-        pos = a.position === 'before' ? t.pos : t.pos + t.node.nodeSize;
-      }
+      let pos = insertPos(state, a);
       if (nodes.some(isBoard)) pos = topLevel(doc, pos);
       const tr = state.tr.insert(pos, nodes);
-      return { tr, result: { paths: insertedPaths(tr, pos, nodes), ...(dropped.length && { dropped }) } };
+      return { tr, result: { paths: insertedPaths(tr, pos, nodes), ...(dropped.length && { dropped }), ...(lost.length && { lost }) } };
     },
   }),
   define({
     id: 'doc.replace',
     title: 'Replace one block of the open draft (not a board)',
-    brief: 'Use it to reword one block by its path. draftId: another draft to work on without opening it (drafts_list gives it); leave it out for the open draft.',
+    brief: 'Use it to reword one block by its path. draftId: another draft (drafts_list gives it).',
     guide: {
-      before: 'Read the block in full with doc_get path and format markdown. The outline cuts long text',
+      before: 'For a few words use doc_edit. Read the block in full with doc_get path and format markdown. The outline cuts long text',
       args: 'content replaces the whole block',
-      errors: 'stale means the draft changed. Read the outline again. A board is denied. Use the board tools',
+      errors: 'stale means the draft changed. Read the outline again. A board is denied. Use the board tools. content_lost: use doc_edit or write content.json',
     },
     group: 'doc',
     risk: 'write',
@@ -316,13 +408,16 @@ export const defs = [
     needs: ['doc.open'],
     args: {
       type: 'object', required: ['path', 'content'], additionalProperties: false,
-      properties: { path: ref('PATH', 'The block path from doc_get outline'), content: { ...CONTENT, description: 'The new block, as markdown, html or json' }, draftId: DRAFT_ID },
+      properties: {
+        path: ref('PATH', 'The block path from doc_get outline'), content: { ...CONTENT, description: 'The new block, as markdown, html or json' }, allowLoss: ALLOW_LOSS,
+        draftId: DRAFT_ID,
+      },
     },
     result: { type: 'object', required: ['path', 'paths'] },
     examples: [{ args: { path: [3], content: { markdown: '## Week 3' } } }],
     busy: (ctx, a) => ctx.lib.boardBusy(a.path),
     plan: async (ctx, a) => {
-      const { nodes, dropped } = await ctx.lib.toNodes(a.content);
+      const { nodes, dropped } = await ctx.lib.toNodes(a.content, undefined, undefined, nodeAtPath(ctx.editor.state.doc, a.path).pos);
       const { state } = ctx.editor;
       const { pos, node } = nodeAtPath(state.doc, a.path);
       if (isBoard(node)) {
@@ -331,8 +426,46 @@ export const defs = [
         });
       }
       if (a.path.length > 1 && nodes.some(isBoard)) fail('refused', 'A board goes at the top level, not inside another block', { code: 'nested_board' });
+      const lost = lossOf([node], nodes);
+      guardLoss(lost, a);
       const tr = state.tr.replaceWith(pos, pos + node.nodeSize, nodes);
-      return { tr, result: { path: a.path, paths: insertedPaths(tr, pos, nodes), ...(dropped.length && { dropped }) } };
+      return { tr, result: { path: a.path, paths: insertedPaths(tr, pos, nodes), ...(dropped.length && { dropped }), ...(lost.length && { lost }) } };
+    },
+  }),
+  define({
+    id: 'doc.edit',
+    title: 'Replace words in one block of the open draft, keeping their formatting',
+    brief: 'Use it to fix a word or a sentence. draftId: another draft (drafts_list gives it).',
+    guide: { before: 'doc_find gives path, from and to', args: 'text takes the formatting at from. Empty text deletes', errors: 'stale: find the words again' },
+    group: 'doc',
+    risk: 'write',
+    undo: 'doc',
+    needs: ['doc.open'],
+    args: {
+      type: 'object', required: ['path', 'from', 'to', 'text'], additionalProperties: false,
+      properties: {
+        path: ref('PATH', 'From doc_find'),
+        from: { type: 'integer', minimum: 0, description: 'Start offset, as doc_find gives it' },
+        to: { type: 'integer', minimum: 0, description: 'End offset, as doc_find gives it' },
+        text: { type: 'string', maxLength: 10000, pattern: '^[^\n]*$', description: 'The new words, on one line' },
+        draftId: DRAFT_ID,
+      },
+    },
+    result: { type: 'object', required: ['path', 'from', 'to'] },
+    examples: [{ args: { path: [2], from: 4, to: 9, text: 'slow' } }],
+    plan: (ctx, a) => {
+      const { state } = ctx.editor;
+      const { pos, from, to } = textRange(state.doc, a);
+      const $at = state.doc.resolve(pos + 1 + from);
+      const end = pos + 1 + to;
+      // The marks at the start of the range (the textStyle's font, size, colour...), as typing over a selection keeps them.
+      const marks = from < to ? $at.marksAcross(state.doc.resolve(end)) ?? $at.marks() : $at.marks();
+      const nodes = a.text ? [state.schema.text(a.text, marks)] : [];
+      // Never drops a field, note or comment in the range (doc_replace with allowLoss does); the run properties are the start's.
+      guardLoss(lossOf(state.doc.slice($at.pos, end).content.content, nodes).filter((l) => l.kind !== 'run'), a,
+        'Leave them out of from and to, or rewrite the block with doc_replace');
+      const tr = state.tr.replaceWith($at.pos, end, nodes);
+      return { tr, result: { path: a.path, from, to: from + a.text.length } };
     },
   }),
   define({
@@ -437,15 +570,7 @@ export const defs = [
     plan: (ctx, a) => {
       const ed = ctx.editor;
       const { state } = ed;
-      const { pos, node } = nodeAtPath(state.doc, a.path);
-      if (!node.isTextblock) fail('refused', `The block at [${a.path}] is a ${node.type.name}, not text`, { code: 'not_text' });
-      const size = node.content.size;
-      const from = a.from ?? 0;
-      const to = a.to ?? size;
-      if (to > size || from > to) {
-        fail('invalid_args', `from / to must keep 0 <= from <= to <= ${size} (the block's length)`,
-          { path: to > size ? '/to' : '/from', message: 'is outside the block', expected: { type: 'integer', minimum: 0, maximum: size } });
-      }
+      const { pos, from, to } = textRange(state.doc, a);
       if (a.block?.type === 'heading' && !a.block.level) {
         fail('invalid_args', 'A heading needs its level', { path: '/block/level', message: 'is required for a heading', expected: { type: 'integer', minimum: 1, maximum: 6 } });
       }
@@ -477,7 +602,7 @@ export const defs = [
     risk: 'write',
     undo: 'doc',
     needs: ['doc.open', { gate: 'doc.inTable', if: (a) => TABLE_COMMANDS.includes(a.name) || DOC_TABLE_COMMANDS.includes(a.name) }],
-    // A check, not a need: capabilities() drops a need's `if`, which would hide doc.command (docs/plans/integrations.md Titled
+    // A check, not a need: capabilities() drops a need's `if`, which would hide doc.command (docs/wiki/integrations.md Titled
     // box). The executor runs it with the gates, before any ask.
     check: (a, draft) => (ALL_COMMANDS.includes(a.name) && !commandsOf(draft).includes(a.name) ? [DOCUMENT_COMMANDS.includes(a.name) ? 'format.document' : 'format.post']
       : a.name === 'insertBox' && !can('format.box', draft) ? ['format.box'] : []),

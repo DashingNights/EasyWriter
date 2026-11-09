@@ -7,7 +7,7 @@
 // on `computer.event` when it opens and closes ({type: 'worker', draftId, title}), when it saves ({type: 'saved', entry: the
 // sidebar entry}) and, while the pane shows, its frames ({type: 'frame', url}, about 5 a second).
 const { BrowserWindow } = require('electron');
-const { draftMarks } = require('./draft-marks.js');
+const { recordMarks } = require('./draft-marks.js');
 
 const SIDE = 1344; // a screenshot's long side at most (px)
 const WORKER_SIZE = { width: 1440, height: 900 };
@@ -320,7 +320,7 @@ async function fromWorker(sender, channel, args, fn) {
     const d = args[0];
     rec.title = String(d.title || 'Untitled draft');
     notify({ type: 'saved', entry: { id: d.id, title: d.title, threadUrl: d.threadUrl ?? null, updated: out.updated, pushedAt: d.pushedAt ?? null,
-      format: d.format ?? null, ...draftMarks(d.doc) } });
+      format: d.format ?? null, ...recordMarks(d) } });
   }
   return out;
 }

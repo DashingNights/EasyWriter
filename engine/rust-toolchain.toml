@@ -1,0 +1,9 @@
+# The compiler the engine (this folder, and the metafile binding, which scripts/build-metafile-wasm.mjs builds from here) is built
+# with, so every machine and the release workflow make the same .wasm from the same sources.
+# scripts/build-engine-wasm.mjs uses stable instead when stable is this same version.
+[toolchain]
+channel = "1.96.0"
+targets = ["wasm32-unknown-unknown"]
+profile = "minimal"
+# The workspace's lints (Cargo.toml) are clippy's.
+components = ["clippy", "rustfmt"]

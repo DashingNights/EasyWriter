@@ -1,3 +1,4 @@
+import { isCanvas } from '../../engine/model/form.mjs';
 import { define, fail } from './define.mjs';
 import { NO_ARGS, ref } from './schema-defs.mjs';
 import { assistantMode, refusal } from './tool-sets.mjs';
@@ -15,6 +16,7 @@ const DOING = { click: 'click', double_click: 'double-click', move: 'move the po
 const WINDOW = { main: 'main window', background: 'background window' };
 // Undo and redo in the user's window would undo the user's own typing (as history.undo, never offered; loop.js NEVER).
 const UNDO = /^(control|ctrl|meta|cmd)\+(shift\+)?[zy]$/i;
+const TYPING = ['type', 'key'];
 const px = (description) => ({ type: 'number', minimum: 0, description });
 
 /** main's answer {target, url, width, height, title?} or {error, code} → the result: the size line, and the picture that the loop
@@ -78,6 +80,10 @@ export const defs = [
       if (a.target === 'main' && a.action === 'key' && UNDO.test(a.keys)) {
         fail('refused', "Undo and redo in the main window are the user's. Each step line has its own Undo.", { code: 'undo' });
       }
+      // Keys typed into a canvas draft's page area would be the user's own untracked edits: the doc tools make them suggestions.
+      if (a.target === 'main' && TYPING.includes(a.action) && ctx.engine && document.activeElement?.closest?.('[data-canvas-pages]')) {
+        fail('refused', 'Typing into a draft in the canvas engine is not possible here. Use doc_edit, doc_insert or doc_replace.', { code: 'canvas_typing' });
+      }
       if (DOING[a.action]) await mayAct(ctx, a);
       // The call its edits wait under as suggestions: the background window records them itself (computer-main.js act).
       const call = ctx.suggest && { g: ctx.suggest.g, by: ctx.suggest.by, at: ctx.suggest.at, note: ctx.suggest.note, ids: [] };
@@ -106,6 +112,11 @@ export const defs = [
     run: async (ctx, a) => {
       if (ctx.state.draft?.id === a.draftId) {
         fail('refused', 'That draft is open in the main window. Work on it there with computer_act and target main.', { code: 'open_in_main' });
+      }
+      // The background window cannot save a canvas draft (computer-main.js WORKER_CALLS has no drafts.savePart); the doc tools work
+      // on it with its draftId, in the assistant's background session (sessions.js).
+      if (isCanvas(await ctx.api.drafts.load(a.draftId).catch(() => null))) {
+        fail('refused', 'The background window cannot open a draft in the canvas engine. Use the doc tools with its draftId.', { code: 'canvas_draft' });
       }
       const title = ctx.state.drafts.find((d) => d.id === a.draftId)?.title || 'Untitled draft';
       return { ...picture(await ctx.actions.openInBackground(a.draftId, title)), draftId: a.draftId };

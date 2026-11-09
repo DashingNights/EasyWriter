@@ -1,6 +1,6 @@
-// Flowchart data model (docs/plans/flowchart.md §3.3, SPEC §6d): connector validation and defaults, dangling-end repair,
+// Flowchart data model (docs/wiki/flowchart.md §3.3, SPEC §6d): connector validation and defaults, dangling-end repair,
 // moving, cloning, hit-testing, aligning and resizing board items. Pure (no DOM): whiteboard.js, route.mjs and the Node tests share it.
-import { anchorPoint, outlineOf, portsOf, rotatePoint, rotBox, rotOf } from './shapes.mjs';
+import { anchorPoint, isLineish, lineEnds, linePad, outlineOf, portsOf, rotatePoint, rotBox, rotOf } from './shapes.mjs';
 
 export const ROUTES = ['straight', 'ortho', 'curve'];
 export const DASHES = ['solid', 'dashed', 'dotted'];
@@ -31,7 +31,7 @@ export function validConnector(c) {
     opt(c.heads, (h) => isObj(h) && opt(h.start, oneOf(HEADS)) && opt(h.end, oneOf(HEADS))) &&
     opt(c.points, (p) => Array.isArray(p) && p.every((q) => isObj(q) && num(q.x) && num(q.y))) &&
     ['corner', 'width', 'opacity'].every((k) => opt(c[k], num)) && opt(c.color, (v) => typeof v === 'string') &&
-    opt(c.labels, isObj) && opt(c.label, (v) => typeof v === 'string');
+    opt(c.labels, isObj) && opt(c.label, (v) => typeof v === 'string') && opt(c.free, (v) => typeof v === 'boolean');
 }
 
 /** Defaults filled, anchor names → fractions, a string `label` → labels.mid, label slots cleaned (start | mid | end with a
@@ -66,6 +66,7 @@ export function cleanConnector(c) {
   const derived = ['x', 'y', 'w', 'h'].every((k) => num(out[k])) && typeof out.d === 'string' && isObj(out.lps) &&
     Array.isArray(out.tips) && out.tips.length === 2 && out.tips.every((t) => isObj(t) && num(t.x) && num(t.y) && num(t.a));
   if (!derived) for (const k of DERIVED) delete out[k];
+  if (out.free !== true) delete out.free; // a free line (endAt): only as true
   return cleanLayers(out);
 }
 
@@ -236,11 +237,26 @@ export function toggleLayer(items, ids, field) {
   });
 }
 
-/** {x, y, w, h}: an item's unrotated box. Text without a stored `h`: the estimate size · 1.3 · lines + 12. */
+/** A text item's padding in px and its line height in ems, as whiteboard.js styleText draws it; Word export writes the same
+ * (docx/shapes-out.mjs textXml), so the two cannot drift. */
+export const TEXT_PAD = { t: 6, r: 8, b: 6, l: 8 };
+export const TEXT_LINE = 1.3;
+
+/** Points {x, y} → the pen's path: quadratic curves through the midpoints of successive points, to a tenth of a px; a single point
+ * is a zero-length dot (round cap). The board draws strokes with it and Word import rebuilds them with it (docx/shapes-in.mjs). */
+export function smoothPath(pts) {
+  const p = ({ x, y }) => `${Math.round(x * 10) / 10} ${Math.round(y * 10) / 10}`;
+  if (pts.length === 1) return `M${p(pts[0])}l0 0`;
+  let d = `M${p(pts[0])}`;
+  for (let i = 1; i < pts.length - 1; i++) d += `Q${p(pts[i])} ${p({ x: (pts[i].x + pts[i + 1].x) / 2, y: (pts[i].y + pts[i + 1].y) / 2 })}`;
+  return `${d}L${p(pts.at(-1))}`;
+}
+
+/** {x, y, w, h}: an item's unrotated box. Text without a stored `h`: the estimate size · TEXT_LINE · lines + its padding. */
 export function defaultMeasure(i) {
   if (i.type !== 'text' || num(i.h)) return { x: i.x, y: i.y, w: i.w, h: i.h };
   const lines = 1 + (String(i.html).match(/<br|<div|<p[\s>]/gi)?.length ?? 0);
-  return { x: i.x, y: i.y, w: i.w, h: Math.round((i.size || 20) * 1.3 * lines + 12) };
+  return { x: i.x, y: i.y, w: i.w, h: Math.round((i.size || 20) * TEXT_LINE * lines + TEXT_PAD.t + TEXT_PAD.b) };
 }
 
 const centreOf = (i) => {
@@ -319,6 +335,45 @@ export function flipItem(item, c, axis, field = null, h = item.h) {
   return { ...item, x: r2(q.x - item.w / 2), y: r2(q.y - h / 2), ...(item.rot && { rot: (360 - item.rot) % 360 }), ...(field && { [field]: !item[field] }) };
 }
 
+/** A copy of `item` mapped from box `b0` to box `b1` ({x, y, w, h}; a multi-selection resize, §6c), with sx = b1.w / b0.w and
+ * sy = b1.h / b0.h: its top-left and size scale with the box; text scales its width only (it reflows) and loses `fit`; a turned
+ * item maps its centre and takes the size that keeps its turned bounds in step, its angle kept; a line or arrow maps its two
+ * ends and is rebuilt unturned around them (its padding unscaled); a connector maps its free ends and waypoints (bound ends
+ * stay on their item). Stroke width and text sizes never change. 2 decimals, sizes at least 1 px. `h`: its height (text:
+ * rendered). */
+export function resizeWithGroup(item, b0, b1, h = item.h) {
+  const r2 = (n) => Math.round(n * 100) / 100;
+  const [sx, sy] = [b0.w ? b1.w / b0.w : 1, b0.h ? b1.h / b0.h : 1];
+  const map = (p) => ({ x: b1.x + (p.x - b0.x) * sx, y: b1.y + (p.y - b0.y) * sy });
+  const round = (p) => {
+    const q = map(p);
+    return { x: r2(q.x), y: r2(q.y) };
+  };
+  if (item.type === 'connector') {
+    const end = (e) => (bound(e) ? e : { ...e, ...round(e) });
+    return { ...item, from: end(item.from), to: end(item.to), ...(item.points && { points: item.points.map(round) }) };
+  }
+  if (item.type === 'shape' && isLineish(item.shape)) { // as whiteboard.js shapeBox, drawn from the start end to the tip
+    const pad = linePad(item);
+    const [a, b] = lineEnds(item).map(map);
+    const [dx, dy] = [b.x - a.x, b.y - a.y];
+    return { ...item, x: Math.round(Math.min(a.x, b.x) - pad), y: Math.round(Math.min(a.y, b.y) - pad),
+      w: Math.max(1, Math.round(Math.abs(dx) + 2 * pad)), h: Math.max(1, Math.round(Math.abs(dy) + 2 * pad)), flipX: dx < 0, flipY: dy < 0, rot: 0 };
+  }
+  const { fit, ...out } = item;
+  const size = (n) => Math.max(1, r2(n));
+  const t = (rotOf(item) * Math.PI) / 180;
+  if (t) {
+    const c = map({ x: item.x + item.w / 2, y: item.y + h / 2 });
+    const w = size(item.w * Math.hypot(sx * Math.cos(t), sy * Math.sin(t)));
+    if (item.type === 'text') return { ...out, x: r2(c.x - w / 2), y: r2(c.y - h / 2), w };
+    const hh = size(h * Math.hypot(sx * Math.sin(t), sy * Math.cos(t)));
+    return { ...out, x: r2(c.x - w / 2), y: r2(c.y - hh / 2), w, h: hh };
+  }
+  const p = round(item);
+  return { ...out, ...p, w: size(item.w * sx), ...(item.type !== 'text' && { h: size(h * sy) }) };
+}
+
 /** Deep copies with new ids (`makeId()`); connector ends bound inside the copied set follow the copies, ends bound outside it
  * become free at their tips. A group copied whole (no shown item of `all`, the board's items, outside the set carries it) gets
  * a new id (`makeId()`); a group copied in part is dropped from the copies. */
@@ -368,10 +423,16 @@ function inside(poly, p) {
   return hit;
 }
 
-/** What a connector end at board point `p` sticks to: the topmost item (reverse z-order; connectors and `exclude` ids never)
- * with a port within `tol` → {item, anchor: port}, or whose turned outline holds p → {item, anchor: null}; else null.
- * Geometric, so unfilled and rotated shapes hit as drawn. `measure(item)` → its unrotated box (default defaultMeasure). */
-export function hitTarget(items, p, { exclude = new Set(), tol = 0, measure = defaultMeasure } = {}) {
+/** The band around an item's outline where a connector end sticks, in screen px so it is the same at every zoom: from `inside`
+ * px inside the outline to `outside` px outside it, about the resize handles' ring (12 px squares centred on the outline). */
+export const STICK_RING = { inside: 6, outside: 16 };
+
+/** What board point `p` hits: the topmost item (reverse z-order; connectors and `exclude` ids never) with a port within `tol`
+ * → {item, anchor: port}, or whose turned outline holds p → {item, anchor: null}; else null. With `ring` ({inside, outside} in
+ * board px) the outline test is the band from `inside` px inside the outline to `outside` px outside it, so a point deeper
+ * inside an item passes on to the items below. Geometric, so unfilled and rotated shapes hit as drawn. `measure(item)` → its
+ * unrotated box (default defaultMeasure). */
+export function hitTarget(items, p, { exclude = new Set(), tol = 0, ring = null, measure = defaultMeasure } = {}) {
   for (let k = items.length - 1; k >= 0; k--) {
     const it = items[k];
     if (it.type === 'connector' || exclude.has(it.id)) continue;
@@ -381,9 +442,52 @@ export function hitTarget(items, p, { exclude = new Set(), tol = 0, measure = de
       return Math.hypot(q.x - p.x, q.y - p.y) <= tol;
     });
     if (port) return { item: it.id, anchor: port };
-    if (inside(outlineOf(it, b), p)) return { item: it.id, anchor: null };
+    const poly = outlineOf(it, b);
+    if (ring ? edgeDist(poly, p) <= (inside(poly, p) ? ring.inside : ring.outside) : inside(poly, p)) return { item: it.id, anchor: null };
   }
   return null;
+}
+
+// The distance from p to the nearest side of polygon `poly`.
+function edgeDist(poly, p) {
+  return Math.min(...poly.map((a, k) => {
+    const b = poly[(k + 1) % poly.length];
+    const [dx, dy] = [b.x - a.x, b.y - a.y];
+    const t = fit(((p.x - a.x) * dx + (p.y - a.y) * dy) / (dx * dx + dy * dy || 1), 0, 1);
+    return Math.hypot(a.x + t * dx - p.x, a.y + t * dy - p.y);
+  }));
+}
+
+/** Where a connector end at board point `p` goes (§6d Sticking), the one rule for the tool's start, its end and an end dragged.
+ * Never a stroke, a hidden or locked item or `skip`; with Alt nowhere (null). With Shift: pinned at p to the topmost item under
+ * it {item, anchor: [fx, fy], pin: true}, so the end stays where it was put and moves with the item. Else the topmost item whose
+ * ring (STICK_RING at zoom `scale`) or port (within `tol`) holds p: a port → fixed {item, anchor}; the ring → floating
+ * {item, anchor: null}. null: a free point, also deeper inside an item (a press there starts free, a release ends free). */
+export function stickTarget(items, p, { skip = null, tol = 0, scale = 1, measure = defaultMeasure, alt = false, shift = false } = {}) {
+  if (alt) return null;
+  const exclude = new Set(items.filter((i) => i.type === 'stroke' || !selectable(i) || i.id === skip).map((i) => i.id));
+  if (!shift) return hitTarget(items, p, { exclude, tol, measure, ring: { inside: STICK_RING.inside / scale, outside: STICK_RING.outside / scale } });
+  const hit = hitTarget(items, p, { exclude, tol, measure });
+  if (!hit) return null;
+  const it = items.find((i) => i.id === hit.item);
+  const b = measure(it);
+  const q = rotatePoint(p, { x: b.x + b.w / 2, y: b.y + b.h / 2 }, -rotOf(it));
+  const frac = (v) => Math.round(fit(v, 0, 1) * 10000) / 10000;
+  return { item: it.id, anchor: [frac((q.x - b.x) / b.w), frac((q.y - b.y) / b.h)], pin: true };
+}
+
+/** Where an end dropped at board point `p` goes, for the connector tool, the line tools and an end dragged. A free line's end
+ * (`free`, the Line and Arrow tools) is p itself, whatever lies under it: nothing sticks, snaps or binds; with Shift its angle from
+ * the other end `from` ({x, y}) goes to 15 degree steps, its length kept. 2 decimals. A connector's end follows stickTarget (the
+ * rest of the options are its). */
+export function endAt(items, p, { free = false, from = null, ...stick } = {}) {
+  if (!free) return stickTarget(items, p, stick);
+  const r2 = (n) => Math.round(n * 100) / 100 || 0; // || 0: never -0
+  if (!stick.shift || !from) return { x: r2(p.x), y: r2(p.y) };
+  const step = Math.PI / 12;
+  const a = Math.round(Math.atan2(p.y - from.y, p.x - from.x) / step) * step;
+  const len = Math.hypot(p.x - from.x, p.y - from.y);
+  return { x: r2(from.x + len * Math.cos(a)), y: r2(from.y + len * Math.sin(a)) };
 }
 
 /** The ids of the non-connector items whose (turned) box lies fully inside `container`'s (a lane or frame moving its content). */

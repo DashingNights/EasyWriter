@@ -1,6 +1,7 @@
-// The forum integration's manifest (docs/plans/integrations.md Registry): what Settings > Integrations shows, the settings,
+// The forum integration's manifest (docs/wiki/integrations.md Registry): what Settings > Integrations shows, the settings,
 // project and draft keys it owns, and its settings migration. Pure: main.js (getSettings), node tests and the renderer read
-// it. It imports only ./topic.mjs, never index.mjs or the gates, so no ESM cycle forms.
+// it. It imports only ./topic.mjs and the pure tooling/profile.mjs, never index.mjs or the gates, so no ESM cycle forms.
+import { TEXT_PROFILE } from '../../tooling/profile.mjs';
 import { hasForum, siteOf, topicOf } from './topic.mjs';
 
 // forumMedia: the ids of imported drafts that still hold picture or video placeholders (forum/actions.js downloadMedia).
@@ -9,8 +10,14 @@ const defaults = { forumUrl: '', forumWidth: 1454, forumMedia: [] };
 /** The forum post format (src/formats.mjs), with the forum switch on or off: the core page width (forumWidth is a legacy key,
  * kept for older builds) and the titled box, whose HTML is Invision's ipsRichTextBox. default: true only makes it the format of
  * a draft without format (every draft from before format was written), never the format a new draft picks. 1454 is formats.mjs
- * DEFAULT_PAGE_WIDTH, which this file cannot import (formats.mjs imports it). */
-const FORUM_POST = { id: 'forum-post', label: 'Forum post', default: true, version: 1, width: (s) => s?.pageWidth ?? 1454, padding: 22, blocks: ['box'] };
+ * DEFAULT_PAGE_WIDTH, which this file cannot import (formats.mjs imports it). Its profile is the forum's toolset in the one tool
+ * pool, shared with the core page (tooling/profile.mjs TEXT_PROFILE: the forum's value lists as option lists). A forum shows
+ * raster pictures only, so the post's output is raster (rasterOutput): its export renders every picture as a PNG or JPEG and
+ * never passes an SVG, EMF or WMF on (forum/export.js buildPayload), while its canvases keep their vector pictures.
+ * Version 3 is the canvas form (docs/plans/engine/stage3-forum.md section 2), as the core page's: a build without the post host
+ * refuses the record instead of opening it with no doc. A DOM save stamps 1 (actions.js versionOf), so 1.x builds still open it. */
+const FORUM_POST = { id: 'forum-post', label: 'Forum post', default: true, version: 3, width: (s) => s?.pageWidth ?? 1454, padding: 22, blocks: ['box'],
+  rasterOutput: true, profile: TEXT_PROFILE, hudRank: 1 };
 
 const gate = (subject, test, message, fix) => ({ subject, test, message, fix });
 

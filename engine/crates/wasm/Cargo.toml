@@ -1,0 +1,43 @@
+# EasyWriter's wrapper over the engine adapted from WordCraft: the worker API of docs/plans/engine/plan.md section 3 through wasm-bindgen,
+# built by scripts/build-engine-wasm.mjs into src/engine/wasm/. Not code from WordCraft: EasyWriter's own, under the app's licence.
+[package]
+name = "ew-wasm"
+version = "0.1.0"
+edition.workspace = true
+license = "MIT OR Apache-2.0"
+publish = false
+
+# The workspace forbids unsafe code; the allocator below needs it, so this crate keeps its own lints.
+
+[lib]
+# The library's name stays `ew` (examples and tests say `ew::`), so cargo still writes ew.wasm.
+name = "ew"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+ew-board = { workspace = true }
+ew-doc-edit = { workspace = true }
+ew-fonts = { workspace = true }
+serde_json = { workspace = true }
+unicode-segmentation = { workspace = true }
+wasm-bindgen = "=0.2.129"
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+dlmalloc = "0.2.14"
+
+[dev-dependencies]
+# examples/scene_check.rs reads the fixture's PDF back (the pdf crate's test readers), since the PDF's bytes differ from run
+# to run (font subsets), so the no-change check compares what the pages draw.
+hayro-syntax = "0.7.2"
+hayro-interpret = { version = "0.7.0", default-features = false, features = ["embed-fonts"] }
+hayro-cmap = "0.1"
+kurbo = { workspace = true }
+
+[features]
+# The viewport design's measurements (src/measure.rs, docs/plans/engine/measure.md): built by
+# .smoke-data/word/cases/_engine-measure.js and examples/measure.rs only, never into the app's .wasm.
+measure = []
+
+[[example]]
+name = "measure"
+required-features = ["measure"]

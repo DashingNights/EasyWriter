@@ -2,7 +2,6 @@ import { startTransition, useCallback, useEffect, useRef, useState } from 'react
 import { flushSync } from 'react-dom';
 import { toast } from 'sonner';
 import { ArrowDown, ArrowUp, Bot, Check, ChevronDown, CloudUpload, ExternalLink, Globe, Keyboard, MessageSquare, Mic, Monitor, Moon, Plus, Puzzle, SlidersHorizontal, Sparkles, Sun, Tags, Trash2, Type, X } from 'lucide-react';
-// import { Badge } from '@/components/ui/badge'; // LOCAL LLM (commented out 2026-10-07): the model file row's state
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
@@ -17,8 +16,8 @@ import { FONT_SIZES, TEXT_COLORS, HIGHLIGHTS, FONTS } from '../../extensions.js'
 import { keyLabel, withKey } from '../keybinds.js';
 import { motion, MOTION } from '../motion.js';
 import { applyPalette, changeSettings, confirmDialog, PALETTE, runSetup, saveSettings } from '../actions.js';
-// LOCAL LLM (commented out 2026-10-07): BACKENDS, deleteAssistant, deleteLeftover, openInstall as openAssistantInstall, size, wake.
 import { ASSISTANT_DEFAULTS, saveAssistant } from '../assistant/assistant.js';
+import { PROVIDER_SEARCH } from '../../assistant/search.js';
 import QWEN_MODELS from '../../assistant/qwen-models.json';
 import { ADVANCED, NUMBERS } from '../../assistant/advanced.js';
 import { DICTATION_DEFAULTS, englishName, findLanguages, languageName, REGIONS, spoken, spokenFields } from '../dictation/core.mjs';
@@ -34,7 +33,7 @@ import { settingsSections } from '../../integrations/ui.js';
 import { columnsFollowing } from '../plans.js';
 import { getState, useStore } from '../store.js';
 import { DEFS, effective, keybindsKey, overridesOf } from '../keys.mjs';
-import { ColorSwatch } from './board/controls.jsx';
+import { ColorSwatch } from '../../tooling/kit/ColorPicker.jsx';
 import { FormDialog } from './FormDialog.jsx';
 import { KeybindsSection } from './KeybindsSection.jsx';
 import { startTutorial } from './Tutorial.jsx';
@@ -364,24 +363,6 @@ function DictationSection({ value: d, onChange }) {
   );
 }
 
-// LOCAL LLM, commented out 2026-10-07 (the user: "i plan to abandon local llm usage, just stick to google api now. comment out all the code for local llm stuff"). Uncomment to restore.
-// // What the local server is doing with the model (status().server.state, or 'asleep' after its idle sleep).
-// const MODEL_STATE = { ready: 'Loaded', asleep: 'Asleep', starting: 'Loading…', stopped: 'Not loaded', error: 'Failed to load' };
-// // settings.assistant.model (main pins each one's files, src/assistant-main.js PINS.models) and its line under the select.
-// const MODELS = [['qwen9b', 'Qwen3.5-9B'], ['fable9b', 'Defiant Fable 9B'], ['gemma12b', 'Gemma 4 12B']];
-// const PROVIDERS = [['local', 'This computer'], ['google', 'Google AI (Gemini)']];
-// const MODEL_HINT = {
-//   qwen9b: 'Qwen3.5-9B. Recommended. Works on 8 GB cards.',
-//   fable9b: 'Defiant Fable 9B. A community fine-tune of Qwen3.5-9B with fewer refusals. Same tools and image support. Needs about 9 GB of GPU memory, or runs slower on 8 GB cards.',
-//   gemma12b: 'Gemma 4 12B. Google\'s model, strong at tool use and pictures. 7.1 GB, needs about 10 GB of GPU memory or runs slower with layers on the CPU.',
-// };
-// // The models with "Faster replies (MTP)" and its line: what MTP downloads (PINS.models qwen9bMtp, fable9bMtp, gemma12b.draft).
-// const MTP_HINT = {
-//   qwen9b: 'Predicts two tokens at a time. Uses a 5.9 GB model file in place of the regular one. Turn off if replies get slower.',
-//   fable9b: 'Predicts two tokens at a time. Uses a 7.0 GB model file in place of the regular one. Turn off if replies get slower.',
-//   gemma12b: 'Predicts two tokens at a time. Adds a 465 MB draft file. Turn off if replies get slower.',
-// };
-
 // settings.assistant.permission (the executor's policy for the assistant, SPEC §8 Policy) and its line under the select.
 export const PERMISSIONS = [['standard', 'Standard'], ['ask', 'Ask first'], ['readonly', 'Read only'], ['all', 'Allow all']];
 // settings.assistant.provider (2026-10-08); 'none' turns the assistant off (no chat button, no shortcut).
@@ -552,7 +533,7 @@ export const PERMISSION_HINT = {
   readonly: 'Read only. Reads and answers. Changes nothing.',
   all: 'Allow all. Does everything without asking, deleting included.',
 };
-// While Auto-approve assistant edits is off, edits to drafts wait as suggestions (docs/plans/suggestions.md Setting).
+// While Auto-approve assistant edits is off, edits to drafts wait as suggestions (docs/wiki/suggestions.md Setting).
 export const SUGGEST_HINT = {
   ...PERMISSION_HINT,
   standard: 'Standard. Edits to drafts wait as suggestions. Asks before deleting drafts, flowcharts, tags, folders or threads.',
@@ -628,10 +609,8 @@ export const assistantFields = (a) => ({
   codexPath: pathValue(a.codexPath), codexModel: a.codexModel.trim(),
 });
 
-/** Settings > Assistant (SPEC §7i): Google AI's API key and model with the status, the permission mode and on-screen controls,
- * the picture after each change, resetting the chat panel's place. Local models are off since 2026-10-07: the section's local
- * version (install, the model choice and MTP, model files, backend, idle unload, existing llama.cpp files or a server) is
- * commented out after this one. `value` is the dialog's copy of settings.assistant. */
+/** Settings > Assistant (SPEC §7i): the provider, its API key or CLI and model with the status, the permission mode and on-screen
+ * controls, the picture after each change, resetting the chat panel's place. `value` is the dialog's copy of settings.assistant. */
 function AssistantSection({ value: a, onChange }) {
   const edit = (patch) => onChange((v) => ({ ...v, ...patch }));
   const provider = providerOf(a);
@@ -698,6 +677,7 @@ function AssistantSection({ value: a, onChange }) {
             <span className="text-xs text-muted-foreground">It checks its work on a picture of the board. Each picture uses about 1,000 tokens.</span>
           </div>
         </div>
+        <ProviderSearch value={a} provider={provider} save={savePermission} />
       </div>
       <Label className="self-start pt-0.5 text-muted-foreground">Writing</Label>
       <div className="flex items-start gap-2" data-assistant-guide>
@@ -716,214 +696,30 @@ function AssistantSection({ value: a, onChange }) {
   );
 }
 
-// LOCAL LLM, commented out 2026-10-07 (the user: "i plan to abandon local llm usage, just stick to google api now. comment out all the code for local llm stuff"). Uncomment to restore.
-// /** Settings > Assistant (SPEC §7i): status with Install… / Delete…, the permission mode and on-screen controls, the model choice (MTP for each model) and the GPU memory found, unused model files with Delete, the graphics backend, the idle unload, resetting the chat
-//  * panel's place; under Advanced, existing llama.cpp files or a server in place of the downloads. `value` is the dialog's copy
-//  * of settings.assistant. */
-// function AssistantSection({ value: a, onChange }) {
-//   const edit = (patch) => onChange((v) => ({ ...v, ...patch }));
-//   const [status, setStatus] = useState(null);
-//   const [error, setError] = useState('');
-//   const [checked, setChecked] = useState(0); // bumped after an install or a delete: status again
-//   useEffect(() => {
-//     let live = true;
-//     const over = { model: a.model, mtp: a.mtp, backend: a.backend, serverPath: pathValue(a.serverPath), modelPath: pathValue(a.modelPath), mmprojPath: pathValue(a.mmprojPath), serverUrl: a.serverUrl.trim(), apiKey: a.apiKey.trim(),
-//       provider: a.provider, googleKey: a.googleKey.trim(), googleModel: a.googleModel.trim() };
-//     window.api.assistant.status(over).then((st) => live && setStatus(st), () => live && setStatus(null));
-//     return () => { live = false; };
-//   }, [a.model, a.mtp, a.backend, a.serverPath, a.modelPath, a.mmprojPath, a.serverUrl, a.apiKey, a.provider, a.googleKey, a.googleModel, checked]);
-//   const google = a.provider === 'google';
-//   // The model choice applies at once (saved, so Install… and the chat use it): a running server stops and, when the new files
-//   // are here, starts again on them.
-//   const pickModel = async (patch) => {
-//     const running = !status?.url && ['ready', 'starting'].includes(status?.server?.state);
-//     edit(patch);
-//     await saveAssistant(patch);
-//     await window.api.assistant.stop();
-//     if (running) wake();
-//   };
-//   const install = async () => {
-//     if (await openAssistantInstall()) edit({ installed: true });
-//     setChecked((n) => n + 1);
-//   };
-//   const remove = async () => {
-//     if (!(await confirmDialog({
-//       title: 'Delete the assistant?',
-//       description: 'llama.cpp, the downloaded models and the image projector are removed from this computer (files of your own named under Advanced are kept). They can be downloaded again later.',
-//       confirmText: 'Delete',
-//       destructive: true,
-//     }))) return;
-//     setError('');
-//     try {
-//       await deleteAssistant();
-//       edit({ installed: false });
-//     } catch (e) {
-//       setError(`The assistant was not deleted: ${e.message}`);
-//     }
-//     setChecked((n) => n + 1);
-//   };
-//   // An earlier pin's model file (status().leftovers, e.g. the 4B's after the switch to the 9B): never deleted without a click.
-//   const removeLeftover = async (f) => {
-//     if (!(await confirmDialog({
-//       title: `Delete ${f.file} (${size(f.bytes)})?`,
-//       description: 'The assistant no longer uses this file. It is removed from this computer.',
-//       confirmText: 'Delete',
-//       destructive: true,
-//     }))) return;
-//     setError('');
-//     try {
-//       await deleteLeftover(f.file);
-//     } catch (e) {
-//       setError(`${f.file} was not deleted. ${e.message}`);
-//     }
-//     setChecked((n) => n + 1);
-//   };
-//   const resetPanel = () => {
-//     edit({ panel: null });
-//     saveAssistant({ panel: null });
-//   };
-//   // Saved at once, as the model choice: the executor reads them at the assistant's next call.
-//   const savePermission = (patch) => {
-//     edit(patch);
-//     saveAssistant(patch);
-//   };
-//   const found = BACKENDS.find(([id]) => id === status?.backend)?.[1];
-//   // data-agent-deny: the assistant never changes, installs or deletes its own runtime (assistant-coverage §5).
-//   return (
-//     <div className={FIELDS} data-agent-deny>
-//       <Label className="self-start pt-2 text-muted-foreground">Runs on</Label>
-//       <div className="grid gap-1.5" data-assistant-provider>
-//         <Pick label="Where the assistant runs" value={a.provider} onChange={(provider) => pickModel({ provider })} options={PROVIDERS} className="w-48" />
-//         {google && (
-//           <>
-//             <div className="flex items-center gap-2">
-//               <Label htmlFor="set-asst-gkey" className="w-16 text-muted-foreground">API key</Label>
-//               <Input id="set-asst-gkey" type="password" className="h-8 w-80" autoComplete="off" spellCheck={false} placeholder="From aistudio.google.com" value={a.googleKey} onChange={(e) => edit({ googleKey: e.target.value })} />
-//             </div>
-//             <div className="flex items-center gap-2">
-//               <Label htmlFor="set-asst-gmodel" className="w-16 text-muted-foreground">Model</Label>
-//               <Input id="set-asst-gmodel" className="h-8 w-80" spellCheck={false} placeholder="gemini-3.8-flash" value={a.googleModel} onChange={(e) => edit({ googleModel: e.target.value })} />
-//             </div>
-//             <span className="max-w-[36rem] text-xs text-muted-foreground">
-//               Your messages, drafts and board pictures go to Google with this key. Nothing runs on this computer.
-//             </span>
-//           </>
-//         )}
-//       </div>
-//       <Label className="text-muted-foreground">Status</Label>
-//       <div className="flex items-center gap-2" data-assistant-status>
-//         {!status ? 'Checking…' : status.provider === 'google' ? (status.ready ? `Using Google AI (${status.model?.label})` : 'Add your Google AI API key above')
-//           : status.url ? `Using the server at ${status.url}` : status.ready ? (a.installed ? 'Installed' : 'Downloaded, turned off')
-//           : `Not installed: ${status.missing.map((m) => m.label).join(', ')}`}
-//         {status && !status.url && (!status.ready || !a.installed) && <Button type="button" variant="outline" size="sm" onClick={install}>Install…</Button>}
-//       </div>
-//       {error && <><span /><p className="text-destructive">{error}</p></>}
-//       <Label className="self-start pt-2 text-muted-foreground">Permissions</Label>
-//       <div className="grid gap-1.5" data-assistant-permission>
-//         <Pick label="Assistant permissions" value={a.permission} onChange={(permission) => savePermission({ permission })} options={PERMISSIONS} className="w-48" />
-//         <span className="max-w-[36rem] text-xs text-muted-foreground" data-permission-hint>{PERMISSION_HINT[a.permission]}</span>
-//         <div className="flex items-start gap-2">
-//           <Switch id="set-asst-ui" className="mt-0.5" checked={a.uiControl !== false} onCheckedChange={(on) => savePermission({ uiControl: on })} />
-//           <div className="grid gap-0.5">
-//             <Label htmlFor="set-asst-ui">Let the assistant use on-screen controls</Label>
-//             <span className="text-xs text-muted-foreground">Lets it click and type in the app when no command fits.</span>
-//           </div>
-//         </div>
-//         <div className="flex items-start gap-2">
-//           <Switch id="set-asst-picture" className="mt-0.5" checked={a.pictureAfterWrite !== false} onCheckedChange={(on) => savePermission({ pictureAfterWrite: on })} />
-//           <div className="grid gap-0.5">
-//             <Label htmlFor="set-asst-picture">Show the assistant the board after each change</Label>
-//             <span className="text-xs text-muted-foreground">It checks its work on a picture of the board. Each picture uses about 1,000 tokens.</span>
-//           </div>
-//         </div>
-//       </div>
-//       {!google && <>
-//       <Label className="self-start pt-2 text-muted-foreground">Model</Label>
-//       <div className="grid gap-1.5" data-assistant-choice>
-//         <div className="flex items-center gap-2">
-//           <Pick label="Assistant model" value={a.model} onChange={(model) => pickModel({ model })} options={MODELS} className="w-48" />
-//           {status && !status.url && (
-//             <span className="text-xs text-muted-foreground" data-gpu-memory>
-//               {status.gpuMemory ? `GPU memory ${Math.round(status.gpuMemory.total / 1024)} GB` : 'GPU memory not detected. Assuming 8 GB.'}
-//             </span>
-//           )}
-//         </div>
-//         <span className="max-w-[36rem] text-xs text-muted-foreground" data-model-hint>{MODEL_HINT[a.model]}</span>
-//         {MTP_HINT[a.model] && (
-//           <div className="flex items-start gap-2">
-//             <Switch id="set-asst-mtp" className="mt-0.5" checked={!!a.mtp} onCheckedChange={(on) => pickModel({ mtp: on })} />
-//             <div className="grid gap-0.5">
-//               <Label htmlFor="set-asst-mtp">Faster replies (MTP)</Label>
-//               <span className="text-xs text-muted-foreground" data-mtp-hint>{MTP_HINT[a.model]}</span>
-//             </div>
-//           </div>
-//         )}
-//       </div>
-//       </>}
-//       {!google && status?.ready && status.model && (
-//         <>
-//           <Label className="text-muted-foreground">Model file</Label>
-//           {/* Laid out as Dictation's downloaded models (Dictation.jsx ModelFiles): name, file and size, state, Delete. */}
-//           <div className="flex items-center gap-2" data-assistant-model>
-//             <span>{status.model.label}</span>
-//             <span className="text-muted-foreground">{status.model.file}{status.model.bytes > 0 && `, ${size(status.model.bytes)}`}</span>
-//             <Badge variant="secondary">{MODEL_STATE[status.server?.state === 'ready' && status.server.sleeping ? 'asleep' : status.server?.state] ?? 'Not loaded'}</Badge>
-//             {!status.url && a.installed && <Button type="button" variant="outline" size="xs" aria-label="Delete the assistant" onClick={remove}>Delete</Button>}
-//           </div>
-//         </>
-//       )}
-//       {status?.leftovers?.length > 0 && (
-//         <>
-//           <Label className="self-start pt-0.5 text-muted-foreground">Unused files</Label>
-//           <div className="grid gap-1" data-assistant-leftovers>
-//             {status.leftovers.map((f) => (
-//               <div key={f.file} className="flex items-center gap-2">
-//                 <span>{f.file}</span>
-//                 <span className="text-muted-foreground">{size(f.bytes)}</span>
-//                 <Button type="button" variant="outline" size="xs" aria-label={`Delete ${f.file}`} onClick={() => removeLeftover(f)}>Delete</Button>
-//               </div>
-//             ))}
-//           </div>
-//         </>
-//       )}
-//       {!google && <>
-//       <Label className="text-muted-foreground">Backend</Label>
-//       <div className="flex items-center gap-2">
-//         <Pick label="Assistant backend" value={a.backend} onChange={(backend) => edit({ backend })} options={BACKENDS} className="w-40" />
-//         {a.backend === 'auto' && found && <span className="text-xs text-muted-foreground">Found: {found}</span>}
-//       </div>
-//       <Label htmlFor="set-asst-idle" className="text-muted-foreground">Idle unload</Label>
-//       <div className="flex items-center gap-2">
-//         <Input id="set-asst-idle" type="number" min={0} max={1440} step={1} className="h-8 w-28" value={a.idleUnloadMinutes}
-//           onChange={(e) => edit({ idleUnloadMinutes: e.target.value })} />
-//         <span className="text-xs text-muted-foreground">Minutes without a request before the model is unloaded (0 = keep loaded)</span>
-//       </div>
-//       </>}
-//       <Label className="text-muted-foreground">Chat panel</Label>
-//       <div><Button type="button" variant="outline" size="sm" disabled={!a.panel} onClick={resetPanel}>Reset chat panel position</Button></div>
-//       <details className="col-span-2" hidden={google}>
-//         <summary className="cursor-pointer text-muted-foreground">Advanced: use an existing llama.cpp or server</summary>
-//         <div className={`mt-2 ${FIELDS}`}>
-//           <Label htmlFor="set-asst-exe" className="text-muted-foreground">Server program</Label>
-//           <Input id="set-asst-exe" className="h-8 w-96" placeholder="C:\…\llama-server.exe" value={a.serverPath} onChange={(e) => edit({ serverPath: e.target.value })} />
-//           <Label htmlFor="set-asst-model" className="text-muted-foreground">Model file</Label>
-//           <Input id="set-asst-model" className="h-8 w-96" placeholder="C:\…\Qwen3.5-9B-Q4_K_M.gguf" value={a.modelPath} onChange={(e) => edit({ modelPath: e.target.value })} />
-//           <Label htmlFor="set-asst-mmproj" className="text-muted-foreground">Projector file</Label>
-//           <Input id="set-asst-mmproj" className="h-8 w-96" placeholder="C:\…\mmproj-BF16.gguf" value={a.mmprojPath} onChange={(e) => edit({ mmprojPath: e.target.value })} />
-//           <Label htmlFor="set-asst-url" className="text-muted-foreground">Server URL</Label>
-//           <Input id="set-asst-url" className="h-8 w-96" placeholder="http://127.0.0.1:8080" value={a.serverUrl} onChange={(e) => edit({ serverUrl: e.target.value })} />
-//           <Label htmlFor="set-asst-key" className="text-muted-foreground">API key</Label>
-//           <Input id="set-asst-key" className="h-8 w-96" autoComplete="off" spellCheck={false} placeholder="The server's --api-key, if it has one" value={a.apiKey} onChange={(e) => edit({ apiKey: e.target.value })} />
-//           <span />
-//           <span className="text-xs text-muted-foreground">
-//             The files replace the downloads. A server URL is used as it is. Nothing is started, and your messages and drafts go to that
-//             server with the API key, so leave it empty unless you run it yourself.
-//           </span>
-//         </div>
-//       </details>
-//     </div>
-//   );
-// }
+/** The provider's own web search (settings.assistant.providerSearch, assistant/search.js), off by default; switched off and
+ * named as missing for a provider without one. */
+function ProviderSearch({ value: a, provider, save }) {
+  const name = PROVIDER_SEARCH[provider];
+  const label = PROVIDER[provider]?.label ?? CLI[provider]?.label;
+  return (
+    <div className="flex items-start gap-2" data-provider-search>
+      <Switch id="set-asst-search" className="mt-0.5" disabled={!name} checked={!!name && a.providerSearch === true} onCheckedChange={(on) => save({ providerSearch: on })} />
+      <div className="grid gap-0.5">
+        <div className="flex items-center gap-1">
+          <Label htmlFor="set-asst-search">Let the provider search the web itself</Label>
+          <Help>
+            {name ? `${name} searches with its own tool, and you cannot watch these searches in the browser. ${CLI[provider]
+              ? `Signed in with a plan, its searches use the plan's usage; signed in with an API key, ${name} bills each search.`
+              : `${name} bills each search.`}`
+              : 'Some providers can search the web with their own tool.'}
+            {' The assistant can always search in a browser tab you can open from the browser button.'}
+          </Help>
+        </div>
+        {!name && <span className="text-xs text-muted-foreground">Not available for {label}.</span>}
+      </div>
+    </div>
+  );
+}
 
 // The section nav: one entry per <Section> in the dialog, in the same order ([id, nav label, icon]).
 const AGENT_PORT = 47823; // settings.agent.port when unset (main's src/agent-server.js PORT)
@@ -1093,7 +889,7 @@ function Section({ id, title, hint, lead, children }) {
 // theme, palette and motion, and the assistant's permissions and chat panel place. Cancel (or Escape) puts them back as they
 // were when it opened; main writes settings in order, so that lands after any of those saves still on its way.
 const AT_ONCE = ['uiScale', 'uiTheme', 'palette', 'reduceMotion', 'motion'];
-const AT_ONCE_ASSISTANT = ['permission', 'autoApproveEdits', 'uiControl', 'pictureAfterWrite', 'humanWriting', 'panel'];
+const AT_ONCE_ASSISTANT = ['permission', 'autoApproveEdits', 'uiControl', 'pictureAfterWrite', 'providerSearch', 'humanWriting', 'panel'];
 const undoAtOnce = (s) => {
   const was = { ...ASSISTANT_DEFAULTS, ...s.assistant };
   changeSettings({
@@ -1216,9 +1012,6 @@ export function SettingsDialog({ settings: s, section, onClose }) {
     const pw = Number(pageWidth);
     if (!(Number.isInteger(pw) && pw >= 320 && pw <= 4000)) return 'Page width must be a whole number between 320 and 4000.';
     if (dictation.serverUrl.trim() && !URL_RE.test(dictation.serverUrl.trim())) return 'The dictation server URL must start with http:// or https://.';
-    // LOCAL LLM (commented out 2026-10-07): the server URL and idle unload checks.
-    // if (assistant.serverUrl.trim() && !URL_RE.test(assistant.serverUrl.trim())) return 'The assistant server URL must start with http:// or https://.';
-    // if (!/^\d+$/.test(String(assistant.idleUnloadMinutes)) || Number(assistant.idleUnloadMinutes) > 1440) return 'Idle unload must be a whole number of minutes between 0 and 1440.';
     if (!/^\d+$/.test(agentPort) || Number(agentPort) < 1024 || Number(agentPort) > 65535) return 'The agents port must be a whole number between 1024 and 65535.';
     if (!(Number(github.minutes) >= 0.5 && Number(github.minutes) <= 1440)) return 'Push every must be between 0.5 and 1440 minutes.';
     if (githubProblem) return githubProblem;
@@ -1240,9 +1033,6 @@ export function SettingsDialog({ settings: s, section, onClose }) {
     dictation: { ...dictation, serverPath: pathValue(dictation.serverPath), modelPath: pathValue(dictation.modelPath), serverUrl: dictation.serverUrl.trim() },
     assistant: {
       ...assistantFields(assistant),
-      // LOCAL LLM (commented out 2026-10-07): serverPath: pathValue(assistant.serverPath), modelPath: pathValue(assistant.modelPath),
-      // mmprojPath: pathValue(assistant.mmprojPath), serverUrl: assistant.serverUrl.trim(), apiKey: assistant.apiKey.trim(),
-      // idleUnloadMinutes: Number(assistant.idleUnloadMinutes),
     },
     agent: { ...s.agent, enabled: agents, port: Number(agentPort) },
     browserIdleOpacity: idleOpacity,

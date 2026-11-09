@@ -3,7 +3,7 @@
 
 // Each number's default and its [min, max]; the defaults are the constants these replaced.
 const NUMBERS = {
-  maxCalls: [40, 1, 500], // tool calls per request (the cloud models' and the CLIs'; the small local models keep 20, loop.js MAX_CALLS)
+  maxCalls: [40, 1, 500], // tool calls per request (the cloud models' and the CLIs'; a server in place of a provider keeps 20, loop.js MAX_CALLS)
   maxResult: [8000, 1000, 200000], // characters of one tool answer sent back
   shots: [3, 1, 20], // computer use: screenshots kept with their image
   cloudKeep: [4, 1, 50], // the cloud models: tool results kept in full per request

@@ -1,0 +1,75 @@
+{
+  "type": "doc",
+  "content": [
+    {
+      "type": "paragraph",
+      "content": [{ "type": "text", "text": "Before the table" }]
+    },
+    {
+      "type": "table",
+      "content": [
+        {
+          "type": "tableRow",
+          "content": [
+            {
+              "type": "tableHeader",
+              "attrs": { "colspan": 1, "rowspan": 1, "colwidth": [120] },
+              "content": [{ "type": "paragraph", "content": [{ "type": "text", "text": "Name" }] }]
+            },
+            {
+              "type": "tableHeader",
+              "attrs": { "colspan": 1, "rowspan": 1, "colwidth": [240] },
+              "content": [{ "type": "paragraph", "content": [{ "type": "text", "text": "Reason" }] }]
+            }
+          ]
+        },
+        {
+          "type": "tableRow",
+          "content": [
+            {
+              "type": "tableCell",
+              "attrs": { "colspan": 1, "rowspan": 1, "colwidth": [120] },
+              "content": [{ "type": "paragraph", "content": [{ "type": "text", "text": "Ada" }] }]
+            },
+            {
+              "type": "tableCell",
+              "attrs": { "colspan": 1, "rowspan": 1, "colwidth": [240] },
+              "content": [
+                { "type": "paragraph", "content": [{ "type": "text", "text": "Writes the notes" }] },
+                {
+                  "type": "table",
+                  "content": [
+                    {
+                      "type": "tableRow",
+                      "content": [
+                        {
+                          "type": "tableCell",
+                          "attrs": { "colspan": 1, "rowspan": 1, "colwidth": [180] },
+                          "content": [{ "type": "paragraph", "content": [{ "type": "text", "text": "nested" }] }]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "tableRow",
+          "content": [
+            {
+              "type": "tableCell",
+              "attrs": { "colspan": 2, "rowspan": 1, "colwidth": null },
+              "content": [{ "type": "paragraph", "content": [{ "type": "text", "text": "Across both columns" }] }]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "content": [{ "type": "text", "text": "After the table" }]
+    }
+  ]
+}

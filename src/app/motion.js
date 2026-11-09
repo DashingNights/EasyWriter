@@ -8,11 +8,14 @@
 // under the OS's reduced motion even when reduce motion is off (sonner's own !important rule).
 export const MOTION = [
   ['menus', 90, 'Menus', 'Menus, selects, popovers, the quick access menu and tool search opening'],
+  ['hide', 125, 'Quick access menu hiding', 'The quick access menu and its tool options fading out when the pointer leaves them after a tool pick'],
   ['tooltips', 90, 'Tooltips', 'Tooltips and hover hints'],
   ['dialogs', 160, 'Dialogs', 'Dialogs and their backdrop'],
   ['pages', 140, 'Pages', 'The editor and the plans and flowcharts pages fading in'],
-  ['islands', 150, 'Islands', "The toolbar's More tools row and the left rail changing height"],
+  ['islands', 150, 'Islands', "The toolbar's More tools row, and the left rail changing height or moving to its place"],
+  ['sidebar', 200, 'Sidebar', 'The sidebar sliding open and closed, and the page moving with it'],
   ['panel', 280, 'Assistant panel', 'The chat panel opening and closing'],
+  ['tabs', 100, 'Browser tabs', 'The browser tab manager opening and closing'],
   // The transcript card's growth; the minimize and restore sequences have their own lengths (dictation.js CLOSE_STEPS).
   ['pane', 300, 'Dictation pane', 'Minimizing and restoring it, and the transcript growing'],
   ['tutorial', 700, 'Tutorial', "The tutorial's light moving to the next step and its pointer showing the click"],

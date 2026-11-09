@@ -1,0 +1,21 @@
+/* Footnotes and endnotes (docs/plans/word/briefs/notes.md): references, note areas, separators and the note editors. */
+.page[data-format="document"] .ProseMirror sup[data-note] { cursor: default; }
+.page[data-format="document"] .ProseMirror sup[data-note].ProseMirror-selectednode { outline: 2px solid #3d99f5; outline-offset: 1px; }
+/* The endnote area is a plain block, so its lines cross page ends like the text's (a formatting context would move whole). */
+.page[data-format="document"] [data-note-area], .page[data-format="document"] [data-endnotes] { cursor: text; }
+.page[data-format="document"] [data-endnotes] { margin-top: 12pt; }
+#editor-area[data-word-view]:is([data-word-view="draft"], [data-word-view="outline"]) [data-endnotes] { display: none; }
+/* Word's default separators: a short rule at the column's left, a continuation rule across the column. */
+.page[data-format="document"] [data-note-sep][data-rule] { display: flex; align-items: center; height: 12pt; }
+.page[data-format="document"] [data-note-sep][data-rule]::before { content: ""; border-top: 0.75pt solid currentColor; width: 33%; }
+.page[data-format="document"] [data-note-sep][data-rule="long"]::before { width: 100%; }
+/* The note editor in the page overlay or the Notes pane: as tall as its text, its number drawn before the first line. */
+.page[data-format="document"] [data-note-edit] .ProseMirror, [data-pane] [data-note-edit] .ProseMirror { min-height: 0; outline: none; }
+.page[data-format="document"] [data-note-edit] { background: var(--page-color, #ffffff); }
+.page[data-format="document"] [data-note-edit] .ProseMirror > :first-child::before,
+[data-pane] [data-note-edit] .ProseMirror > :first-child::before {
+  /* important: document.css's empty-line rule (a 1 px box) is more specific and would hide an empty note's number */
+  content: var(--w-note-label) "\00a0" !important; display: inline !important; width: auto !important; vertical-align: super; font-size: smaller;
+}
+/* The Notes pane shows note text on paper, as the page does in either theme: the page colour with paper's black text. */
+[data-pane] [data-note-edit], [data-pane] [data-note-row], [data-pane] [data-note-sep-edit] { background: var(--page-color, #ffffff); color: #000000; }

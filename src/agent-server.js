@@ -128,13 +128,26 @@ function dispatch(rid, req) {
 
 function cancelRid(rid) {
   const queued = waiting.findIndex(([r]) => r === rid);
-  if (queued < 0) return toRenderer({ type: 'cancel', rid });
+  if (queued < 0) {
+    pending.delete(rid); // a late reply finds nothing to answer, and the idle sweep can drop the session
+    return toRenderer({ type: 'cancel', rid });
+  }
   waiting.splice(queued, 1);
   answer(rid, { ok: false, error: { code: 'cancelled', message: 'Cancelled before it ran' } });
 }
 
 function cancel(session, id) {
   for (const [rid, p] of pending) if (p.session === session && p.id === id) cancelRid(rid);
+}
+
+/** The main window navigated or its renderer died: the calls it held are lost, so they fail now instead of hanging until the
+ * client's timeout. Calls not sent yet wait for the next agent.ready. */
+function reset() {
+  ready = false;
+  const queued = new Set(waiting.map(([r]) => r));
+  for (const rid of [...pending.keys()]) {
+    if (!queued.has(rid)) answer(rid, { ok: false, error: { code: 'failed', message: 'The app window reloaded or stopped before the call finished' } });
+  }
 }
 
 /** Runs command request `req` for `session`'s JSON-RPC request `id` → the command result (SPEC §8 Envelope). */
@@ -463,4 +476,4 @@ function register(handle, win, settings) {
   app.on('will-quit', stop);
 }
 
-module.exports = { register, sync, startPipe, assistantLink, PORT };
+module.exports = { register, reset, run, sync, startPipe, assistantLink, PORT };

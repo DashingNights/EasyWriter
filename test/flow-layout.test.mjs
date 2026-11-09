@@ -88,8 +88,9 @@ test('fromGraph: laid out at the unit, graph ids kept unless taken, frames behin
   assert.equal(ids.get('A'), 'x1');
   const [frame, a, b] = items;
   assert.ok(a.x + a.w <= b.x, 'LR: A left of B');
-  assert.deepEqual([a.w, a.h, a.width, a.size, a.fillColor, a.color, a.textColor], [280, 128, 4, 32, preset.fillColor, preset.color, preset.textColor]);
-  assert.deepEqual([b.fillColor, frame.fill, frame.html], ['#dae8fc', 'none', 'Group']);
+  // A node is a flat fill with no outline (briefs/board-arrows-flat.md); the group's frame, unfilled, keeps a 2 px line.
+  assert.deepEqual([a.w, a.h, a.width, a.size, a.fillColor, a.color, a.textColor], [280, 128, 0, 32, preset.fillColor, preset.color, preset.textColor]);
+  assert.deepEqual([b.fillColor, frame.fill, frame.width, frame.html], ['#dae8fc', 'none', 4, 'Group']);
   const c = items[4];
   assert.deepEqual([c.from.item, c.to.item, c.dash, c.width, c.labels.mid.html, c.labels.mid.size], ['x1', 'B', 'dotted', 8, 'go', 28]);
   assert.equal(items[5].to.item, 'G');

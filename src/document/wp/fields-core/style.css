@@ -1,0 +1,36 @@
+/* Fields (docs/plans/word/plan.md §1.10, briefs/fields-core.md): a field shows its result or its { code }. The code shows when
+   Alt+F9 is on (data-field-codes on #editor-area) or when Shift+F9 flipped that field (data-fld-flip), never both. Shading is
+   Word's light grey, on screen only. */
+[data-doc-text] [data-field] { white-space: pre-wrap; }
+[data-doc-text] [data-field] > .fld-code { display: none; }
+[data-doc-text] [data-field][data-fld-flip] > .fld-code { display: inline; }
+[data-doc-text] [data-field][data-fld-flip] > .fld-res { display: none; }
+#editor-area[data-word-view][data-field-codes] [data-field]:not([data-fld-flip]) > .fld-code { display: inline; }
+#editor-area[data-word-view][data-field-codes] [data-field]:not([data-fld-flip]) > .fld-res { display: none; }
+#editor-area[data-word-view][data-field-codes] [data-field][data-fld-flip] > .fld-code { display: none; }
+#editor-area[data-word-view][data-field-codes] [data-field][data-fld-flip] > .fld-res { display: inline; }
+[data-doc-text] [data-field] .fld-c { outline: none; caret-color: currentColor; }
+/* A field with no result draws nothing; one pixel keeps its shading visible. */
+[data-doc-text] [data-field] > .fld-res:empty { padding-left: 1px; }
+/* Word's error texts ("Error! ...") draw bold. */
+[data-doc-text] [data-field] .fld-err { font-weight: 700; }
+/* A fieldBlock shows its blocks, or its code on one line. */
+[data-doc-text] [data-field-block] > .fld-line { display: none; }
+[data-doc-text] [data-field-block][data-fld-flip] > .fld-line { display: block; }
+[data-doc-text] [data-field-block][data-fld-flip] > .fld-blocks { display: none; }
+#editor-area[data-word-view][data-field-codes] [data-field-block]:not([data-fld-flip]) > .fld-line { display: block; }
+#editor-area[data-word-view][data-field-codes] [data-field-block]:not([data-fld-flip]) > .fld-blocks { display: none; }
+/* Shading: 'always', or 'selected' while the selection touches the field (default); 'never' draws none. */
+[data-doc-text][data-field-shading="always"] [data-field],
+[data-doc-text][data-field-shading="always"] [data-field-block],
+[data-doc-text][data-field-shading="selected"] [data-field][data-fld-sel],
+[data-doc-text][data-field-shading="selected"] [data-field-block][data-fld-sel] { background-color: #d9d9d9; }
+/* A picture field: the image, or the broken-picture frame Word draws for a file it cannot read. */
+[data-doc-text] [data-field] img[data-field-picture] { max-width: 100%; vertical-align: bottom; }
+[data-doc-text] [data-field] [data-field-broken] {
+  display: inline-block; width: 1.5em; height: 1.5em; vertical-align: bottom; border: 1px solid #a6a6a6;
+  background: linear-gradient(to top right, transparent 46%, #c00000 48%, #c00000 52%, transparent 54%);
+}
+@media print {
+  [data-doc-text] [data-field], [data-doc-text] [data-field-block] { background-color: transparent !important; }
+}

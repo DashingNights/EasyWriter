@@ -1,0 +1,1572 @@
+# easywriter.document 10: the stored form's types (scripts/schema-fields.mjs, test/engine-schema.test.mjs)
+AbstractNum
+AbstractNum.id u32
+AbstractNum.levels Vec<Level>
+AbstractNum.multi_level_type Option<String>
+AbstractNum.name Option<String>
+AbstractNum.nsid Option<String>
+AbstractNum.tmpl Option<String>
+Align rename_all=camelCase
+Align::Center
+Align::Distribute
+Align::Justify
+Align::Left
+Align::Right
+AltText rename_all=camelCase
+AltText.decorative bool
+AltText.text String
+AltText.title String
+Anchor rename_all=camelCase
+Anchor::BottomMargin
+Anchor::Character
+Anchor::Column
+Anchor::InsideMargin
+Anchor::LeftMargin
+Anchor::Line
+Anchor::Margin
+Anchor::OutsideMargin
+Anchor::Page
+Anchor::Paragraph
+Anchor::RightMargin
+Anchor::TopMargin
+AnyForm untagged
+AnyForm::Plain(Rgb)
+AnyForm::Tagged(Tagged)
+Arg = Vec<MNode>
+Artistic
+Artistic.attrs Vec<(String, i64)>
+Artistic.effect String
+Bevel rename_all=camelCase
+Bevel.height f32
+Bevel.kind BevelKind
+Bevel.width f32
+BevelKind rename_all=camelCase
+BevelKind::Angle
+BevelKind::ArtDeco
+BevelKind::Circle
+BevelKind::Convex
+BevelKind::CoolSlant
+BevelKind::Cross
+BevelKind::Divot
+BevelKind::HardEdge
+BevelKind::RelaxedInset
+BevelKind::Riblet
+BevelKind::Slope
+BevelKind::SoftRound
+Block rename_all=camelCase tag=kind
+Block::Para(Paragraph)
+Block::Table(Table)
+Blocks = Vec<Block>
+Border
+Border.color Option<Rgb>
+Border.space f32
+Border.style BorderStyle
+Border.width f32
+BorderArt: own Deserialize (doc/src/props/para_props.rs) a14e551d1cf0
+BorderArt: own Serialize (doc/src/props/para_props.rs) e3093e3b641c
+BorderStyle rename_all=camelCase
+BorderStyle::Art(BorderArt)
+BorderStyle::DashDotStroked
+BorderStyle::DashSmallGap
+BorderStyle::Dashed
+BorderStyle::DotDash
+BorderStyle::DotDotDash
+BorderStyle::Dotted
+BorderStyle::Double
+BorderStyle::DoubleWave
+BorderStyle::Inset
+BorderStyle::None
+BorderStyle::Outset
+BorderStyle::Single
+BorderStyle::Thick
+BorderStyle::ThickThinLargeGap
+BorderStyle::ThickThinMediumGap
+BorderStyle::ThickThinSmallGap
+BorderStyle::ThinThickLargeGap
+BorderStyle::ThinThickMediumGap
+BorderStyle::ThinThickSmallGap
+BorderStyle::ThinThickThinLargeGap
+BorderStyle::ThinThickThinMediumGap
+BorderStyle::ThinThickThinSmallGap
+BorderStyle::ThreeDEmboss
+BorderStyle::ThreeDEngrave
+BorderStyle::Triple
+BorderStyle::Wave
+Borders
+Borders.between Option<Border>
+Borders.bottom Option<Border>
+Borders.inside_v Option<Border>
+Borders.left Option<Border>
+Borders.right Option<Border>
+Borders.top Option<Border>
+BrkBin rename_all=camelCase
+BrkBin::After
+BrkBin::Before
+BrkBin::Repeat
+BrkBinSub rename_all=camelCase
+BrkBinSub::MinusMinus
+BrkBinSub::MinusPlus
+BrkBinSub::PlusMinus
+BuildingBlock rename_all=camelCase
+BuildingBlock.behaviors Vec<String>
+BuildingBlock.blocks Blocks
+BuildingBlock.category String
+BuildingBlock.description String
+BuildingBlock.gallery String
+BuildingBlock.guid String
+BuildingBlock.name String
+BuildingBlock.style String
+BuildingBlock.types Vec<String>
+CanvasStyle rename_all=camelCase
+CanvasStyle.fill Option<Fill>
+CanvasStyle.stroke Option<Rgb>
+CanvasStyle.stroke_width f32
+Cell
+Cell.blocks Blocks
+Cell.controls ControlWrap
+Cell.props CellProps
+CellProps rename_all=camelCase
+CellProps.borders Option<Borders>
+CellProps.fmt_change Option<PropChange<CellProps>>
+CellProps.hide_mark bool
+CellProps.margins Option<[f32; 4]>
+CellProps.no_wrap bool
+CellProps.partial_margins Option<[Option<f32>; 4]>
+CellProps.shading Option<Rgb>
+CellProps.span u32
+CellProps.text_direction TextDirection
+CellProps.text_direction_set bool
+CellProps.valign Option<VAlign>
+CellProps.vmerge VMerge
+CellProps.width Option<f32>
+CellProps.width_pct Option<f32>
+CharProps rename_all=camelCase
+CharProps.bold Option<bool>
+CharProps.bold_cs Option<bool>
+CharProps.border Option<Border>
+CharProps.caps Option<bool>
+CharProps.color Option<TextColor>
+CharProps.contextual_alternates Option<bool>
+CharProps.cs Option<bool>
+CharProps.del Option<u32>
+CharProps.double_strike Option<bool>
+CharProps.east_asian_layout Option<EastAsianLayout>
+CharProps.em Option<EmphasisMark>
+CharProps.emboss Option<bool>
+CharProps.engrave Option<bool>
+CharProps.fit_text Option<FitText>
+CharProps.fmt_change Option<PropChange<CharProps>>
+CharProps.font Option<String>
+CharProps.font_cs Option<String>
+CharProps.font_ea Option<String>
+CharProps.hidden Option<bool>
+CharProps.highlight Option<Highlight>
+CharProps.ins Option<u32>
+CharProps.italic Option<bool>
+CharProps.italic_cs Option<bool>
+CharProps.kern Option<f32>
+CharProps.lang Option<String>
+CharProps.lang_bidi Option<String>
+CharProps.lang_ea Option<String>
+CharProps.ligatures Option<Ligatures>
+CharProps.link Option<String>
+CharProps.no_proof Option<bool>
+CharProps.num_form Option<NumForm>
+CharProps.num_spacing Option<NumSpacing>
+CharProps.outline Option<bool>
+CharProps.position Option<f32>
+CharProps.rtl Option<bool>
+CharProps.scale Option<f32>
+CharProps.shading Option<Rgb>
+CharProps.shadow Option<bool>
+CharProps.size Option<f32>
+CharProps.size_cs Option<f32>
+CharProps.small_caps Option<bool>
+CharProps.spacing Option<f32>
+CharProps.spec_vanish Option<bool>
+CharProps.strike Option<bool>
+CharProps.style Option<String>
+CharProps.stylistic_set Option<u8>
+CharProps.sym_font Option<String>
+CharProps.text_effects Option<TextEffects>
+CharProps.underline Option<Underline>
+CharProps.underline_color Option<Rgb>
+CharProps.vert_align Option<VertAlign>
+ChartSeries rename_all=camelCase
+ChartSeries.name String
+ChartSeries.values Vec<Option<f64>>
+ChartSpec rename_all=camelCase
+ChartSpec.categories Vec<String>
+ChartSpec.data_labels bool
+ChartSpec.kind ChartType rename=type
+ChartSpec.legend Option<LegendPos>
+ChartSpec.series Vec<ChartSeries>
+ChartSpec.title Option<String>
+ChartType rename_all=camelCase
+ChartType::Area
+ChartType::Bar
+ChartType::BarStacked
+ChartType::Column
+ChartType::ColumnStacked
+ChartType::Doughnut
+ChartType::Line
+ChartType::Pie
+ChartType::Scatter
+ColJc rename_all=camelCase
+ColJc::Center
+ColJc::Left
+ColJc::Right
+Columns rename_all=camelCase
+Columns.count u32
+Columns.separator bool
+Columns.space f32
+Columns.widths Vec<(f32, f32)>
+CombineBrackets rename_all=camelCase
+CombineBrackets::Angle
+CombineBrackets::Curly
+CombineBrackets::None
+CombineBrackets::Round
+CombineBrackets::Square
+Comment rename_all=camelCase
+Comment.author String
+Comment.date String
+Comment.date_utc Option<String>
+Comment.durable_id Option<String>
+Comment.initials String
+Comment.parent Option<u32>
+Comment.part u32
+Comment.resolved bool
+ConnEnd rename_all=camelCase
+ConnEnd.id u32
+ConnEnd.site u32
+ContentControl rename_all=camelCase
+ContentControl.block bool
+ContentControl.end_pr_xml String
+ContentControl.extra Vec<String>
+ContentControl.id Option<i64>
+ContentControl.kind ControlKind
+ContentControl.lock ControlLock
+ContentControl.placeholder String
+ContentControl.placeholder_text String
+ContentControl.rpr_xml String
+ContentControl.run_props Option<CharProps>
+ContentControl.showing_placeholder bool
+ContentControl.tag String
+ContentControl.temporary bool
+ContentControl.title String
+ControlKind rename_all=camelCase tag=type
+ControlKind::CheckBox rename_all=camelCase
+ControlKind::CheckBox.checked bool
+ControlKind::CheckBox.checked_char char
+ControlKind::CheckBox.checked_font String
+ControlKind::CheckBox.unchecked_char char
+ControlKind::CheckBox.unchecked_font String
+ControlKind::ComboBox rename_all=camelCase
+ControlKind::ComboBox.items Vec<ListItem>
+ControlKind::ComboBox.last_value String
+ControlKind::Date rename_all=camelCase
+ControlKind::Date.calendar String
+ControlKind::Date.format String
+ControlKind::Date.full_date String
+ControlKind::Date.lid String
+ControlKind::Date.store_as String
+ControlKind::DropDown rename_all=camelCase
+ControlKind::DropDown.items Vec<ListItem>
+ControlKind::DropDown.last_value String
+ControlKind::Gallery rename_all=camelCase
+ControlKind::Gallery.category String
+ControlKind::Gallery.gallery String
+ControlKind::Gallery.list bool
+ControlKind::Gallery.unique bool
+ControlKind::Picture
+ControlKind::RepeatingSection rename_all=camelCase
+ControlKind::RepeatingSection.no_insert_delete bool
+ControlKind::RepeatingSection.title String
+ControlKind::RepeatingSectionItem
+ControlKind::RichText
+ControlKind::Text rename_all=camelCase
+ControlKind::Text.multi_line bool
+ControlLock rename_all=camelCase
+ControlLock::ContentLocked
+ControlLock::SdtContentLocked
+ControlLock::SdtLocked
+ControlLock::Unlocked
+ControlWrap rename_all=camelCase
+ControlWrap.close u32
+ControlWrap.open Vec<ContentControl>
+CoreProps rename_all=camelCase
+CoreProps.category String
+CoreProps.created String
+CoreProps.creator String
+CoreProps.description String
+CoreProps.keywords String
+CoreProps.last_modified_by String
+CoreProps.modified String
+CoreProps.revision u32
+CoreProps.subject String
+CoreProps.title String
+CropShape rename_all=camelCase
+CropShape.adj Vec<(String, i64)>
+CropShape.outline Freeform
+CropShape.preset String
+CustomProp rename_all=camelCase
+CustomProp.kind String
+CustomProp.name String
+CustomProp.value String
+DocGrid rename_all=camelCase
+DocGrid.char_space i32
+DocGrid.kind DocGridType rename=type
+DocGrid.line_pitch f32
+DocGridType rename_all=camelCase
+DocGridType::Default
+DocGridType::Lines
+DocGridType::LinesAndChars
+DocGridType::SnapToChars
+Document rename_all=camelCase
+Document.body Blocks
+Document.comments BTreeMap<u32, Comment>
+Document.core CoreProps
+Document.custom_props Vec<CustomProp>
+Document.endnote_separators NoteSeparators
+Document.footnote_separators NoteSeparators
+Document.glossary Vec<BuildingBlock>
+Document.last_section SectionProps
+Document.media BTreeMap<String, Vec<u8>> with=byte_store
+Document.numbering Numbering
+Document.parts BTreeMap<u32, Part>
+Document.passthrough BTreeMap<String, Vec<u8>> with=byte_store
+Document.revisions Vec<Revision>
+Document.schema String serialize_with=schema::write_schema
+Document.schema_version u32 rename=version serialize_with=schema::write_version
+Document.settings Settings
+Document.sources Vec<Source>
+Document.styles StyleSheet
+EastAsianLayout rename_all=camelCase
+EastAsianLayout.combine Option<bool>
+EastAsianLayout.combine_brackets Option<CombineBrackets>
+EastAsianLayout.id Option<i32>
+EastAsianLayout.vert Option<bool>
+EastAsianLayout.vert_compress Option<bool>
+EditNode rename_all=camelCase
+EditNode.at [f32; 2]
+EditNode.c_in Option<[f32; 2]>
+EditNode.c_out Option<[f32; 2]>
+EditNode.kind NodeKind
+EditPath
+EditPath.closed bool
+EditPath.nodes Vec<EditNode>
+Embedded
+Embedded.refs Vec<EmbeddedRef>
+Embedded.xml String
+EmbeddedRef
+EmbeddedRef.external bool
+EmbeddedRef.id String
+EmbeddedRef.kind String
+EmbeddedRef.target String
+EmphasisMark rename_all=camelCase
+EmphasisMark::Circle
+EmphasisMark::Comma
+EmphasisMark::Dot
+EmphasisMark::None
+EmphasisMark::UnderDot
+Fill: own Deserialize (doc/src/fill.rs) fa8ba08c6710
+Fill: own Serialize (doc/src/fill.rs) 5304e5ce8fe2
+FilterOp rename_all=camelCase
+FilterOp::Blank
+FilterOp::Contains
+FilterOp::Equal
+FilterOp::Greater
+FilterOp::GreaterOrEqual
+FilterOp::Less
+FilterOp::LessOrEqual
+FilterOp::NotBlank
+FilterOp::NotContains
+FilterOp::NotEqual
+FilterRule rename_all=camelCase
+FilterRule.field String
+FilterRule.op FilterOp
+FilterRule.or bool
+FilterRule.value String
+FitText rename_all=camelCase
+FitText.id Option<i32>
+FitText.width f32
+Float rename_all=camelCase
+Float.adjust PictureAdjust
+Float.alt AltText
+Float.box Option<ObjectBox> rename=box
+Float.crop_shape Option<CropShape>
+Float.dist f32
+Float.dist_bottom f32
+Float.dist_top f32
+Float.effect [f32; 4]
+Float.fallback Option<String>
+Float.flip_h bool
+Float.flip_v bool
+Float.fx ShapeEffects
+Float.h_align Option<FloatAlign>
+Float.h_rel Anchor
+Float.hidden bool
+Float.id Id
+Float.layer Option<String>
+Float.link Option<String>
+Float.outline Option<Outline>
+Float.outside_cell bool
+Float.regroup u32
+Float.rel_h Option<(Anchor, f32)>
+Float.rel_w Option<(Anchor, f32)>
+Float.rot f32
+Float.v_align Option<FloatAlign>
+Float.v_rel Anchor
+Float.word_copy Option<WordCopy>
+Float.wrap Wrap
+Float.wrap_polygon Option<WrapPolygon>
+Float.wrap_text WrapText
+Float.x f32
+Float.y f32
+Float.z u32
+FloatAlign rename_all=camelCase
+FloatAlign::Center
+FloatAlign::End
+FloatAlign::Inside
+FloatAlign::Outside
+FloatAlign::Start
+FracKind rename_all=camelCase
+FracKind::Bar
+FracKind::Linear
+FracKind::NoBar
+FracKind::Skewed
+FreePath rename_all=camelCase
+FreePath.closed bool
+FreePath.pts Vec<[f32; 2]>
+Freeform rename_all=camelCase
+Freeform.alpha f32
+Freeform.h f32
+Freeform.ink Option<InkTool>
+Freeform.order Option<u32>
+Freeform.paths Vec<FreePath>
+Freeform.w f32
+Glow rename_all=camelCase
+Glow.color Rgb
+Glow.size f32
+Glow.transparency f32
+GradStop rename_all=camelCase
+GradStop.color Rgb
+GradStop.pos f32
+GradStop.transparency f32
+Gradient rename_all=camelCase
+Gradient.flip GradientFlip
+Gradient.kind GradientKind
+Gradient.rot_with_shape bool
+Gradient.stops Vec<GradStop>
+Gradient.tile Option<[f32; 4]>
+GradientFlip rename_all=camelCase
+GradientFlip::None
+GradientFlip::X
+GradientFlip::Xy
+GradientFlip::Y
+GradientKind rename_all=camelCase tag=type
+GradientKind::Linear
+GradientKind::Linear.angle f32
+GradientKind::Linear.scaled bool
+GradientKind::Path
+GradientKind::Path.focus [f32; 4]
+GradientKind::Path.shape PathShape
+Graphic rename_all=camelCase
+Graphic.chart Option<ChartSpec>
+Graphic.h f32
+Graphic.items Vec<GraphicItem>
+Graphic.kind GraphicKind
+Graphic.smart_art Option<SmartArtSpec>
+Graphic.source Option<Embedded>
+Graphic.w f32
+GraphicItem rename_all=camelCase tag=type
+GraphicItem::Image
+GraphicItem::Image.media String
+GraphicItem::Image.rect [f32; 4]
+GraphicItem::Path
+GraphicItem::Path.fill Option<Rgb>
+GraphicItem::Path.segs Vec<PathSeg>
+GraphicItem::Path.stroke Option<Rgb>
+GraphicItem::Path.stroke_width f32
+GraphicItem::Shape
+GraphicItem::Shape.fill Option<Rgb>
+GraphicItem::Shape.kind ShapeKind
+GraphicItem::Shape.rect [f32; 4]
+GraphicItem::Shape.stroke Option<Rgb>
+GraphicItem::Shape.stroke_width f32
+GraphicItem::Text
+GraphicItem::Text.align TextAlign
+GraphicItem::Text.bold bool
+GraphicItem::Text.color Rgb
+GraphicItem::Text.font Option<String>
+GraphicItem::Text.rect [f32; 4]
+GraphicItem::Text.size f32
+GraphicItem::Text.text String
+GraphicKind rename_all=camelCase
+GraphicKind::Chart
+GraphicKind::Diagram
+GraphicKind::Ink
+GridShow rename_all=camelCase
+GridShow.every_h u32
+GridShow.every_v u32
+GridShow.use_margins bool
+GridShow.x f32
+GridShow.y f32
+GroupChild rename_all=camelCase
+GroupChild.obj InlineObject
+GroupChild.x f32
+GroupChild.y f32
+HeaderSet
+HeaderSet.default Option<u32>
+HeaderSet.even Option<u32>
+HeaderSet.first Option<u32>
+HeightRule rename_all=camelCase
+HeightRule::AtLeast
+HeightRule::Auto
+HeightRule::Exact
+Highlight rename_all=camelCase
+Highlight::Black
+Highlight::Blue
+Highlight::BrightGreen
+Highlight::DarkBlue
+Highlight::DarkRed
+Highlight::DarkYellow
+Highlight::Gray25
+Highlight::Gray50
+Highlight::Green
+Highlight::None
+Highlight::Pink
+Highlight::Red
+Highlight::Teal
+Highlight::Turquoise
+Highlight::Violet
+Highlight::White
+Highlight::Yellow
+Id transparent
+Id.0 u32
+InkTool rename_all=camelCase
+InkTool::Highlighter
+InkTool::Pen
+InkTool::Pencil
+InlineObject rename_all=camelCase tag=type
+InlineObject::BookmarkEnd
+InlineObject::BookmarkEnd.name String
+InlineObject::BookmarkStart
+InlineObject::BookmarkStart.name String
+InlineObject::CommentEnd
+InlineObject::CommentEnd.id u32
+InlineObject::CommentStart
+InlineObject::CommentStart.id u32
+InlineObject::ControlEnd
+InlineObject::ControlStart
+InlineObject::ControlStart.control ContentControl
+InlineObject::Equation
+InlineObject::Equation.display bool
+InlineObject::Equation.linear String
+InlineObject::Equation.math Math
+InlineObject::Field
+InlineObject::Field.code bool
+InlineObject::Field.dirty bool
+InlineObject::Field.form String
+InlineObject::Field.instr String
+InlineObject::Field.locked bool
+InlineObject::Field.result String
+InlineObject::FieldEnd
+InlineObject::FieldStart
+InlineObject::FieldStart.dirty bool
+InlineObject::FieldStart.instr String
+InlineObject::FieldStart.locked bool
+InlineObject::Graphic
+InlineObject::Graphic.alt String
+InlineObject::Graphic.float Float
+InlineObject::Graphic.graphic Graphic
+InlineObject::Graphic.h f32
+InlineObject::Graphic.w f32
+InlineObject::Group
+InlineObject::Group.canvas Option<CanvasStyle>
+InlineObject::Group.ch_h f32
+InlineObject::Group.ch_w f32
+InlineObject::Group.children Vec<GroupChild>
+InlineObject::Group.float Float
+InlineObject::Group.h f32
+InlineObject::Group.w f32
+InlineObject::Image
+InlineObject::Image.alt String
+InlineObject::Image.crop [f32; 4]
+InlineObject::Image.float Float
+InlineObject::Image.h f32
+InlineObject::Image.media String
+InlineObject::Image.ole Option<Embedded>
+InlineObject::Image.w f32
+InlineObject::NoteRef
+InlineObject::NoteRef.custom String
+InlineObject::NoteRef.id u32
+InlineObject::NoteRef.kind NoteKind
+InlineObject::Opaque
+InlineObject::Opaque.format String
+InlineObject::Opaque.text String
+InlineObject::Opaque.xml String
+InlineObject::PermEnd
+InlineObject::PermEnd.id u32
+InlineObject::PermStart
+InlineObject::PermStart.editor String
+InlineObject::PermStart.group String
+InlineObject::PermStart.id u32
+InlineObject::PositionalTab
+InlineObject::PositionalTab.align PTabAlign
+InlineObject::PositionalTab.leader TabLeader
+InlineObject::PositionalTab.relative_to PTabBase
+InlineObject::Ruby
+InlineObject::Ruby.align RubyAlign
+InlineObject::Ruby.base String
+InlineObject::Ruby.base_size f32
+InlineObject::Ruby.lang String
+InlineObject::Ruby.props CharProps
+InlineObject::Ruby.raise f32
+InlineObject::Ruby.ruby String
+InlineObject::Ruby.size f32
+InlineObject::Shape
+InlineObject::Shape.effects ShapeEffects
+InlineObject::Shape.extra ShapeExtra
+InlineObject::Shape.fill Option<Fill>
+InlineObject::Shape.float Float
+InlineObject::Shape.freeform Option<Freeform>
+InlineObject::Shape.h f32
+InlineObject::Shape.kind ShapeKind
+InlineObject::Shape.story Option<u32>
+InlineObject::Shape.stroke Option<Rgb>
+InlineObject::Shape.stroke_width f32
+InlineObject::Shape.w f32
+LegendPos rename_all=camelCase
+LegendPos::Bottom
+LegendPos::Left
+LegendPos::Right
+LegendPos::Top
+Level rename_all=camelCase
+Level.align Align
+Level.chr CharProps
+Level.format NumFormat
+Level.hanging f32
+Level.indent f32
+Level.legal bool
+Level.restart bool
+Level.restart_after Option<u8>
+Level.start u32
+Level.style Option<String>
+Level.suffix LevelSuffix
+Level.tab Option<f32>
+Level.text String
+LevelSuffix rename_all=camelCase
+LevelSuffix::Nothing
+LevelSuffix::Space
+LevelSuffix::Tab
+Ligatures rename_all=camelCase
+Ligatures.contextual bool
+Ligatures.discretional bool
+Ligatures.historical bool
+Ligatures.standard bool
+LimLoc rename_all=camelCase
+LimLoc::SubSup
+LimLoc::UndOvr
+LineCap rename_all=camelCase
+LineCap::Flat
+LineCap::Round
+LineCap::Square
+LineDash rename_all=camelCase
+LineDash::Custom(Vec<(u32, u32)>)
+LineDash::Dash
+LineDash::DashDot
+LineDash::Dot
+LineDash::LongDash
+LineDash::LongDashDot
+LineDash::LongDashDotDot
+LineDash::Solid
+LineDash::SystemDash
+LineDash::SystemDashDot
+LineDash::SystemDashDotDot
+LineDash::SystemDot
+LineNumberRestart rename_all=camelCase
+LineNumberRestart::Continuous
+LineNumberRestart::Page
+LineNumberRestart::Section
+LineNumbering rename_all=camelCase
+LineNumbering.count_by u32
+LineNumbering.distance f32
+LineNumbering.restart LineNumberRestart
+LineNumbering.start u32
+LineSpacing content=value rename_all=camelCase tag=rule
+LineSpacing::AtLeast(f32)
+LineSpacing::Exactly(f32)
+LineSpacing::Multiple(f32)
+ListItem rename_all=camelCase
+ListItem.display String
+ListItem.value String
+MNode rename_all=camelCase tag=t
+MNode::Acc
+MNode::Acc.chr char
+MNode::Acc.e Arg
+MNode::Bar
+MNode::Bar.e Arg
+MNode::Bar.top bool
+MNode::BorderBox
+MNode::BorderBox.e Arg
+MNode::BorderBox.hide [bool; 4]
+MNode::BorderBox.strike [bool; 4]
+MNode::Boxed
+MNode::Boxed.e Arg
+MNode::Delim
+MNode::Delim.beg Option<char>
+MNode::Delim.elems Vec<Arg>
+MNode::Delim.end Option<char>
+MNode::Delim.grow bool
+MNode::Delim.sep Option<char>
+MNode::Delim.shp_match bool
+MNode::EqArr
+MNode::EqArr.rows Vec<Arg>
+MNode::Frac
+MNode::Frac.den Arg
+MNode::Frac.kind FracKind
+MNode::Frac.num Arg
+MNode::Func
+MNode::Func.e Arg
+MNode::Func.name Arg
+MNode::GroupChr
+MNode::GroupChr.chr char
+MNode::GroupChr.e Arg
+MNode::GroupChr.top bool
+MNode::Lim
+MNode::Lim.e Arg
+MNode::Lim.lim Arg
+MNode::Lim.upper bool
+MNode::Matrix
+MNode::Matrix.col_jc Vec<ColJc>
+MNode::Matrix.rows Vec<Vec<Arg>>
+MNode::Nary
+MNode::Nary.chr char
+MNode::Nary.e Arg
+MNode::Nary.grow bool
+MNode::Nary.lim_loc Option<LimLoc>
+MNode::Nary.sub Arg
+MNode::Nary.sub_hide bool
+MNode::Nary.sup Arg
+MNode::Nary.sup_hide bool
+MNode::Phant
+MNode::Phant.e Arg
+MNode::Phant.show bool
+MNode::Phant.zero_asc bool
+MNode::Phant.zero_desc bool
+MNode::Phant.zero_wid bool
+MNode::Rad
+MNode::Rad.deg Arg
+MNode::Rad.deg_hide bool
+MNode::Rad.e Arg
+MNode::Run(MRun)
+MNode::Script
+MNode::Script.base Arg
+MNode::Script.kind ScriptKind
+MNode::Script.sub Arg
+MNode::Script.sup Arg
+MRun
+MRun.brk Option<u8>
+MRun.color Option<Rgb>
+MRun.font Option<String>
+MRun.lit bool
+MRun.nor bool
+MRun.scr MScr
+MRun.size Option<f32>
+MRun.sty Option<MSty>
+MRun.text String
+MScr rename_all=camelCase
+MScr::DoubleStruck
+MScr::Fraktur
+MScr::Monospace
+MScr::Roman
+MScr::SansSerif
+MScr::Script
+MSty rename_all=camelCase
+MSty::Bold
+MSty::BoldItalic
+MSty::Italic
+MSty::Plain
+MailMerge rename_all=camelCase
+MailMerge.active Vec<u32>
+MailMerge.envelope Option<Value>
+MailMerge.excluded Vec<u32>
+MailMerge.fields Vec<String>
+MailMerge.filter Vec<FilterRule>
+MailMerge.kind String
+MailMerge.label Option<Value>
+MailMerge.map BTreeMap<String, String>
+MailMerge.preview bool
+MailMerge.record u32
+MailMerge.records Vec<Vec<String>>
+MailMerge.sort Vec<SortKey>
+MailMerge.source String
+Math
+Math.jc MathJc
+Math.linear bool
+Math.nodes Arg
+Math.omml String
+MathJc rename_all=camelCase
+MathJc::Center
+MathJc::CenterGroup
+MathJc::Left
+MathJc::Right
+MathProps rename_all=camelCase
+MathProps.brk_bin BrkBin
+MathProps.brk_bin_sub BrkBinSub
+MathProps.def_jc MathJc
+MathProps.disp_def bool
+MathProps.int_lim LimLoc
+MathProps.inter_sp Option<f32>
+MathProps.intra_sp Option<f32>
+MathProps.l_margin f32
+MathProps.math_font String
+MathProps.nary_lim LimLoc
+MathProps.post_sp Option<f32>
+MathProps.pre_sp Option<f32>
+MathProps.r_margin f32
+MathProps.small_frac bool
+MathProps.wrap_indent f32
+MathProps.wrap_right bool
+NodeKind rename_all=lowercase
+NodeKind::Auto
+NodeKind::Corner
+NodeKind::Smooth
+NodeKind::Straight
+NoteKind rename_all=camelCase
+NoteKind::Endnote
+NoteKind::Footnote
+NotePos rename_all=camelCase
+NotePos::BeneathText
+NotePos::DocEnd
+NotePos::PageBottom
+NotePos::SectEnd
+NoteProps rename_all=camelCase
+NoteProps.num_fmt Option<NumFormat>
+NoteProps.num_restart Option<NoteRestart>
+NoteProps.num_start Option<u32>
+NoteProps.pos Option<NotePos>
+NoteRestart rename_all=camelCase
+NoteRestart::Continuous
+NoteRestart::EachPage
+NoteRestart::EachSect
+NoteSeparators rename_all=camelCase
+NoteSeparators.continuation_notice Option<Blocks>
+NoteSeparators.continuation_separator Option<Blocks>
+NoteSeparators.separator Option<Blocks>
+Num rename_all=camelCase
+Num.abstract_id u32
+Num.id u32
+Num.level_overrides Vec<(u8, Level)>
+Num.start_overrides Vec<(u8, u32)>
+NumChange rename_all=camelCase
+NumChange.original String
+NumChange.rev u32
+NumForm rename_all=camelCase
+NumForm::Default
+NumForm::Lining
+NumForm::OldStyle
+NumFormat rename_all=camelCase
+NumFormat::Aiueo
+NumFormat::AiueoFullWidth
+NumFormat::ArabicAbjad
+NumFormat::ArabicAlpha
+NumFormat::BahtText
+NumFormat::Bullet
+NumFormat::CardinalText
+NumFormat::Chicago
+NumFormat::ChineseCounting
+NumFormat::ChineseCountingThousand
+NumFormat::ChineseLegalSimplified
+NumFormat::Chosung
+NumFormat::Decimal
+NumFormat::DecimalEnclosedCircle
+NumFormat::DecimalEnclosedCircleChinese
+NumFormat::DecimalEnclosedFullstop
+NumFormat::DecimalEnclosedParen
+NumFormat::DecimalFullWidth
+NumFormat::DecimalFullWidth2
+NumFormat::DecimalHalfWidth
+NumFormat::DecimalZero
+NumFormat::DollarText
+NumFormat::Ganada
+NumFormat::Hebrew1
+NumFormat::Hebrew2
+NumFormat::Hex
+NumFormat::HindiConsonants
+NumFormat::HindiCounting
+NumFormat::HindiNumbers
+NumFormat::HindiVowels
+NumFormat::IdeographDigital
+NumFormat::IdeographEnclosedCircle
+NumFormat::IdeographLegalTraditional
+NumFormat::IdeographTraditional
+NumFormat::IdeographZodiac
+NumFormat::IdeographZodiacTraditional
+NumFormat::Iroha
+NumFormat::IrohaFullWidth
+NumFormat::JapaneseCounting
+NumFormat::JapaneseDigitalTenThousand
+NumFormat::JapaneseLegal
+NumFormat::KoreanCounting
+NumFormat::KoreanDigital
+NumFormat::KoreanDigital2
+NumFormat::KoreanLegal
+NumFormat::LowerLetter
+NumFormat::LowerRoman
+NumFormat::None
+NumFormat::NumberInDash
+NumFormat::Ordinal
+NumFormat::OrdinalText
+NumFormat::RussianLower
+NumFormat::RussianUpper
+NumFormat::TaiwaneseCounting
+NumFormat::TaiwaneseCountingThousand
+NumFormat::TaiwaneseDigital
+NumFormat::ThaiCounting
+NumFormat::ThaiLetters
+NumFormat::ThaiNumbers
+NumFormat::UpperLetter
+NumFormat::UpperRoman
+NumFormat::VietnameseCounting
+NumRef
+NumRef.level u8
+NumRef.num u32
+NumSpacing rename_all=camelCase
+NumSpacing::Default
+NumSpacing::Proportional
+NumSpacing::Tabular
+Numbering
+Numbering.abstracts Vec<AbstractNum>
+Numbering.nums Vec<Num>
+ObjectBox
+ObjectBox.data String
+ObjectBox.kind String
+Outline rename_all=camelCase
+Outline.color Rgb
+Outline.dash LineDash
+Outline.sketch Sketch
+Outline.width f32
+PTabAlign rename_all=camelCase
+PTabAlign::Center
+PTabAlign::Left
+PTabAlign::Right
+PTabBase rename_all=camelCase
+PTabBase::Indent
+PTabBase::Margin
+PageBorderPlace rename_all=camelCase
+PageBorderPlace.behind bool
+PageBorderPlace.first_page Option<bool>
+PageBorderPlace.from_text bool
+PagePicture
+PagePicture.fill_type String
+PagePicture.media String
+PagePicture.title String
+PageRule rename_all=camelCase
+PageRule.full bool
+PageRule.kind String
+PageVAlign rename_all=camelCase
+PageVAlign::Bottom
+PageVAlign::Center
+PageVAlign::Justify
+PageVAlign::Top
+ParaProps rename_all=camelCase
+ParaProps.align Option<Align>
+ParaProps.auto_space_de Option<bool> rename=autoSpaceDE
+ParaProps.auto_space_dn Option<bool> rename=autoSpaceDN
+ParaProps.bidi Option<bool>
+ParaProps.borders Option<Borders>
+ParaProps.collapsed Option<bool>
+ParaProps.contextual_spacing Option<bool>
+ParaProps.drop_cap Option<u8>
+ParaProps.drop_cap_distance Option<f32>
+ParaProps.drop_cap_font Option<String>
+ParaProps.drop_cap_margin Option<bool>
+ParaProps.fmt_change Option<PropChange<ParaProps>>
+ParaProps.frame Option<TextFrame>
+ParaProps.indent_first Option<f32>
+ParaProps.indent_first_chars Option<f32>
+ParaProps.indent_left Option<f32>
+ParaProps.indent_left_chars Option<f32>
+ParaProps.indent_right Option<f32>
+ParaProps.indent_right_chars Option<f32>
+ParaProps.keep_lines Option<bool>
+ParaProps.keep_next Option<bool>
+ParaProps.kinsoku Option<bool>
+ParaProps.line_spacing Option<LineSpacing>
+ParaProps.mirror_indents Option<bool>
+ParaProps.num_change Option<NumChange>
+ParaProps.numbering Option<NumRef>
+ParaProps.outline_level Option<u8>
+ParaProps.overflow_punct Option<bool>
+ParaProps.page_break_before Option<bool>
+ParaProps.shading Option<Rgb>
+ParaProps.snap_to_grid Option<bool>
+ParaProps.space_after Option<f32>
+ParaProps.space_after_auto Option<bool>
+ParaProps.space_before Option<f32>
+ParaProps.space_before_auto Option<bool>
+ParaProps.style Option<String>
+ParaProps.suppress_hyphens Option<bool>
+ParaProps.suppress_line_numbers Option<bool>
+ParaProps.tabs Option<Vec<TabStop>>
+ParaProps.top_line_punct Option<bool>
+ParaProps.widow_control Option<bool>
+ParaProps.word_wrap Option<bool>
+Paragraph
+Paragraph.id Id
+Paragraph.mark CharProps
+Paragraph.objects Vec<InlineObject>
+Paragraph.props ParaProps
+Paragraph.runs Vec<Run>
+Paragraph.section Option<SectionProps>
+Paragraph.text String
+Part
+Part.blocks Blocks
+Part.body TextBody
+Part.kind PartKind
+PartFormat rename_all=camelCase
+PartFormat.align Option<Align>
+PartFormat.borders Option<Borders>
+PartFormat.chr CharProps
+PartFormat.fill Option<Rgb>
+PartFormat.margins Option<[f32; 4]>
+PartFormat.v_align Option<VAlign>
+PartKind rename_all=camelCase
+PartKind::Comment
+PartKind::Endnote
+PartKind::Footer
+PartKind::Footnote
+PartKind::Header
+PartKind::TextBox
+PathSeg rename_all=camelCase
+PathSeg::Close
+PathSeg::Cubic(f32, f32, f32, f32, f32, f32)
+PathSeg::Line(f32, f32)
+PathSeg::Move(f32, f32)
+PathShape rename_all=camelCase
+PathShape::Circle
+PathShape::Rect
+PathShape::Shape
+PatternFill rename_all=camelCase
+PatternFill.bg Rgb
+PatternFill.fg Rgb
+PatternFill.preset String
+PictureAdjust rename_all=camelCase
+PictureAdjust.artistic Option<Artistic>
+PictureAdjust.brightness f32
+PictureAdjust.clear Option<Rgb>
+PictureAdjust.contrast f32
+PictureAdjust.lum Option<[f32; 2]>
+PictureAdjust.recolor Option<Recolor>
+PictureAdjust.saturation Option<f32>
+PictureAdjust.sharpen f32
+PictureAdjust.temperature Option<f32>
+PictureAdjust.transparency f32
+PictureFill rename_all=camelCase
+PictureFill.media String
+PictureFill.rot_with_shape bool
+PictureFill.size [f32; 2]
+PictureFill.tile bool
+PictureFill.transparency f32
+PropChange rename_all=camelCase
+PropChange.old T
+PropChange.rev u32
+Recolor rename_all=camelCase
+Recolor::BlackWhite(f32)
+Recolor::Duotone(Rgb, Rgb)
+Recolor::Grayscale
+Revision
+Revision.author String
+Revision.date String
+Revision.kind RevisionKind
+Revision.move_name Option<String>
+Revision.tag Option<String>
+RevisionKind rename_all=camelCase
+RevisionKind::Delete
+RevisionKind::Format
+RevisionKind::Insert
+Rgb
+Rgb.0 u8
+Rgb.1 u8
+Rgb.2 u8
+Rgb: own Deserialize (doc/src/props/color.rs) f62df4352247
+Rotation3d rename_all=camelCase
+Rotation3d.fov f32
+Rotation3d.x f32
+Rotation3d.y f32
+Rotation3d.z f32
+Row
+Row.cells Vec<Cell>
+Row.controls ControlWrap
+Row.props RowProps
+RowProps rename_all=camelCase
+RowProps.cant_split bool
+RowProps.exceptions Option<TableProps>
+RowProps.fmt_change Option<PropChange<RowProps>>
+RowProps.grid_after u32
+RowProps.grid_before u32
+RowProps.header bool
+RowProps.height Option<f32>
+RowProps.height_rule HeightRule
+RowProps.w_after Option<f32>
+RowProps.w_before Option<f32>
+RubyAlign rename_all=camelCase
+RubyAlign::Center
+RubyAlign::DistributeLetter
+RubyAlign::DistributeSpace
+RubyAlign::Left
+RubyAlign::Right
+RubyAlign::RightVertical
+Run
+Run.len usize
+Run.props CharProps
+ScriptKind rename_all=camelCase
+ScriptKind::Pre
+ScriptKind::Sub
+ScriptKind::SubSup
+ScriptKind::Sup
+SectionProps rename_all=camelCase
+SectionProps.columns Columns
+SectionProps.doc_grid Option<DocGrid>
+SectionProps.endnote_pr NoteProps
+SectionProps.fmt_change Option<PropChange<SectionProps>>
+SectionProps.footer f32
+SectionProps.footers HeaderSet
+SectionProps.footnote_pr NoteProps
+SectionProps.form_prot Option<bool>
+SectionProps.gutter f32
+SectionProps.header f32
+SectionProps.headers HeaderSet
+SectionProps.landscape bool
+SectionProps.line_numbers Option<LineNumbering>
+SectionProps.margin_bottom f32
+SectionProps.margin_left f32
+SectionProps.margin_right f32
+SectionProps.margin_top f32
+SectionProps.page_border_place PageBorderPlace
+SectionProps.page_borders Option<Borders>
+SectionProps.page_h f32
+SectionProps.page_num_format NumFormat
+SectionProps.page_num_set bool
+SectionProps.page_num_start Option<u32>
+SectionProps.page_w f32
+SectionProps.rtl bool
+SectionProps.start SectionStart
+SectionProps.text_direction TextDirection
+SectionProps.text_direction_set bool
+SectionProps.title_page bool
+SectionProps.valign PageVAlign
+SectionStart rename_all=camelCase
+SectionStart::Continuous
+SectionStart::EvenPage
+SectionStart::NextColumn
+SectionStart::NextPage
+SectionStart::OddPage
+Settings rename_all=camelCase
+Settings.allow_space_of_same_style_in_table bool
+Settings.attached_template Option<String>
+Settings.auto_hyphenation bool
+Settings.bib_style Option<String>
+Settings.compat_mode u32
+Settings.consecutive_hyphen_limit u32
+Settings.default_tab f32
+Settings.do_not_expand_shift_return bool
+Settings.endnote_format NumFormat
+Settings.endnote_pr NoteProps
+Settings.even_odd_headers bool
+Settings.footnote_format NumFormat
+Settings.footnote_pr NoteProps
+Settings.grid_h f32
+Settings.grid_show Option<GridShow>
+Settings.grid_v f32
+Settings.hyphenate_caps bool
+Settings.hyphenation_zone f32
+Settings.link_styles bool
+Settings.mail_merge Option<MailMerge>
+Settings.major_font String
+Settings.math Option<MathProps>
+Settings.minor_font String
+Settings.mirror_margins bool
+Settings.no_form_shading bool
+Settings.page_color Option<Rgb>
+Settings.page_fill Option<Fill>
+Settings.page_picture Option<PagePicture>
+Settings.page_rule Option<PageRule>
+Settings.protect_formatting bool
+Settings.protect_hash Vec<(String, String)>
+Settings.protection Option<String>
+Settings.remove_date_time bool
+Settings.remove_personal_info bool
+Settings.roman_fonts Vec<String>
+Settings.sum_paragraph_spacing bool
+Settings.theme_colors Vec<Rgb>
+Settings.theme_name String
+Settings.track_changes bool
+Settings.track_moves bool
+Settings.watermark Option<Watermark>
+Settings.zoom Option<Zoom>
+Shadow rename_all=camelCase
+Shadow.angle f32
+Shadow.blur f32
+Shadow.color Rgb
+Shadow.distance f32
+Shadow.rot_with_shape bool
+Shadow.transparency f32
+ShapeEffects rename_all=camelCase
+ShapeEffects.bevel Option<Bevel>
+ShapeEffects.glow Option<Glow>
+ShapeEffects.inner_shadow Option<Shadow>
+ShapeEffects.reflection Option<Reflection>
+ShapeEffects.rotation Option<Rotation3d>
+ShapeEffects.shadow Option<Shadow>
+ShapeEffects.soft_edge Option<f32>
+ShapeExtra rename_all=camelCase
+ShapeExtra.arrow_end bool
+ShapeExtra.arrow_start bool
+ShapeExtra.body_attrs Vec<(String, String)>
+ShapeExtra.cap LineCap
+ShapeExtra.corner Option<u32>
+ShapeExtra.dash LineDash
+ShapeExtra.edit_paths Vec<EditPath> deserialize_with=crate::freeform::read_edit_paths
+ShapeExtra.end Option<ConnEnd>
+ShapeExtra.id u32
+ShapeExtra.outline_fill Option<Fill>
+ShapeExtra.preset Option<(String, Vec<(String, i64)>)>
+ShapeExtra.start Option<ConnEnd>
+ShapeExtra.warp Option<TextWarp>
+ShapeKind rename_all=camelCase
+ShapeKind::Arrow
+ShapeKind::ArrowDown
+ShapeKind::ArrowLeft
+ShapeKind::ArrowUp
+ShapeKind::CurvedConnector
+ShapeKind::Diamond
+ShapeKind::ElbowConnector
+ShapeKind::Ellipse
+ShapeKind::FlowchartOr
+ShapeKind::Freeform
+ShapeKind::Heart
+ShapeKind::Line
+ShapeKind::Rectangle
+ShapeKind::RightTriangle
+ShapeKind::RoundedRectangle
+ShapeKind::Star
+ShapeKind::StraightConnector
+ShapeKind::TextBox
+ShapeKind::Triangle
+Sketch rename_all=camelCase
+Sketch::Curved
+Sketch::Freehand
+Sketch::None
+Sketch::Scribble
+SmartArtColors rename_all=camelCase
+SmartArtColors::Accent1
+SmartArtColors::Accent2
+SmartArtColors::Accent3
+SmartArtColors::Accent4
+SmartArtColors::Accent5
+SmartArtColors::Accent6
+SmartArtColors::Colorful
+SmartArtItem rename_all=camelCase
+SmartArtItem.level u8
+SmartArtItem.text String
+SmartArtLayout rename_all=camelCase
+SmartArtLayout::BasicList
+SmartArtLayout::Cycle
+SmartArtLayout::Hierarchy
+SmartArtLayout::Matrix
+SmartArtLayout::Process
+SmartArtLayout::Pyramid
+SmartArtLayout::Radial
+SmartArtLayout::Venn
+SmartArtSpec rename_all=camelCase
+SmartArtSpec.colors SmartArtColors
+SmartArtSpec.items Vec<SmartArtItem>
+SmartArtSpec.layout SmartArtLayout
+SortKey rename_all=camelCase
+SortKey.descending bool
+SortKey.field String
+Source rename_all=camelCase
+Source.accessed String
+Source.author String
+Source.city String
+Source.day String
+Source.doi String
+Source.edition String
+Source.editor String
+Source.issue String
+Source.journal String
+Source.kind String
+Source.month String
+Source.pages String
+Source.publisher String
+Source.tag String
+Source.title String
+Source.url String
+Source.volume String
+Source.year String
+Style rename_all=camelCase
+Style.aliases Option<String>
+Style.based_on Option<String>
+Style.builtin bool
+Style.chr CharProps
+Style.default bool
+Style.hidden bool
+Style.hidden_always bool
+Style.id String
+Style.kind StyleKind
+Style.linked Option<String>
+Style.locked bool
+Style.name String
+Style.next Option<String>
+Style.para ParaProps
+Style.priority Option<u32>
+Style.quick bool
+Style.table Option<TableStyleParts>
+StyleKind rename_all=camelCase
+StyleKind::Character
+StyleKind::Numbering
+StyleKind::Paragraph
+StyleKind::Table
+StyleSheet rename_all=camelCase
+StyleSheet.default_chr CharProps
+StyleSheet.default_para ParaProps
+StyleSheet.default_para_present bool
+StyleSheet.latent_styles Option<String>
+StyleSheet.styles Vec<Style>
+TabAlign rename_all=camelCase
+TabAlign::Bar
+TabAlign::Center
+TabAlign::Clear
+TabAlign::Decimal
+TabAlign::Left
+TabAlign::Right
+TabLeader rename_all=camelCase
+TabLeader::Dot
+TabLeader::Hyphen
+TabLeader::MiddleDot
+TabLeader::None
+TabLeader::Underscore
+TabStop
+TabStop.align TabAlign
+TabStop.leader TabLeader
+TabStop.pos f32
+Table
+Table.controls ControlWrap
+Table.grid Vec<f32>
+Table.id Id
+Table.props TableProps
+Table.rows Vec<Row>
+TableFloat rename_all=camelCase
+TableFloat.dist [f32; 4]
+TableFloat.h_align Option<FloatAlign>
+TableFloat.h_rel Anchor
+TableFloat.overlap bool
+TableFloat.v_align Option<FloatAlign>
+TableFloat.v_rel Anchor
+TableFloat.x f32
+TableFloat.y f32
+TableLook rename_all=camelCase
+TableLook.banded_columns bool
+TableLook.banded_rows bool
+TableLook.first_column bool
+TableLook.header_row bool
+TableLook.last_column bool
+TableLook.total_row bool
+TablePart rename_all=camelCase
+TablePart::Band1Horz
+TablePart::Band1Vert
+TablePart::Band2Horz
+TablePart::Band2Vert
+TablePart::FirstCol
+TablePart::FirstRow
+TablePart::LastCol
+TablePart::LastRow
+TablePart::NeCell
+TablePart::NwCell
+TablePart::SeCell
+TablePart::SwCell
+TablePart::WholeTable
+TableProps rename_all=camelCase
+TableProps.align Option<Align>
+TableProps.bidi_visual bool
+TableProps.borders Option<Borders>
+TableProps.caption Option<String>
+TableProps.cell_margins Option<[f32; 4]>
+TableProps.description Option<String>
+TableProps.fixed bool
+TableProps.float Option<TableFloat>
+TableProps.fmt_change Option<PropChange<TableProps>>
+TableProps.indent Option<f32>
+TableProps.look TableLook
+TableProps.shading Option<Rgb>
+TableProps.style Option<String>
+TableProps.width Option<f32>
+TableProps.width_pct Option<f32>
+TableStyleParts rename_all=camelCase
+TableStyleParts.band_borders Option<Borders>
+TableStyleParts.band_chr CharProps
+TableStyleParts.band_fill Option<Rgb>
+TableStyleParts.band_size Option<u32>
+TableStyleParts.borders Option<Borders>
+TableStyleParts.cell_margins Option<[f32; 4]>
+TableStyleParts.col_band_borders Option<Borders>
+TableStyleParts.col_band_chr CharProps
+TableStyleParts.col_band_fill Option<Rgb>
+TableStyleParts.col_band_size Option<u32>
+TableStyleParts.fill Option<Rgb>
+TableStyleParts.first_col_borders Option<Borders>
+TableStyleParts.first_col_chr CharProps
+TableStyleParts.first_col_fill Option<Rgb>
+TableStyleParts.header_borders Option<Borders>
+TableStyleParts.header_chr CharProps
+TableStyleParts.header_fill Option<Rgb>
+TableStyleParts.last_col_borders Option<Borders>
+TableStyleParts.last_col_chr CharProps
+TableStyleParts.last_col_fill Option<Rgb>
+TableStyleParts.regions BTreeMap<TablePart, PartFormat>
+TableStyleParts.total_border_top Option<Border>
+TableStyleParts.total_borders Option<Borders>
+TableStyleParts.total_chr CharProps
+TableStyleParts.total_fill Option<Rgb>
+Tagged rename_all=camelCase tag=type
+Tagged::Gradient(Gradient)
+Tagged::Pattern(PatternFill)
+Tagged::Picture(PictureFill)
+Tagged::Solid
+Tagged::Solid.color Rgb
+Tagged::Solid.transparency f32
+TextAlign rename_all=camelCase
+TextAlign::Center
+TextAlign::Left
+TextAlign::Right
+TextBody rename_all=camelCase
+TextBody.anchor VAlign
+TextBody.auto_color Option<Rgb>
+TextBody.auto_fit bool
+TextBody.inset Option<[u32; 4]>
+TextBody.next Option<u32>
+TextBody.vert TextVert
+TextColor
+TextColor: own Deserialize (doc/src/props/color.rs) 6cb6cd672d06
+TextColor::Auto
+TextColor::Rgb(Rgb)
+TextDirection rename_all=camelCase
+TextDirection::Down
+TextDirection::Horizontal
+TextDirection::Up
+TextEffects rename_all=camelCase
+TextEffects.fill Option<TextFill>
+TextEffects.glow Option<Glow>
+TextEffects.outline Option<TextOutline>
+TextEffects.reflection Option<Reflection>
+TextEffects.shadow Option<Shadow>
+TextFill rename_all=camelCase tag=type
+TextFill::Gradient
+TextFill::Gradient.angle f32
+TextFill::Gradient.stops Vec<GradStop>
+TextFill::None
+TextFill::Solid
+TextFill::Solid.color Rgb
+TextFill::Solid.transparency f32
+TextFrame rename_all=camelCase
+TextFrame.h Option<f32>
+TextFrame.h_anchor String
+TextFrame.h_exact bool
+TextFrame.h_space f32
+TextFrame.v_anchor String
+TextFrame.v_space f32
+TextFrame.w Option<f32>
+TextFrame.wrap String
+TextFrame.x f32
+TextFrame.x_align Option<String>
+TextFrame.y f32
+TextFrame.y_align Option<String>
+TextOutline rename_all=camelCase
+TextOutline.color Option<Rgb>
+TextOutline.transparency f32
+TextOutline.width f32
+TextVert rename_all=camelCase
+TextVert::Horz
+TextVert::Stacked
+TextVert::Vert
+TextVert::Vert270
+TextWarp rename_all=camelCase
+TextWarp.adj Vec<(String, i64)>
+TextWarp.preset String
+Underline rename_all=camelCase
+Underline::Dash
+Underline::DotDash
+Underline::DotDotDash
+Underline::Dotted
+Underline::Double
+Underline::DoubleWave
+Underline::None
+Underline::Single
+Underline::Thick
+Underline::Wave
+Underline::Words
+VAlign rename_all=camelCase
+VAlign::Bottom
+VAlign::Center
+VAlign::Top
+VMerge rename_all=camelCase
+VMerge::Continue
+VMerge::None
+VMerge::Restart
+VertAlign rename_all=camelCase
+VertAlign::Baseline
+VertAlign::Subscript
+VertAlign::Superscript
+Watermark
+Watermark.color Rgb
+Watermark.diagonal bool
+Watermark.font String
+Watermark.lang Option<String>
+Watermark.picture Option<WatermarkPicture>
+Watermark.semitransparent bool
+Watermark.size Option<[f32; 2]>
+Watermark.text String
+WatermarkPicture rename_all=camelCase
+WatermarkPicture.media String
+WatermarkPicture.scale Option<f32>
+WatermarkPicture.size [f32; 2]
+WatermarkPicture.washout bool
+WordCopy
+WordCopy.adjust PictureAdjust
+WordCopy.media String
+Wrap rename_all=camelCase
+Wrap::BehindText
+Wrap::InFrontOfText
+Wrap::Inline
+Wrap::Square
+Wrap::Through
+Wrap::Tight
+Wrap::TopAndBottom
+WrapPolygon rename_all=camelCase
+WrapPolygon.edited bool
+WrapPolygon.points Vec<[i32; 2]>
+WrapText rename_all=camelCase
+WrapText::BothSides
+WrapText::Largest
+WrapText::Left
+WrapText::Right
+Zoom rename_all=camelCase
+Zoom.fit Option<ZoomFit>
+Zoom.percent u32
+ZoomFit rename_all=camelCase
+ZoomFit::OnePage
+ZoomFit::PageWidth
+ZoomFit::TextWidth
+doc/src/effects.rs: Reflection rename_all=camelCase
+doc/src/effects.rs: Reflection.blur f32
+doc/src/effects.rs: Reflection.distance f32
+doc/src/effects.rs: Reflection.size f32
+doc/src/effects.rs: Reflection.transparency f32
+doc/src/wordart.rs: Reflection rename_all=camelCase
+doc/src/wordart.rs: Reflection.blur f32
+doc/src/wordart.rs: Reflection.distance f32
+doc/src/wordart.rs: Reflection.size f32
+doc/src/wordart.rs: Reflection.transparency f32

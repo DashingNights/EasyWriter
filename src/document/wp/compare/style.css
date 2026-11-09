@@ -1,0 +1,9 @@
+/* compare (docs/plans/word plan.md §3 compare): the read-only previews of Show Source Documents and Version History. */
+[data-pane] .compare-sheet { font-family: Aptos, Calibri, Carlito, sans-serif; font-size: 12pt; line-height: 1.16; }
+[data-pane] .compare-sheet p { margin: 0 0 8pt; }
+[data-pane] .compare-sheet h1 { font-size: 20pt; margin: 12pt 0 4pt; }
+[data-pane] .compare-sheet h2 { font-size: 16pt; margin: 10pt 0 4pt; }
+[data-pane] .compare-sheet h3 { font-size: 14pt; margin: 8pt 0 4pt; }
+[data-pane] .compare-sheet img { max-width: 100%; }
+[data-pane] .compare-sheet table { border-collapse: collapse; }
+[data-pane] .compare-sheet td, [data-pane] .compare-sheet th { border: 1px solid #bbb; padding: 0 5pt; }

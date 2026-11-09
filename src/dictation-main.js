@@ -13,20 +13,20 @@ const path = require('path');
 const { Readable, Transform } = require('stream');
 const { pipeline } = require('stream/promises');
 
-const MB = 1024 * 1024;
 const MODEL_REPO = 'ggerganov/whisper.cpp';
-// Multilingual models (not .en), so Automatic works. Sizes from the Hugging Face API (lfs size). The first is the default.
+// Multilingual models (not .en), so Automatic works. Sizes and sha256 from the Hugging Face API (lfs size, lfs oid). The first is
+// the default. A download that does not match its sha256 is refused.
 const MODELS = [
-  { id: 'small', bytes: 487601967, label: 'Small',
+  { id: 'small', bytes: 487601967, sha256: '1be3a9b2063867b937e64e2ec7483364a79917e157fa98c5d94b5c1fffea987b', label: 'Small',
     note: 'Recommended. Accurate enough for everyday dictation, in English and other languages, and quick on most computers.' },
-  { id: 'large-v3-turbo-q5_0', bytes: 574041195, label: 'Best quality',
+  { id: 'large-v3-turbo-q5_0', bytes: 574041195, sha256: '394221709cd5ad1f40c46e6031ca61bce88931e6e088c188294c6d5a55ffa7e2', label: 'Best quality',
     note: 'The most accurate, also with names, punctuation and languages other than English, but bigger and slower on the CPU: needs about 1 GB of memory while dictating.' },
-  { id: 'base', bytes: 147951465, label: 'Base',
+  { id: 'base', bytes: 147951465, sha256: '60ed5bc3dd14eea856493d334349b405782ddcaf0028d4b5df4088345fba2efe', label: 'Base',
     note: 'Smallest and fastest, but makes more mistakes: often mishears words, especially with accents or background noise.' },
 ];
-const VAD = { repo: 'ggml-org/whisper-vad', file: 'ggml-silero-v5.1.2.bin', bytes: 885098 };
-const BIN = { asset: 'whisper-bin-x64.zip', bytes: 9 * MB, exe: 'whisper-server.exe' }; // the size is an estimate until download
-const RELEASES = 'https://api.github.com/repos/ggml-org/whisper.cpp/releases?per_page=30';
+const VAD = { repo: 'ggml-org/whisper-vad', file: 'ggml-silero-v5.1.2.bin', bytes: 885098, sha256: '29940d98d42b91fbd05ce489f3ecf7c72f0a42f027e4875919a28fb4c04ea2cf' };
+// whisper.cpp pinned to one release; sha256 = the GitHub release asset's digest. A new tag needs a new hash.
+const BIN = { tag: 'v1.9.2', asset: 'whisper-bin-x64.zip', bytes: 8194445, sha256: '49dcc16de826f20bd53d44f947a1ae49dfa81f86cad67a64d80820cb192d674a', exe: 'whisper-server.exe' };
 const UA = { 'User-Agent': 'EasyWriter' };
 
 let getSettings = null;
@@ -80,23 +80,7 @@ async function status(over) {
 
 const progress = (p) => getWin()?.webContents.send('dictation.progress', p);
 
-async function getJson(url, signal) {
-  const res = await fetch(url, { headers: UA, signal });
-  if (!res.ok) throw new Error(`${url}: HTTP ${res.status}`);
-  return res.json();
-}
-
-// The sha256 Hugging Face lists for a file (its LFS oid), or null when the API does not answer.
-async function hfSha(repo, file, signal) {
-  try {
-    return (await getJson(`https://huggingface.co/api/models/${repo}/tree/main`, signal)).find((f) => f.path === file)?.lfs?.oid ?? null;
-  } catch (e) {
-    if (signal.aborted) throw e;
-    return null;
-  }
-}
-
-// ponytail: no resume; a cancelled or failed download starts again from zero.
+// ponytail: no resume; a cancelled or failed download starts again from zero. A file whose sha256 is not `sha256` is refused.
 async function download(url, dest, { sha256, signal, report }) {
   const res = await fetch(url, { headers: UA, signal });
   if (!res.ok) throw new Error(`${url}: HTTP ${res.status}`);
@@ -119,7 +103,7 @@ async function download(url, dest, { sha256, signal, report }) {
   try {
     await pipeline(Readable.fromWeb(res.body), count, fs.createWriteStream(part), { signal });
     report(received, total);
-    if (sha256 && hash.digest('hex') !== sha256) throw new Error(`${path.basename(dest)} is damaged (checksum mismatch). Try again.`);
+    if (hash.digest('hex') !== sha256) throw new Error(`${path.basename(dest)} is damaged (checksum mismatch). Try again.`);
     await fsp.rename(part, dest);
   } finally {
     await fsp.rm(part, { force: true });
@@ -146,12 +130,9 @@ async function runInstall(id) {
     const steps = [];
     if (!exists(c.exe) && !c.d.serverPath) {
       steps.push(['whisper.cpp server', async (report) => {
-        // Binaries are attached to the nightly bNNNN releases (the vX.Y.Z releases have none): the newest that has one.
-        const asset = (await getJson(RELEASES, signal)).flatMap((r) => (r.draft ? [] : r.assets)).find((a) => a.name === BIN.asset);
-        if (!asset) throw new Error(`No whisper.cpp release has ${BIN.asset}.`);
         const zip = path.join(dir(), BIN.asset);
         const bin = path.join(dir(), 'bin');
-        await download(asset.browser_download_url, zip, { sha256: asset.digest?.replace(/^sha256:/, ''), signal, report });
+        await download(`https://github.com/ggml-org/whisper.cpp/releases/download/${BIN.tag}/${BIN.asset}`, zip, { sha256: BIN.sha256, signal, report });
         await fsp.rm(bin, { recursive: true, force: true });
         await fsp.mkdir(bin);
         await tar(['-xf', zip, '-C', bin]).finally(() => fsp.rm(zip, { force: true }));
@@ -161,14 +142,12 @@ async function runInstall(id) {
     if (!exists(c.model) && !c.d.modelPath) {
       const file = path.basename(c.model);
       steps.push(['speech model', async (report) => {
-        const sha256 = await hfSha(MODEL_REPO, file, signal);
-        await download(`https://huggingface.co/${MODEL_REPO}/resolve/main/${file}`, c.model, { sha256, signal, report });
+        await download(`https://huggingface.co/${MODEL_REPO}/resolve/main/${file}`, c.model, { sha256: model(id).sha256, signal, report });
       }]);
     }
     if (!exists(c.vad)) {
       steps.push(['voice activity model', async (report) => {
-        const sha256 = await hfSha(VAD.repo, VAD.file, signal);
-        await download(`https://huggingface.co/${VAD.repo}/resolve/main/${VAD.file}`, c.vad, { sha256, signal, report });
+        await download(`https://huggingface.co/${VAD.repo}/resolve/main/${VAD.file}`, c.vad, { sha256: VAD.sha256, signal, report });
       }]);
     }
     for (const [i, [label, run]] of steps.entries()) {
@@ -344,4 +323,4 @@ function register(handle, settings, win) {
   });
 }
 
-module.exports = { register, warmAtStart };
+module.exports = { register, warmAtStart, download, MODELS, VAD, BIN };

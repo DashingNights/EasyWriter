@@ -1,0 +1,26 @@
+/* editing-keys (docs/plans/word briefs/editing-keys.md): extra selection ranges, the F2 source, the right-drag menu and the
+   selection bar and Click and Type pointers. */
+
+/* The ranges of a multiple or column selection that ProseMirror's one DOM selection does not show. */
+.page[data-format="document"] .ProseMirror .wek-sel { background: Highlight; color: HighlightText; }
+/* F2 and Shift+F2: the text that moves or copies stays marked until Enter or Esc. */
+.page[data-format="document"] .ProseMirror .wek-src { background: rgb(0 120 215 / 0.18); outline: 1px dotted rgb(0 0 0 / 0.55); }
+
+/* The selection bar's right-leaning arrow over the left margin. */
+.page[data-format="document"][data-wek-bar] {
+  cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20'%3E%3Cpath d='M17 2 L5 10 L10 11 L8 17 L11 18 L13 12 L17 15 Z' fill='white' stroke='black' stroke-width='1'/%3E%3C/svg%3E") 17 2, default;
+}
+
+/* Click and Type: the I-beam with the paragraph a double-click below the text would make. */
+.page[data-format="document"] .ProseMirror[data-wek-zone="center"] {
+  cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24'%3E%3Cpath d='M8 3 V19 M5 3 H11 M5 19 H11' stroke='black' stroke-width='1.5' fill='none'/%3E%3Cpath d='M14 14 H22 M15 17 H21 M14 20 H22' stroke='black' stroke-width='1.2'/%3E%3C/svg%3E") 8 11, text;
+}
+.page[data-format="document"] .ProseMirror[data-wek-zone="right"] {
+  cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24'%3E%3Cpath d='M8 3 V19 M5 3 H11 M5 19 H11' stroke='black' stroke-width='1.5' fill='none'/%3E%3Cpath d='M14 14 H22 M17 17 H22 M14 20 H22' stroke='black' stroke-width='1.2'/%3E%3C/svg%3E") 8 11, text;
+}
+.page[data-format="document"] .ProseMirror:is([data-wek-zone="left"], [data-wek-zone="tab"]) {
+  cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24'%3E%3Cpath d='M8 3 V19 M5 3 H11 M5 19 H11' stroke='black' stroke-width='1.5' fill='none'/%3E%3Cpath d='M14 14 H22 M14 17 H19 M14 20 H22' stroke='black' stroke-width='1.2'/%3E%3C/svg%3E") 8 11, text;
+}
+.page[data-format="document"] .ProseMirror[data-wek-zone="indent"] {
+  cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24'%3E%3Cpath d='M8 3 V19 M5 3 H11 M5 19 H11' stroke='black' stroke-width='1.5' fill='none'/%3E%3Cpath d='M16 14 H22 M14 17 H22 M14 20 H22' stroke='black' stroke-width='1.2'/%3E%3C/svg%3E") 8 11, text;
+}

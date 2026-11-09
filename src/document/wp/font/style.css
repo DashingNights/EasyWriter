@@ -1,0 +1,28 @@
+/* The font work package (docs/plans/word/briefs/font.md). */
+
+/* Word kerns no text unless its run asks (w:kern, from that size up: model/attrs.js kern and extension.js below the threshold),
+   while the browser kerns every run by default. Kerning took up to 3.7 pt off a line of Aptos at 12 pt, so the editor's lines held
+   words Word wraps; kerned, Aptos 12 pt fits "three lines, so" (72.66 pt of advances) in Word's 72.30 pt line, which Word wraps
+   (para-indents), and Aptos 11 pt "Table" set 0.9 pt tighter than Word's T at 5.75 pt (blocks-pages). layout/measure.mjs
+   measures the same way. */
+[data-doc-text] { font-kerning: none; }
+
+/* The armed highlighter pen: a marker pointer over the text until Stop Highlighting, Esc or the button again. */
+.page[data-format="document"] .ProseMirror[data-highlighter] {
+  cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24' fill='%23ffeb3b' stroke='%23000' stroke-width='1.5' stroke-linejoin='round'%3E%3Cpath d='m9 11-6 6v3h9l3-3'/%3E%3Cpath d='m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4'/%3E%3C/svg%3E") 2 18, text;
+}
+
+/* Ruby (Phonetic Guide), drawn by the node view (extension.js rubyView, Word's rules in ruby.mjs). The strut is an empty box from
+   --w-ruby-up over the baseline to --w-ruby-down under it (0 without them); base and reading share one grid cell and one baseline,
+   the reading moved up by its offset; Word's default reading is half size. */
+/* No break between the strut and the grid: a guide wider than the column wraps to a line of its own with its room. */
+.page[data-format="document"] .ProseMirror ruby.w-ruby { display: inline; white-space: nowrap; }
+.page[data-format="document"] .ProseMirror .w-ruby-strut {
+  display: inline-block; width: 0;
+  height: calc(var(--w-ruby-up, 0pt) + var(--w-ruby-down, 0pt)); vertical-align: calc(-1 * var(--w-ruby-down, 0pt));
+}
+/* The grid's box lands on whole pixels, up to a pixel below the text's: a pixel less margin over and under keeps it from growing
+   the line, which the paragraph's text and the strut size as Word does. */
+.page[data-format="document"] .ProseMirror .w-ruby-box { display: inline-grid; align-items: baseline; vertical-align: baseline; text-indent: 0; margin-block: -1px; }
+.page[data-format="document"] .ProseMirror :is(.w-rb, ruby.w-ruby rt) { grid-area: 1 / 1; display: flex; white-space: pre; }
+.page[data-format="document"] .ProseMirror ruby.w-ruby rt { position: relative; font-size: 50%; line-height: 0; }

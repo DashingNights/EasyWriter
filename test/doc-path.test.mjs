@@ -122,7 +122,7 @@ test('mapPath: a block replaced in place (a board write, a block type change) ke
   assert.equal(mapPath([3], rev, state.doc), 'stale');
 });
 
-test('outline: pending names a waiting suggestion on a top-level block (docs/plans/suggestions.md)', () => {
+test('outline: pending names a waiting suggestion on a top-level block (docs/wiki/suggestions.md)', () => {
   const ins = (id, old) => ({ suggest: { ins: { id, g: 'g000001', n: 1, sig: 'x', ...(old && { old }) } } });
   const doc = {
     content: [
@@ -135,4 +135,35 @@ test('outline: pending names a waiting suggestion on a top-level block (docs/pla
   };
   assert.deepEqual(outline(doc).map((e) => e.pending), ['replace s7k2a1', 'replace s7k2a1', 'insert s9x0b2', 'deleted before: 2 blocks s8m3q0', undefined]);
   assert.ok(!('pending' in outline(DOC)[0]));
+});
+
+test('find: offsets past a bookmark pair, a field, a note and an sdtInline equal ProseMirror offsets; outline keeps readable text', () => {
+  const s = new Schema({
+    nodes: {
+      doc: { content: 'block+' },
+      paragraph: { group: 'block', content: 'inline*' },
+      text: { group: 'inline' },
+      hardBreak: { group: 'inline', inline: true },
+      bookmark: { group: 'inline', inline: true, atom: true, attrs: { name: { default: '' }, id: { default: '' }, end: { default: false } } },
+      field: { group: 'inline', inline: true, atom: true, attrs: { code: { default: '' }, result: { default: null } } },
+      noteRef: { group: 'inline', inline: true, atom: true, attrs: { id: { default: '' } } },
+      sdtInline: { group: 'inline', inline: true, content: 'inline*' },
+    },
+  });
+  const json = {
+    type: 'doc',
+    content: [p(
+      t('Start '), { type: 'bookmark', attrs: { name: 'bm', id: '1' } }, t('marked'), { type: 'bookmark', attrs: { name: 'bm', id: '1', end: true } },
+      t(' page '), { type: 'field', attrs: { code: 'PAGE', result: '7' } }, t(' note'), { type: 'noteRef', attrs: { id: 'n1' } },
+      { type: 'hardBreak' }, { type: 'sdtInline', content: [t('inside')] }, { type: 'sdtInline' }, t(' target here'),
+    )],
+  };
+  const doc = s.nodeFromJSON(json);
+  const para = doc.child(0);
+  for (const word of ['marked', 'page', 'note', 'inside', 'target here']) {
+    const [m] = find(json, { text: word });
+    assert.ok(m, word);
+    assert.equal(para.textBetween(m.from, m.to), word, `${word} at ${m.from}`);
+  }
+  assert.equal(outline(json)[0].text, 'Start marked page 7 note\ninside target here');
 });

@@ -1,0 +1,5 @@
+/* ribbon-chrome: Touch/Mouse Mode's Touch adds 8 px to each control row (three rows in the body), through data-touch on the
+   ribbon root (settings.word.ribbon.touch). */
+[data-ribbon][data-touch] [data-ribbon-body] { height: 123px; }
+[data-ribbon][data-touch] [data-ribbon-body] .h-\[22px\] { height: 30px; }
+[data-ribbon][data-touch] [data-qat] .h-\[22px\] { height: 30px; }

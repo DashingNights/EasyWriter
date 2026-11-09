@@ -6,7 +6,6 @@
 import { Node } from '@tiptap/core';
 import { NodeSelection } from '@tiptap/pm/state';
 import { closeHistory } from '@tiptap/pm/history';
-import { toBlob } from 'html-to-image';
 import { createElement as h } from 'react';
 import { flushSync } from 'react-dom';
 import { createRoot } from 'react-dom/client';
@@ -14,7 +13,7 @@ import { todayStr } from './plan/dates.mjs';
 import { ganttLayout, GANTT_MAX_ROWS } from './plan/gantt-layout.mjs';
 import { cards, columnsOf, filterTickets, newId, OPTION_DEFAULTS, parseOptions, parsePlan, tree } from './plan/plan-model.mjs';
 import { schedule } from './plan/schedule.mjs';
-import { contentWidth, insertBoard, make, resolveBg, topLevelPos } from './whiteboard.js';
+import { columnWidth, drawnWidth, exportDensity, insertBoard, make, nextFrame, rasterize, resolveBg, topLevelPos } from './whiteboard.js';
 
 export const VIEWS = ['kanban', 'backlog', 'gantt'];
 const UUID = /^[a-f0-9-]{36}$/;
@@ -248,9 +247,9 @@ class PlanChartView {
       this.chart = parseChart(this.node.attrs);
     }
     const c = this.chart;
-    if (!this.drag) this.dom.style.width = c.dw ? `min(${c.dw}px, 100%)` : '100%';
+    if (!this.drag) this.dom.style.width = drawnWidth(c.dw);
     this.ctx = c.frozen?.ctx ?? planSource.context(c.planId);
-    this.width = this.dom.offsetWidth || Math.min(c.dw ?? Infinity, contentWidth(this.view));
+    this.width = this.dom.offsetWidth || Math.min(c.dw ?? Infinity, this.maxWidth());
     const lay = this.ctx ? chartLayout(c.view, this.ctx, c.options, this.width) : null;
     this.error = lay?.error ?? null;
     this.layoutWidth = lay?.layoutWidth ?? this.width;
@@ -286,8 +285,9 @@ class PlanChartView {
     this.dom.style.setProperty('--wb-inv', String(1 / scaleOf(this.dom)));
   }
 
+  // The text width of the chart's section, or in newspaper columns the column's (columnWidth, from the page setup).
   maxWidth() {
-    return contentWidth(this.view);
+    return columnWidth(this.view, this.getPos() ?? undefined);
   }
 
   /** Changes attrs of the node: one undo step. */
@@ -458,10 +458,11 @@ export const PlanChart = Node.create({
 });
 
 // ---------------------------------------------------------------------------------------------
-// Rasterizer (§7.3): the chart laid out off screen at its layout width, drawn at pixel ratio 2. `width`: the display width
-// in the post; `n`: the chart's number in the post (error messages). → {blob, width, height} (height at the display width).
+// Rasterizer (§7.3): the chart laid out off screen at its layout width, drawn at pixel ratio `density` (whiteboard.js
+// exportDensity). `width`: the display width in the post; `n`: the chart's number in the post (error messages). → {blob, width,
+// height} (height at the display width).
 
-export async function rasterizePlanChart(attrs, { width, theme, n = 1 }) {
+export async function rasterizePlanChart(attrs, { width, theme, n = 1, density = exportDensity() }) {
   const c = parseChart(attrs);
   const ctx = c.frozen?.ctx ?? planSource.context(c.planId);
   if (!ctx || !planSource.Chart) throw new Error(`Plan chart ${n}: plan not found (freeze it or pick a plan)`);
@@ -477,10 +478,10 @@ export async function rasterizePlanChart(attrs, { width, theme, n = 1 }) {
   const root = createRoot(el);
   try {
     flushSync(() => root.render(h(planSource.Chart, { ctx, view: c.view, options: c.options, palette: pagePalette(theme), width: layoutWidth })));
-    await new Promise((resolve) => requestAnimationFrame(resolve));
+    await nextFrame();
     const height = el.offsetHeight;
     if (height > MAX_H) throw new Error(`Plan chart ${n}: too tall; filter it in Options`);
-    const blob = await toBlob(el, { pixelRatio: 2, width: layoutWidth, height, backgroundColor: resolveBg('post', theme), skipFonts: true });
+    const blob = await rasterize(el, { pixelRatio: density, width: layoutWidth, height, backgroundColor: resolveBg('post', theme) });
     if (!blob) throw new Error(`Plan chart ${n}: rasterization produced no image`);
     return { blob, width, height: Math.round((height * width) / layoutWidth) };
   } finally {

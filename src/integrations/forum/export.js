@@ -1,10 +1,12 @@
 import { generateHTML } from '@tiptap/core';
 import { flowSource } from '../../canvas.js';
-import { boardPicture, drawnColumnWidths, setColumnWidths } from '../../export.js';
+import { PX_PER_PT } from '../../engine/view/camera.mjs';
+import { boardPicture, drawnColumnWidths, setColumnWidths, shownWidth, VECTOR_PICTURE, vectorMediaPicture } from '../../export.js';
 import { validFlow } from '../../flow/library.mjs';
-import { pageOf } from '../../formats.mjs';
+import { formatOf, pageOf } from '../../formats.mjs';
 import { pendingCount } from '../../suggest/core.mjs';
 import { WB_BG } from '../../whiteboard.js';
+import { renderPost } from './html.mjs';
 import { applyBaseStyles, replaceWhiteboards } from './post.mjs';
 
 // Forum limit is 20 MiB; stay below it with some headroom.
@@ -43,31 +45,59 @@ function sizedTablesJSON(editor) {
   return tr.doc.toJSON();
 }
 
-/** Builds `{html, images}` of `draft`, shown in `editor`, for api.forum.push (SPEC §5). */
-export async function buildPayload(editor, settings, draft) {
-  // A suggestion waiting in the draft would go out with no record of it (docs/plans/suggestions.md, gate draft.settled).
-  if (pendingCount(editor.state.doc) > 0) throw new Error('Suggestions wait in this draft. Accept or reject them in the draft first.');
-  const { doc, boards: nodes } = replaceWhiteboards(applyBaseStyles(sizedTablesJSON(editor), settings));
-  const html = generateHTML(doc, editor.extensionManager.extensions);
+/** A post session's saved model: the post the push sends ({doc, pending}, post-write A3). */
+export async function postModel(session) {
+  return JSON.parse(new TextDecoder().decode(await session.save('post')));
+}
+
+/** The width an object is shown at in the post, px, from its saved `shown` (points, post-write A3): the drawn width a DOM post's
+ * push reads off the page. */
+const shownPx = (board) => Math.round(Number(board.shown ?? 0) * PX_PER_PT);
+
+/** Builds `{html, images}` of `draft` for api.forum.push (SPEC §5). `post`: the model a post session saves ({doc, pending}) when
+ * the canvas engine hosts the post, else its DOM editor. The engine path writes its own html (html.mjs renderPost) and takes each
+ * object's width from its `shown`; the DOM path is the one the push sent before the engine. */
+export async function buildPayload(post, settings, draft) {
+  const model = post?.state ? null : post; // an editor has a state; a saved model has the post's doc
+  // A suggestion waiting in the draft would go out with no record of it (docs/wiki/suggestions.md, gate draft.settled).
+  if ((model ? (model.pending ?? 0) > 0 : pendingCount(post.state.doc) > 0)) {
+    throw new Error('Suggestions wait in this draft. Accept or reject them in the draft first.');
+  }
+  const { doc, boards: nodes } = model
+    ? replaceWhiteboards(applyBaseStyles(model.doc, settings))
+    : replaceWhiteboards(applyBaseStyles(sizedTablesJSON(post), settings));
+  const html = model ? renderPost(doc) : generateHTML(doc, post.extensionManager.extensions);
   // A synced canvas exports what it shows: its library flowchart's live board; a missing record, its own attrs (the cache).
   const live = await Promise.all(nodes.map((b) => (b.kind === 'canvas' && validFlow(b.flow) ? flowSource.load(b.flow.id) : null)));
   const boards = nodes.map((b, i) => (live[i] ? { ...b, ...live[i].board } : b));
 
-  // Boards nested in a list, quote, box or table are narrower than the page; use the drawn width.
-  // NodeView DOM order matches replaceWhiteboards' document order. offsetWidth ignores CSS zoom.
-  const widths = [...editor.view.dom.querySelectorAll('.sc, .pc, [data-media] > :is(video, img)')].map((el) => el.offsetWidth);
+  // Boards nested in a list, quote, box or table are narrower than the page; use the width they are shown at.
+  // A DOM post's NodeView DOM order matches replaceWhiteboards' document order, and offsetWidth ignores CSS zoom; the engine
+  // writes each object's shown width with its post. A picture the page cannot draw (an EMF in a media block) has no drawn width:
+  // it takes its own, at most the page's.
+  const widths = model
+    ? nodes.map(shownPx)
+    : [...post.view.dom.querySelectorAll('.sc, .pc, [data-media] > :is(video, img)')].map(shownWidth);
+  // A format whose output is raster (formats.mjs rasterOutput: the forum's) never passes a vector picture on.
+  const raster = !!formatOf(draft, settings)?.rasterOutput;
+  const page = pageOf(draft, settings).width;
   const images = [];
   let charts = 0;
   for (const [i, board] of boards.entries()) {
-    if (board.kind === 'media') { // a video or GIF goes up as it is
+    const vector = board.kind === 'media' && raster && VECTOR_PICTURE.test(board.src ?? '');
+    if (board.kind === 'media' && !vector) { // a video or GIF goes up as it is
       const m = board.src?.match(/^data:([^;]+);base64,/);
       if (!m) throw new Error(`The file of ${board.name} is missing`);
       images.push({ name: board.name, base64: board.src.slice(m[0].length), width: widths[i], type: m[1] });
       continue;
     }
-    const page = pageOf(draft, settings).width;
-    const width = widths[i] || Math.min(board.dw ?? page, page);
-    let { blob, height } = await boardPicture(board, width, settings.theme, board.kind === 'planChart' ? ++charts : 0);
+    // A vector picture outside a canvas (a pasted media block): rendered as a canvas of it would be (export.js vectorMediaPicture).
+    let blob, width, height;
+    if (vector) ({ blob, width, height } = await vectorMediaPicture(board, widths[i], page, settings.theme));
+    else {
+      width = widths[i] || Math.min(board.dw ?? page, page);
+      ({ blob, height } = await boardPicture(board, width, settings.theme, board.kind === 'planChart' ? ++charts : 0));
+    }
     if (!blob) throw new Error(`Could not render ${board.kind} ${i + 1}`);
     let type = 'image/png';
     let name = `${board.kind === 'planChart' ? 'plan' : board.kind}-${i + 1}.png`;

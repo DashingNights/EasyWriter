@@ -5,17 +5,19 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { TITLE_LIMIT } from '../../doc-utils.mjs';
 import { Spinner } from '@/components/ui/spinner';
 import { Textarea } from '@/components/ui/textarea';
 import { PageSetupDialog } from '../../document/PageSetupDialog.jsx';
+import { PlaceDraft } from '../../board/PlaceDraft.jsx';
 import { all } from '../../integrations/ui.js';
-import { refocusEditor } from '../actions.js';
+import { WORD_DIALOGS } from '../../tooling/dialogs.js';
+import { closeDialog, dialogStack, refocusEditor } from '../actions.js';
 import { setState, useStore } from '../store.js';
 import { FLOW_FORMS } from './flows/forms.jsx';
 import { FormDialog } from './FormDialog.jsx';
 import { NewDraftDialog } from './NewDraftDialog.jsx';
 import { PLAN_FORMS } from './plan/forms.jsx';
-import { ReferencesDialog } from './References.jsx';
 import { SettingsDialog } from './SettingsDialog.jsx';
 
 function LinkDialog({ href, onClose }) {
@@ -48,10 +50,20 @@ function AddThreadDialog({ validate, onClose }) {
   );
 }
 
+/** Rename (the title bar's document name in Word): the draft's title `value` → the new one. */
+function RenameDraftDialog({ value, onClose }) {
+  const [name, setName] = useState(value ?? '');
+  return (
+    <FormDialog title="Rename" okText="Rename" validate={() => (name.trim() ? '' : 'Enter a name.')} result={() => name} onClose={onClose}>
+      <Input aria-label="Name" className="h-8" maxLength={TITLE_LIMIT} value={name} autoFocus onFocus={(e) => e.target.select()} onChange={(e) => setName(e.target.value)} />
+    </FormDialog>
+  );
+}
+
 const CORE = { newDraft: NewDraftDialog, link: LinkDialog, altText: AltTextDialog, pageSetup: PageSetupDialog, addThread: AddThreadDialog, settings: SettingsDialog,
-  references: ReferencesDialog };
+  renameDraft: RenameDraftDialog, placeDraft: PlaceDraft };
 // Object.assign: all('FORMS') is one object per integration.
-const FORMS = Object.assign({ ...CORE, ...PLAN_FORMS, ...FLOW_FORMS }, ...all('FORMS'));
+const FORMS = Object.assign({ ...CORE, ...PLAN_FORMS, ...FLOW_FORMS, ...WORD_DIALOGS }, ...all('FORMS'));
 
 /** confirmDialog(): AlertDialog with Cancel and a confirm button (only OK for an alert). */
 function ConfirmDialog() {
@@ -93,17 +105,17 @@ function PushOverlay() {
   );
 }
 
-/** Renders the open form dialog (actions.openDialog), the confirmation and the push overlay. */
+/** Renders the open form dialogs (actions.openDialog), the confirmation and the push overlay. Dialogs stack (plan.md §1.6): every
+ * entry stays mounted with its state, and Radix keeps only the top one interactive and focused. */
 export function DialogHost() {
-  const dialog = useStore((s) => s.dialog);
-  const Form = dialog && FORMS[dialog.type];
-  const close = (result) => {
-    setState({ dialog: null });
-    dialog.resolve(result);
-  };
+  useStore((s) => s.dialogs);
+  useStore((s) => s.dialog); // plans.js, flows.js and prefabs.js still set it directly; dialogStack() takes such an entry too
   return (
     <>
-      {Form && <Form {...dialog.props} onClose={close} />}
+      {dialogStack().map((d, i) => {
+        const Form = FORMS[d.type];
+        return Form && <Form key={d.n ?? `legacy${i}`} {...d.props} onClose={(result) => closeDialog(d, result)} />;
+      })}
       <ConfirmDialog />
       <PushOverlay />
     </>

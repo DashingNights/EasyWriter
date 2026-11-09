@@ -1,0 +1,19 @@
+{
+  "w": 400,
+  "h": 300,
+  "aw": 400,
+  "ah": 300,
+  "frame": { "x": 0, "y": 0, "w": 200, "h": 150, "item": "img1" },
+  "bg": "transparent",
+  "items": [
+    {
+      "id": "img1",
+      "type": "image",
+      "src": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==",
+      "x": 10,
+      "y": 20,
+      "w": 200,
+      "h": 150
+    }
+  ]
+}

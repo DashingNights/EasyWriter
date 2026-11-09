@@ -1,0 +1,17 @@
+/* proofing (docs/plans/word briefs/proofing.md): repeated words get Word's red wavy line (Chromium draws the misspellings), the
+   Spelling pane's word and the word Read Aloud speaks are highlighted, and dialogs with only Close or OK hide the kit's Cancel. */
+.page[data-format="document"] .w-proof-repeat {
+  text-decoration: underline wavy #e81123;
+  text-decoration-skip-ink: none;
+  text-underline-offset: 0.15em;
+}
+
+.page[data-format="document"] .w-proof-current {
+  background-color: color-mix(in srgb, var(--color-primary, #2563eb) 25%, transparent);
+}
+
+.page[data-format="document"] .w-read-word {
+  background-color: #c6e3fa;
+  color: #000;
+  border-radius: 2px;
+}

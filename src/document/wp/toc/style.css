@@ -1,0 +1,11 @@
+/* toc: entries are links to their headings (\h), drawn as plain text as Word draws them. */
+[data-doc-text] div[data-field-block] a[data-anchor] {
+  color: inherit;
+  text-decoration: none;
+  cursor: text;
+}
+
+/* \z hides the page numbers in Web Layout. */
+#editor-area[data-word-view][data-word-view='web'] div[data-field-block][data-code*='\\z'] span[data-field][data-code^='PAGEREF'] {
+  display: none;
+}

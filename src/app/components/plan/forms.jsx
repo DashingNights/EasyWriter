@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ArrowDown, ArrowUp, CircleCheck, Plus, Trash2, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -6,7 +6,8 @@ import { Dot } from '@/components/ui/dot';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Toggle } from '@/components/ui/toggle';
-import { cards, doneColumnOf, MAX_COLUMNS, PLAN_GATES } from '../../../plan/plan-model.mjs';
+import { cards, COLORS, doneColumnOf, MAX_COLUMNS, PLAN_GATES } from '../../../plan/plan-model.mjs';
+import { ColorPick } from '../../../tooling/kit/ColorPick.jsx';
 import { confirmDialog, refocusEditor, threadLabel } from '../../actions.js';
 import { keyLabel } from '../../keybinds.js';
 import { deletePlan, dispatch, dispatchAll, planContext, planList, usePlans } from '../../plans.js';
@@ -21,7 +22,8 @@ import { TicketDialog } from './TicketDialog.jsx';
 // entry and have one Close button.
 
 const NONE = '-'; // Radix Select items need a non-empty value
-const SWATCH = 'size-8 shrink-0 cursor-pointer rounded-md border border-input bg-input/30 p-1 [&::-webkit-color-swatch]:rounded-sm [&::-webkit-color-swatch]:border-0 [&::-webkit-color-swatch-wrapper]:p-0';
+// The plan palette (plan-model.mjs COLORS, the colours new columns and labels take) by name: the colour picker's standard row.
+const PALETTE = COLORS.map((c, i) => [c, ['Light grey', 'Blue', 'Green', 'Orange', 'Red', 'Purple', 'Cyan', 'Yellow', 'Pink', 'Slate'][i]]);
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
 /** A text box that commits on Enter or blur (when changed); Escape puts the stored value back. */
@@ -41,18 +43,16 @@ export function CommitInput({ value, onCommit, ...props }) {
   );
 }
 
-/** A colour swatch that commits once the native picker closes (its change event), not on every drag step. */
-export function ColorInput({ value, onCommit, ...props }) {
-  const ref = useRef(null);
-  const commit = useRef(onCommit);
-  commit.current = onCommit;
-  useEffect(() => {
-    const el = ref.current;
-    const onChange = () => el.value !== value && commit.current(el.value);
-    el.addEventListener('change', onChange);
-    return () => el.removeEventListener('change', onChange);
-  }, [value]);
-  return <input ref={ref} type="color" className={SWATCH} defaultValue={value} key={value} {...props} />;
+/** A column's or label's colour: the kit's colour box with the plan palette, a typed hex and More Colors. `label` names it
+ * (data-plan-color). The focus coming back from the picker leaves the Tip around it shut (its preventDefault skips the
+ * tooltip's own focus handler): an open tooltip would take the next Escape, so closing the dialog would take two. */
+export function ColorInput({ value, onCommit, label }) {
+  return (
+    <span data-plan-color={label} className="inline-flex [&>button]:h-8 [&>button]:w-16"
+      onFocus={(e) => (!e.relatedTarget || e.relatedTarget.closest('[data-slot=popover-content]')) && e.preventDefault()}>
+      <ColorPick value={value} theme={null} standard={PALETTE} automatic={null} recent={false} onChange={(hex) => hex && hex.toLowerCase() !== value?.toLowerCase() && onCommit(hex)} />
+    </span>
+  );
 }
 
 /** onOpenAutoFocus for a list whose first control has a tooltip (a colour, a Default toggle): the first name field, or the
@@ -93,7 +93,7 @@ function ColumnsDialog({ planId, onClose }) {
           const free = tags.filter((t) => t.id === c.tagId || !plan.columns.some((x) => x.tagId === t.id));
           return (
             <div key={c.id} className="flex items-center gap-1" data-plan-column={c.id}>
-              <Tip title="Column colour"><ColorInput aria-label="Column colour" value={c.color} onCommit={(color) => update(c.id, { color })} /></Tip>
+              <Tip title="Column colour"><ColorInput label="Column colour" value={c.color} onCommit={(color) => update(c.id, { color })} /></Tip>
               <CommitInput aria-label="Column name" className="h-8 w-40" maxLength={40} value={c.name} onCommit={(name) => update(c.id, { name })} />
               <Select value={tags.some((t) => t.id === c.tagId) ? c.tagId : NONE} onValueChange={(v) => update(c.id, { tagId: v === NONE ? null : v })}>
                 <SelectTrigger size="sm" aria-label="Status tag it follows" className="w-36"><SelectValue /></SelectTrigger>
@@ -176,7 +176,7 @@ function LabelsDialog({ planId, onClose }) {
         {!plan.labels.length && <p className="text-xs text-muted-foreground">No labels yet.</p>}
         {plan.labels.map((l) => (
           <div key={l.id} className="flex items-center gap-1">
-            <Tip title="Label colour"><ColorInput aria-label="Label colour" value={l.color} onCommit={(color) => update(l.id, { color })} /></Tip>
+            <Tip title="Label colour"><ColorInput label="Label colour" value={l.color} onCommit={(color) => update(l.id, { color })} /></Tip>
             <CommitInput aria-label="Label name" className="h-8 w-52" maxLength={40} autoFocus={fresh === l.id} onFocus={(e) => fresh === l.id && e.target.select()}
               value={l.name} onCommit={(name) => name.trim() && update(l.id, { name })} />
             <IconButton size="regular" variant="destructive-ghost" label="Delete label" onClick={() => remove(l)}><Trash2 /></IconButton>
